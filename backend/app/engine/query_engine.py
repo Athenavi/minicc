@@ -176,17 +176,26 @@ class QueryEngine:
         self.mutable_messages.append(user_msg)
         yield {"type": "user_message", "payload": {"content": content, "is_meta": is_meta}}
 
-        # 3. 装配上下文
-        system_context = await self._context_builder.build_context()
-        system_prompt = system_context.build_system_prompt()
+        # 3. 装配上下文 — 使用分层提示词系统
+        # 收集工具级 prompts
+        for t in self._tool_registry.list_tools():
+            tp = t.get_prompt()
+            if tp:
+                self._context_builder.add_tool_prompt(tp)
 
-        # 追加自定义提示词（如有）
+        # 注入用户自定义提示词
         if self.config.custom_system_prompt:
-            system_prompt = f"{system_prompt}\n\n{self.config.custom_system_prompt}"
+            self._context_builder.set_custom_system_prompt(self.config.custom_system_prompt)
         if self.config.append_system_prompt:
-            system_prompt = f"{system_prompt}\n\n{self.config.append_system_prompt}"
+            self._context_builder.set_append_system_prompt(self.config.append_system_prompt)
 
-        # 4. 获取工具定义
+        # 获取工具名列表（用于 session guidance）
+        tool_names = [t.name for t in self._tool_registry.list_tools()]
+
+        # 构建分层 System Prompt
+        system_prompt = await self._context_builder.build_prompt(tool_names=tool_names)
+
+        # 4. 获取工具定义（LLM 格式）
         tools = self._tool_registry.to_anthropic_tools()
 
         # 5. 主循环

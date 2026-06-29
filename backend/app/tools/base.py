@@ -28,6 +28,15 @@ class BaseTool(ABC):
     input_schema: type[BaseModel] = BaseModel
     permission_level: PermissionLevel = PermissionLevel.READ
 
+    def get_prompt(self) -> str | None:
+        """返回工具级 prompt（指导模型如何正确使用此工具）。
+
+        对应 Claude Code 工具自带的 prompt 设计：
+        - 不只是在 schema 里写 description
+        - 而是用自然语言告诉模型"什么时候用、怎么用、不要怎么用"
+        """
+        return None
+
     @abstractmethod
     async def execute(self, input_data: BaseModel) -> ToolResult:
         """执行工具调用。"""

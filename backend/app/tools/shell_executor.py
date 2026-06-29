@@ -64,6 +64,28 @@ Prefer non-destructive operations. Be extra careful with delete/overwrite comman
     input_schema = ShellExecutorInput
     permission_level = PermissionLevel.EXECUTE
 
+    def get_prompt(self) -> str | None:
+        return (
+            "Execute a shell command on the local system.\n\n"
+            "IMPORTANT USAGE RULES:\n"
+            "- You MUST explain the command's intent before running it\n"
+            "- When a dedicated tool exists (read_file, grep, glob), use it instead of bash\n"
+            "- Prefer non-destructive operations\n"
+            "- Be extra careful with delete/overwrite commands (rm, dd, > redirect)\n"
+            "- Commands timeout after 30 seconds by default\n"
+            "- The working directory is the project root by default\n"
+            "- Long outputs are automatically truncated\n\n"
+            "Do NOT use bash for:\n"
+            "- Reading files (use read_file)\n"
+            "- Searching code (use grep)\n"
+            "- Finding files (use glob)\n"
+            "- Editing files (use str_replace_editor or write_to_file)"
+        )
+    description = """Execute a shell command. You MUST explain the command's intent before running it.
+Prefer non-destructive operations. Be extra careful with delete/overwrite commands."""
+    input_schema = ShellExecutorInput
+    permission_level = PermissionLevel.EXECUTE
+
     def __init__(self, workspace_dir: str | Path = ".") -> None:
         super().__init__()
         self._workspace_dir = Path(workspace_dir).resolve()

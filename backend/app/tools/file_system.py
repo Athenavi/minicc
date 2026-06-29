@@ -83,6 +83,20 @@ class ReadFileTool(BaseTool):
     input_schema = ReadFileToolInput
     permission_level = PermissionLevel.READ
 
+    def get_prompt(self) -> str | None:
+        return (
+            "Reads a file from the local filesystem.\n\n"
+            "Usage:\n"
+            "- The path parameter must be an absolute or workspace-relative path\n"
+            "- By default, reads up to 100 lines starting from the beginning\n"
+            "- Use offset and limit to paginate through large files\n"
+            "- This tool can only read files, not directories (use bash ls for directories)\n"
+            "- Binary files will be detected and skipped"
+        )
+    description = "Read a file's contents with line numbers. Use for viewing source code or config files."
+    input_schema = ReadFileToolInput
+    permission_level = PermissionLevel.READ
+
     def __init__(self, workspace_dir: str | Path = ".") -> None:
         super().__init__()
         self._validator = PathValidator(workspace_dir)
@@ -154,6 +168,16 @@ class WriteToFileTool(BaseTool):
     input_schema = WriteToFileToolInput
     permission_level = PermissionLevel.WRITE
 
+    def get_prompt(self) -> str | None:
+        return (
+            "Creates a new file or completely overwrites an existing file.\n\n"
+            "Use this for:\n"
+            "- Creating new files\n"
+            "- Making large changes that affect most of a file\n"
+            "- When str_replace_editor would need too many replacements\n\n"
+            "For small, targeted changes, prefer str_replace_editor instead."
+        )
+
     def __init__(self, workspace_dir: str | Path = ".") -> None:
         super().__init__()
         self._validator = PathValidator(workspace_dir)
@@ -204,6 +228,20 @@ class StrReplaceEditorTool(BaseTool):
     description = "Edit a file by replacing an exact string. Best for targeted code changes."
     input_schema = StrReplaceEditorInput
     permission_level = PermissionLevel.WRITE
+
+    def get_prompt(self) -> str | None:
+        return (
+            "Edit a file by replacing an exact string match.\n\n"
+            "Use this for:\n"
+            "- Fixing a bug in a specific function\n"
+            "- Changing a variable name or string literal\n"
+            "- Making small, targeted modifications\n\n"
+            "Rules:\n"
+            "- old_string must match EXACTLY once in the file\n"
+            "- If it matches multiple times, use replace_all=True\n"
+            "- If no match is found, check the file content first with read_file\n"
+            "- For large changes affecting most of a file, use write_to_file instead"
+        )
 
     def __init__(self, workspace_dir: str | Path = ".") -> None:
         super().__init__()
