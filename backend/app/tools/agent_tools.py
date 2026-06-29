@@ -187,7 +187,47 @@ class AgentTool(BaseTool):
             background=input_data.run_in_background,
         )
 
-        await sub_agent_manager.execute_task(task.id, None)
+        # Create a sub-QueryEngine for real task execution
+        try:
+            # Lazy import to avoid circular dependency
+            from app.core.context_builder import ContextBuilder
+            from app.core.permission import PermissionHandler
+            from app.engine.query_engine import QueryEngine, QueryEngineConfig
+            from app.engine.llm_provider import create_provider
+            from app.utils.config import settings
+
+            sub_engine = QueryEngine(QueryEngineConfig(
+                session_id=f"sub_{task.id}",
+                provider=create_provider(
+                    settings.llm_provider,
+                    settings.llm_api_key,
+                    settings.llm_model,
+                ),
+                tool_registry=context.options.get("tool_registry") if context else None,
+                context_builder=ContextBuilder(context.options.get("cwd", ".") if context else "."),
+                permission_handler=PermissionHandler(),
+                max_tool_rounds=10,
+                max_tokens=4096,
+            ))
+
+            # Execute the sub-agent task
+            async for event in sub_engine.submit_message(input_data.prompt):
+                if event["type"] == "message_complete":
+                    sub_agent_manager.update_task(
+                        task.id, TaskStatus.COMPLETED,
+                        output=str(event.get("payload", {})),
+                    )
+                    break
+                elif event["type"] == "error":
+                    sub_agent_manager.update_task(
+                        task.id, TaskStatus.FAILED,
+                        error=event.get("payload", {}).get("message", "Unknown error"),
+                    )
+                    break
+
+        except Exception as exc:
+            # Fallback: use simple execution
+            await sub_agent_manager.execute_task(task.id, None)
 
         task_result = sub_agent_manager.get_task(task.id)
 

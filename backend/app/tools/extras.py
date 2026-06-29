@@ -6,20 +6,21 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Optional
 
 from pydantic import BaseModel, Field
 
 from app.models.permission import PermissionLevel
+from app.models.tool import ToolResult
+from app.tools.base import BaseTool, ToolCategory, ToolUseContext
+from app.utils.security import PathValidator
 
 
 class _NoInput(BaseModel):
     pass
-from app.models.tool import ToolResult
-from app.tools.base import BaseTool, ToolCategory, ToolUseContext
-from app.utils.security import PathValidator
-from app.utils.security import PathValidator
+
 
 # ── NotebookEditTool ──
 
@@ -155,10 +156,28 @@ class WebSearchTool(BaseTool):
         if input_data.blocked_domains:
             domains += f"\nBlocked domains: {', '.join(input_data.blocked_domains)}"
 
+        # Try search providers in order
+        results = await self._search_duckduckgo(input_data.query) or \
+                  await self._search_searxng(input_data.query) or \
+                  []
+
+        if not results:
+            results = ["(No results found. Try a more specific query.)"]
+
+        output = (
+            f"[Web search results for: {input_data.query}]{domains}\n\n"
+            + "\n".join(results)
+            + "\n\nIMPORTANT: Use web_fetch to retrieve specific pages. "
+            "Include a 'Sources:' section with markdown links in your final response."
+        )
+        return ToolResult(tool_call_id="", output=output)
+
+    async def _search_duckduckgo(self, query: str) -> list[str] | None:
+        """DuckDuckGo instant answer API (free, no key)."""
+        import httpx
         try:
-            # DuckDuckGo instant answer API (no API key required)
-            url = f"https://api.duckduckgo.com/?q={input_data.query}&format=json&no_html=1"
-            async with httpx.AsyncClient(timeout=10) as client:
+            url = f"https://api.duckduckgo.com/?q={query}&format=json&no_html=1"
+            async with httpx.AsyncClient(timeout=8) as client:
                 resp = await client.get(url)
                 data = resp.json()
 
@@ -168,30 +187,42 @@ class WebSearchTool(BaseTool):
                 results.append(f"• {abstract}")
                 if data.get("AbstractURL"):
                     results.append(f"  Source: {data['AbstractURL']}")
-
             for topic in data.get("RelatedTopics", [])[:5]:
                 if "Text" in topic:
                     results.append(f"• {topic['Text']}")
                     if "FirstURL" in topic:
                         results.append(f"  {topic['FirstURL']}")
+            return results if results else None
+        except Exception:
+            return None
 
-            if not results:
-                results.append("(No instant answers found. Try a more specific query.)")
+    async def _search_searxng(self, query: str) -> list[str] | None:
+        """SearXNG self-hosted search API."""
+        import httpx
+        from app.utils.config import settings
+        searxng_url = getattr(settings, "searxng_url", "") or os.environ.get("SEARXNG_URL", "")
+        if not searxng_url:
+            return None
+        try:
+            params = {"q": query, "format": "json", "language": "en", "categories": "general"}
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(f"{searxng_url}/search", params=params)
+                data = resp.json()
 
-            output = (
-                f"[Web search results for: {input_data.query}]{domains}\n\n"
-                + "\n".join(results)
-                + "\n\nIMPORTANT: Use web_fetch to retrieve specific pages. "
-                "Include a 'Sources:' section with markdown links in your final response."
-            )
-            return ToolResult(tool_call_id="", output=output)
-
-        except Exception as exc:
-            return ToolResult(
-                tool_call_id="",
-                output=f"[Web search error: {exc}]\n\nTry using web_fetch to access specific URLs directly.",
-                is_error=True,
-            )
+            results = []
+            for r in data.get("results", [])[:8]:
+                title = r.get("title", "")
+                url = r.get("url", "")
+                snippet = r.get("content", "")[:200]
+                if title:
+                    results.append(f"• {title}")
+                    if snippet:
+                        results.append(f"  {snippet}")
+                    if url:
+                        results.append(f"  {url}")
+            return results if results else None
+        except Exception:
+            return None
 
 
 # ── Plan Mode 工具 ──

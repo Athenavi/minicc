@@ -37,6 +37,7 @@ export default function Home() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectCount = useRef(0);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Auto-scroll
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, streamingMsg]);
@@ -198,8 +199,13 @@ export default function Home() {
   }, [send]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
+    if ((e.key === "Enter" && !e.shiftKey) || (e.key === "Enter" && e.ctrlKey)) { e.preventDefault(); handleSend(); }
   };
+
+  // Loading skeleton
+  const Skeleton = ({ className }: { className?: string }) => (
+    <div className={`animate-pulse bg-gray-200 dark:bg-gray-700 rounded ${className || ""}`} />
+  );
 
   // Render a single message
   const renderMessage = (msg: ChatMessage, isStreaming?: boolean) => {
@@ -276,11 +282,17 @@ export default function Home() {
 
   return (
     <div className="flex h-screen bg-gray-100 dark:bg-gray-900">
+      {/* Sidebar overlay for mobile */}
+      {sidebarOpen && <div className="fixed inset-0 bg-black/30 z-10 md:hidden" onClick={() => setSidebarOpen(false)} />}
+
       {/* Sidebar */}
-      <div className="w-64 bg-white dark:bg-gray-800 border-r dark:border-gray-700 flex flex-col shrink-0">
-        <div className="p-3 border-b dark:border-gray-700">
-          <button onClick={() => { setMessages([]); setStreamingMsg(null); }} className="w-full py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+      <div className={`${sidebarOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0 fixed md:static z-20 md:z-auto w-64 bg-white dark:bg-gray-800 border-r dark:border-gray-700 flex flex-col shrink-0 transition-transform duration-200 h-full`}>
+        <div className="flex items-center justify-between p-3 border-b dark:border-gray-700">
+          <button onClick={() => { setMessages([]); setStreamingMsg(null); }} className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 mr-2">
             + New Chat
+          </button>
+          <button onClick={() => setSidebarOpen(false)} className="md:hidden p-1 text-gray-400 hover:text-gray-600">
+            ✕
           </button>
         </div>
         <div className="flex-1 overflow-y-auto p-2 space-y-1 text-xs text-gray-500 dark:text-gray-400">
@@ -296,6 +308,9 @@ export default function Home() {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
         <header className="flex items-center gap-3 px-4 h-12 bg-white dark:bg-gray-800 border-b dark:border-gray-700 shrink-0">
+          <button onClick={() => setSidebarOpen(true)} className="md:hidden p-1 text-gray-500 hover:text-gray-700 dark:text-gray-400">
+            ☰
+          </button>
           <h1 className="text-sm font-semibold dark:text-gray-100">MiniCC</h1>
           <span className={`w-2 h-2 rounded-full ${wsStatus === "connected" ? "bg-green-500" : wsStatus === "connecting" ? "bg-yellow-500" : "bg-red-500"}`} />
           <span className="text-xs text-gray-400 dark:text-gray-500">{wsStatus}</span>
@@ -305,7 +320,17 @@ export default function Home() {
         <div className="flex-1 overflow-y-auto p-4 space-y-4 dark:bg-gray-900">
           {messages.map((m) => renderMessage(m))}
           {streamingMsg && renderMessage(streamingMsg, true)}
-          {messages.length === 0 && !streamingMsg && (
+          {isGenerating && !streamingMsg && (
+            <div className="flex gap-3">
+              <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-xs font-bold shrink-0 mt-1">M</div>
+              <div className="space-y-2 flex-1 max-w-[75%]">
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-4 w-1/2" />
+                <Skeleton className="h-4 w-2/3" />
+              </div>
+            </div>
+          )}
+          {messages.length === 0 && !streamingMsg && !isGenerating && (
             <div className="flex items-center justify-center h-full text-gray-400 dark:text-gray-500 text-sm">
               <div className="text-center space-y-2">
                 <p className="text-lg font-medium text-gray-300 dark:text-gray-600">MiniCC</p>
