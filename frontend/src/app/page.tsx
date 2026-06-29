@@ -1,123 +1,337 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { MessageList } from "@/components/chat/MessageList";
-import { SessionList } from "@/components/sidebar/SessionList";
-import { useWebSocket } from "@/hooks/useWebSocket";
-import { type Message, type AgentStatus } from "@/lib/types";
-import { Send, Square, Menu } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { Message, ToolCall, ToolCallStatus, PermissionLevel } from "@/lib/types";
+
+type WSStatus = "connecting" | "connected" | "disconnected";
+
+interface ChatMessage {
+  id: string;
+  role: "user" | "assistant" | "system" | "tool";
+  content: string;
+  toolCalls?: ToolCallState[];
+  timestamp: string;
+}
+
+interface ToolCallState {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+  status: ToolCallStatus;
+  level?: PermissionLevel;
+  diffPreview?: string;
+  result?: string;
+  isError?: boolean;
+  requestId?: string;
+}
+
+function genId() { return Math.random().toString(36).slice(2, 10); }
 
 export default function Home() {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
-  const [agentStatus, setAgentStatus] = useState<AgentStatus>("idle");
-  const [sessionId] = useState(() => crypto.randomUUID());
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [wsStatus, setWsStatus] = useState<WSStatus>("disconnected");
+  const [sessionId] = useState(() => genId() + genId());
+  const [streamingMsg, setStreamingMsg] = useState<ChatMessage | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectCount = useRef(0);
+  const [isGenerating, setIsGenerating] = useState(false);
 
-  const handleMessage = useCallback((data: Record<string, unknown>) => {
-    if (data.type === "message_chunk") {
-      // Phase 1: handle streaming chunks
+  // Auto-scroll
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, streamingMsg]);
+
+  // WebSocket connection
+  const connect = useCallback(() => {
+    const url = `ws://localhost:8000/ws/${sessionId}`;
+    setWsStatus("connecting");
+    const ws = new WebSocket(url);
+    wsRef.current = ws;
+
+    ws.onopen = () => { setWsStatus("connected"); reconnectCount.current = 0; };
+    ws.onclose = () => {
+      setWsStatus("disconnected");
+      const delay = Math.min(1000 * 2 ** reconnectCount.current, 30000);
+      reconnectCount.current += 1;
+      setTimeout(connect, delay);
+    };
+    ws.onerror = () => ws.close();
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        handleEvent(data);
+      } catch { /* ignore */ }
+    };
+  }, [sessionId]);
+
+  useEffect(() => { connect(); return () => wsRef.current?.close(); }, [connect]);
+
+  const send = useCallback((data: Record<string, unknown>) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(data));
     }
   }, []);
 
-  const { status: wsStatus, sendJSON } = useWebSocket({
-    sessionId,
-    onMessage: handleMessage,
-  });
+  // Event handler
+  const handleEvent = useCallback((data: any) => {
+    const type = data.type;
+    const payload = data.payload || {};
 
+    switch (type) {
+      case "session_info":
+        break;
+
+      case "text_chunk":
+        setStreamingMsg((prev) => {
+          const text = payload.text || "";
+          if (!prev) {
+            return { id: genId(), role: "assistant", content: text, timestamp: new Date().toISOString() };
+          }
+          return { ...prev, content: prev.content + text };
+        });
+        break;
+
+      case "tool_call_start":
+        setStreamingMsg((prev) => {
+          const tc: ToolCallState = {
+            id: payload.call_id,
+            name: payload.name,
+            input: payload.input || {},
+            status: payload.level === "read" ? "approved" : "pending",
+            level: payload.level,
+          };
+          const existing = prev?.toolCalls || [];
+          return prev ? { ...prev, toolCalls: [...existing, tc] } : prev!;
+        });
+        break;
+
+      case "tool_call_result":
+        setStreamingMsg((prev) => {
+          if (!prev) return prev;
+          const existing = prev.toolCalls || [];
+          const updated = existing.map((tc) =>
+            tc.id === payload.call_id
+              ? { ...tc, status: payload.is_error ? "failed" as const : "completed" as const, result: payload.output, isError: payload.is_error }
+              : tc
+          );
+          return { ...prev, toolCalls: updated };
+        });
+        break;
+
+      case "permission_required":
+        setStreamingMsg((prev) => {
+          if (!prev) return prev;
+          const existing = prev.toolCalls || [];
+          const updated = existing.map((tc) =>
+            tc.name === payload.tool_name && tc.status === "pending"
+              ? { ...tc, status: "pending" as const, requestId: payload.request_id, level: payload.level, diffPreview: payload.diff_preview }
+              : tc
+          );
+          return { ...prev, toolCalls: updated };
+        });
+        break;
+
+      case "message_complete":
+        if (streamingMsg) {
+          setMessages((prev) => [...prev, streamingMsg]);
+          setStreamingMsg(null);
+        }
+        setIsGenerating(false);
+        break;
+
+      case "command_result":
+        setMessages((prev) => [...prev, { id: genId(), role: "system", content: payload.output || "", timestamp: new Date().toISOString() }]);
+        break;
+
+      case "compaction":
+        // Context was compressed — show a subtle indicator
+        setMessages((prev) => [...prev, { id: genId(), role: "system", content: `📦 Context compressed (freed ~${payload.tokens_freed || 0} tokens)`, timestamp: new Date().toISOString() }]);
+        break;
+
+      case "error":
+        setMessages((prev) => [...prev, { id: genId(), role: "system", content: `❌ Error: ${payload.message || "Unknown error"}`, timestamp: new Date().toISOString() }]);
+        setIsGenerating(false);
+        break;
+
+      case "user_message":
+        setMessages((prev) => [...prev, { id: genId(), role: "user", content: payload.content || "", timestamp: new Date().toISOString() }]);
+        break;
+
+      case "pong":
+        break;
+    }
+  }, [streamingMsg]);
+
+  // Send user message
   const handleSend = useCallback(() => {
     const text = input.trim();
     if (!text) return;
-
-    const userMsg: Message = {
-      role: "user",
-      content: text,
-      created_at: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, userMsg]);
     setInput("");
-    setAgentStatus("thinking");
+    setIsGenerating(true);
+    // Check for slash command
+    if (text.startsWith("/")) {
+      send({ type: "user_message", payload: { content: text } });
+    } else {
+      setMessages((prev) => [...prev, { id: genId(), role: "user", content: text, timestamp: new Date().toISOString() }]);
+      send({ type: "user_message", payload: { content: text } });
+    }
+  }, [input, send]);
 
-    sendJSON({ type: "user_message", payload: { content: text } });
-  }, [input, sendJSON]);
+  // Approval actions
+  const handleApproval = useCallback((requestId: string, action: "approve" | "reject" | "always_allow") => {
+    send({ type: "approval_action", payload: { request_id: requestId, action } });
+    // Update local state
+    setStreamingMsg((prev) => {
+      if (!prev) return prev;
+      const updated = (prev.toolCalls || []).map((tc) =>
+        tc.requestId === requestId
+          ? { ...tc, status: (action === "approve" || action === "always_allow" ? "approved" : "rejected") as ToolCallStatus }
+          : tc
+      );
+      return { ...prev, toolCalls: updated };
+    });
+  }, [send]);
+
+  const handleCancel = useCallback(() => {
+    send({ type: "cancel", payload: {} });
+    setIsGenerating(false);
+  }, [send]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
-  const handleStop = useCallback(() => {
-    sendJSON({ type: "cancel" });
-    setAgentStatus("idle");
-  }, [sendJSON]);
+  // Render a single message
+  const renderMessage = (msg: ChatMessage, isStreaming?: boolean) => {
+    const isUser = msg.role === "user";
+    const isSystem = msg.role === "system";
+    const isTool = msg.role === "tool";
+
+    return (
+      <div key={msg.id} className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""} ${isStreaming ? "opacity-80" : ""}`}>
+        {/* Avatar */}
+        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-1 ${
+          isUser ? "bg-blue-600 text-white" : isSystem ? "bg-gray-400 text-white" : "bg-gray-200 text-gray-700"
+        }`}>
+          {isUser ? "U" : isSystem ? "⚙" : "M"}
+        </div>
+
+        {/* Content */}
+        <div className={`max-w-[75%] space-y-2 ${isUser ? "items-end" : ""}`}>
+          {/* Text */}
+          {msg.content && (
+            <div className={`rounded-xl px-4 py-2.5 text-sm whitespace-pre-wrap ${
+              isUser ? "bg-blue-600 text-white" : isSystem ? "bg-gray-100 text-gray-600 text-xs" : "bg-white border"
+            }`}>
+              {msg.content}
+              {isStreaming && <span className="animate-pulse">▍</span>}
+            </div>
+          )}
+
+          {/* Tool calls */}
+          {msg.toolCalls?.map((tc) => (
+            <div key={tc.id} className={`border rounded-lg overflow-hidden text-sm ${
+              tc.status === "rejected" || tc.status === "failed" ? "border-red-300 bg-red-50" :
+              tc.status === "running" ? "border-blue-300 bg-blue-50" :
+              tc.status === "completed" ? "border-green-300 bg-green-50" :
+              "border-yellow-300 bg-yellow-50"
+            }`}>
+              {/* Header */}
+              <div className="flex items-center gap-2 px-3 py-1.5 border-b bg-white text-xs font-medium">
+                <span>🔧 {tc.name}</span>
+                <span className={`ml-auto px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                  tc.status === "completed" ? "bg-green-100 text-green-700" :
+                  tc.status === "failed" || tc.status === "rejected" ? "bg-red-100 text-red-700" :
+                  tc.status === "running" ? "bg-blue-100 text-blue-700" :
+                  "bg-yellow-100 text-yellow-700"
+                }`}>{tc.status}</span>
+              </div>
+
+              {/* Diff preview */}
+              {tc.diffPreview && (
+                <pre className="p-2 text-xs font-mono overflow-x-auto max-h-40 bg-white border-b">{tc.diffPreview}</pre>
+              )}
+
+              {/* Result */}
+              {tc.result && (
+                <pre className={`p-2 text-xs font-mono max-h-40 overflow-auto ${tc.isError ? "text-red-600" : "text-gray-700"}`}>
+                  {tc.result.slice(0, 1000)}
+                </pre>
+              )}
+
+              {/* Approval buttons */}
+              {tc.status === "pending" && tc.requestId && (
+                <div className="flex gap-2 p-2 bg-white border-t">
+                  <button onClick={() => handleApproval(tc.requestId!, "approve")} className="flex-1 px-3 py-1.5 text-xs font-medium rounded bg-green-600 text-white hover:bg-green-700">✅ Approve</button>
+                  <button onClick={() => handleApproval(tc.requestId!, "reject")} className="px-3 py-1.5 text-xs font-medium rounded bg-red-600 text-white hover:bg-red-700">❌ Reject</button>
+                  <button onClick={() => handleApproval(tc.requestId!, "always_allow")} className="px-3 py-1.5 text-xs font-medium rounded bg-gray-200 text-gray-700 hover:bg-gray-300 border">⭐ Always</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen bg-gray-100">
       {/* Sidebar */}
-      {sidebarOpen && (
-        <SessionList
-          sessions={[]}
-          onSelect={() => {}}
-          onNew={() => {
-            setMessages([]);
-            setAgentStatus("idle");
-          }}
-          onDelete={() => {}}
-          className="w-72 shrink-0 hidden md:flex"
-        />
-      )}
+      <div className="w-64 bg-white border-r flex flex-col shrink-0">
+        <div className="p-3 border-b">
+          <button onClick={() => { setMessages([]); setStreamingMsg(null); }} className="w-full py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+            + New Chat
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-2 space-y-1 text-xs text-gray-500">
+          {messages.filter(m => m.role !== "system").slice(-10).map(m => (
+            <div key={m.id} className="px-2 py-1.5 rounded hover:bg-gray-100 truncate">{m.content.slice(0, 60)}</div>
+          ))}
+          {messages.length === 0 && <div className="text-center py-8 text-gray-400">No conversations yet</div>}
+        </div>
+        <div className="p-3 border-t text-[10px] text-gray-400 text-center">MiniCC v0.1</div>
+      </div>
 
-      {/* Main chat area */}
+      {/* Main */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <header className="flex items-center gap-2 px-4 h-12 border-b shrink-0">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="md:hidden"
-          >
-            <Menu className="w-4 h-4" />
-          </Button>
+        <header className="flex items-center gap-3 px-4 h-12 bg-white border-b shrink-0">
           <h1 className="text-sm font-semibold">MiniCC</h1>
-          <div className="flex items-center gap-2 ml-auto">
-            <span className={`w-2 h-2 rounded-full ${
-              wsStatus === "connected" ? "bg-green-500" : "bg-yellow-500"
-            }`} />
-            <span className="text-xs text-muted-foreground">
-              {wsStatus === "connected" ? "已连接" : "连接中..."}
-            </span>
-          </div>
+          <span className={`w-2 h-2 rounded-full ${wsStatus === "connected" ? "bg-green-500" : wsStatus === "connecting" ? "bg-yellow-500" : "bg-red-500"}`} />
+          <span className="text-xs text-gray-400">{wsStatus}</span>
         </header>
 
         {/* Messages */}
-        <MessageList messages={messages} className="flex-1" />
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {messages.map((m) => renderMessage(m))}
+          {streamingMsg && renderMessage(streamingMsg, true)}
+          {messages.length === 0 && !streamingMsg && (
+            <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+              <div className="text-center space-y-2">
+                <p className="text-lg font-medium text-gray-300">MiniCC</p>
+                <p>Send a message to start a conversation</p>
+                <p className="text-xs">Type /help for available commands</p>
+              </div>
+            </div>
+          )}
+          <div ref={bottomRef} />
+        </div>
 
-        {/* Input area */}
-        <div className="border-t p-4 shrink-0">
+        {/* Input */}
+        <div className="border-t bg-white p-4 shrink-0">
           <div className="flex gap-2 max-w-4xl mx-auto">
-            <Input
-              ref={inputRef}
+            <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="输入消息... (Shift+Enter 换行)"
-              disabled={agentStatus === "thinking" || agentStatus === "executing"}
-              className="flex-1"
+              placeholder="Type a message... (/help for commands)"
+              disabled={isGenerating}
+              className="flex-1 px-4 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
             />
-            {agentStatus === "idle" ? (
-              <Button onClick={handleSend} size="icon" disabled={!input.trim()}>
-                <Send className="w-4 h-4" />
-              </Button>
+            {isGenerating ? (
+              <button onClick={handleCancel} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700">⏹ Stop</button>
             ) : (
-              <Button onClick={handleStop} variant="destructive" size="icon">
-                <Square className="w-4 h-4" />
-              </Button>
+              <button onClick={handleSend} disabled={!input.trim()} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">Send</button>
             )}
           </div>
         </div>
