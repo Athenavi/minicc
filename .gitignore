@@ -219,3 +219,7 @@ __marimo__/
 
 # ponytail (cloned repo)
 /ponytail/
+
+# Environment files
+backend/.env
+.env

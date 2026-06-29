@@ -154,8 +154,9 @@ export default function Home() {
         setIsGenerating(false);
         break;
 
-      case "user_message":
-        setMessages((prev) => [...prev, { id: genId(), role: "user", content: payload.content || "", timestamp: new Date().toISOString() }]);
+      case "error":
+        setMessages((prev) => [...prev, { id: genId(), role: "system", content: `❌ Error: ${payload.message || "Unknown error"}`, timestamp: new Date().toISOString() }]);
+        setIsGenerating(false);
         break;
 
       case "pong":
@@ -169,13 +170,9 @@ export default function Home() {
     if (!text) return;
     setInput("");
     setIsGenerating(true);
-    // Check for slash command
-    if (text.startsWith("/")) {
-      send({ type: "user_message", payload: { content: text } });
-    } else {
-      setMessages((prev) => [...prev, { id: genId(), role: "user", content: text, timestamp: new Date().toISOString() }]);
-      send({ type: "user_message", payload: { content: text } });
-    }
+    // Add message locally for instant feedback, then send to backend
+    setMessages((prev) => [...prev, { id: genId(), role: "user", content: text, timestamp: new Date().toISOString() }]);
+    send({ type: "user_message", payload: { content: text } });
   }, [input, send]);
 
   // Approval actions
@@ -324,9 +321,21 @@ export default function Home() {
             <div className="flex gap-3">
               <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-xs font-bold shrink-0 mt-1">M</div>
               <div className="space-y-2 flex-1 max-w-[75%]">
+                <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                  <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+                  Thinking...
+                </div>
                 <Skeleton className="h-4 w-3/4" />
                 <Skeleton className="h-4 w-1/2" />
-                <Skeleton className="h-4 w-2/3" />
+              </div>
+            </div>
+          )}
+          {streamingMsg && streamingMsg.toolCalls?.some(tc => tc.status === "pending" || tc.status === "approved") && (
+            <div className="flex gap-3">
+              <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-xs font-bold shrink-0 mt-1">⚙</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400 py-2">
+                <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse inline-block mr-2" />
+                Waiting for approval...
               </div>
             </div>
           )}
@@ -341,6 +350,19 @@ export default function Home() {
           )}
           <div ref={bottomRef} />
         </div>
+
+        {/* Status bar */}
+        {isGenerating && (
+          <div className="px-4 py-1.5 bg-blue-50 dark:bg-blue-950 border-t dark:border-blue-800 text-xs text-blue-600 dark:text-blue-400 flex items-center gap-2 shrink-0">
+            <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" />
+            {streamingMsg?.toolCalls?.some(tc => tc.status === "pending")
+              ? "Waiting for approval..."
+              : streamingMsg?.toolCalls?.some(tc => tc.status === "running" || tc.status === "approved")
+              ? "Executing tool..."
+              : "Generating response..."}
+            <button onClick={handleCancel} className="ml-auto text-red-500 hover:text-red-700 text-[10px] font-medium">Stop</button>
+          </div>
+        )}
 
         {/* Input */}
         <div className="border-t dark:border-gray-700 bg-white dark:bg-gray-800 p-4 shrink-0">

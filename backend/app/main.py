@@ -20,6 +20,7 @@ from app.core.permission import PermissionHandler
 from app.engine.query_engine import QueryEngine, QueryEngineConfig
 from app.engine.session import SessionManager
 from app.engine.task_manager import TaskManager
+from app.engine.llm_provider import create_provider
 from app.tools.base import ToolRegistry
 from app.tools.file_system import register_file_tools
 from app.tools.search_tools import GlobTool, GrepTool
@@ -146,13 +147,20 @@ async def agent_websocket(websocket: WebSocket, session_id: str):
     context_builder = ContextBuilder(settings.workspace_dir)
     permission_handler = PermissionHandler()
 
+    # 创建 LLM Provider
+    provider = create_provider(
+        settings.llm_provider,
+        settings.llm_api_key,
+        settings.llm_model,
+        base_url=settings.llm_base_url or None,
+    )
+
     engine = _active_engines.get(session_id)
     if engine is None:
-        # 从持久层恢复
         saved = await session_manager.resume_session(session_id)
         engine = QueryEngine(QueryEngineConfig(
             session_id=session_id,
-            provider=None,  # Phase 1 注入 LLM provider
+            provider=provider,
             tool_registry=tool_registry,
             context_builder=context_builder,
             permission_handler=permission_handler,

@@ -11,9 +11,10 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="MINICC_", env_file=".env", extra="ignore")
 
     # LLM 配置
-    llm_provider: str = "anthropic"
+    llm_provider: str = "openai"
     llm_api_key: str = ""
     llm_model: str = "claude-sonnet-4-20250514"
+    llm_base_url: str = ""  # For OpenAI-compatible providers (DeepSeek, Ollama)
 
     # 工作区
     workspace_dir: str = "."
