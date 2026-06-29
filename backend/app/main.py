@@ -31,6 +31,9 @@ from app.utils.logger import logger
 from app.utils.redis_client import RedisClient
 from app.utils.sqlite_store import SQLiteStore
 
+from app.commands import CommandDispatcher
+from app.commands.core import ClearCommand, ConfigCommand, HelpCommand, StatusCommand, ToolsCommand
+
 
 # -- 全局单例 --
 
@@ -42,6 +45,14 @@ tool_registry.register(GlobTool())
 tool_registry.register(GrepTool())
 tool_registry.register(WebFetchTool())
 tool_registry.register(ToolSearchTool(tool_registry))
+
+# 命令系统
+command_dispatcher = CommandDispatcher()
+command_dispatcher.register(HelpCommand(command_dispatcher))
+command_dispatcher.register(StatusCommand())
+command_dispatcher.register(ToolsCommand(tool_registry))
+command_dispatcher.register(ClearCommand())
+command_dispatcher.register(ConfigCommand())
 
 redis_client = RedisClient(settings.redis_url)
 sqlite_store = SQLiteStore()
@@ -168,6 +179,26 @@ async def agent_websocket(websocket: WebSocket, session_id: str):
 
             if msg_type == "user_message":
                 content = payload.get("content", "")
+
+                # 检测 slash command
+                cmd_context = {
+                    "session_id": session_id,
+                    "message_count": len(engine.mutable_messages),
+                    "messages": engine.mutable_messages,
+                    "usage": engine.total_usage.model_dump() if hasattr(engine, "total_usage") else {},
+                    "provider": settings.llm_provider,
+                    "model": settings.llm_model,
+                }
+                cmd_result = await command_dispatcher.dispatch(content, cmd_context)
+                if cmd_result is not None:
+                    # 是命令，直接返回结果
+                    await websocket.send_json({
+                        "type": "command_result",
+                        "payload": {"output": cmd_result},
+                    })
+                    continue
+
+                # 普通用户消息
                 await _handle_user_message(engine, output_queue, session_id, content)
                 continue
 
