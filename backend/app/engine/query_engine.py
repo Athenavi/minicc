@@ -33,6 +33,7 @@ from pydantic import BaseModel
 
 from app.core.context_builder import ContextBuilder
 from app.core.permission import PermissionHandler, PermissionLevel, PermissionResult
+from app.engine.compactor import BudgetManager, CompactPipeline, SNIP_THRESHOLD
 from app.engine.llm_provider import LLMProvider, StreamEvent, create_provider
 from app.models.chat import ContentBlock, Message, Role
 from app.models.tool import ToolCall, ToolResult
@@ -119,6 +120,8 @@ class QueryEngine:
         self._context_builder = config.context_builder
         self._permission_handler = config.permission_handler
         self._mcp_refresh = config.mcp_refresh_callback
+        self._compact_pipeline = CompactPipeline()
+        self._budget_manager = BudgetManager()
 
         # ── 跨轮次状态（对应 Claude Code QueryEngine 成员变量） ──
 
@@ -207,6 +210,21 @@ class QueryEngine:
 
             # 5a. 转换消息为 LLM 格式
             llm_messages = self._messages_to_llm_format()
+
+            # 5a1. 上下文压缩（对应 Claude Code 6 层管线）
+            total_est = sum(self._budget_manager.estimate_tokens(str(m.content)) for m in self.mutable_messages)
+            if total_est > SNIP_THRESHOLD and turn > 0:
+                compact_result = await self._compact_pipeline.apply_all(self.mutable_messages, total_est)
+                if compact_result.tokens_freed > 0:
+                    self.mutable_messages = compact_result.messages
+                    llm_messages = self._messages_to_llm_format()
+                    yield {
+                        "type": "compaction",
+                        "payload": {
+                            "tokens_freed": compact_result.tokens_freed,
+                            "boundaries": len(self._compact_pipeline.boundaries),
+                        },
+                    }
 
             # 5b. 调用 LLM
             text_buffer = ""
