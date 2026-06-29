@@ -211,7 +211,7 @@ export default function Home() {
       <div key={msg.id} className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""} ${isStreaming ? "opacity-80" : ""}`}>
         {/* Avatar */}
         <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-1 ${
-          isUser ? "bg-blue-600 text-white" : isSystem ? "bg-gray-400 text-white" : "bg-gray-200 text-gray-700"
+          isUser ? "bg-blue-600 text-white" : isSystem ? "bg-gray-400 dark:bg-gray-600 text-white" : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
         }`}>
           {isUser ? "U" : isSystem ? "⚙" : "M"}
         </div>
@@ -221,7 +221,7 @@ export default function Home() {
           {/* Text */}
           {msg.content && (
             <div className={`rounded-xl px-4 py-2.5 text-sm whitespace-pre-wrap ${
-              isUser ? "bg-blue-600 text-white" : isSystem ? "bg-gray-100 text-gray-600 text-xs" : "bg-white border"
+              isUser ? "bg-blue-600 text-white" : isSystem ? "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs" : "bg-white dark:bg-gray-800 border dark:border-gray-700 dark:text-gray-100"
             }`}>
               {msg.content}
               {isStreaming && <span className="animate-pulse">▍</span>}
@@ -231,19 +231,19 @@ export default function Home() {
           {/* Tool calls */}
           {msg.toolCalls?.map((tc) => (
             <div key={tc.id} className={`border rounded-lg overflow-hidden text-sm ${
-              tc.status === "rejected" || tc.status === "failed" ? "border-red-300 bg-red-50" :
-              tc.status === "running" ? "border-blue-300 bg-blue-50" :
-              tc.status === "completed" ? "border-green-300 bg-green-50" :
-              "border-yellow-300 bg-yellow-50"
+              tc.status === "rejected" || tc.status === "failed" ? "border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950" :
+              tc.status === "running" ? "border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-950" :
+              tc.status === "completed" ? "border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-950" :
+              "border-yellow-300 dark:border-yellow-700 bg-yellow-50 dark:bg-yellow-950"
             }`}>
               {/* Header */}
-              <div className="flex items-center gap-2 px-3 py-1.5 border-b bg-white text-xs font-medium">
+              <div className="flex items-center gap-2 px-3 py-1.5 border-b dark:border-gray-700 bg-white dark:bg-gray-800 text-xs font-medium dark:text-gray-100">
                 <span>🔧 {tc.name}</span>
                 <span className={`ml-auto px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                  tc.status === "completed" ? "bg-green-100 text-green-700" :
-                  tc.status === "failed" || tc.status === "rejected" ? "bg-red-100 text-red-700" :
-                  tc.status === "running" ? "bg-blue-100 text-blue-700" :
-                  "bg-yellow-100 text-yellow-700"
+                  tc.status === "completed" ? "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300" :
+                  tc.status === "failed" || tc.status === "rejected" ? "bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300" :
+                  tc.status === "running" ? "bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300" :
+                  "bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300"
                 }`}>{tc.status}</span>
               </div>
 
@@ -275,40 +275,40 @@ export default function Home() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-100">
+    <div className="flex h-screen bg-gray-100 dark:bg-gray-900">
       {/* Sidebar */}
-      <div className="w-64 bg-white border-r flex flex-col shrink-0">
-        <div className="p-3 border-b">
+      <div className="w-64 bg-white dark:bg-gray-800 border-r dark:border-gray-700 flex flex-col shrink-0">
+        <div className="p-3 border-b dark:border-gray-700">
           <button onClick={() => { setMessages([]); setStreamingMsg(null); }} className="w-full py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
             + New Chat
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto p-2 space-y-1 text-xs text-gray-500">
+        <div className="flex-1 overflow-y-auto p-2 space-y-1 text-xs text-gray-500 dark:text-gray-400">
           {messages.filter(m => m.role !== "system").slice(-10).map(m => (
-            <div key={m.id} className="px-2 py-1.5 rounded hover:bg-gray-100 truncate">{m.content.slice(0, 60)}</div>
+            <div key={m.id} className="px-2 py-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 truncate">{m.content.slice(0, 60)}</div>
           ))}
-          {messages.length === 0 && <div className="text-center py-8 text-gray-400">No conversations yet</div>}
+          {messages.length === 0 && <div className="text-center py-8 text-gray-400 dark:text-gray-500">No conversations yet</div>}
         </div>
-        <div className="p-3 border-t text-[10px] text-gray-400 text-center">MiniCC v0.1</div>
+        <div className="p-3 border-t dark:border-gray-700 text-[10px] text-gray-400 dark:text-gray-500 text-center">MiniCC v0.1</div>
       </div>
 
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <header className="flex items-center gap-3 px-4 h-12 bg-white border-b shrink-0">
-          <h1 className="text-sm font-semibold">MiniCC</h1>
+        <header className="flex items-center gap-3 px-4 h-12 bg-white dark:bg-gray-800 border-b dark:border-gray-700 shrink-0">
+          <h1 className="text-sm font-semibold dark:text-gray-100">MiniCC</h1>
           <span className={`w-2 h-2 rounded-full ${wsStatus === "connected" ? "bg-green-500" : wsStatus === "connecting" ? "bg-yellow-500" : "bg-red-500"}`} />
-          <span className="text-xs text-gray-400">{wsStatus}</span>
+          <span className="text-xs text-gray-400 dark:text-gray-500">{wsStatus}</span>
         </header>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 dark:bg-gray-900">
           {messages.map((m) => renderMessage(m))}
           {streamingMsg && renderMessage(streamingMsg, true)}
           {messages.length === 0 && !streamingMsg && (
-            <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+            <div className="flex items-center justify-center h-full text-gray-400 dark:text-gray-500 text-sm">
               <div className="text-center space-y-2">
-                <p className="text-lg font-medium text-gray-300">MiniCC</p>
+                <p className="text-lg font-medium text-gray-300 dark:text-gray-600">MiniCC</p>
                 <p>Send a message to start a conversation</p>
                 <p className="text-xs">Type /help for available commands</p>
               </div>
@@ -318,7 +318,7 @@ export default function Home() {
         </div>
 
         {/* Input */}
-        <div className="border-t bg-white p-4 shrink-0">
+        <div className="border-t dark:border-gray-700 bg-white dark:bg-gray-800 p-4 shrink-0">
           <div className="flex gap-2 max-w-4xl mx-auto">
             <input
               value={input}
@@ -326,7 +326,7 @@ export default function Home() {
               onKeyDown={handleKeyDown}
               placeholder="Type a message... (/help for commands)"
               disabled={isGenerating}
-              className="flex-1 px-4 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+              className="flex-1 px-4 py-2 border dark:border-gray-600 rounded-lg text-sm dark:bg-gray-700 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
             />
             {isGenerating ? (
               <button onClick={handleCancel} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700">⏹ Stop</button>

@@ -1,21 +1,27 @@
-# 任务 14：Token 预算管理、UI 优化与 Docker 打包
+# 任务 14：Token 预算管理与 UI 优化
 
 > **所属阶段**：Phase 5 - 打磨与优化 (Polish)
-> **对应模块**：全模块 — Budget Manager / UI UX / 打包分发
-> **预估工时**：2-3 天
+> **对应模块**：全模块 — Budget Manager / UI UX
+> **预估工时**：1-2 天
 > **依赖**：所有前置任务完成
 
 ---
 
 ## 1. 任务目标
 
-进行最后的打磨与优化：实现 Token 预算管理防止 Context Window 溢出、优化 UI/UX、适配暗黑模式、添加骨架屏加载动画、打包 Docker 镜像实现一键部署。
+进行最后的打磨与优化：实现 Token 预算管理防止 Context Window 溢出、优化 UI/UX、适配暗黑模式、添加骨架屏加载动画。
 
 ## 2. 详细子任务
 
 ### 2.1 Token 预算管理器 (BudgetManager)
 
-- [ ] 文件：`backend/app/engine/budget_manager.py`
+- [x] 文件：`backend/app/engine/compactor.py`
+- 已实现（见 #6 上下文压缩管理）
+- `BudgetManager` — 工具结果预算裁剪、Token 估算
+- `AutoCompactor` — 自动摘要压缩
+- `CompactPipeline` — 6 层压缩管线
+- `SnipCompactor` — 局部裁剪
+- `ContextCollapser` — 折叠视图
 
 ```python
 class BudgetManager:
