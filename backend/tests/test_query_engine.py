@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from app.core.context_builder import ContextBuilder, SystemContext
 from app.engine.llm_provider import LLMProvider, StreamEvent
-from app.engine.query_engine import QueryEngine
+from app.engine.query_engine import QueryEngine, QueryEngineConfig
 from app.models.chat import Message, Role
 from app.models.permission import PermissionLevel
 from app.models.tool import ToolResult
@@ -90,6 +90,18 @@ async def _collect(engine: QueryEngine, content: str) -> list[dict]:
     return events
 
 
+def make_engine(session_id: str, provider: LLMProvider, registry: ToolRegistry, ctx_builder: ContextBuilder,
+                **kwargs) -> QueryEngine:
+    """Helper: create a QueryEngine with QueryEngineConfig."""
+    return QueryEngine(QueryEngineConfig(
+        session_id=session_id,
+        provider=provider,
+        tool_registry=registry,
+        context_builder=ctx_builder,
+        **kwargs,
+    ))
+
+
 # -- Tests --
 
 
@@ -97,7 +109,7 @@ class TestQueryEngineBasics:
     async def test_empty_response(self, registry, context_builder):
         """Text-only response with no tool calls."""
         provider = MockProvider([StreamEvent(type="end", data={})])
-        engine = QueryEngine("s1", provider, registry, context_builder)
+        engine = make_engine("s1", provider, registry, context_builder)
         events = await _collect(engine, "hello")
 
         assert len(events) >= 2
@@ -113,7 +125,7 @@ class TestQueryEngineBasics:
             StreamEvent(type="text", data={"text": " world"}),
             StreamEvent(type="end", data={}),
         ])
-        engine = QueryEngine("s2", provider, registry, context_builder)
+        engine = make_engine("s2", provider, registry, context_builder)
         events = await _collect(engine, "hi")
 
         texts = [e["payload"]["text"] for e in events if e["type"] == "text_chunk"]
@@ -122,7 +134,7 @@ class TestQueryEngineBasics:
     async def test_mutable_messages_accumulate(self, registry, context_builder):
         """Messages accumulate across turns (session state)."""
         provider = MockProvider([StreamEvent(type="end", data={})])
-        engine = QueryEngine("s3", provider, registry, context_builder)
+        engine = make_engine("s3", provider, registry, context_builder)
         await _collect(engine, "first")
         await _collect(engine, "second")
 
@@ -136,11 +148,21 @@ class TestQueryEngineBasics:
         """abort_event stops the main loop."""
         provider = MockProvider([
             StreamEvent(type="text", data={"text": "thinking..."}),
+            StreamEvent(type="text", data={"text": "still going"}),
             StreamEvent(type="end", data={}),
         ])
-        engine = QueryEngine("s4", provider, registry, context_builder)
-        engine.cancel()
-        events = await _collect(engine, "test")
+        engine = make_engine("s4", provider, registry, context_builder)
+
+        async def collect_with_cancel():
+            events = []
+            async for event in engine.submit_message("test"):
+                events.append(event)
+                # Cancel after receiving first text chunk
+                if event["type"] == "text_chunk":
+                    engine.cancel()
+            return events
+
+        events = await collect_with_cancel()
         assert events[-1]["type"] == "message_complete"
         assert events[-1]["payload"].get("interrupted") is True
 
@@ -155,7 +177,7 @@ class TestQueryEngineToolCalls:
             ),
             StreamEvent(type="end", data={}),
         ])
-        engine = QueryEngine("s5", provider, registry, context_builder)
+        engine = make_engine("s5", provider, registry, context_builder)
         events = await _collect(engine, "run echo")
 
         # Should have tool_call_start
@@ -177,7 +199,7 @@ class TestQueryEngineToolCalls:
             ),
             StreamEvent(type="end", data={}),
         ])
-        engine = QueryEngine("s6", provider, registry, context_builder)
+        engine = make_engine("s6", provider, registry, context_builder)
         events = await _collect(engine, "run bad tool")
 
         results = [e for e in events if e["type"] == "tool_call_result"]
@@ -193,7 +215,7 @@ class TestQueryEngineToolCalls:
             ),
             StreamEvent(type="end", data={}),
         ])
-        engine = QueryEngine("s7", provider, registry, context_builder)
+        engine = make_engine("s7", provider, registry, context_builder)
         events = await _collect(engine, "run fail")
 
         results = [e for e in events if e["type"] == "tool_call_result"]
@@ -212,7 +234,7 @@ class TestQueryEngineMultipleTurns:
             ),
             StreamEvent(type="end", data={}),
         ])
-        engine = QueryEngine("s8", provider, registry, context_builder)
+        engine = make_engine("s8", provider, registry, context_builder)
         events = await _collect(engine, "multi turn")
 
         assert any(e["type"] == "text_chunk" for e in events)
@@ -229,6 +251,67 @@ class TestQueryEngineMultipleTurns:
             ),
             StreamEvent(type="end", data={}),
         ])
-        engine = QueryEngine("s9", provider, registry, context_builder, max_tool_rounds=2)
+        engine = make_engine("s9", provider, registry, context_builder, max_tool_rounds=2)
         events = await _collect(engine, "loop test")
         assert events[-1]["type"] == "message_complete"
+
+
+class TestQueryEngineCrossTurnState:
+    async def test_discover_skill(self, registry, context_builder):
+        """discover_skill tracks unique names."""
+        engine = make_engine("s10", MockProvider([StreamEvent(type="end", data={})]), registry, context_builder)
+        assert engine.discover_skill("grep") is True
+        assert engine.discover_skill("grep") is False  # already known
+        assert engine.discover_skill("bash") is True
+        assert engine.discovered_skill_names == {"grep", "bash"}
+
+    async def test_mark_memory_loaded(self, registry, context_builder):
+        """mark_memory_loaded tracks unique paths."""
+        engine = make_engine("s11", MockProvider([StreamEvent(type="end", data={})]), registry, context_builder)
+        assert engine.mark_memory_loaded(".minicc/memory.md") is True
+        assert engine.mark_memory_loaded(".minicc/memory.md") is False  # already loaded
+
+    async def test_permission_denial_tracking(self, registry, context_builder):
+        """Denials are recorded as structured objects."""
+        provider = MockProvider([
+            StreamEvent(type="tool_use", data={"id": "td1", "name": "echo", "input": {"msg": "x"}}),
+            StreamEvent(type="end", data={}),
+        ])
+        engine = make_engine("s12", provider, registry, context_builder)
+
+        # Simulate a denial directly — PermissionDenial is in query_engine module
+        from app.engine.query_engine import PermissionDenial as DenialModel
+        denial = DenialModel(tool_name="echo", reason="rejected", input_preview="{'msg': 'x'}", turn=0, timestamp="now")
+        engine.permission_denials.append(denial)  # type: ignore[attr-defined]
+
+        assert len(engine.permission_denials) == 1
+        assert engine.permission_denials[0].tool_name == "echo"
+        assert engine.has_recent_denial("echo") is True
+        assert engine.has_recent_denial("bash") is False
+
+    async def test_usage_stats(self, registry, context_builder):
+        """total_usage tracks across turns."""
+        engine = make_engine("s13", MockProvider([StreamEvent(type="end", data={})]), registry, context_builder)
+        assert engine.total_usage.input_tokens == 0
+        assert engine.total_usage.turn_count == 0
+
+        await _collect(engine, "hi")
+        assert engine.total_usage.turn_count >= 1
+
+    async def test_file_cache(self, registry, context_builder):
+        """File cache stores read results."""
+        engine = make_engine("s14", MockProvider([StreamEvent(type="end", data={})]), registry, context_builder)
+
+        # Simulate a file read cache entry
+        from app.engine.query_engine import FileCacheEntry
+        import hashlib
+        engine._file_cache["test.py"] = FileCacheEntry(
+            content="print('hello')",
+            total_lines=1,
+            hash=hashlib.md5(b"print('hello')").hexdigest(),
+        )
+
+        info = engine.get_file_cache_info()
+        assert len(info) == 1
+        assert info[0]["path"] == "test.py"
+        assert info[0]["total_lines"] == 1

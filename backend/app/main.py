@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.context_builder import ContextBuilder
 from app.core.permission import PermissionHandler
-from app.engine.query_engine import QueryEngine
+from app.engine.query_engine import QueryEngine, QueryEngineConfig
 from app.engine.session import SessionManager
 from app.engine.task_manager import TaskManager
 from app.tools.base import ToolRegistry
@@ -107,13 +107,13 @@ async def agent_websocket(websocket: WebSocket, session_id: str):
     if engine is None:
         # 从持久层恢复
         saved = await session_manager.resume_session(session_id)
-        engine = QueryEngine(
+        engine = QueryEngine(QueryEngineConfig(
             session_id=session_id,
             provider=None,  # Phase 1 注入 LLM provider
             tool_registry=tool_registry,
             context_builder=context_builder,
             permission_handler=permission_handler,
-        )
+        ))
         _active_engines[session_id] = engine
 
     # 发送会话信息
