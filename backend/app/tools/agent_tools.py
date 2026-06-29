@@ -328,3 +328,76 @@ class TaskOutputTool(BaseTool):
             return ToolResult(tool_call_id="", output=f"Task {task.id} is {task.status.value}. Output not ready yet.")
         output = task.output or "(no output)"
         return ToolResult(tool_call_id="", output=output)
+
+
+# ── SendMessageTool ──
+
+
+class SendMessageInput(BaseModel):
+    to: str = Field(description="Recipient: teammate name, '*' for broadcast, or 'bridge:<session>'")
+    message: str = Field(description="Message content")
+    summary: Optional[str] = Field(default=None, description="Short summary for context")
+
+
+class SendMessageTool(BaseTool):
+    """Agent 间通信工具 — 多 Agent 模式下的通信总线。"""
+
+    name = "send_message"
+    description = "Send a message to another agent or broadcast to all teammates. Required for multi-agent communication."
+    input_schema = SendMessageInput
+    permission_level = PermissionLevel.READ
+    category = ToolCategory.AGENT
+
+    def get_prompt(self) -> str | None:
+        return (
+            "Send a message to another agent or broadcast.\n\n"
+            "Rules:\n"
+            "- Use to='*' for team-wide broadcasts (use sparingly)\n"
+            "- Use to='<name>' to message a specific teammate\n"
+            "- Regular text output is NOT visible to other agents\n"
+            "- You MUST use this tool to communicate with teammates"
+        )
+
+    async def execute(self, input_data: SendMessageInput, context: ToolUseContext | None = None) -> ToolResult:
+        recipient = input_data.to
+        msg = input_data.message
+        summary = input_data.summary or ""
+
+        if recipient == "*":
+            output = f"[Broadcast to all teammates]\n{msg}"
+        elif recipient.startswith("bridge:"):
+            output = f"[Message to bridge session: {recipient[7:]}]\n{msg}"
+        else:
+            output = f"[Message to {recipient}]\n{msg}"
+
+        if summary:
+            output = f"[{summary}]\n{output}"
+
+        return ToolResult(tool_call_id="", output=output, metadata={"to": recipient})
+
+
+# ── SkillTool ──
+
+
+class _SkillInput(BaseModel):
+    name: str = ""
+
+
+class SkillTool(BaseTool):
+    """执行 Skills — 运行技能规则集。
+
+    对应 Claude Code SkillTool：
+    - Skills 是可复用的提示词规则集
+    - 支持从本地和 MCP 加载
+    - MCP skills 被视为远程不可信
+    """
+
+    name = "skill"
+    description = "Execute a skill — a reusable set of instructions or rules. Use to apply specific workflows."
+    input_schema = _SkillInput
+    permission_level = PermissionLevel.READ
+    category = ToolCategory.AGENT
+
+    async def execute(self, input_data: _SkillInput, context: ToolUseContext | None = None) -> ToolResult:
+        return ToolResult(tool_call_id="", output="Skill execution ready. Available skills can be configured in .minicc/skills/.")
+

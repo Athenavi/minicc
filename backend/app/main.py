@@ -27,7 +27,8 @@ from app.tools.session_tools import AskUserQuestionTool, TodoWriteTool
 from app.tools.tool_search import ToolSearchTool
 from app.tools.web_tools import WebFetchTool
 from app.tools.agent_tools import (
-    AgentTool, TaskCreateTool, TaskGetTool, TaskListTool,
+    AgentTool, SendMessageTool, SkillTool,
+    TaskCreateTool, TaskGetTool, TaskListTool,
     TaskOutputTool, TaskStopTool, TaskUpdateTool,
 )
 from app.utils.config import settings
@@ -56,6 +57,8 @@ tool_registry.register(TaskUpdateTool())
 tool_registry.register(TaskListTool())
 tool_registry.register(TaskStopTool())
 tool_registry.register(TaskOutputTool())
+tool_registry.register(SendMessageTool())
+tool_registry.register(SkillTool())
 
 # 命令系统
 command_dispatcher = CommandDispatcher()
