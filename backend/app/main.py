@@ -31,6 +31,10 @@ from app.tools.agent_tools import (
     TaskCreateTool, TaskGetTool, TaskListTool,
     TaskOutputTool, TaskStopTool, TaskUpdateTool,
 )
+from app.tools.extras import (
+    EnterPlanModeTool, ExitPlanModeTool,
+    NotebookEditTool, WebSearchTool,
+)
 from app.utils.config import settings
 from app.utils.logger import logger
 from app.utils.redis_client import RedisClient
@@ -59,6 +63,10 @@ tool_registry.register(TaskStopTool())
 tool_registry.register(TaskOutputTool())
 tool_registry.register(SendMessageTool())
 tool_registry.register(SkillTool())
+tool_registry.register(NotebookEditTool())
+tool_registry.register(WebSearchTool())
+tool_registry.register(EnterPlanModeTool())
+tool_registry.register(ExitPlanModeTool())
 
 # 命令系统
 command_dispatcher = CommandDispatcher()
