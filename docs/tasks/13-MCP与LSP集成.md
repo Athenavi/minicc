@@ -4,8 +4,40 @@
 > **对应模块**：模块 8 (Extensions — MCP Client / LSP / Plugins)
 > **预估工时**：4-5 天
 > **依赖**：任务 05 (QueryEngine)、任务 06 (Tool Parser/ToolRegistry)
+> **状态**：✅ 已完成（2026-06-29）
 
 ---
+
+## 0. 设计哲学
+
+参考 Claude Code 源码中 MCP/LSP 的设计理念：
+
+### 一句话理解
+
+> MCP = **向外扩能力**（接入外部系统、工具、资源）
+> LSP = **向内补语义**（诊断、符号、引用、定义）
+
+### MCP 的核心定位
+
+如果说内置工具解决的是"我自己会什么"，那 MCP 解决的就是"我还能接入谁"。MCP 不是简单的"插件协议"，而是一层**外部能力接入总线**：
+
+```
+MiniCC 运行时
+├── 内置工具（read_file, bash, ...）
+└── MCP 总线
+    ├── MCP 工具（tools/list → tools/call）
+    ├── MCP 资源（resources/list → resources/read）
+    ├── MCP Prompts（prompts/list）
+    └── MCP Skills（远程不可信，安全边界）
+```
+
+### 关键设计决策
+
+1. **标准化** — MCP server 暴露的原始能力不会直接丢给模型。先翻译成统一的 `BaseTool`，之后 MCP 工具和内置工具在运行时中处于同一层面（参考 `fetchToolsForClient()` 设计）
+2. **动态刷新** — 能力不是启动时写死的。监听 `tools/list_changed` / `resources/list_changed` 通知，每轮 turn 之间执行 `refreshTools()`，新接入的 MCP server 可以在下一轮立刻变成可用工具
+3. **安全边界** — MCP skills 被明确当成"远程不可信"内容处理，不执行内联 shell 命令（参考 `loadSkillsDir.ts` 注释 `MCP skills are remote and untrusted`）
+4. **资源桥接** — 当 MCP server 支持 resources 时，自动注入 `ListMcpResourcesTool` 和 `ReadMcpResourceTool` 两个桥接工具，把"资源"也变成模型能主动访问的对象
+5. **协议化交互** — MCP server 执行过程中需要用户补充信息时，通过协议提出交互请求，客户端统一接管，而非写一堆 server-specific if/else
 
 ## 1. 任务目标
 
