@@ -14,6 +14,10 @@ class PermissionLevel(str, enum.Enum):
     WRITE = "write"  # 需用户审批
     EXECUTE = "execute"  # 需严格审批（醒目提示）
 
+    def __ge__(self, other: "PermissionLevel") -> bool:
+        order = ["read", "write", "execute"]
+        return order.index(self.value) >= order.index(other.value)
+
 
 class PermissionRequest(BaseModel):
     """一次待审批的权限请求。"""
