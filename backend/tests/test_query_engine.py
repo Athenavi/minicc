@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from pydantic import BaseModel
 
-from app.core.context_builder import ContextBuilder, SystemContext
+from app.core.context_builder import ContextBuilder
 from app.engine.llm_provider import LLMProvider, StreamEvent
 from app.engine.query_engine import QueryEngine, QueryEngineConfig
 from app.models.chat import Message, Role
@@ -52,7 +52,7 @@ class EchoTool(BaseTool):
     input_schema = EchoInput
     permission_level = PermissionLevel.READ
 
-    async def execute(self, input_data: EchoInput) -> ToolResult:
+    async def execute(self, input_data: EchoInput, context=None) -> ToolResult:
         return ToolResult(tool_call_id="test", output=input_data.msg)
 
 
@@ -62,7 +62,7 @@ class FailTool(BaseTool):
     input_schema = EchoInput
     permission_level = PermissionLevel.READ
 
-    async def execute(self, input_data: EchoInput) -> ToolResult:
+    async def execute(self, input_data: EchoInput, context=None) -> ToolResult:
         return ToolResult(tool_call_id="test", output="simulated failure", is_error=True)
 
 

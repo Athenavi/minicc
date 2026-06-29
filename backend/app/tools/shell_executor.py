@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from app.models.permission import PermissionLevel
 from app.models.tool import ToolResult
-from app.tools.base import BaseTool
+from app.tools.base import BaseTool, ToolUseContext
 from app.utils.security import PathValidator
 
 OUTPUT_MAX_CHARS = 100_000  # ~100KB
@@ -91,7 +91,7 @@ Prefer non-destructive operations. Be extra careful with delete/overwrite comman
         self._workspace_dir = Path(workspace_dir).resolve()
         self._validator = PathValidator(workspace_dir)
 
-    async def execute(self, input_data: ShellExecutorInput) -> ToolResult:
+    async def execute(self, input_data: ShellExecutorInput, context: ToolUseContext | None = None) -> ToolResult:
         # 工作目录验证
         cwd = self._workspace_dir
         if input_data.workdir:

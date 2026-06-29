@@ -22,6 +22,7 @@ from app.engine.session import SessionManager
 from app.engine.task_manager import TaskManager
 from app.tools.base import ToolRegistry
 from app.tools.file_system import register_file_tools
+from app.tools.session_tools import AskUserQuestionTool, TodoWriteTool
 from app.utils.config import settings
 from app.utils.logger import logger
 from app.utils.redis_client import RedisClient
@@ -32,6 +33,8 @@ from app.utils.sqlite_store import SQLiteStore
 
 tool_registry = ToolRegistry()
 register_file_tools(tool_registry)
+tool_registry.register(AskUserQuestionTool())
+tool_registry.register(TodoWriteTool())
 
 redis_client = RedisClient(settings.redis_url)
 sqlite_store = SQLiteStore()

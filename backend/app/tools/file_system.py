@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 from app.models.permission import PermissionLevel
 from app.models.tool import ToolResult
-from app.tools.base import BaseTool
+from app.tools.base import BaseTool, ToolUseContext
 from app.utils.security import PathValidator
 
 MAX_FILE_SIZE = 1_024 * 1_024  # 1MB
@@ -101,7 +101,7 @@ class ReadFileTool(BaseTool):
         super().__init__()
         self._validator = PathValidator(workspace_dir)
 
-    async def execute(self, input_data: ReadFileToolInput) -> ToolResult:
+    async def execute(self, input_data: ReadFileToolInput, context: ToolUseContext | None = None) -> ToolResult:
         try:
             path = self._validator.validate(input_data.path)
         except PermissionError as e:
@@ -182,7 +182,7 @@ class WriteToFileTool(BaseTool):
         super().__init__()
         self._validator = PathValidator(workspace_dir)
 
-    async def execute(self, input_data: WriteToFileToolInput) -> ToolResult:
+    async def execute(self, input_data: WriteToFileToolInput, context: ToolUseContext | None = None) -> ToolResult:
         try:
             path = self._validator.validate(input_data.path)
         except PermissionError as e:
@@ -247,7 +247,7 @@ class StrReplaceEditorTool(BaseTool):
         super().__init__()
         self._validator = PathValidator(workspace_dir)
 
-    async def execute(self, input_data: StrReplaceEditorInput) -> ToolResult:
+    async def execute(self, input_data: StrReplaceEditorInput, context: ToolUseContext | None = None) -> ToolResult:
         try:
             path = self._validator.validate(input_data.path)
         except PermissionError as e:
