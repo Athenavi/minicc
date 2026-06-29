@@ -26,6 +26,10 @@ from app.tools.search_tools import GlobTool, GrepTool
 from app.tools.session_tools import AskUserQuestionTool, TodoWriteTool
 from app.tools.tool_search import ToolSearchTool
 from app.tools.web_tools import WebFetchTool
+from app.tools.agent_tools import (
+    AgentTool, TaskCreateTool, TaskGetTool, TaskListTool,
+    TaskOutputTool, TaskStopTool, TaskUpdateTool,
+)
 from app.utils.config import settings
 from app.utils.logger import logger
 from app.utils.redis_client import RedisClient
@@ -45,6 +49,13 @@ tool_registry.register(GlobTool())
 tool_registry.register(GrepTool())
 tool_registry.register(WebFetchTool())
 tool_registry.register(ToolSearchTool(tool_registry))
+tool_registry.register(AgentTool())
+tool_registry.register(TaskCreateTool())
+tool_registry.register(TaskGetTool())
+tool_registry.register(TaskUpdateTool())
+tool_registry.register(TaskListTool())
+tool_registry.register(TaskStopTool())
+tool_registry.register(TaskOutputTool())
 
 # 命令系统
 command_dispatcher = CommandDispatcher()
