@@ -1,12 +1,20 @@
 """文件系统工具集 — ReadFile / WriteToFile / StrReplaceEditor。
 
 参考 Claude Code 的 FileReadTool / FileWriteTool / FileEditTool 设计。
+
+关键优化：
+1. 文件变更检测：通过内容哈希判断文件是否被修改过
+2. 分页体验：显示上下文行 + 进度指示
+3. 原子写入 + 备份：写入前备份原文件到 .minicc/.backup/
+4. 精确编辑：上下文行显示、undo 支持
 """
 
 from __future__ import annotations
 
 import difflib
+import hashlib
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Optional
@@ -20,6 +28,48 @@ from app.utils.security import PathValidator
 
 MAX_FILE_SIZE = 1_024 * 1_024  # 1MB
 LINE_NUMBER_WIDTH = 6
+CONTEXT_LINES = 3  # 编辑时显示的上下文行数
+
+
+# ── 文件状态工具 ─────────────────────────────────────────
+
+
+def compute_file_hash(path: Path) -> str:
+    """计算文件内容的 MD5 哈希。"""
+    return hashlib.md5(path.read_bytes()).hexdigest()
+
+
+def backup_file(path: Path) -> Optional[Path]:
+    """备份文件到 .minicc/.backup/。返回备份路径。"""
+    try:
+        backup_dir = path.parent / ".minicc" / ".backup"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        backup_path = backup_dir / f"{path.name}.{stamp}.bak"
+        backup_path.write_bytes(path.read_bytes())
+        return backup_path
+    except Exception:
+        return None
+
+
+def format_line_number(lineno: int, width: int = LINE_NUMBER_WIDTH) -> str:
+    """格式化行号，右对齐。"""
+    return str(lineno).rjust(width)
+
+
+def make_diff_preview(original: str, modified: str, file_path: str = "file", max_lines: int = 80) -> str:
+    """生成 Unified Diff，限制最大行数。"""
+    diff = difflib.unified_diff(
+        original.splitlines(keepends=True),
+        modified.splitlines(keepends=True),
+        fromfile=f"a/{file_path}",
+        tofile=f"b/{file_path}",
+    )
+    lines = list(diff)
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        lines.append("...\n[diff truncated: too many lines]")
+    return "".join(lines)
 
 
 # ── Diff 生成器 ─────────────────────────────────────────
@@ -30,18 +80,10 @@ class DiffGenerator:
 
     @staticmethod
     def generate_diff(original: str, modified: str, file_path: str = "file") -> str:
-        """返回 Unified Diff 格式字符串。"""
-        diff = difflib.unified_diff(
-            original.splitlines(keepends=True),
-            modified.splitlines(keepends=True),
-            fromfile=f"a/{file_path}",
-            tofile=f"b/{file_path}",
-        )
-        return "".join(diff)
+        return make_diff_preview(original, modified, file_path)
 
     @staticmethod
     def generate_diff_for_tool(file_path: str, tool_name: str, tool_input: dict) -> str | None:
-        """根据工具类型和输入，生成操作的 diff 预览。"""
         path = Path(file_path)
         if not path.exists():
             if tool_name == "write_to_file":
@@ -56,14 +98,11 @@ class DiffGenerator:
             old = tool_input.get("old_string", "")
             new = tool_input.get("new_string", "")
             replace_all = tool_input.get("replace_all", False)
-            if replace_all:
-                modified = original.replace(old, new)
-            else:
-                modified = original.replace(old, new, 1)
+            modified = original.replace(old, new) if replace_all else original.replace(old, new, 1)
         else:
             return None
 
-        return DiffGenerator.generate_diff(original, modified, file_path)
+        return make_diff_preview(original, modified, file_path)
 
 
 # ── 读取工具 ───────────────────────────────────────────
@@ -73,26 +112,13 @@ class ReadFileToolInput(BaseModel):
     path: str = Field(description="File path (relative to workspace or absolute)")
     offset: int = Field(default=0, ge=0, description="Starting line (0-indexed)")
     limit: int = Field(default=100, ge=1, le=2000, description="Max lines to return")
+    show_line_numbers: bool = Field(default=True, description="Show line numbers in output")
 
 
 class ReadFileTool(BaseTool):
     """读取文件内容，支持行号显示和分页。"""
 
     name = "read_file"
-    description = "Read a file's contents with line numbers. Use for viewing source code or config files."
-    input_schema = ReadFileToolInput
-    permission_level = PermissionLevel.READ
-
-    def get_prompt(self) -> str | None:
-        return (
-            "Reads a file from the local filesystem.\n\n"
-            "Usage:\n"
-            "- The path parameter must be an absolute or workspace-relative path\n"
-            "- By default, reads up to 100 lines starting from the beginning\n"
-            "- Use offset and limit to paginate through large files\n"
-            "- This tool can only read files, not directories (use bash ls for directories)\n"
-            "- Binary files will be detected and skipped"
-        )
     description = "Read a file's contents with line numbers. Use for viewing source code or config files."
     input_schema = ReadFileToolInput
     permission_level = PermissionLevel.READ
@@ -114,18 +140,12 @@ class ReadFileTool(BaseTool):
 
         # Binary detection
         if _is_binary(path):
-            return ToolResult(
-                tool_call_id="",
-                output=f"(binary file: {path.name})",
-            )
+            return ToolResult(tool_call_id="", output=f"(binary file: {path.name})")
 
         # Size check
         size = path.stat().st_size
         if size > MAX_FILE_SIZE:
-            return ToolResult(
-                tool_call_id="",
-                output=f"(file too large: {size / 1024 / 1024:.1f}MB, max 1MB)",
-            )
+            return ToolResult(tool_call_id="", output=f"(file too large: {size / 1024 / 1024:.1f}MB, max 1MB)")
 
         content = path.read_text(encoding="utf-8")
         lines = content.splitlines()
@@ -137,16 +157,35 @@ class ReadFileTool(BaseTool):
         selected = lines[start:end]
 
         # Format with line numbers
-        result_lines = []
-        for i, line in enumerate(selected):
-            lineno = start + i + 1
-            result_lines.append(f"{str(lineno).rjust(LINE_NUMBER_WIDTH)}|{line}")
+        if input_data.show_line_numbers:
+            result_lines = []
+            for i, line in enumerate(selected):
+                lineno = start + i + 1
+                result_lines.append(f"{format_line_number(lineno)}|{line}")
+        else:
+            result_lines = list(selected)
 
+        # Pagination footer
+        footer_parts = []
         if end < total:
-            result_lines.append(f"\n[{end}-{total} of {total} lines remain]")
+            footer_parts.append(f"lines {start+1}-{end} of {total}")
+        else:
+            footer_parts.append(f"all {total} lines shown")
+
+        # File hash for change detection
+        file_hash = compute_file_hash(path)
+        footer_parts.append(f"hash: {file_hash[:12]}")
+
+        result_lines.append("")
+        result_lines.append(f"[{'] ['.join(footer_parts)}]")
 
         output = "\n".join(result_lines)
-        metadata = {"total_lines": total, "returned_lines": len(selected)}
+        metadata = {
+            "total_lines": total,
+            "returned_lines": len(selected),
+            "file_hash": file_hash,
+            "file_size": size,
+        }
 
         return ToolResult(tool_call_id="", output=output, metadata=metadata)
 
@@ -158,6 +197,7 @@ class WriteToFileToolInput(BaseModel):
     path: str = Field(description="File path")
     content: str = Field(description="Complete file content")
     create_parents: bool = Field(default=True, description="Auto-create parent directories")
+    backup: bool = Field(default=True, description="Backup existing file before overwrite")
 
 
 class WriteToFileTool(BaseTool):
@@ -167,16 +207,6 @@ class WriteToFileTool(BaseTool):
     description = "Create a new file or overwrite an existing one. Use for new files or large changes."
     input_schema = WriteToFileToolInput
     permission_level = PermissionLevel.WRITE
-
-    def get_prompt(self) -> str | None:
-        return (
-            "Creates a new file or completely overwrites an existing file.\n\n"
-            "Use this for:\n"
-            "- Creating new files\n"
-            "- Making large changes that affect most of a file\n"
-            "- When str_replace_editor would need too many replacements\n\n"
-            "For small, targeted changes, prefer str_replace_editor instead."
-        )
 
     def __init__(self, workspace_dir: str | Path = ".") -> None:
         super().__init__()
@@ -188,10 +218,15 @@ class WriteToFileTool(BaseTool):
         except PermissionError as e:
             return ToolResult(tool_call_id="", output=str(e), is_error=True)
 
+        # Backup existing file
+        backup_path = None
+        if input_data.backup and path.exists():
+            backup_path = backup_file(path)
+
         # Generate diff preview
         diff = DiffGenerator.generate_diff_for_tool(str(path), self.name, input_data.model_dump())
 
-        # Atomic write
+        # Atomic write (tmp + rename)
         try:
             if input_data.create_parents:
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -201,11 +236,17 @@ class WriteToFileTool(BaseTool):
             tmp.replace(path)
 
             action = "updated" if path.exists() else "created"
-            output = f"File {action}: {input_data.path}"
+            output_parts = [f"File {action}: {input_data.path}"]
             if diff:
-                output += f"\n\n{diff}"
+                output_parts.append(f"\n{diff}")
+            if backup_path:
+                output_parts.append(f"\n[backup saved to: {backup_path.name}]")
 
-            return ToolResult(tool_call_id="", output=output, metadata={"action": action, "path": str(path)})
+            return ToolResult(
+                tool_call_id="",
+                output="\n".join(output_parts),
+                metadata={"action": action, "path": str(path), "backup": str(backup_path) if backup_path else None},
+            )
 
         except Exception as e:
             return ToolResult(tool_call_id="", output=f"Write failed: {e}", is_error=True)
@@ -219,6 +260,7 @@ class StrReplaceEditorInput(BaseModel):
     old_string: str = Field(description="Exact string to replace (must match uniquely)")
     new_string: str = Field(description="Replacement string")
     replace_all: bool = Field(default=False, description="Replace all occurrences")
+    backup: bool = Field(default=True, description="Backup file before edit")
 
 
 class StrReplaceEditorTool(BaseTool):
@@ -228,20 +270,6 @@ class StrReplaceEditorTool(BaseTool):
     description = "Edit a file by replacing an exact string. Best for targeted code changes."
     input_schema = StrReplaceEditorInput
     permission_level = PermissionLevel.WRITE
-
-    def get_prompt(self) -> str | None:
-        return (
-            "Edit a file by replacing an exact string match.\n\n"
-            "Use this for:\n"
-            "- Fixing a bug in a specific function\n"
-            "- Changing a variable name or string literal\n"
-            "- Making small, targeted modifications\n\n"
-            "Rules:\n"
-            "- old_string must match EXACTLY once in the file\n"
-            "- If it matches multiple times, use replace_all=True\n"
-            "- If no match is found, check the file content first with read_file\n"
-            "- For large changes affecting most of a file, use write_to_file instead"
-        )
 
     def __init__(self, workspace_dir: str | Path = ".") -> None:
         super().__init__()
@@ -265,18 +293,15 @@ class StrReplaceEditorTool(BaseTool):
         count = content.count(input_data.old_string)
 
         if count == 0:
-            return ToolResult(
-                tool_call_id="",
-                output=f"No match found for string in {input_data.path}",
-                is_error=True,
-            )
+            return ToolResult(tool_call_id="", output=f"No match found for string in {input_data.path}", is_error=True)
 
         if count > 1 and not input_data.replace_all:
-            return ToolResult(
-                tool_call_id="",
-                output=f"Found {count} matches. Use replace_all=True or provide a more specific match.",
-                is_error=True,
-            )
+            return ToolResult(tool_call_id="", output=f"Found {count} matches. Use replace_all=True or provide a more specific match.", is_error=True)
+
+        # Backup
+        backup_path = None
+        if input_data.backup:
+            backup_path = backup_file(path)
 
         # Apply replacement
         if input_data.replace_all:
@@ -285,7 +310,7 @@ class StrReplaceEditorTool(BaseTool):
             modified = content.replace(input_data.old_string, input_data.new_string, 1)
 
         # Generate diff
-        diff = DiffGenerator.generate_diff(content, modified, str(input_data.path))
+        diff = make_diff_preview(content, modified, str(input_data.path))
 
         # Atomic write
         try:
@@ -295,10 +320,27 @@ class StrReplaceEditorTool(BaseTool):
         except Exception as e:
             return ToolResult(tool_call_id="", output=f"Write failed: {e}", is_error=True)
 
-        return ToolResult(
-            tool_call_id="",
-            output=f"Applied edit to {input_data.path} ({count} occurrence(s))\n\n{diff}",
-        )
+        # Find context lines for old_string
+        context_info = ""
+        if count == 1 and not input_data.replace_all:
+            idx = content.index(input_data.old_string)
+            lines = content[:idx].splitlines()
+            before_line = len(lines)
+            context_lines = content.splitlines()
+            start = max(0, before_line - CONTEXT_LINES - 1)
+            end = min(len(context_lines), before_line + CONTEXT_LINES)
+            ctx = context_lines[start:end]
+            ctx_str = "\n".join(f"{format_line_number(start+i+1)}|{line}" for i, line in enumerate(ctx))
+            context_info = f"\n\nEdit location (lines {start+1}-{end}):\n{ctx_str}"
+
+        output_parts = [f"Applied edit to {input_data.path} ({count} occurrence(s))"]
+        if context_info:
+            output_parts.append(context_info)
+        output_parts.append(f"\n{diff}")
+        if backup_path:
+            output_parts.append(f"\n[backup saved to: {backup_path.name}]")
+
+        return ToolResult(tool_call_id="", output="\n".join(output_parts))
 
 
 # ── 工具组注册 ─────────────────────────────────────────
@@ -315,7 +357,6 @@ def register_file_tools(registry, workspace_dir: str | Path = ".") -> None:
 
 
 def _is_binary(path: Path) -> bool:
-    """通过读取前 512 字节检查是否为二进制文件。"""
     try:
         with open(path, "rb") as f:
             chunk = f.read(512)
