@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, Optional
 
 from app.core.context_builder import ContextBuilder
+from app.core.permission import PermissionHandler, PermissionLevel, PermissionResult
 from app.engine.llm_provider import LLMProvider, StreamEvent
 from app.models.chat import ContentBlock, Message, Role
 from app.models.tool import ToolCall, ToolResult
@@ -38,7 +39,7 @@ class QueryEngine:
         provider: LLMProvider,
         tool_registry: ToolRegistry,
         context_builder: ContextBuilder,
-        permission_callback: Optional[callable] = None,
+        permission_handler: PermissionHandler | None = None,
         max_tool_rounds: int = 25,
         max_tokens: int = 8192,
     ) -> None:
@@ -46,11 +47,11 @@ class QueryEngine:
         self._provider = provider
         self._tool_registry = tool_registry
         self._context_builder = context_builder
-        self._permission_callback = permission_callback
+        self._permission_handler = permission_handler or PermissionHandler()
         self._max_tool_rounds = max_tool_rounds
         self._max_tokens = max_tokens
 
-        # 跨轮次状态（对应 Claude Code QueryEngine 的成员变量）
+        # 跨轮次状态
         self.mutable_messages: list[Message] = []
         self.abort_event = asyncio.Event()
         self.permission_denials: dict[str, bool] = {}
@@ -160,31 +161,63 @@ class QueryEngine:
                 yield {"type": "message_complete", "payload": {}}
                 return
 
-            # 4e. 处理工具调用（Phase 2 将插入权限检查）
+            # 4e. 处理工具调用（带权限检查）
             for tc in tool_calls:
-                # 权限检查 (Phase 2 实现)
-                if self._permission_callback:
-                    approved = await self._permission_callback(tc)
-                    if not approved:
-                        self.permission_denials[tc.name] = True
-                        result = ToolResult(
-                            tool_call_id=tc.id,
-                            output="Operation was rejected by user.",
-                            is_error=True,
-                        )
-                        self._append_tool_result(tc, result)
-                        yield {
-                            "type": "tool_call_result",
-                            "payload": {
-                                "call_id": tc.id,
-                                "output": result.output,
-                                "is_error": True,
-                            },
-                        }
-                        continue
+                tool = self._tool_registry.get(tc.name)
+
+                # 未知工具 → 直接返回错误，不触发审批
+                if tool is None:
+                    result = ToolResult(
+                        tool_call_id=tc.id,
+                        output=f"Unknown tool: {tc.name}",
+                        is_error=True,
+                    )
+                    self._append_tool_result(tc, result)
+                    yield {
+                        "type": "tool_call_result",
+                        "payload": {
+                            "call_id": tc.id,
+                            "output": result.output,
+                            "is_error": True,
+                        },
+                    }
+                    continue
+
+                # 生成 diff 预览（如有）
+                diff = ""
+                if tool.name in ("write_to_file", "str_replace_editor"):
+                    from app.tools.file_system import DiffGenerator
+                    diff = DiffGenerator.generate_diff_for_tool(
+                        tc.input.get("path", ""), tool.name, tc.input
+                    ) or ""
+
+                # 权限检查
+                perm_result = await self._permission_handler.request_permission(
+                    tool_call=tc,
+                    level=tool.permission_level,
+                    reason=f"Tool: {tc.name}" if tool.name not in ("write_to_file", "str_replace_editor") else "",
+                    diff_preview=diff,
+                )
+
+                if perm_result == PermissionResult.REJECTED or perm_result == PermissionResult.TIMEOUT:
+                    self.permission_denials[tc.name] = True
+                    result = ToolResult(
+                        tool_call_id=tc.id,
+                        output=self._permission_handler.format_rejection_feedback(tc.name),
+                        is_error=True,
+                    )
+                    self._append_tool_result(tc, result)
+                    yield {
+                        "type": "tool_call_result",
+                        "payload": {
+                            "call_id": tc.id,
+                            "output": result.output,
+                            "is_error": True,
+                        },
+                    }
+                    continue
 
                 # 执行工具
-                tool = self._tool_registry.get(tc.name)
                 if tool is None:
                     result = ToolResult(
                         tool_call_id=tc.id,
@@ -266,4 +299,5 @@ class QueryEngine:
     def cancel(self) -> None:
         """中断当前执行。"""
         self.abort_event.set()
+        self._permission_handler.cancel_all_pending()
         logger.info("QueryEngine cancelled: session=%s", self.session_id)
