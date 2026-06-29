@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import logging
 import os
@@ -38,13 +39,17 @@ class CommitInfo(BaseModel):
 
 
 class GitState(BaseModel):
+    """Git 状态 — 对应 Claude Code getSystemContext()。"""
     branch: str = "unknown"
+    default_branch: str = "main"
     is_dirty: bool = False
     unstaged_files: list[str] = Field(default_factory=list)
     staged_files: list[str] = Field(default_factory=list)
     recent_commits: list[CommitInfo] = Field(default_factory=list)
     remote_url: str | None = None
     diff_summary: str | None = None
+    user_name: str = ""
+    user_email: str = ""
 
 
 class SystemInfo(BaseModel):
@@ -57,6 +62,49 @@ class SystemInfo(BaseModel):
         default_factory=lambda: str(datetime.datetime.now().astimezone().tzinfo)
     )
     workspace_dir: str = "."
+
+
+class ContextResult(BaseModel):
+    """结构化上下文结果 — 对应 Claude Code context.ts 返回值。
+
+    不只是一个 prompt 字符串，而是结构化对象，
+    供 QueryEngine、命令系统、审计等模块使用。
+    """
+    git_state: GitState | None = None
+    rules: str | None = None
+    memory: str | None = None
+    system_info: SystemInfo = Field(default_factory=SystemInfo)
+    memory_files_loaded: list[str] = Field(default_factory=list)
+    memory_disabled: bool = False
+
+    def build_prompt_sections(self, tool_names: list[str] | None = None) -> list[str]:
+        """生成所有 prompt section。"""
+        sections = []
+
+        # Intro
+        from app.core.context_builder import make_intro_section
+        sections.append(make_intro_section())
+
+        # Session guidance
+        sections.append(make_session_guidance_section(tool_names))
+
+        # Environment
+        sections.append(make_env_info_section(self.system_info))
+
+        # Git
+        git_section = make_git_section(self.git_state)
+        if git_section:
+            sections.append(git_section)
+
+        # Rules
+        if self.rules:
+            sections.append(f"## Project Rules\n{self.rules}")
+
+        # Memory
+        if self.memory and not self.memory_disabled:
+            sections.append(f"## Long-term Memory\n{self.memory}")
+
+        return sections
 
 
 # ── Prompt Section 系统 ──────────────────────────────────
@@ -258,44 +306,84 @@ def make_rules_section(rules: str | None) -> str | None:
 
 
 class GitProvider:
-    """Git 上下文收集 — 使用 git CLI。"""
+    """Git 上下文收集 — 使用 asyncio 并发获取。
+
+    对应 Claude Code 的 Promise.all() 并行收集：
+    branch, default branch, status, log, user name。
+    """
 
     def __init__(self, workspace_dir: str | Path) -> None:
         self.workspace = Path(workspace_dir)
 
-    def collect(self) -> GitState | None:
+    async def collect(self) -> GitState | None:
         git_dir = self.workspace / ".git"
         if not git_dir.exists():
             return None
 
         state = GitState()
         try:
-            state.branch = self._run("rev-parse --abbrev-ref HEAD")
-            state.remote_url = self._run("remote get-url origin") or None
-            status = self._run("status --porcelain")
-            if status:
+            results = await asyncio.gather(
+                self._run("rev-parse --abbrev-ref HEAD"),
+                self._run("rev-parse --abbrev-ref HEAD~0", silent=True),
+                self._run("status --porcelain"),
+                self._run('log --oneline -5 --format="%h|%s|%an|%ar"'),
+                self._run("remote get-url origin", silent=True),
+                self._run("config user.name", silent=True),
+                self._run("config user.email", silent=True),
+                self._run("diff --stat", silent=True),
+                return_exceptions=True,
+            )
+
+            branch, default_ref, status, log, remote_url, user_name, user_email, diff = results
+
+            if isinstance(branch, str) and branch:
+                state.branch = branch
+            if isinstance(default_ref, str) and default_ref:
+                state.default_branch = default_ref
+            if isinstance(user_name, str):
+                state.user_name = user_name
+            if isinstance(user_email, str):
+                state.user_email = user_email
+            if isinstance(remote_url, str):
+                state.remote_url = remote_url or None
+
+            if isinstance(status, str) and status:
                 state.is_dirty = True
                 for line in status.splitlines():
                     if line.startswith("??") or line.startswith(" M") or line.startswith(" D"):
                         state.unstaged_files.append(line[3:])
                     elif line.startswith("M ") or line.startswith("A ") or line.startswith("D "):
                         state.staged_files.append(line[3:])
-            log = self._run('log --oneline -5 --format="%h|%s|%an|%ar"')
-            if log:
+
+            if isinstance(log, str) and log:
                 for line in log.splitlines():
                     parts = line.split("|", 3)
                     if len(parts) == 4:
                         state.recent_commits.append(CommitInfo(hash=parts[0], message=parts[1], author=parts[2], date=parts[3]))
-            if state.is_dirty:
-                state.diff_summary = self._run("diff --stat")
+
+            if state.is_dirty and isinstance(diff, str) and diff:
+                state.diff_summary = diff
+
         except Exception as exc:
             logger.warning("Git collection failed: %s", exc)
             return None
         return state
 
-    def _run(self, args: str) -> str:
-        result = subprocess.run(["git"] + args.split(), capture_output=True, text=True, cwd=self.workspace, timeout=10)
-        return result.stdout.strip()
+    async def _run(self, args: str, silent: bool = False) -> str:
+        try:
+            process = await asyncio.create_subprocess_exec(
+                "git", *args.split(),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=self.workspace,
+            )
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=10)
+            if process.returncode != 0 and not silent:
+                logger.debug("git %s: %s", args, stderr.decode().strip())
+            return stdout.decode().strip()
+        except (asyncio.TimeoutError, Exception) as exc:
+            logger.debug("git %s: %s", args, exc)
+            return ""
 
 
 class RulesProvider:
@@ -346,6 +434,7 @@ class ContextBuilder:
         self._git_provider = GitProvider(workspace_dir)
         self._rules_provider = RulesProvider(workspace_dir)
         self._memory_provider = MemoryProvider(workspace_dir)
+        self._memory_disabled = False
 
         # 外部注入
         self._tool_prompts: list[str] = []
@@ -361,6 +450,32 @@ class ContextBuilder:
 
     def set_append_system_prompt(self, prompt: str | None) -> None:
         self._append_system_prompt = prompt
+
+    def set_memory_disabled(self, disabled: bool) -> None:
+        """禁用记忆注入（对应 Claude Code 的 shouldDisableClaudeMd）。"""
+        self._memory_disabled = disabled
+
+    async def build_context(self) -> ContextResult:
+        """构建结构化上下文结果。
+
+        对应 Claude Code 的 getSystemContext() + getUserContext()。
+        返回结构化 ContextResult，不只是 prompt 文本。
+        """
+        git_state, rules, memory = await asyncio.gather(
+            self._collect_git(),
+            self._load_rules(),
+            self._load_memory(),
+        )
+        system_info = SystemInfo(workspace_dir=os.path.abspath(self.workspace_dir))
+
+        return ContextResult(
+            git_state=git_state,
+            rules=rules,
+            memory=memory,
+            system_info=system_info,
+            memory_files_loaded=[str(self._memory_provider.path)] if memory else [],
+            memory_disabled=self._memory_disabled,
+        )
 
     async def build_prompt(
         self,
@@ -380,18 +495,12 @@ class ContextBuilder:
         # 1. 基础身份
         builder.set_intro(make_intro_section())
 
-        # 2. 数据收集
-        git_state = await self._collect_git()
-        rules = await self._load_rules()
-        memory = await self._load_memory()
-        system_info = SystemInfo(workspace_dir=os.path.abspath(self.workspace_dir))
+        # 2. 使用 build_context 获取结构化数据
+        context = await self.build_context()
 
-        # 3. 动态 sections
-        builder.add_section(PromptSection("session_guidance", lambda: make_session_guidance_section(tool_names)))
-        builder.add_section(PromptSection("env_info", lambda: make_env_info_section(system_info)))
-        builder.add_section(PromptSection("git", lambda: make_git_section(git_state)))
-        builder.add_section(PromptSection("rules", lambda: make_rules_section(rules)))
-        builder.add_section(PromptSection("memory", lambda: make_memory_section(memory)))
+        # 3. 从 ContextResult 生成 prompt sections
+        for section in context.build_prompt_sections(tool_names):
+            builder.add_section(PromptSection("dynamic", lambda s=section: s))
 
         # 4. 工具级 prompts
         for tp in self._tool_prompts:
@@ -403,7 +512,7 @@ class ContextBuilder:
         return builder.build()
 
     async def _collect_git(self) -> GitState | None:
-        return self._git_provider.collect()
+        return await self._git_provider.collect()
 
     async def _load_rules(self) -> str | None:
         return self._rules_provider.load()
