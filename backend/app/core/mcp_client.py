@@ -102,6 +102,16 @@ class MCPClientSession:
         result = await self._request("resources/list", {})
         return [MCPResourceDefinition(**r) for r in result.get("resources", [])]
 
+    async def list_prompts(self) -> list[MCPPromptDefinition]:
+        """调用 prompts/list。"""
+        result = await self._request("prompts/list", {})
+        return [MCPPromptDefinition(**p) for p in result.get("prompts", [])]
+
+    async def list_skills(self) -> list[MCPSkillDefinition]:
+        """调用 skills/list。安全注意：MCP skills 被视为远程不可信内容。"""
+        result = await self._request("skills/list", {})
+        return [MCPSkillDefinition(**s) for s in result.get("skills", [])]
+
     async def read_resource(self, uri: str) -> dict:
         """调用 resources/read。"""
         return await self._request("resources/read", {"uri": uri})
@@ -232,6 +242,8 @@ class MCPClient:
         self._session: Optional[MCPClientSession] = None
         self._tool_cache: list[MCPToolDefinition] = []
         self._resource_cache: list[MCPResourceDefinition] = []
+        self._prompt_cache: list[MCPPromptDefinition] = []
+        self._skill_cache: list[MCPSkillDefinition] = []
         self._on_tools_changed: Optional[Callable] = None
 
     async def connect(self) -> bool:
@@ -249,9 +261,11 @@ class MCPClient:
             await self._session.initialize()
             self._session.set_tools_changed_callback(self._on_tools_changed or (lambda: None))
 
-            # 首次拉取工具和资源
+            # 首次拉取工具、资源、prompts、skills
             await self.refresh_tools()
             await self.refresh_resources()
+            await self.refresh_prompts()
+            await self.refresh_skills()
 
             logger.info("MCP connected: %s (%s)", self.name, self.config.transport)
             return True
@@ -318,6 +332,31 @@ class MCPClient:
             logger.warning("MCP resources refresh failed: %s — %s", self.name, exc)
         return self._resource_cache
 
+    async def refresh_prompts(self) -> list[MCPPromptDefinition]:
+        """重新拉取 prompts 列表并更新缓存。"""
+        if not self._session:
+            return []
+        try:
+            prompts = await self._session.list_prompts()
+            self._prompt_cache = prompts
+        except Exception as exc:
+            logger.debug("MCP prompts refresh skipped: %s — %s", self.name, exc)
+        return self._prompt_cache
+
+    async def refresh_skills(self) -> list[MCPSkillDefinition]:
+        """重新拉取 skills 列表并更新缓存。
+
+        安全注意：MCP skills 视为远程不可信，不执行内联 shell。
+        """
+        if not self._session:
+            return []
+        try:
+            skills = await self._session.list_skills()
+            self._skill_cache = skills
+        except Exception as exc:
+            logger.debug("MCP skills refresh skipped: %s — %s", self.name, exc)
+        return self._skill_cache
+
     async def call_tool(self, name: str, arguments: dict) -> dict:
         """调用 MCP 工具。"""
         if not self._session:
@@ -337,6 +376,14 @@ class MCPClient:
     def get_resources(self) -> list[MCPResourceDefinition]:
         """获取缓存的资源列表。"""
         return self._resource_cache
+
+    def get_prompts(self) -> list[MCPPromptDefinition]:
+        """获取缓存的 prompts 列表。"""
+        return self._prompt_cache
+
+    def get_skills(self) -> list[MCPSkillDefinition]:
+        """获取缓存的 skills 列表。"""
+        return self._skill_cache
 
     async def shutdown(self) -> None:
         """关闭 MCP 连接。"""
@@ -563,7 +610,11 @@ class ListMcpResourcesTool(BaseTool):
 
 
 class ReadMcpResourceTool(BaseTool):
-    """读取指定 MCP 资源内容。"""
+    """读取指定 MCP 资源内容。
+
+    二进制 blob 处理：不会把 base64 直接塞回上下文，
+    而是先落盘，再把路径和说明返回。
+    """
 
     name = "read_mcp_resource"
     description = "Read content from a specific MCP resource URI."
@@ -583,10 +634,27 @@ class ReadMcpResourceTool(BaseTool):
 
         try:
             result = await client.read_resource(uri)
-            content = result.get("contents", [])
-            output = "\n".join(
-                c.get("text", "") for c in content if c.get("text")
-            )
-            return ToolResult(tool_call_id="", output=output)
+            contents = result.get("contents", [])
+            output_parts = []
+
+            for c in contents:
+                # 处理二进制 blob：先落盘，再返回路径
+                if c.get("blob"):
+                    import tempfile
+                    import base64
+                    blob_data = base64.b64decode(c["blob"])
+                    # 从 URI 推断文件名
+                    fname = uri.split("/")[-1] or "resource.bin"
+                    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=f"_{fname}", prefix="mcp_")
+                    tmp.write(blob_data)
+                    tmp.close()
+                    output_parts.append(f"[binary resource saved to: {tmp.name}]")
+                    output_parts.append(f"[size: {len(blob_data)} bytes, mime: {c.get('mimeType', 'unknown')}]")
+                elif c.get("text"):
+                    output_parts.append(c["text"])
+                elif c.get("uri"):
+                    output_parts.append(f"[resource: {c['uri']}]")
+
+            return ToolResult(tool_call_id="", output="\n".join(output_parts) if output_parts else "(empty resource)")
         except Exception as exc:
             return ToolResult(tool_call_id="", output=f"Read resource error: {exc}", is_error=True)

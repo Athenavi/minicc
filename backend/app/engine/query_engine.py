@@ -18,7 +18,7 @@ import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Any, AsyncGenerator, Optional
+from typing import Any, AsyncGenerator, Callable, Optional
 
 from app.core.context_builder import ContextBuilder
 from app.core.permission import PermissionHandler, PermissionLevel, PermissionResult
@@ -40,6 +40,7 @@ class QueryEngine:
         tool_registry: ToolRegistry,
         context_builder: ContextBuilder,
         permission_handler: PermissionHandler | None = None,
+        mcp_refresh_callback: Callable | None = None,
         max_tool_rounds: int = 25,
         max_tokens: int = 8192,
     ) -> None:
@@ -48,6 +49,7 @@ class QueryEngine:
         self._tool_registry = tool_registry
         self._context_builder = context_builder
         self._permission_handler = permission_handler or PermissionHandler()
+        self._mcp_refresh = mcp_refresh_callback
         self._max_tool_rounds = max_tool_rounds
         self._max_tokens = max_tokens
 
@@ -246,7 +248,14 @@ class QueryEngine:
                     },
                 }
 
-            # 4f. 继续下一轮（LLM 看到 tool_result 后继续推理）
+            # 4f. 刷新 MCP 工具列表（对应 Claude Code 每轮之间的 refreshTools()）
+            if self._mcp_refresh:
+                try:
+                    await self._mcp_refresh()
+                except Exception:
+                    pass
+
+            # 4g. 继续下一轮（LLM 看到 tool_result 后继续推理）
             continue
 
         # 到达最大轮次
