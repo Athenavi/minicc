@@ -19,6 +19,7 @@ class _NoInput(BaseModel):
 from app.models.tool import ToolResult
 from app.tools.base import BaseTool, ToolCategory, ToolUseContext
 from app.utils.security import PathValidator
+from app.utils.security import PathValidator
 
 # ── NotebookEditTool ──
 
@@ -147,20 +148,50 @@ class WebSearchTool(BaseTool):
         )
 
     async def execute(self, input_data: WebSearchInput, context: ToolUseContext | None = None) -> ToolResult:
+        import httpx
         domains = ""
         if input_data.allowed_domains:
             domains = f"\nAllowed domains: {', '.join(input_data.allowed_domains)}"
         if input_data.blocked_domains:
             domains += f"\nBlocked domains: {', '.join(input_data.blocked_domains)}"
 
-        output = (
-            f"[Web search: {input_data.query}]{domains}\n\n"
-            f"Search results for '{input_data.query}':\n"
-            f"- (Web search requires a configured search provider API)\n"
-            f"- Use web_fetch to retrieve specific pages\n\n"
-            f"IMPORTANT: Include a 'Sources:' section with markdown links in your final response."
-        )
-        return ToolResult(tool_call_id="", output=output)
+        try:
+            # DuckDuckGo instant answer API (no API key required)
+            url = f"https://api.duckduckgo.com/?q={input_data.query}&format=json&no_html=1"
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(url)
+                data = resp.json()
+
+            results = []
+            abstract = data.get("AbstractText", "")
+            if abstract:
+                results.append(f"• {abstract}")
+                if data.get("AbstractURL"):
+                    results.append(f"  Source: {data['AbstractURL']}")
+
+            for topic in data.get("RelatedTopics", [])[:5]:
+                if "Text" in topic:
+                    results.append(f"• {topic['Text']}")
+                    if "FirstURL" in topic:
+                        results.append(f"  {topic['FirstURL']}")
+
+            if not results:
+                results.append("(No instant answers found. Try a more specific query.)")
+
+            output = (
+                f"[Web search results for: {input_data.query}]{domains}\n\n"
+                + "\n".join(results)
+                + "\n\nIMPORTANT: Use web_fetch to retrieve specific pages. "
+                "Include a 'Sources:' section with markdown links in your final response."
+            )
+            return ToolResult(tool_call_id="", output=output)
+
+        except Exception as exc:
+            return ToolResult(
+                tool_call_id="",
+                output=f"[Web search error: {exc}]\n\nTry using web_fetch to access specific URLs directly.",
+                is_error=True,
+            )
 
 
 # ── Plan Mode 工具 ──
