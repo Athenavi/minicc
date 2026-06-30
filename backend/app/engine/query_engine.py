@@ -489,78 +489,79 @@ class QueryEngine:
         ⚡ DeepSeek 缓存优化：消息序列化必须确定性且 append-only。
         移除 created_at 等易变字段，确保每轮 prefix 字节完全一致。
 
-        OpenAI/DeepSeek 需要 tool_result 为纯文本格式：
-          {"role": "tool", "tool_call_id": "xxx", "content": "result text"}
+        OpenAI/DeepSeek 格式（参照 Reasonix openai provider）：
+          - 所有 content 为纯文本字符串（不是 content blocks）
+          - assistant 的 tool_calls 在单独的 "tool_calls" 字段
+          - tool 结果在 "content" + "tool_call_id"
 
-        Anthropic 需要 tool_result 为 content blocks：
-          {"role": "tool", "content": [{"type": "tool_result", ...}]}
+        Anthropic 格式：
+          - content 为 content blocks 列表
+          - tool_use / tool_result 都在 content blocks 中
         """
         is_openai = self.config.provider_type == "openai"
         result: list[dict] = []
+
         for msg in self.mutable_messages:
-            # ⚡ 不输出 created_at — 它会随每次请求变化，使 prefix cache 全部失效
             entry: dict[str, Any] = {"role": msg.role.value}
 
-            # OpenAI/DeepSeek tool result format
-            if is_openai and msg.role == Role.tool:
-                text = self._extract_tool_result_text(msg)
-                entry["content"] = text
-                # Extract tool_use_id from content blocks
-                if isinstance(msg.content, list):
+            if is_openai:
+                # ── OpenAI/DeepSeek 格式 ──
+                if msg.role == Role.tool:
+                    entry["content"] = self._extract_tool_result_text(msg)
+                    if isinstance(msg.content, list):
+                        for block in msg.content:
+                            if block.tool_use_id:
+                                entry["tool_call_id"] = block.tool_use_id
+                                break
+
+                elif msg.role == Role.assistant and isinstance(msg.content, list):
+                    text_parts = [b.text for b in msg.content if b.type == "text" and b.text]
+                    tool_uses = [b for b in msg.content if b.type == "tool_use"]
+                    entry["content"] = "".join(text_parts)
+                    if tool_uses:
+                        entry["tool_calls"] = [
+                            {
+                                "id": b.id or f"call_{i}",
+                                "type": "function",
+                                "function": {
+                                    "name": b.name or "unknown",
+                                    "arguments": json.dumps(b.input) if b.input else "{}",
+                                },
+                            }
+                            for i, b in enumerate(tool_uses)
+                        ]
+
+                else:
+                    # system, user, or assistant with plain string content
+                    entry["content"] = msg.content if isinstance(msg.content, str) else ""
+
+                result.append(entry)
+
+            else:
+                # ── Anthropic 格式（content blocks） ──
+                if isinstance(msg.content, str):
+                    entry["content"] = msg.content
+                elif isinstance(msg.content, list):
+                    blocks = []
                     for block in msg.content:
-                        if block.tool_use_id:
-                            entry["tool_call_id"] = block.tool_use_id
-                            break
+                        b: dict[str, Any] = {"type": block.type}
+                        if block.text is not None:
+                            b["text"] = block.text
+                        if block.id is not None:
+                            b["id"] = block.id
+                        if block.name is not None:
+                            b["name"] = block.name
+                        if block.input is not None:
+                            b["input"] = block.input
+                        if block.tool_use_id is not None:
+                            b["tool_use_id"] = block.tool_use_id
+                        if block.content is not None:
+                            b["content"] = [c.model_dump(exclude_none=True) for c in block.content]
+                        blocks.append(b)
+                    entry["content"] = blocks
                 result.append(entry)
-                continue
 
-            # OpenAI/DeepSeek: assistant messages with tool_use need "tool_calls" format
-            if is_openai and msg.role == Role.assistant and isinstance(msg.content, list):
-                tool_use_blocks = [b for b in msg.content if b.type == "tool_use"]
-                text_blocks = [b for b in msg.content if b.type == "text"]
-                if tool_use_blocks:
-                    entry["content"] = text_blocks[0].text if text_blocks else ""
-                    entry["tool_calls"] = [
-                        {
-                            "id": b.id or f"call_{i}",
-                            "type": "function",
-                            "function": {
-                                "name": b.name or "unknown",
-                                "arguments": json.dumps(b.input) if b.input else "{}",
-                            },
-                        }
-                        for i, b in enumerate(tool_use_blocks)
-                    ]
-                    result.append(entry)
-                    continue
-                # OpenAI: plain text content (not content blocks)
-                entry["content"] = text_blocks[0].text if text_blocks else ""
-                result.append(entry)
-                continue
-
-            # Standard format (Anthropic content blocks)
-            if isinstance(msg.content, str) or not is_openai:
-                entry["content"] = msg.content if isinstance(msg.content, str) else ""
-            if not isinstance(msg.content, str):
-                blocks = []
-                for block in msg.content if isinstance(msg.content, list) else []:
-                    b: dict[str, Any] = {"type": block.type}
-                    if block.text is not None:
-                        b["text"] = block.text
-                    if block.id is not None:
-                        b["id"] = block.id
-                    if block.name is not None:
-                        b["name"] = block.name
-                    if block.input is not None:
-                        b["input"] = block.input
-                    if block.tool_use_id is not None:
-                        b["tool_use_id"] = block.tool_use_id
-                    if block.content is not None:
-                        b["content"] = [c.model_dump(exclude_none=True) for c in block.content]
-                    blocks.append(b)
-                entry["content"] = blocks
-
-            result.append(entry)
+        return result
         return result
 
     @staticmethod
