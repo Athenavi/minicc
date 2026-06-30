@@ -1,40 +1,51 @@
-"""MiniCC FastAPI 入口 — 路由注册与应用生命周期。
+"""MiniCC FastAPI 入口 — SSE 事件流 + HTTP 命令端点。
 
-WebSocket 端点处理：
-- 用户消息 → QueryEngine.submit_message()
-- cancel 信号 → QueryEngine.cancel() + PermissionHandler.cancel_all()
-- 会话恢复 → SessionManager.resume_session()
+参照 Reasonix 架构：
+- SSE (GET /events)：
+  Server-Sent Events 单向推送，服务端→客户端
+  包含所有事件类型：text, reasoning, tool_dispatch, tool_progress, usage, message, turn_done, error 等
+- HTTP POST 命令端点：
+  客户端通过 POST 发送命令：/submit, /cancel, /approve
+  命令结果也通过 SSE 事件流推送
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.core.context_builder import ContextBuilder
+from app.core.events import (
+    APPROVAL_REQUEST, ERROR, MESSAGE, NOTICE, REASONING, TEXT,
+    TOOL_DISPATCH, TOOL_RESULT, TURN_DONE,
+    TURN_STARTED, USAGE, MiniCCEvent, broadcaster,
+)
 from app.core.permission import PermissionHandler
+from app.engine.compactor import BudgetManager, CompactPipeline, SNIP_THRESHOLD
+from app.engine.llm_provider import create_provider
 from app.engine.query_engine import QueryEngine, QueryEngineConfig
 from app.engine.session import SessionManager
 from app.engine.task_manager import TaskManager
-from app.engine.llm_provider import create_provider
 from app.tools.base import ToolRegistry
 from app.tools.file_system import register_file_tools
 from app.tools.search_tools import GlobTool, GrepTool
 from app.tools.session_tools import AskUserQuestionTool, TodoWriteTool
 from app.tools.tool_search import ToolSearchTool
 from app.tools.web_tools import WebFetchTool
+from app.tools.extras import (
+    EnterPlanModeTool, ExitPlanModeTool,
+    NotebookEditTool, WebSearchTool,
+)
 from app.tools.agent_tools import (
     AgentTool, SendMessageTool, SkillTool,
     TaskCreateTool, TaskGetTool, TaskListTool,
     TaskOutputTool, TaskStopTool, TaskUpdateTool,
-)
-from app.tools.extras import (
-    EnterPlanModeTool, ExitPlanModeTool,
-    NotebookEditTool, WebSearchTool,
 )
 from app.utils.config import settings
 from app.utils.logger import logger
@@ -69,7 +80,6 @@ tool_registry.register(WebSearchTool())
 tool_registry.register(EnterPlanModeTool())
 tool_registry.register(ExitPlanModeTool())
 
-# 命令系统
 command_dispatcher = CommandDispatcher()
 command_dispatcher.register(HelpCommand(command_dispatcher))
 command_dispatcher.register(StatusCommand())
@@ -82,13 +92,12 @@ sqlite_store = SQLiteStore()
 session_manager = SessionManager(redis_client, sqlite_store)
 task_manager = TaskManager()
 
-# 活跃的 QueryEngine 实例（session_id → engine）
 _active_engines: dict[str, QueryEngine] = {}
+_active_permission: dict[str, PermissionHandler] = {}
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用生命周期：初始化和清理。"""
     logger.info("MiniCC starting — provider=%s model=%s", settings.llm_provider, settings.llm_model)
     await redis_client.connect()
     await sqlite_store.connect()
@@ -110,7 +119,42 @@ app.add_middleware(
 )
 
 
-# -- REST 端点 --
+# ── SSE 事件流端点 ──
+# 参照 Reasonix serve.go events 处理函数
+
+
+@app.get("/events")
+async def sse_events(request: Request):
+    """SSE 事件流端点。"""
+
+    async def event_stream():
+        sub_id, queue = await broadcaster.subscribe()
+        try:
+            yield f"data: {json.dumps({'kind': 'connected'})}\n\n"
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=15)
+                    data = json.dumps({"kind": event.kind, **event.data})
+                    yield f"data: {data}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            broadcaster.unsubscribe(sub_id)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ── 基础端点 ──
 
 
 @app.get("/health")
@@ -124,40 +168,29 @@ async def list_tools():
     return {"tools": tools, "count": len(tools)}
 
 
-@app.get("/api/sessions")
-async def list_sessions():
-    sessions = await session_manager.list_sessions(limit=20)
-    return {
-        "sessions": [
-            {"session_id": s.session_id, "created_at": s.created_at.isoformat(), "message_count": len(s.messages)}
-            for s in sessions
-        ]
-    }
+# ── HTTP 命令端点 ──
+# 参照 Reasonix 的 POST /submit, /cancel, /approve
 
 
-# -- WebSocket 端点 --
+@app.post("/submit")
+async def submit_message(request: Request):
+    """提交用户消息。返回 202 Accepted，结果通过 SSE 推送。"""
+    body = await request.json()
+    content = body.get("content", "")
+    session_id = body.get("session_id", "default")
 
-
-@app.websocket("/ws/{session_id}")
-async def agent_websocket(websocket: WebSocket, session_id: str):
-    await websocket.accept()
-    logger.info("WS connect: session=%s", session_id)
-
-    # 初始化或恢复会话
-    context_builder = ContextBuilder(settings.workspace_dir)
-    permission_handler = PermissionHandler()
-
-    # 创建 LLM Provider
-    provider = create_provider(
-        settings.llm_provider,
-        settings.llm_api_key,
-        settings.llm_model,
-        base_url=settings.llm_base_url or None,
-    )
-
+    # 创建/获取 engine
     engine = _active_engines.get(session_id)
     if engine is None:
-        saved = await session_manager.resume_session(session_id)
+        context_builder = ContextBuilder(settings.workspace_dir)
+        permission_handler = PermissionHandler()
+        _active_permission[session_id] = permission_handler
+        provider = create_provider(
+            settings.llm_provider,
+            settings.llm_api_key,
+            settings.llm_model,
+            base_url=settings.llm_base_url or None,
+        )
         engine = QueryEngine(QueryEngineConfig(
             session_id=session_id,
             provider=provider,
@@ -168,111 +201,117 @@ async def agent_websocket(websocket: WebSocket, session_id: str):
         ))
         _active_engines[session_id] = engine
 
-    # 发送会话信息
-    await websocket.send_json({
-        "type": "session_info",
-        "payload": {
-            "session_id": session_id,
-            "message_count": len(engine.mutable_messages),
-        },
-    })
+    # 在后台处理消息
+    asyncio.create_task(_process_message(engine, session_id, content))
 
-    output_queue: asyncio.Queue = asyncio.Queue()
+    return JSONResponse({"status": "accepted", "session_id": session_id}, status_code=202)
 
-    async def writer():
-        """从队列取消息并发送到 WebSocket。"""
-        while True:
-            try:
-                msg = await asyncio.wait_for(output_queue.get(), timeout=0.5)
-                await websocket.send_json(msg)
-            except asyncio.TimeoutError:
-                continue
-            except Exception:
-                break
 
-    writer_task = asyncio.create_task(writer())
+@app.post("/cancel")
+async def cancel_message(request: Request):
+    body = await request.json()
+    session_id = body.get("session_id", "default")
+    engine = _active_engines.get(session_id)
+    if engine:
+        engine.cancel()
+        perm = _active_permission.get(session_id)
+        if perm:
+            perm.cancel_all_pending()
+        await broadcaster.emit(MiniCCEvent(TURN_DONE, {"interrupted": True}))
+    return JSONResponse({"status": "cancelled"})
+
+
+@app.post("/approve")
+async def approve_tool(request: Request):
+    body = await request.json()
+    session_id = body.get("session_id", "default")
+    request_id = body.get("request_id", "")
+    action = body.get("action", "approve")
+    perm = _active_permission.get(session_id)
+    if perm:
+        perm.handle_user_response(request_id, action)
+    return JSONResponse({"status": "ok"})
+
+
+# ── 后台消息处理 ──
+
+
+async def _process_message(engine: QueryEngine, session_id: str, content: str) -> None:
+    """处理用户消息：驱动 QueryEngine 主循环并通过 Broadcaster 推送事件。"""
+    await broadcaster.emit(MiniCCEvent(TURN_STARTED, {"session_id": session_id}))
+
+    # 检查 slash command
+    cmd_context = {
+        "session_id": session_id,
+        "messages": engine.mutable_messages,
+        "usage": engine.total_usage.model_dump() if hasattr(engine, "total_usage") else {},
+        "provider": settings.llm_provider,
+        "model": settings.llm_model,
+    }
+    cmd_result = await command_dispatcher.dispatch(content, cmd_context)
+    if cmd_result is not None:
+        await broadcaster.emit(MiniCCEvent(TEXT, {"text": cmd_result}))
+        await broadcaster.emit(MiniCCEvent(MESSAGE, {"text": cmd_result}))
+        await broadcaster.emit(MiniCCEvent(TURN_DONE, {}))
+        return
 
     try:
-        async for raw in websocket.iter_text():
-            try:
-                data = json.loads(raw)
-            except json.JSONDecodeError:
-                continue
+        async for event in engine.submit_message(content):
+            etype = event["type"]
+            payload = event.get("payload", {})
 
-            msg_type = data.get("type", "")
-            payload = data.get("payload", {})
+            if etype == "text_chunk":
+                await broadcaster.emit(MiniCCEvent(TEXT, {"text": payload.get("text", "")}))
 
-            if msg_type == "cancel":
-                engine.cancel()
-                permission_handler.cancel_all_pending()
-                logger.info("Cancel signal: session=%s", session_id)
-                continue
+            elif etype == "tool_call_start":
+                await broadcaster.emit(MiniCCEvent(TOOL_DISPATCH, {
+                    "id": payload.get("call_id", ""),
+                    "name": payload.get("name", ""),
+                    "input": payload.get("input", {}),
+                }))
 
-            if msg_type == "user_message":
-                content = payload.get("content", "")
+            elif etype == "tool_call_result":
+                await broadcaster.emit(MiniCCEvent(TOOL_RESULT, {
+                    "id": payload.get("call_id", ""),
+                    "output": payload.get("output", ""),
+                    "is_error": payload.get("is_error", False),
+                }))
 
-                # 检测 slash command
-                cmd_context = {
-                    "session_id": session_id,
-                    "message_count": len(engine.mutable_messages),
-                    "messages": engine.mutable_messages,
-                    "usage": engine.total_usage.model_dump() if hasattr(engine, "total_usage") else {},
-                    "provider": settings.llm_provider,
-                    "model": settings.llm_model,
-                }
-                cmd_result = await command_dispatcher.dispatch(content, cmd_context)
-                if cmd_result is not None:
-                    # 是命令，直接返回结果
-                    await websocket.send_json({
-                        "type": "command_result",
-                        "payload": {"output": cmd_result},
-                    })
-                    continue
+            elif etype == "permission_required":
+                await broadcaster.emit(MiniCCEvent(APPROVAL_REQUEST, {
+                    "request_id": payload.get("request_id", ""),
+                    "tool_name": payload.get("tool_name", ""),
+                    "tool_input": payload.get("tool_input", {}),
+                    "level": payload.get("level", "write"),
+                    "diff_preview": payload.get("diff_preview", ""),
+                }))
 
-                # 普通用户消息
-                await _handle_user_message(engine, output_queue, session_id, content)
-                continue
+            elif etype == "message_complete":
+                # 最终消息（含完整文本，供前端重新渲染）
+                full_text = ""
+                # Collect text from the last assistant message
+                if engine.mutable_messages and hasattr(engine, "mutable_messages"):
+                    for msg in reversed(engine.mutable_messages):
+                        if hasattr(msg, "role") and str(msg.role) == "assistant":
+                            if isinstance(msg.content, str):
+                                full_text = msg.content
+                            break
+                await broadcaster.emit(MiniCCEvent(MESSAGE, {
+                    "text": full_text,
+                    "usage": payload.get("usage", {}),
+                }))
+                await broadcaster.emit(MiniCCEvent(TURN_DONE, {}))
 
-            if msg_type == "approval_action":
-                req_id = payload.get("request_id", "")
-                action = payload.get("action", "")
-                permission_handler.handle_user_response(req_id, action)
-                continue
+            elif etype == "error":
+                await broadcaster.emit(MiniCCEvent(ERROR, {"message": payload.get("message", "Unknown error")}))
+                await broadcaster.emit(MiniCCEvent(TURN_DONE, {"error": payload.get("message", "")}))
 
-            if msg_type == "ping":
-                await websocket.send_json({"type": "pong"})
-                continue
+            elif etype == "compaction":
+                await broadcaster.emit(MiniCCEvent(NOTICE, {
+                    "message": f"Context compressed (freed ~{payload.get('tokens_freed', 0)} tokens)",
+                }))
 
-    except WebSocketDisconnect:
-        logger.info("WS disconnect: session=%s", session_id)
     except Exception as exc:
-        logger.warning("WS error: session=%s reason=%s", session_id, exc)
-    finally:
-        writer_task.cancel()
-        try:
-            await asyncio.wait_for(writer_task, timeout=2)
-        except (asyncio.TimeoutError, asyncio.CancelledError):
-            pass
-        # 保留 engine 在内存中等待重连（30分钟超时由 TaskManager 处理）
-        logger.info("WS cleanup: session=%s", session_id)
-
-
-async def _handle_user_message(engine, queue, session_id: str, content: str) -> None:
-    """处理用户消息：驱动 QueryEngine 主循环并转发事件到 WebSocket。"""
-    async for event in engine.submit_message(content):
-        await queue.put(event)
-
-        # 持久化消息
-        if event["type"] in ("message_complete",):
-            await session_manager.save_session(
-                engine._build_state() if hasattr(engine, "_build_state") else _build_state_fallback(engine)
-            )
-
-
-def _build_state_fallback(engine: QueryEngine):
-    """Fallback: 构建 SessionState 用于持久化。"""
-    from app.models.session import SessionState
-    return SessionState(
-        session_id=engine.session_id,
-        messages=engine.mutable_messages,
-    )
+        logger.exception("Message processing error")
+        await broadcaster.emit(MiniCCEvent(ERROR, {"message": str(exc)}))
+        await broadcaster.emit(MiniCCEvent(TURN_DONE, {"error": str(exc)}))
