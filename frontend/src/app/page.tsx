@@ -134,12 +134,6 @@ export default function Home() {
         break;
 
       case "message_complete":
-        setStreamingMsg((prev) => {
-          if (prev) {
-            setMessages((msgs) => [...msgs, prev]);
-          }
-          return null;
-        });
         setIsGenerating(false);
         break;
 
@@ -157,15 +151,10 @@ export default function Home() {
         setIsGenerating(false);
         break;
 
-      case "error":
-        setMessages((prev) => [...prev, { id: genId(), role: "system", content: `❌ Error: ${payload.message || "Unknown error"}`, timestamp: new Date().toISOString() }]);
-        setIsGenerating(false);
-        break;
-
       case "pong":
         break;
     }
-  }, [streamingMsg]);
+  }, []);
 
   // Send user message
   const handleSend = useCallback(() => {
@@ -180,6 +169,16 @@ export default function Home() {
 
   // Sync handleEvent to ref so WebSocket always gets latest version
   useEffect(() => { handleEventRef.current = handleEvent; }, [handleEvent]);
+
+  // Finalize streaming message when generation stops
+  const prevGenerating = useRef(false);
+  useEffect(() => {
+    if (prevGenerating.current && !isGenerating && streamingMsg) {
+      setMessages((prev) => [...prev, streamingMsg]);
+      setStreamingMsg(null);
+    }
+    prevGenerating.current = isGenerating;
+  }, [isGenerating, streamingMsg]);
 
   // Approval actions
   const handleApproval = useCallback((requestId: string, action: "approve" | "reject" | "always_allow") => {

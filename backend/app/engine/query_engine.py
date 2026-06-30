@@ -445,11 +445,33 @@ class QueryEngine:
     # ── 内部方法 ──
 
     def _messages_to_llm_format(self) -> list[dict]:
-        """将内部 Message 列表转为 LLM API 格式。"""
+        """将内部 Message 列表转为 LLM API 格式。
+
+        OpenAI/DeepSeek 需要 tool_result 为纯文本格式：
+          {"role": "tool", "tool_call_id": "xxx", "content": "result text"}
+
+        Anthropic 需要 tool_result 为 content blocks：
+          {"role": "tool", "content": [{"type": "tool_result", ...}]}
+        """
+        is_openai = self.config.provider_type == "openai"
         result: list[dict] = []
         for msg in self.mutable_messages:
             entry: dict[str, Any] = {"role": msg.role.value}
 
+            # OpenAI/DeepSeek tool result format
+            if is_openai and msg.role == Role.tool:
+                text = self._extract_tool_result_text(msg)
+                entry["content"] = text
+                # Extract tool_use_id from content blocks
+                if isinstance(msg.content, list):
+                    for block in msg.content:
+                        if block.tool_use_id:
+                            entry["tool_call_id"] = block.tool_use_id
+                            break
+                result.append(entry)
+                continue
+
+            # Standard format
             if isinstance(msg.content, str):
                 entry["content"] = msg.content
             else:
@@ -473,6 +495,19 @@ class QueryEngine:
 
             result.append(entry)
         return result
+
+    @staticmethod
+    def _extract_tool_result_text(msg: Message) -> str:
+        """从 tool_result content blocks 中提取纯文本。"""
+        if isinstance(msg.content, str):
+            return msg.content
+        texts = []
+        for block in (msg.content if isinstance(msg.content, list) else []):
+            if block.type == "tool_result" and block.content:
+                for sub in block.content:
+                    if sub.type == "text" and sub.text:
+                        texts.append(sub.text)
+        return "\n".join(texts) if texts else str(msg.content)
 
     def _append_tool_result(self, tc: ToolCall, result: ToolResult) -> None:
         """将工具执行结果追加为 tool role 消息。"""
