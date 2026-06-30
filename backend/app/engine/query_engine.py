@@ -241,64 +241,70 @@ class QueryEngine:
                         },
                     }
 
-            # 5b. 调用 LLM
+            # 5b. 调用 LLM（带超时保护）
             text_buffer = ""
             tool_calls: list[ToolCall] = []
 
-            async for event in self._provider.send_message(
-                system_prompt=system_prompt,
-                messages=llm_messages,
-                tools=tools if tools else None,
-                max_tokens=self.config.max_tokens,
-            ):
-                if self.abort_event.is_set():
-                    break
+            try:
+                async with asyncio.timeout(120):  # 2min max per LLM call
+                    async for event in self._provider.send_message(
+                        system_prompt=system_prompt,
+                        messages=llm_messages,
+                        tools=tools if tools else None,
+                        max_tokens=self.config.max_tokens,
+                    ):
+                        if self.abort_event.is_set():
+                            break
 
-                if event.type == "text":
-                    text_buffer += event.data.get("text", "")
-                    yield {
-                        "type": "text_chunk",
-                        "payload": {"text": event.data.get("text", "")},
-                    }
+                        if event.type == "text":
+                            text_buffer += event.data.get("text", "")
+                            yield {
+                                "type": "text_chunk",
+                                "payload": {"text": event.data.get("text", "")},
+                            }
 
-                elif event.type == "tool_use":
-                    tc = ToolCall(
-                        id=event.data.get("id", f"call_{uuid.uuid4().hex[:8]}"),
-                        name=event.data.get("name", "unknown"),
-                        type="function",
-                        input=event.data.get("input", {}),
-                    )
-                    tool_calls.append(tc)
-                    yield {
-                        "type": "tool_call_start",
-                        "payload": {"call_id": tc.id, "name": tc.name, "input": tc.input},
-                    }
+                        elif event.type == "tool_use":
+                            tc = ToolCall(
+                                id=event.data.get("id", f"call_{uuid.uuid4().hex[:8]}"),
+                                name=event.data.get("name", "unknown"),
+                                type="function",
+                                input=event.data.get("input", {}),
+                            )
+                            tool_calls.append(tc)
+                            yield {
+                                "type": "tool_call_start",
+                                "payload": {"call_id": tc.id, "name": tc.name, "input": tc.input},
+                            }
 
-                elif event.type == "error":
-                    logger.error("LLM error: %s", event.data.get("message"))
-                    yield {"type": "error", "payload": {"message": event.data.get("message", "LLM call failed")}}
-                    return
+                        elif event.type == "error":
+                            logger.error("LLM error: %s", event.data.get("message"))
+                            yield {"type": "error", "payload": {"message": event.data.get("message", "LLM call failed")}}
+                            return
 
-                elif event.type == "end":
-                    # 捕获 usage 信息（若有）
-                    usage = event.data.get("usage", {})
-                    if usage:
-                        inp = usage.get("input_tokens", 0) or usage.get("prompt_tokens", 0)
-                        out = usage.get("output_tokens", 0) or usage.get("completion_tokens", 0)
-                        self.total_usage.input_tokens += inp
-                        self.total_usage.output_tokens += out
+                        elif event.type == "end":
+                            # 捕获 usage 信息（若有）
+                            usage = event.data.get("usage", {})
+                            if usage:
+                                inp = usage.get("input_tokens", 0) or usage.get("prompt_tokens", 0)
+                                out = usage.get("output_tokens", 0) or usage.get("completion_tokens", 0)
+                                self.total_usage.input_tokens += inp
+                                self.total_usage.output_tokens += out
 
-                        # Budget 检查
-                        if self.config.max_budget_usd > 0:
-                            cost = (inp * 3e-6) + (out * 15e-6)  # Claude Sonnet 近似费率
-                            self.total_usage.total_cost_usd += cost
-                            if self.total_usage.total_cost_usd >= self.config.max_budget_usd:
-                                yield {
-                                    "type": "message_complete",
-                                    "payload": {"budget_exceeded": True, "usage": self.total_usage.model_dump()},
-                                }
-                                return
-                    break
+                                # Budget 检查
+                                if self.config.max_budget_usd > 0:
+                                    cost = (inp * 3e-6) + (out * 15e-6)
+                                    self.total_usage.total_cost_usd += cost
+                                    if self.total_usage.total_cost_usd >= self.config.max_budget_usd:
+                                        yield {
+                                            "type": "message_complete",
+                                            "payload": {"budget_exceeded": True, "usage": self.total_usage.model_dump()},
+                                        }
+                                        return
+                            break
+            except asyncio.TimeoutError:
+                logger.error("LLM call timed out after 120s")
+                yield {"type": "error", "payload": {"message": "LLM call timed out after 120 seconds"}}
+                return
 
             if self.abort_event.is_set():
                 self.snip_replay.interrupted = True
