@@ -148,6 +148,11 @@ class QueryEngine:
         # 已加载的记忆路径（避免重复读取）
         self.loaded_memory_paths: set[str] = set()
 
+        # ⚡ DeepSeek 缓存优化：缓存系统提示词和工具定义，每 session 只构建一次
+        self._cached_system_prompt: str | None = None
+        self._cached_tools: list[dict] | None = None
+        self._prompt_built: bool = False
+
     # ── 主入口 ──
 
     async def submit_message(
@@ -180,30 +185,36 @@ class QueryEngine:
         self.mutable_messages.append(user_msg)
         yield {"type": "user_message", "payload": {"content": content, "is_meta": is_meta}}
 
-        # 3. 装配上下文 — 使用分层提示词系统
-        # 收集工具级 prompts
-        for t in self._tool_registry.list_tools():
-            tp = t.get_prompt()
-            if tp:
-                self._context_builder.add_tool_prompt(tp)
+        # 3. 装配上下文 — 使用分层提示词系统（首次构建后缓存）
+        if not self._prompt_built:
+            # 收集工具级 prompts
+            for t in self._tool_registry.list_tools():
+                tp = t.get_prompt()
+                if tp:
+                    self._context_builder.add_tool_prompt(tp)
 
-        # 注入用户自定义提示词
-        if self.config.custom_system_prompt:
-            self._context_builder.set_custom_system_prompt(self.config.custom_system_prompt)
-        if self.config.append_system_prompt:
-            self._context_builder.set_append_system_prompt(self.config.append_system_prompt)
+            # 注入用户自定义提示词
+            if self.config.custom_system_prompt:
+                self._context_builder.set_custom_system_prompt(self.config.custom_system_prompt)
+            if self.config.append_system_prompt:
+                self._context_builder.set_append_system_prompt(self.config.append_system_prompt)
 
-        # 获取工具名列表（用于 session guidance）
-        tool_names = [t.name for t in self._tool_registry.list_tools()]
+            # 获取工具名列表（用于 session guidance）
+            tool_names = [t.name for t in self._tool_registry.list_tools()]
 
-        # 构建分层 System Prompt
-        system_prompt = await self._context_builder.build_prompt(tool_names=tool_names)
+            # 构建分层 System Prompt（首次构建后缓存）
+            self._cached_system_prompt = await self._context_builder.build_prompt(tool_names=tool_names)
 
-        # 4. 获取工具定义（LLM 格式，根据 provider 类型选择）
-        if self.config.provider_type == "openai":
-            tools = self._tool_registry.to_openai_tools()
-        else:
-            tools = self._tool_registry.to_anthropic_tools()
+            # ⚡ 工具定义也缓存，确保每轮 byte 一致
+            if self.config.provider_type == "openai":
+                self._cached_tools = self._tool_registry.to_openai_tools()
+            else:
+                self._cached_tools = self._tool_registry.to_anthropic_tools()
+
+            self._prompt_built = True
+
+        system_prompt = self._cached_system_prompt
+        tools = self._cached_tools
 
         # 5. 主循环
         for turn in range(self.config.max_tool_rounds):
@@ -441,6 +452,24 @@ class QueryEngine:
             return False
         self.loaded_memory_paths.add(path)
         return True
+
+    def get_cache_shape(self) -> dict:
+        """返回缓存形状诊断信息（类似 Reasonix CacheShape）。
+        
+        用于诊断 prefix cache 是否稳定。
+        """
+        import hashlib, json
+        sys_hash = hashlib.sha256((self._cached_system_prompt or "").encode()).hexdigest()[:16]
+        tools_json = json.dumps(self._cached_tools or [], sort_keys=True)
+        tools_hash = hashlib.sha256(tools_json.encode()).hexdigest()[:16]
+        prefix_hash = hashlib.sha256(f"{sys_hash}:{tools_hash}".encode()).hexdigest()[:16]
+        return {
+            "system_hash": sys_hash,
+            "tools_hash": tools_hash,
+            "prefix_hash": prefix_hash,
+            "prompt_built": self._prompt_built,
+            "message_count": len(self.mutable_messages),
+        }
 
     # ── 内部方法 ──
 

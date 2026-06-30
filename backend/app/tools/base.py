@@ -211,14 +211,20 @@ class ToolRegistry:
         return [t for t in self._tools.values() if t.category == category]
 
     def to_anthropic_tools(self, permission_context: ToolPermissionContext | None = None) -> list[dict]:
-        """序列化为 Anthropic tool 格式（可选权限过滤）。"""
+        """序列化为 Anthropic tool 格式（可选权限过滤）。
+        ⚡ 按 name 排序确保确定性输出，稳定 DeepSeek prefix cache。"""
         tools = filter_tools_for_llm(self.list_tools(permission_context))
-        return [t.to_anthropic_tool() for t in tools]
+        result = [t.to_anthropic_tool() for t in tools]
+        result.sort(key=lambda x: x["name"])  # 确定性排序
+        return result
 
     def to_openai_tools(self, permission_context: ToolPermissionContext | None = None) -> list[dict]:
-        """序列化为 OpenAI tool 格式（可选权限过滤）。"""
+        """序列化为 OpenAI tool 格式（可选权限过滤）。
+        ⚡ 按 name 排序确保确定性输出，稳定 DeepSeek prefix cache。"""
         tools = filter_tools_for_llm(self.list_tools(permission_context))
-        return [t.to_openai_tool() for t in tools]
+        result = [t.to_openai_tool() for t in tools]
+        result.sort(key=lambda x: x.get("function", {}).get("name", x.get("name", "")))
+        return result
 
     def register_file_tools(self, workspace_dir: str = ".") -> None:
         """注册文件系统工具组。"""
