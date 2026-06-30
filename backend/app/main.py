@@ -164,6 +164,7 @@ async def agent_websocket(websocket: WebSocket, session_id: str):
             tool_registry=tool_registry,
             context_builder=context_builder,
             permission_handler=permission_handler,
+            provider_type=settings.llm_provider,
         ))
         _active_engines[session_id] = engine
 

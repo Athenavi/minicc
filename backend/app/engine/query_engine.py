@@ -91,6 +91,7 @@ class QueryEngineConfig:
     max_tokens: int = 8192
     max_budget_usd: float = 0.0  # 0 = 不限制
     persist_session: bool = True
+    provider_type: str = "anthropic"  # "anthropic" | "openai"
 
 
 @dataclass
@@ -198,8 +199,11 @@ class QueryEngine:
         # 构建分层 System Prompt
         system_prompt = await self._context_builder.build_prompt(tool_names=tool_names)
 
-        # 4. 获取工具定义（LLM 格式）
-        tools = self._tool_registry.to_anthropic_tools()
+        # 4. 获取工具定义（LLM 格式，根据 provider 类型选择）
+        if self.config.provider_type == "openai":
+            tools = self._tool_registry.to_openai_tools()
+        else:
+            tools = self._tool_registry.to_anthropic_tools()
 
         # 5. 主循环
         for turn in range(self.config.max_tool_rounds):
