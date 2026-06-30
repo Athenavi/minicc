@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MarkdownRenderer } from "@/components/chat/MarkdownRenderer";
 
 type ConnStatus = "connecting" | "connected" | "disconnected";
 
@@ -28,15 +29,23 @@ function genId() { return Math.random().toString(36).slice(2, 10); }
 function Skeleton({ className }: { className?: string }) {
   return <div className={`animate-pulse bg-gray-200 dark:bg-gray-700 rounded ${className || ""}`} />;
 }
-function CollapsibleContent({ text, maxLen = 500 }: { text: string; maxLen?: number }) {
+function CollapsibleContent({ text, maxLen = 500, asMarkdown = false }: { text: string; maxLen?: number; asMarkdown?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const isLong = text.length > maxLen;
   const lineCount = text.split('\n').length;
-  const displayText = isLong && !expanded ? text.slice(0, maxLen) + "\n\n... [" + lineCount + " lines, " + text.length + " chars]" : text;
+  if (isLong && !expanded) {
+    const preview = text.slice(0, maxLen) + "\n\n... [" + lineCount + " lines, " + text.length + " chars]";
+    return (
+      <div>
+        {asMarkdown ? <MarkdownRenderer content={preview} /> : <pre className="whitespace-pre-wrap font-sans text-sm m-0">{preview}</pre>}
+        <button onClick={() => setExpanded(!expanded)} className="mt-1 text-[10px] font-medium text-blue-500 hover:text-blue-700 underline">▼ Show all ({lineCount} lines)</button>
+      </div>
+    );
+  }
   return (
     <div>
-      <pre className="whitespace-pre-wrap font-sans text-sm m-0">{displayText}</pre>
-      {isLong && <button onClick={() => setExpanded(!expanded)} className="mt-1 text-[10px] font-medium text-blue-500 hover:text-blue-700 underline">{expanded ? "▲ Show less" : "▼ Show all (" + lineCount + " lines)"}</button>}
+      {asMarkdown ? <MarkdownRenderer content={text} /> : <pre className="whitespace-pre-wrap font-sans text-sm m-0">{text}</pre>}
+      {isLong && <button onClick={() => setExpanded(!expanded)} className="mt-1 text-[10px] font-medium text-blue-500 hover:text-blue-700 underline">▲ Show less</button>}
     </div>
   );
 }
@@ -197,7 +206,7 @@ export default function Home() {
         <div className="max-w-[75%] space-y-2">
           {msg.content && (
             <div className={`rounded-xl px-4 py-2.5 text-sm ${isUser ? "bg-blue-600 text-white" : isSystem ? "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs" : "bg-white dark:bg-gray-800 border dark:border-gray-700 dark:text-gray-100"}`}>
-              <CollapsibleContent text={msg.content} />
+              <CollapsibleContent text={msg.content} asMarkdown={!isUser && !isSystem} />
               {isStreaming && <span className="animate-pulse">▍</span>}
             </div>
           )}
