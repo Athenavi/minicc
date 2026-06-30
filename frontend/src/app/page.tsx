@@ -225,28 +225,55 @@ export default function Home() {
 
   return (
     <div className="flex flex-col h-screen bg-gray-100 dark:bg-gray-900">
-      {/* Top header with mode + tabs */}
+      {/* Mobile sidebar overlay */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 bg-black/40 z-30 md:hidden" onClick={() => setSidebarOpen(false)}>
+          <div className="absolute left-0 top-0 bottom-0 w-72 bg-white dark:bg-gray-800 shadow-xl p-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-semibold dark:text-gray-100">Conversations</h2>
+              <button onClick={() => setSidebarOpen(false)} className="p-1 text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+            <div className="space-y-1">
+              {conversations.map((conv, i) => (
+                <div key={conv.id} className={`flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer text-sm ${i === activeIdx ? "bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 font-medium" : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"}`}
+                  onClick={() => { switchConversation(i); setSidebarOpen(false); }}>
+                  <span className="truncate flex-1">{conv.title}</span>
+                  <span className="text-[10px] text-gray-400">{conv.messages.length}</span>
+                  {conversations.length > 1 && <button onClick={(e) => { e.stopPropagation(); deleteConversation(i); }} className="text-gray-400 hover:text-red-500 text-xs">✕</button>}
+                </div>
+              ))}
+            </div>
+            <button onClick={() => { newConversation(); setSidebarOpen(false); }} disabled={isGenerating} className="w-full mt-3 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">+ New Chat</button>
+          </div>
+        </div>
+      )}
+
+      {/* Top header */}
       <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 shrink-0">
-        <div className="flex items-center gap-2 px-3 h-10">
-          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="md:hidden p-1 text-gray-500">☰</button>
-          <h1 className="text-sm font-semibold dark:text-gray-100 mr-3">MiniCC</h1>
-          <span className={`w-2 h-2 rounded-full ${connStatus === "connected" ? "bg-green-500" : connStatus === "connecting" ? "bg-yellow-500" : "bg-red-500"}`} />
-          {/* Conversation tabs — horizontal bar */}
-          <div className="flex gap-1 flex-1 min-w-0 overflow-x-auto no-scrollbar ml-2" style={{scrollbarWidth:'none'}}>
+        <div className="flex items-center gap-2 px-2 h-10 md:px-3">
+          <button onClick={() => setSidebarOpen(true)} className="md:hidden p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+            {conversations.length > 1 ? (
+              <span className="text-[10px] font-bold bg-blue-500 text-white rounded-full px-1.5 py-0.5">{conversations.length}</span>
+            ) : "☰"}
+          </button>
+          <h1 className="text-sm font-semibold dark:text-gray-100 hidden md:inline mr-2">MiniCC</h1>
+          <span className={`w-2 h-2 rounded-full shrink-0 ${connStatus === "connected" ? "bg-green-500" : connStatus === "connecting" ? "bg-yellow-500" : "bg-red-500"}`} />
+          {/* Conversation tabs — desktop only */}
+          <div className="hidden md:flex gap-1 flex-1 min-w-0 overflow-x-auto ml-1" style={{scrollbarWidth:'none'}}>
             {conversations.map((conv, i) => (
-              <div key={conv.id} className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs cursor-pointer whitespace-nowrap shrink-0 max-w-[150px] transition-colors ${i === activeIdx ? "bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 font-medium" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"}`}
+              <div key={conv.id} className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs cursor-pointer whitespace-nowrap shrink-0 max-w-[140px] transition-colors ${i === activeIdx ? "bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 font-medium" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"}`}
                 onClick={() => switchConversation(i)}>
                 <span className="truncate">{conv.title}</span>
                 {conversations.length > 1 && <button onClick={(e) => { e.stopPropagation(); deleteConversation(i); }} className="ml-0.5 text-gray-400 hover:text-red-500 text-[10px] leading-none">✕</button>}
               </div>
             ))}
-            <button onClick={newConversation} disabled={isGenerating} className="px-2 py-1 text-xs text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950 rounded shrink-0 disabled:opacity-50">+</button>
+            <button onClick={newConversation} disabled={isGenerating} className="px-2 py-1 text-xs text-gray-400 hover:text-blue-500 rounded shrink-0 disabled:opacity-50">+</button>
           </div>
           {/* Mode toggles */}
           <div className="flex items-center gap-1 ml-auto shrink-0">
             {["ask", "auto", "yolo"].map((m) => (
               <button key={m} onClick={async () => { setExecMode(m); await fetch("http://localhost:8000/mode", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: activeConv.sessionId, mode: m }) }); }}
-                className={`px-2 py-0.5 text-[10px] font-medium rounded border transition-colors ${execMode === m ? "bg-blue-600 text-white border-blue-600" : "bg-transparent text-gray-500 dark:text-gray-400 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"}`}>{m === "ask" ? "💬 Ask" : m === "auto" ? "⚡ Auto" : "🔥 YOLO"}</button>
+                className={`px-1.5 py-0.5 text-[9px] md:text-[10px] font-medium rounded border transition-colors ${execMode === m ? "bg-blue-600 text-white border-blue-600" : "bg-transparent text-gray-500 dark:text-gray-400 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"}`}>{m === "ask" ? "💬Ask" : m === "auto" ? "⚡Auto" : "🔥YOLO"}</button>
             ))}
           </div>
         </div>
