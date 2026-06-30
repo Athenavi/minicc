@@ -23,6 +23,29 @@ interface ToolCallState {
 
 function genId() { return Math.random().toString(36).slice(2, 10); }
 
+function Skeleton({ className }: { className?: string }) {
+  return <div className={`animate-pulse bg-gray-200 dark:bg-gray-700 rounded ${className || ""}`} />;
+}
+
+// Collapsible content for long messages (Reasonix-style)
+function CollapsibleContent({ text, maxLen = 500, className }: { text: string; maxLen?: number; className?: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = text.length > maxLen;
+  const lineCount = text.split('\n').length;
+  const displayText = isLong && !expanded ? text.slice(0, maxLen) + "\n\n... [" + lineCount + " lines, " + text.length + " chars]" : text;
+  return (
+    <div className={className}>
+      <pre className="whitespace-pre-wrap font-sans text-sm m-0">{displayText}</pre>
+      {isLong && (
+        <button onClick={() => setExpanded(!expanded)}
+          className="mt-1 text-[10px] font-medium text-blue-500 hover:text-blue-700 underline">
+          {expanded ? "▲ Show less" : "▼ Show all (" + lineCount + " lines)"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -230,10 +253,6 @@ export default function Home() {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
-  const Skeleton = ({ className }: { className?: string }) => (
-    <div className={`animate-pulse bg-gray-200 dark:bg-gray-700 rounded ${className || ""}`} />
-  );
-
   const renderMessage = (msg: ChatMessage, isStreaming?: boolean) => {
     const isUser = msg.role === "user";
     const isSystem = msg.role === "system";
@@ -246,10 +265,10 @@ export default function Home() {
         </div>
         <div className={`max-w-[75%] space-y-2`}>
           {msg.content && (
-            <div className={`rounded-xl px-4 py-2.5 text-sm whitespace-pre-wrap ${
+            <div className={`rounded-xl px-4 py-2.5 text-sm ${
               isUser ? "bg-blue-600 text-white" : isSystem ? "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs" : "bg-white dark:bg-gray-800 border dark:border-gray-700 dark:text-gray-100"
             }`}>
-              {msg.content}
+              <CollapsibleContent text={msg.content} className={isUser ? "text-white" : ""} />
               {isStreaming && <span className="animate-pulse">▍</span>}
             </div>
           )}
