@@ -125,7 +125,7 @@ export default function Home() {
           const tc: ToolCallState = {
             id: data.id || "",
             name: data.name || "",
-            status: "running",
+            status: "pending",
           };
           const existing = prev?.toolCalls || [];
           return prev ? { ...prev, toolCalls: [...existing, tc] } : prev!;
@@ -133,11 +133,10 @@ export default function Home() {
         break;
 
       case "tool_progress":
-        // Update tool with streaming output
         setStreamingMsg((prev) => {
           if (!prev) return prev;
           const updated = (prev.toolCalls || []).map((tc) =>
-            tc.id === data.id ? { ...tc, result: (tc.result || "") + (data.output || "") } : tc
+            tc.id === data.id ? { ...tc, status: "running", result: (tc.result || "") + (data.output || "") } : tc
           );
           return { ...prev, toolCalls: updated };
         });
