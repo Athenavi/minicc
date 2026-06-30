@@ -47,6 +47,7 @@ from app.tools.agent_tools import (
     TaskCreateTool, TaskGetTool, TaskListTool,
     TaskOutputTool, TaskStopTool, TaskUpdateTool,
 )
+from app.tools.shell_executor import ShellExecutorTool
 from app.utils.config import settings
 from app.utils.logger import logger
 from app.utils.redis_client import RedisClient
@@ -79,6 +80,7 @@ tool_registry.register(NotebookEditTool())
 tool_registry.register(WebSearchTool())
 tool_registry.register(EnterPlanModeTool())
 tool_registry.register(ExitPlanModeTool())
+tool_registry.register(ShellExecutorTool())
 
 command_dispatcher = CommandDispatcher()
 command_dispatcher.register(HelpCommand(command_dispatcher))
