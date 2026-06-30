@@ -533,13 +533,17 @@ class QueryEngine:
                     ]
                     result.append(entry)
                     continue
+                # OpenAI: plain text content (not content blocks)
+                entry["content"] = text_blocks[0].text if text_blocks else ""
+                result.append(entry)
+                continue
 
-            # Standard format (Anthropic)
-            if isinstance(msg.content, str):
-                entry["content"] = msg.content
-            else:
+            # Standard format (Anthropic content blocks)
+            if isinstance(msg.content, str) or not is_openai:
+                entry["content"] = msg.content if isinstance(msg.content, str) else ""
+            if not isinstance(msg.content, str):
                 blocks = []
-                for block in msg.content:
+                for block in msg.content if isinstance(msg.content, list) else []:
                     b: dict[str, Any] = {"type": block.type}
                     if block.text is not None:
                         b["text"] = block.text
