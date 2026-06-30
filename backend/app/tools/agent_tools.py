@@ -327,7 +327,7 @@ class TaskListTool(BaseTool):
         tasks = sub_agent_manager.list_tasks()
         if not tasks:
             return ToolResult(tool_call_id="", output="No tasks.")
-        lines = [f"{t.id[:8]}  {t.status.value:<10} {t.description[:40]}" for t in reversed(tasks)]
+        lines = [f"{t.id}  {t.status.value:<10} {t.description[:50]}" for t in reversed(tasks)]
         return ToolResult(tool_call_id="", output="Tasks:\n" + "\n".join(lines))
 
 
