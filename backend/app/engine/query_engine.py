@@ -447,6 +447,9 @@ class QueryEngine:
     def _messages_to_llm_format(self) -> list[dict]:
         """将内部 Message 列表转为 LLM API 格式。
 
+        ⚡ DeepSeek 缓存优化：消息序列化必须确定性且 append-only。
+        移除 created_at 等易变字段，确保每轮 prefix 字节完全一致。
+
         OpenAI/DeepSeek 需要 tool_result 为纯文本格式：
           {"role": "tool", "tool_call_id": "xxx", "content": "result text"}
 
@@ -456,6 +459,7 @@ class QueryEngine:
         is_openai = self.config.provider_type == "openai"
         result: list[dict] = []
         for msg in self.mutable_messages:
+            # ⚡ 不输出 created_at — 它会随每次请求变化，使 prefix cache 全部失效
             entry: dict[str, Any] = {"role": msg.role.value}
 
             # OpenAI/DeepSeek tool result format

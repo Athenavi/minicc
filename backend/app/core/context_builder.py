@@ -111,6 +111,13 @@ class ContextResult(BaseModel):
 #
 # 对应 Claude Code 的 dynamicSections 数组：
 # session_guidance / memory / env_info / language / output_style / mcp_instructions
+#
+# ⚡ DeepSeek 缓存优化：
+# - 静态 section（intro, session_guidance, rules, memory）放在前面 → 永不过期
+# - 动态 section（env_info, git）放在 CACHE_BOUNDARY 之后 → 仅此部分需要重新计算
+# - CACHE_BOUNDARY 标记告诉 DeepSeek 此前内容可全局缓存
+
+CACHE_BOUNDARY = "__MINICC_PROMPT_CACHE_BOUNDARY__"
 
 
 class PromptSection:
@@ -176,33 +183,56 @@ class PromptBuilder:
     def build(self) -> str:
         """装配完整的 System Prompt。
 
+        ⚡ DeepSeek 缓存优化：
+        - 静态部分（intro + session_guidance + rules + memory）→ 缓存友好
+        - CACHE_BOUNDARY 标记分隔
+        - 动态部分（env_info + git）→ 放在最后，仅此部分变化
+
         如果 customSystemPrompt 已设置，直接返回它（完全替换模式）。
-        否则按标准流程拼装。
         """
         if self._custom_system_prompt:
             return self._custom_system_prompt
 
-        parts: list[str] = []
+        static_parts: list[str] = []
+        dynamic_parts: list[str] = []
 
-        # 1. 基础身份描述
+        # 1. 基础身份描述（静态 — 永不变化）
         if self._intro_section:
-            parts.append(self._intro_section)
+            static_parts.append(self._intro_section)
 
-        # 2. 动态 sections
+        # 2. 动态 sections — 按 cache_key 分配
         for section in self._sections:
             text = section.render()
-            if text:
-                parts.append(text)
+            if not text:
+                continue
+            # session_guidance 和 user rules/memory 是静态的
+            if section.name in ("session_guidance",):
+                static_parts.append(text)
+            else:
+                # env_info, git — 这些随环境变化
+                dynamic_parts.append(text)
 
-        # 3. 工具级 prompt
+        # 3. 工具级 prompt（静态 — 工具集不变时不变化）
         if self._tool_prompts:
-            parts.append("## Available Tools\n" + "\n\n".join(self._tool_prompts))
+            static_parts.append("## Available Tools\n" + "\n\n".join(self._tool_prompts))
 
-        # 4. 用户追加（append mode）
+        # 4. 用户规则与记忆（静态）
+        for section in self._sections:
+            text = section.render()
+            if text and section.name in ("rules", "memory"):
+                static_parts.append(text)
+
+        # 5. 缓存边界 + 动态部分
+        all_parts = static_parts
+        if dynamic_parts:
+            all_parts.append(f"\n{CACHE_BOUNDARY}\n")
+            all_parts.extend(dynamic_parts)
+
+        # 6. 用户追加
         if self._append_system_prompt:
-            parts.append(self._append_system_prompt)
+            all_parts.append(self._append_system_prompt)
 
-        return "\n\n".join(parts)
+        return "\n\n".join(all_parts)
 
 
 # ── Section 工厂函数 ─────────────────────────────────────
@@ -498,9 +528,14 @@ class ContextBuilder:
         # 2. 使用 build_context 获取结构化数据
         context = await self.build_context()
 
-        # 3. 从 ContextResult 生成 prompt sections
-        for section in context.build_prompt_sections(tool_names):
-            builder.add_section(PromptSection("dynamic", lambda s=section: s))
+        # 3. 从 ContextResult 生成 prompt sections（命名以便分类 static vs dynamic）
+        builder.add_section(PromptSection("session_guidance", lambda: make_session_guidance_section(tool_names)))
+        builder.add_section(PromptSection("env_info", lambda: make_env_info_section(context.system_info)))
+        builder.add_section(PromptSection("git", lambda: make_git_section(context.git_state)))
+        if context.rules:
+            builder.add_section(PromptSection("rules", lambda: context.rules))
+        if context.memory and not context.memory_disabled:
+            builder.add_section(PromptSection("memory", lambda: f"## Long-term Memory\n{context.memory}"))
 
         # 4. 工具级 prompts
         for tp in self._tool_prompts:
