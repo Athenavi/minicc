@@ -242,6 +242,23 @@ async def _process_message(engine: QueryEngine, session_id: str, content: str) -
     """处理用户消息：驱动 QueryEngine 主循环并通过 Broadcaster 推送事件。"""
     await broadcaster.emit(MiniCCEvent(TURN_STARTED, {"session_id": session_id}))
 
+    # 为 PermissionHandler 设置发送回调，使其能通过 Broadcaster 发送审批请求
+    async def _permission_sender(data: dict) -> None:
+        """PermissionHandler 通过此回调发送审批请求到前端。"""
+        if data.get("type") == "permission_required":
+            payload = data.get("payload", {})
+            await broadcaster.emit(MiniCCEvent(APPROVAL_REQUEST, {
+                "request_id": payload.get("id", ""),
+                "tool_name": payload.get("tool_name", ""),
+                "tool_input": payload.get("tool_input", {}),
+                "level": payload.get("level", "write"),
+                "diff_preview": payload.get("diff_preview", ""),
+            }))
+
+    # 将回调注入 PermissionHandler
+    if hasattr(engine, "_permission_handler") and engine._permission_handler:
+        engine._permission_handler._send = _permission_sender
+
     # 检查 slash command
     cmd_context = {
         "session_id": session_id,
