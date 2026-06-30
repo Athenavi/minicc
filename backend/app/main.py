@@ -22,10 +22,11 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.core.context_builder import ContextBuilder
 from app.core.events import (
-    APPROVAL_REQUEST, ERROR, MESSAGE, NOTICE, REASONING, TEXT,
+    APPROVAL_REQUEST, ERROR, MESSAGE, NOTICE, TEXT,
     TOOL_DISPATCH, TOOL_RESULT, TURN_DONE,
-    TURN_STARTED, USAGE, MiniCCEvent, broadcaster,
+    TURN_STARTED, MiniCCEvent, broadcaster,
 )
+from app.core.extensions import ExtensionLoader
 from app.core.permission import PermissionHandler
 from app.engine.compactor import BudgetManager, CompactPipeline, SNIP_THRESHOLD
 from app.engine.llm_provider import create_provider
@@ -105,8 +106,14 @@ async def lifespan(app: FastAPI):
     logger.info("MiniCC starting — provider=%s model=%s", settings.llm_provider, settings.llm_model)
     await redis_client.connect()
     await sqlite_store.connect()
+
+    # 加载 MCP 扩展（如 codegraph）
+    ext_loader = ExtensionLoader(tool_registry)
+    await ext_loader.load_mcp_servers_from_config(".minicc/mcp.json")
+
     yield
     logger.info("MiniCC shutting down")
+    await ext_loader.shutdown_all()
     await task_manager.cancel_all()
     await redis_client.disconnect()
     await sqlite_store.disconnect()

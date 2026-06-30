@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "codegraph": {
+      "command": "npx",
+      "args": ["-y", "@lzehrung/codegraph", "mcp"],
+      "transport": "stdio",
+      "env": {
+        "CODEGRAPH_NATIVE": "auto"
+      }
+    }
+  }
+}
