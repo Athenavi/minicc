@@ -307,12 +307,22 @@ class QueryEngine:
 
             self.total_usage.turn_count += 1
 
-            # 5c. 将 LLM 回复追加到消息历史
+            # 5c. 将 LLM 回复追加到消息历史（包含文本和工具调用）
+            assistant_blocks: list[ContentBlock] = []
             if text_buffer:
+                assistant_blocks.append(ContentBlock(type="text", text=text_buffer))
+            for tc in tool_calls:
+                assistant_blocks.append(ContentBlock(
+                    type="tool_use",
+                    id=tc.id,
+                    name=tc.name,
+                    input=tc.input,
+                ))
+            if assistant_blocks:
                 self.mutable_messages.append(
                     Message(
                         role=Role.assistant,
-                        content=[ContentBlock(type="text", text=text_buffer)],
+                        content=assistant_blocks,
                         created_at=datetime.now(timezone.utc),
                     )
                 )
@@ -504,7 +514,27 @@ class QueryEngine:
                 result.append(entry)
                 continue
 
-            # Standard format
+            # OpenAI/DeepSeek: assistant messages with tool_use need "tool_calls" format
+            if is_openai and msg.role == Role.assistant and isinstance(msg.content, list):
+                tool_use_blocks = [b for b in msg.content if b.type == "tool_use"]
+                text_blocks = [b for b in msg.content if b.type == "text"]
+                if tool_use_blocks:
+                    entry["content"] = text_blocks[0].text if text_blocks else ""
+                    entry["tool_calls"] = [
+                        {
+                            "id": b.id or f"call_{i}",
+                            "type": "function",
+                            "function": {
+                                "name": b.name or "unknown",
+                                "arguments": json.dumps(b.input) if b.input else "{}",
+                            },
+                        }
+                        for i, b in enumerate(tool_use_blocks)
+                    ]
+                    result.append(entry)
+                    continue
+
+            # Standard format (Anthropic)
             if isinstance(msg.content, str):
                 entry["content"] = msg.content
             else:
