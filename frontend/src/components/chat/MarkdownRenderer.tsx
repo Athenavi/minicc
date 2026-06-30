@@ -7,7 +7,7 @@ import { Check, Copy } from "lucide-react";
 
 export function MarkdownRenderer({ content, className }: { content: string; className?: string }) {
   return (
-    <div className={"prose prose-sm dark:prose-invert max-w-none " + (className || "")}>
+    <div className={(className || "")}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
