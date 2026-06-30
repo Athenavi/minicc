@@ -12,103 +12,90 @@ interface ChatMessage {
 }
 
 interface ToolCallState {
+  id: string; name: string; status: string;
+  result?: string; isError?: boolean;
+  requestId?: string; diffPreview?: string;
+}
+
+interface Conversation {
   id: string;
-  name: string;
-  status: string;
-  result?: string;
-  isError?: boolean;
-  requestId?: string;
-  diffPreview?: string;
+  title: string;
+  messages: ChatMessage[];
+  sessionId: string;
 }
 
 function genId() { return Math.random().toString(36).slice(2, 10); }
-
 function Skeleton({ className }: { className?: string }) {
   return <div className={`animate-pulse bg-gray-200 dark:bg-gray-700 rounded ${className || ""}`} />;
 }
-
-// Collapsible content for long messages (Reasonix-style)
-function CollapsibleContent({ text, maxLen = 500, className }: { text: string; maxLen?: number; className?: string }) {
+function CollapsibleContent({ text, maxLen = 500 }: { text: string; maxLen?: number }) {
   const [expanded, setExpanded] = useState(false);
   const isLong = text.length > maxLen;
   const lineCount = text.split('\n').length;
   const displayText = isLong && !expanded ? text.slice(0, maxLen) + "\n\n... [" + lineCount + " lines, " + text.length + " chars]" : text;
   return (
-    <div className={className}>
+    <div>
       <pre className="whitespace-pre-wrap font-sans text-sm m-0">{displayText}</pre>
-      {isLong && (
-        <button onClick={() => setExpanded(!expanded)}
-          className="mt-1 text-[10px] font-medium text-blue-500 hover:text-blue-700 underline">
-          {expanded ? "▲ Show less" : "▼ Show all (" + lineCount + " lines)"}
-        </button>
-      )}
+      {isLong && <button onClick={() => setExpanded(!expanded)} className="mt-1 text-[10px] font-medium text-blue-500 hover:text-blue-700 underline">{expanded ? "▲ Show less" : "▼ Show all (" + lineCount + " lines)"}</button>}
     </div>
   );
 }
 
 export default function Home() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([{ id: genId(), title: "Chat 1", messages: [], sessionId: genId() + genId() }]);
+  const [activeIdx, setActiveIdx] = useState(0);
   const [input, setInput] = useState("");
   const [connStatus, setConnStatus] = useState<ConnStatus>("disconnected");
-  const [sessionId] = useState(() => genId() + genId());
   const [streamingMsg, setStreamingMsg] = useState<ChatMessage | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [execMode, setExecMode] = useState("ask");
-  const [approvals, setApprovals] = useState<Record<string, any>>({});
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const prevGenRef = useRef(false);
+  const handleEventRef = useRef<(data: any) => void>(() => {});
+  const activeConv = conversations[activeIdx];
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, streamingMsg]);
-
-  // SSE connection (Reasonix-style)
+  // SSE connection (per session)
   useEffect(() => {
     let eventSource: EventSource | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout>;
-
     function connectSSE() {
       setConnStatus("connecting");
-      eventSource = new EventSource(`http://localhost:8000/events`);
-
+      eventSource = new EventSource("http://localhost:8000/events");
       eventSource.onopen = () => setConnStatus("connected");
-
       eventSource.onmessage = (e) => {
-        if (e.data.startsWith(": ping")) return; // keepalive
-        try {
-          const data = JSON.parse(e.data);
-          handleSSEEvent(data);
-        } catch { /* ignore */ }
+        if (e.data.startsWith(": ping")) return;
+        try { handleEventRef.current(JSON.parse(e.data)); } catch { }
       };
-
       eventSource.onerror = () => {
         setConnStatus("disconnected");
         eventSource?.close();
         reconnectTimer = setTimeout(connectSSE, 3000);
       };
     }
-
     connectSSE();
     return () => { eventSource?.close(); clearTimeout(reconnectTimer); };
   }, []);
 
-  // Finalize streaming message when generation stops
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [activeConv.messages, streamingMsg]);
+
   useEffect(() => {
     if (prevGenRef.current && !isGenerating && streamingMsg) {
-      setMessages((prev) => [...prev, streamingMsg]);
+      setConversations((prev) => prev.map((c, i) =>
+        i === activeIdx ? { ...c, messages: [...c.messages, streamingMsg] } : c
+      ));
       setStreamingMsg(null);
     }
     prevGenRef.current = isGenerating;
-  }, [isGenerating, streamingMsg]);
+  }, [isGenerating, streamingMsg, activeIdx]);
 
-  // SSE event handler
+  const updateMessages = useCallback((fn: (msgs: ChatMessage[]) => ChatMessage[]) => {
+    setConversations((prev) => prev.map((c, i) => i === activeIdx ? { ...c, messages: fn(c.messages) } : c));
+  }, [activeIdx]);
+
   const handleSSEEvent = useCallback((data: any) => {
     const kind = data.kind;
-
     switch (kind) {
-      case "connected":
-        console.log("SSE connected");
-        break;
-
       case "text":
         setStreamingMsg((prev) => {
           const text = data.text || "";
@@ -116,175 +103,109 @@ export default function Home() {
           return { ...next, content: next.content + text };
         });
         break;
-
-      case "reasoning":
-        // Show thinking indicator
-        break;
-
       case "tool_dispatch":
         setStreamingMsg((prev) => {
-          const tc: ToolCallState = {
-            id: data.id || "",
-            name: data.name || "",
-            status: "pending",
-          };
-          const existing = prev?.toolCalls || [];
-          return prev ? { ...prev, toolCalls: [...existing, tc] } : prev!;
-        });
-        break;
-
-      case "tool_progress":
-        setStreamingMsg((prev) => {
           if (!prev) return prev;
-          const updated = (prev.toolCalls || []).map((tc) =>
-            tc.id === data.id ? { ...tc, status: "running", result: (tc.result || "") + (data.output || "") } : tc
-          );
-          return { ...prev, toolCalls: updated };
+          const tc: ToolCallState = { id: data.id || "", name: data.name || "", status: "pending" };
+          return { ...prev, toolCalls: [...(prev.toolCalls || []), tc] };
         });
         break;
-
       case "tool_result":
-        setStreamingMsg((prev) => {
-          if (!prev) return prev;
-          const updated = (prev.toolCalls || []).map((tc) =>
-            tc.id === data.id
-              ? { ...tc, status: data.is_error ? "failed" : "completed", result: data.output, isError: data.is_error }
-              : tc
-          );
-          return { ...prev, toolCalls: updated };
-        });
-        break;
-
-      case "approval_request":
-        setApprovals((prev) => ({
+        setStreamingMsg((prev) => prev ? {
           ...prev,
-          [data.request_id]: { ...data, status: "pending" },
-        }));
-        setStreamingMsg((prev) => {
-          if (!prev) return prev;
-          const updated = (prev.toolCalls || []).map((tc) =>
-            tc.name === data.tool_name
-              ? { ...tc, status: "pending", requestId: data.request_id, diffPreview: data.diff_preview }
-              : tc
-          );
-          return { ...prev, toolCalls: updated };
-        });
+          toolCalls: (prev.toolCalls || []).map((tc) =>
+            tc.id === data.id ? { ...tc, status: data.is_error ? "failed" : "completed", result: data.output, isError: data.is_error } : tc
+          ),
+        } : prev);
         break;
-
+      case "approval_request":
+        setStreamingMsg((prev) => prev ? {
+          ...prev,
+          toolCalls: (prev.toolCalls || []).map((tc) =>
+            tc.name === data.tool_name ? { ...tc, status: "pending", requestId: data.request_id, diffPreview: data.diff_preview } : tc
+          ),
+        } : prev);
+        break;
       case "message":
-        // Final message with full text — frontend can re-render
-        if (data.text) {
-          setStreamingMsg((prev) => {
-            if (prev) return { ...prev, content: data.text };
-            return null;
-          });
-        }
+        if (data.text) setStreamingMsg((prev) => prev ? { ...prev, content: data.text } : prev);
         break;
-
       case "turn_done":
         setIsGenerating(false);
-        setApprovals({});
         break;
-
       case "notice":
-        setMessages((prev) => [...prev, { id: genId(), role: "system", content: data.message || "" }]);
+        updateMessages((msgs) => [...msgs, { id: genId(), role: "system", content: data.message || "" }]);
         break;
-
       case "error":
-        setMessages((prev) => [...prev, { id: genId(), role: "system", content: `❌ Error: ${data.message || "Unknown"}` }]);
+        updateMessages((msgs) => [...msgs, { id: genId(), role: "system", content: "❌ Error: " + (data.message || "Unknown") }]);
         setIsGenerating(false);
         break;
     }
-  }, []);
+  }, [updateMessages]);
 
-  // Send message via HTTP POST (Reasonix-style)
+  useEffect(() => { handleEventRef.current = handleSSEEvent; }, [handleSSEEvent]);
+
   const handleSend = useCallback(async () => {
     const text = input.trim();
     if (!text) return;
     setInput("");
     setIsGenerating(true);
-    setMessages((prev) => [...prev, { id: genId(), role: "user", content: text }]);
+    const sid = activeConv.sessionId;
+    updateMessages((msgs) => [...msgs, { id: genId(), role: "user", content: text }]);
     try {
-      await fetch("http://localhost:8000/submit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: text, session_id: sessionId }),
-      });
+      await fetch("http://localhost:8000/submit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: text, session_id: sid }) });
     } catch (err) {
-      setMessages((prev) => [...prev, { id: genId(), role: "system", content: `❌ Failed to send: ${err}` }]);
+      updateMessages((msgs) => [...msgs, { id: genId(), role: "system", content: "❌ Failed: " + err }]);
       setIsGenerating(false);
     }
-  }, [input, sessionId]);
+  }, [input, activeConv, updateMessages]);
 
-  // Cancel via HTTP POST
   const handleCancel = useCallback(async () => {
-    try {
-      await fetch("http://localhost:8000/cancel", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionId }),
-      });
-    } catch { /* ignore */ }
+    await fetch("http://localhost:8000/cancel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: activeConv.sessionId }) });
     setIsGenerating(false);
-  }, [sessionId]);
+  }, [activeConv]);
 
-  // Approve via HTTP POST
   const handleApproval = useCallback(async (requestId: string, action: string) => {
-    try {
-      await fetch("http://localhost:8000/approve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionId, request_id: requestId, action }),
-      });
-    } catch { /* ignore */ }
-    setApprovals((prev) => ({ ...prev, [requestId]: { ...prev[requestId], status: action } }));
-    setStreamingMsg((prev) => {
-      if (!prev) return prev;
-      const updated = (prev.toolCalls || []).map((tc) =>
-        tc.requestId === requestId
-          ? { ...tc, status: action === "approve" || action === "always_allow" ? "approved" : "rejected" }
-          : tc
-      );
-      return { ...prev, toolCalls: updated };
-    });
-  }, [sessionId]);
+    await fetch("http://localhost:8000/approve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: activeConv.sessionId, request_id: requestId, action }) });
+    setStreamingMsg((prev) => prev ? { ...prev, toolCalls: (prev.toolCalls || []).map((tc) => tc.requestId === requestId ? { ...tc, status: action === "approve" || action === "always_allow" ? "approved" : "rejected" } : tc) } : prev);
+  }, [activeConv]);
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
-  };
+  const newConversation = useCallback(() => {
+    if (isGenerating) return;
+    setConversations((prev) => [...prev, { id: genId(), title: "Chat " + (prev.length + 1), messages: [], sessionId: genId() + genId() }]);
+    setActiveIdx((prev) => prev + 1);
+    setStreamingMsg(null);
+  }, [isGenerating]);
+
+  const switchConversation = useCallback((idx: number) => {
+    if (isGenerating) return;
+    setActiveIdx(idx);
+    setStreamingMsg(null);
+  }, [isGenerating]);
+
+  const deleteConversation = useCallback((idx: number) => {
+    if (conversations.length <= 1) return;
+    setConversations((prev) => prev.filter((_, i) => i !== idx));
+    if (activeIdx >= idx && activeIdx > 0) setActiveIdx((prev) => prev - 1);
+  }, [conversations.length, activeIdx]);
 
   const renderMessage = (msg: ChatMessage, isStreaming?: boolean) => {
     const isUser = msg.role === "user";
     const isSystem = msg.role === "system";
     return (
       <div key={msg.id} className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""} ${isStreaming ? "opacity-80" : ""}`}>
-        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-1 ${
-          isUser ? "bg-blue-600 text-white" : isSystem ? "bg-gray-400 dark:bg-gray-600 text-white" : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
-        }`}>
-          {isUser ? "U" : isSystem ? "⚙" : "M"}
-        </div>
-        <div className={`max-w-[75%] space-y-2`}>
+        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-1 ${isUser ? "bg-blue-600 text-white" : isSystem ? "bg-gray-400 dark:bg-gray-600 text-white" : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300"}`}>{isUser ? "U" : isSystem ? "⚙" : "M"}</div>
+        <div className="max-w-[75%] space-y-2">
           {msg.content && (
-            <div className={`rounded-xl px-4 py-2.5 text-sm ${
-              isUser ? "bg-blue-600 text-white" : isSystem ? "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs" : "bg-white dark:bg-gray-800 border dark:border-gray-700 dark:text-gray-100"
-            }`}>
-              <CollapsibleContent text={msg.content} className={isUser ? "text-white" : ""} />
+            <div className={`rounded-xl px-4 py-2.5 text-sm ${isUser ? "bg-blue-600 text-white" : isSystem ? "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs" : "bg-white dark:bg-gray-800 border dark:border-gray-700 dark:text-gray-100"}`}>
+              <CollapsibleContent text={msg.content} />
               {isStreaming && <span className="animate-pulse">▍</span>}
             </div>
           )}
           {msg.toolCalls?.map((tc) => (
-            <div key={tc.id} className={`border rounded-lg overflow-hidden text-sm ${
-              tc.status === "rejected" || tc.status === "failed" ? "border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950" :
-              tc.status === "completed" ? "border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-950" :
-              "border-yellow-300 dark:border-yellow-700 bg-yellow-50 dark:bg-yellow-950"
-            }`}>
+            <div key={tc.id} className={`border rounded-lg overflow-hidden text-sm ${tc.status === "rejected" || tc.status === "failed" ? "border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950" : tc.status === "completed" ? "border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-950" : "border-yellow-300 dark:border-yellow-700 bg-yellow-50 dark:bg-yellow-950"}`}>
               <div className="flex items-center gap-2 px-3 py-1.5 border-b dark:border-gray-700 bg-white dark:bg-gray-800 text-xs font-medium dark:text-gray-100">
                 <span>🔧 {tc.name}</span>
-                <span className={`ml-auto px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                  tc.status === "completed" ? "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300" :
-                  tc.status === "failed" || tc.status === "rejected" ? "bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300" :
-                  "bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300"
-                }`}>{tc.status}</span>
+                <span className={`ml-auto px-2 py-0.5 rounded-full text-[10px] font-bold ${tc.status === "completed" ? "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300" : tc.status === "failed" || tc.status === "rejected" ? "bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300" : "bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300"}`}>{tc.status}</span>
               </div>
               {tc.diffPreview && <pre className="p-2 text-xs font-mono overflow-x-auto max-h-40 bg-white dark:bg-gray-800 border-b dark:border-gray-700">{tc.diffPreview}</pre>}
               {tc.result && <pre className={`p-2 text-xs font-mono max-h-40 overflow-auto ${tc.isError ? "text-red-600" : "text-gray-700 dark:text-gray-300"}`}>{tc.result.slice(0, 1000)}</pre>}
@@ -303,86 +224,77 @@ export default function Home() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-100 dark:bg-gray-900">
-      {sidebarOpen && <div className="fixed inset-0 bg-black/30 z-10 md:hidden" onClick={() => setSidebarOpen(false)} />}
-      <div className={`${sidebarOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0 fixed md:static z-20 md:z-auto w-64 bg-white dark:bg-gray-800 border-r dark:border-gray-700 flex flex-col shrink-0 transition-transform duration-200 h-full`}>
-        <div className="flex items-center justify-between p-3 border-b dark:border-gray-700">
-          <button onClick={() => { setMessages([]); setStreamingMsg(null); }} className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 mr-2">+ New Chat</button>
-          <button onClick={() => setSidebarOpen(false)} className="md:hidden p-1 text-gray-400 hover:text-gray-600">✕</button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-2 space-y-1 text-xs text-gray-500 dark:text-gray-400">
-          {messages.filter(m => m.role !== "system").slice(-10).map(m => (
-            <div key={m.id} className="px-2 py-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 truncate">{m.content.slice(0, 60)}</div>
-          ))}
-          {messages.length === 0 && <div className="text-center py-8 text-gray-400 dark:text-gray-500">No conversations yet</div>}
-        </div>
-        <div className="p-3 border-t dark:border-gray-700 text-[10px] text-gray-400 dark:text-gray-500 text-center">MiniCC v0.1</div>
-      </div>
-
-      <div className="flex-1 flex flex-col min-w-0">
-        <header className="flex items-center gap-3 px-4 h-12 bg-white dark:bg-gray-800 border-b dark:border-gray-700 shrink-0">
-          <button onClick={() => setSidebarOpen(true)} className="md:hidden p-1 text-gray-500 hover:text-gray-700 dark:text-gray-400">☰</button>
-          <h1 className="text-sm font-semibold dark:text-gray-100">MiniCC</h1>
+    <div className="flex flex-col h-screen bg-gray-100 dark:bg-gray-900">
+      {/* Top header with mode + tabs */}
+      <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 shrink-0">
+        <div className="flex items-center gap-2 px-3 h-10">
+          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="md:hidden p-1 text-gray-500">☰</button>
+          <h1 className="text-sm font-semibold dark:text-gray-100 mr-3">MiniCC</h1>
           <span className={`w-2 h-2 rounded-full ${connStatus === "connected" ? "bg-green-500" : connStatus === "connecting" ? "bg-yellow-500" : "bg-red-500"}`} />
-          <span className="text-xs text-gray-400 dark:text-gray-500">{connStatus}</span>
-          <div className="ml-auto flex items-center gap-1">
+          {/* Conversation tabs — horizontal bar */}
+          <div className="flex gap-1 flex-1 min-w-0 overflow-x-auto no-scrollbar ml-2" style={{scrollbarWidth:'none'}}>
+            {conversations.map((conv, i) => (
+              <div key={conv.id} className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs cursor-pointer whitespace-nowrap shrink-0 max-w-[150px] transition-colors ${i === activeIdx ? "bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 font-medium" : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"}`}
+                onClick={() => switchConversation(i)}>
+                <span className="truncate">{conv.title}</span>
+                {conversations.length > 1 && <button onClick={(e) => { e.stopPropagation(); deleteConversation(i); }} className="ml-0.5 text-gray-400 hover:text-red-500 text-[10px] leading-none">✕</button>}
+              </div>
+            ))}
+            <button onClick={newConversation} disabled={isGenerating} className="px-2 py-1 text-xs text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950 rounded shrink-0 disabled:opacity-50">+</button>
+          </div>
+          {/* Mode toggles */}
+          <div className="flex items-center gap-1 ml-auto shrink-0">
             {["ask", "auto", "yolo"].map((m) => (
-              <button key={m} onClick={async () => {
-                setExecMode(m);
-                await fetch("http://localhost:8000/mode", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({session_id: sessionId, mode: m}) });
-              }}
-                className={`px-2 py-0.5 text-[10px] font-medium rounded border transition-colors ${
-                  execMode === m
-                    ? "bg-blue-600 text-white border-blue-600"
-                    : "bg-transparent text-gray-500 dark:text-gray-400 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"
-                }`}>{m === "ask" ? "💬 Ask" : m === "auto" ? "⚡ Auto" : "🔥 YOLO"}</button>
+              <button key={m} onClick={async () => { setExecMode(m); await fetch("http://localhost:8000/mode", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: activeConv.sessionId, mode: m }) }); }}
+                className={`px-2 py-0.5 text-[10px] font-medium rounded border transition-colors ${execMode === m ? "bg-blue-600 text-white border-blue-600" : "bg-transparent text-gray-500 dark:text-gray-400 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"}`}>{m === "ask" ? "💬 Ask" : m === "auto" ? "⚡ Auto" : "🔥 YOLO"}</button>
             ))}
           </div>
-        </header>
-
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 dark:bg-gray-900">
-          {messages.map((m) => renderMessage(m))}
-          {streamingMsg && renderMessage(streamingMsg, true)}
-          {isGenerating && !streamingMsg && (
-            <div className="flex gap-3">
-              <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-xs font-bold shrink-0 mt-1">M</div>
-              <div className="space-y-2 flex-1 max-w-[75%]">
-                <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-                  <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />Thinking...
-                </div>
-                <Skeleton className="h-4 w-3/4" /><Skeleton className="h-4 w-1/2" />
-              </div>
-            </div>
-          )}
-          <div ref={bottomRef} />
         </div>
+      </div>
 
-        {isGenerating && (
-          <div className="px-4 py-1.5 bg-blue-50 dark:bg-blue-950 border-t dark:border-blue-800 text-xs text-blue-600 dark:text-blue-400 flex items-center gap-2 shrink-0">
-            <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" />
-            {streamingMsg?.toolCalls?.some(tc => tc.status === "pending") ? "Waiting for approval..." : "Generating..."}
-            <button onClick={handleCancel} className="ml-auto text-red-500 hover:text-red-700 text-[10px] font-medium">Stop</button>
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 dark:bg-gray-900">
+        {activeConv.messages.map((m) => renderMessage(m))}
+        {streamingMsg && renderMessage(streamingMsg, true)}
+        {isGenerating && !streamingMsg && (
+          <div className="flex gap-3">
+            <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-xs font-bold shrink-0 mt-1">M</div>
+            <div className="space-y-2 flex-1 max-w-[75%]">
+              <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400"><span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />Thinking...</div>
+              <Skeleton className="h-4 w-3/4" /><Skeleton className="h-4 w-1/2" />
+            </div>
           </div>
         )}
-
-        <div className="border-t dark:border-gray-700 bg-white dark:bg-gray-800 p-4 shrink-0">
-          <div className="flex gap-2 max-w-4xl mx-auto">
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Type a message... (/help for commands)"
-              disabled={isGenerating}
-              rows={Math.min(Math.max(input.split('\n').length, 1), 8)}
-              className="flex-1 px-4 py-2 border dark:border-gray-600 rounded-lg text-sm dark:bg-gray-700 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 resize-none font-mono leading-6"
-              style={{ minHeight: '42px', maxHeight: '200px' }}
-            />
-            {isGenerating ? (
-              <button onClick={handleCancel} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700">⏹ Stop</button>
-            ) : (
-              <button onClick={handleSend} disabled={!input.trim()} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">Send</button>
-            )}
+        {activeConv.messages.length === 0 && !streamingMsg && !isGenerating && (
+          <div className="flex items-center justify-center h-full text-gray-400 dark:text-gray-500 text-sm">
+            <div className="text-center space-y-2"><p className="text-lg font-medium text-gray-300 dark:text-gray-600">MiniCC</p><p>Send a message to start</p><p className="text-xs">+ New Chat for multi-tab conversations</p></div>
           </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Status bar */}
+      {isGenerating && (
+        <div className="px-4 py-1.5 bg-blue-50 dark:bg-blue-950 border-t dark:border-blue-800 text-xs text-blue-600 dark:text-blue-400 flex items-center gap-2 shrink-0">
+          <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" />
+          {streamingMsg?.toolCalls?.some(tc => tc.status === "pending") ? "Waiting for approval..." : "Generating..."}
+          <button onClick={handleCancel} className="ml-auto text-red-500 hover:text-red-700 text-[10px] font-medium">Stop</button>
+        </div>
+      )}
+
+      {/* Input */}
+      <div className="border-t dark:border-gray-700 bg-white dark:bg-gray-800 p-4 shrink-0">
+        <div className="flex gap-2 max-w-4xl mx-auto">
+          <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+            placeholder="Type a message... (/help for commands)" disabled={isGenerating}
+            rows={Math.min(Math.max(input.split('\n').length, 1), 8)}
+            className="flex-1 px-4 py-2 border dark:border-gray-600 rounded-lg text-sm dark:bg-gray-700 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 resize-none font-mono leading-6"
+            style={{ minHeight: '42px', maxHeight: '200px' }} />
+          {isGenerating ? (
+            <button onClick={handleCancel} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700">⏹ Stop</button>
+          ) : (
+            <button onClick={handleSend} disabled={!input.trim()} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">Send</button>
+          )}
         </div>
       </div>
     </div>
