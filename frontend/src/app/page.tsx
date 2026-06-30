@@ -38,6 +38,7 @@ export default function Home() {
   const reconnectCount = useRef(0);
   const [isGenerating, setIsGenerating] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const handleEventRef = useRef<(data: any) => void>(() => {});
 
   // Auto-scroll
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, streamingMsg]);
@@ -60,7 +61,7 @@ export default function Home() {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        handleEvent(data);
+        handleEventRef.current(data);
       } catch { /* ignore */ }
     };
   }, [sessionId]);
@@ -73,7 +74,7 @@ export default function Home() {
     }
   }, []);
 
-  // Event handler
+  // Event handler — stored in ref to avoid stale closures in WebSocket
   const handleEvent = useCallback((data: any) => {
     const type = data.type;
     const payload = data.payload || {};
@@ -133,10 +134,12 @@ export default function Home() {
         break;
 
       case "message_complete":
-        if (streamingMsg) {
-          setMessages((prev) => [...prev, streamingMsg]);
-          setStreamingMsg(null);
-        }
+        setStreamingMsg((prev) => {
+          if (prev) {
+            setMessages((msgs) => [...msgs, prev]);
+          }
+          return null;
+        });
         setIsGenerating(false);
         break;
 
@@ -174,6 +177,9 @@ export default function Home() {
     setMessages((prev) => [...prev, { id: genId(), role: "user", content: text, timestamp: new Date().toISOString() }]);
     send({ type: "user_message", payload: { content: text } });
   }, [input, send]);
+
+  // Sync handleEvent to ref so WebSocket always gets latest version
+  useEffect(() => { handleEventRef.current = handleEvent; }, [handleEvent]);
 
   // Approval actions
   const handleApproval = useCallback((requestId: string, action: "approve" | "reject" | "always_allow") => {

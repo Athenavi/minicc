@@ -109,9 +109,7 @@ class OpenAIProvider(LLMProvider):
             yield StreamEvent(type="error", data={"message": "openai SDK not installed"})
             return
 
-        kwargs: dict[str, Any] = {
-            "api_key": self.api_key,
-        }
+        kwargs: dict[str, Any] = {"api_key": self.api_key}
         if self.base_url:
             kwargs["base_url"] = self.base_url
 
@@ -130,6 +128,9 @@ class OpenAIProvider(LLMProvider):
             request_kwargs["tools"] = tools
 
         try:
+            # Accumulate tool calls across chunks
+            tool_call_acc: dict[int, dict] = {}
+
             stream = await client.chat.completions.create(**request_kwargs)
             async for chunk in stream:
                 delta = chunk.choices[0].delta if chunk.choices else None
@@ -141,22 +142,41 @@ class OpenAIProvider(LLMProvider):
 
                 if delta.tool_calls:
                     for tc in delta.tool_calls:
+                        idx = tc.index if hasattr(tc, "index") else 0
+                        if idx not in tool_call_acc:
+                            tool_call_acc[idx] = {
+                                "id": tc.id or "",
+                                "name": tc.function.name if tc.function else "",
+                                "arguments": "",
+                            }
                         if tc.function:
+                            if tc.function.name:
+                                tool_call_acc[idx]["name"] = tc.function.name
+                            if tc.id:
+                                tool_call_acc[idx]["id"] = tc.id
+                            if tc.function.arguments:
+                                tool_call_acc[idx]["arguments"] += tc.function.arguments
+
+                # Only yield tool_use when finish_reason is tool_calls
+                if chunk.choices[0].finish_reason:
+                    finish = chunk.choices[0].finish_reason
+                    if finish == "tool_calls":
+                        for idx in sorted(tool_call_acc.keys()):
+                            tc_data = tool_call_acc[idx]
                             try:
-                                args = json.loads(tc.function.arguments)
+                                args = json.loads(tc_data["arguments"]) if tc_data["arguments"] else {}
                             except json.JSONDecodeError:
                                 args = {}
                             yield StreamEvent(
                                 type="tool_use",
                                 data={
-                                    "id": tc.id or f"call_{hash(tc.function.name)}",
-                                    "name": tc.function.name,
+                                    "id": tc_data["id"] or f"call_{idx}",
+                                    "name": tc_data["name"],
                                     "input": args,
                                 },
                             )
-
-                if chunk.choices[0].finish_reason:
-                    yield StreamEvent(type="end", data={"reason": chunk.choices[0].finish_reason})
+                    tool_call_acc.clear()
+                    yield StreamEvent(type="end", data={"reason": finish})
 
         except Exception as exc:
             yield StreamEvent(type="error", data={"message": str(exc)})
