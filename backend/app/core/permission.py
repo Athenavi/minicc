@@ -58,11 +58,17 @@ class PermissionHandler:
     def __init__(self, send_callback: Optional[Callable] = None, approval_timeout: float = APPROVAL_TIMEOUT) -> None:
         self._send = send_callback
         self._approval_timeout = approval_timeout
+        self._mode: str = "ask"  # "ask" | "auto" | "yolo"
         self._pending: dict[str, PendingRequest] = {}
-        # 工具名 → 允许的最高等级（例如 "bash" → EXECUTE 意味着所有级别都允许）
         self._always_allow: dict[str, PermissionLevel] = {}
-        # 本轮已拒绝的工具名集合
         self._denied: set[str] = set()
+
+    def set_mode(self, mode: str) -> None:
+        """设置执行模式：ask（询问）/ auto（自动）/ yolo（全部自动）。"""
+        if mode not in ("ask", "auto", "yolo"):
+            raise ValueError(f"Invalid mode: {mode}")
+        self._mode = mode
+        logger.info("Permission mode set to: %s", mode)
 
     async def request_permission(
         self,
@@ -73,20 +79,25 @@ class PermissionHandler:
     ) -> PermissionResult:
         """请求权限。
 
-        - READ 级别：直接放行
-        - WRITE/EXECUTE：检查"始终允许"缓存，否则等待用户审批
+        - READ 级别：自动放行
+        - ask 模式：WRITE/EXECUTE 需审批
+        - auto 模式：READ/WRITE 自动放行，EXECUTE 需审批
+        - yolo 模式：全部自动放行
         """
-        # READ 自动放行
         if level == PermissionLevel.READ:
             return PermissionResult.APPROVED
 
-        # "始终允许"检查
         if self._is_always_allowed(tool_call.name, level):
             return PermissionResult.APPROVED
 
-        # 拒绝记忆检查
         if tool_call.name in self._denied:
             return PermissionResult.REJECTED
+
+        if self._mode == "yolo":
+            return PermissionResult.APPROVED
+
+        if self._mode == "auto" and level == PermissionLevel.WRITE:
+            return PermissionResult.APPROVED
 
         # 创建审批请求
         perm_req = PermissionRequest(

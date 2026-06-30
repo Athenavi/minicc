@@ -54,6 +54,7 @@ export default function Home() {
   const [streamingMsg, setStreamingMsg] = useState<ChatMessage | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [execMode, setExecMode] = useState("ask");
   const [approvals, setApprovals] = useState<Record<string, any>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
   const prevGenRef = useRef(false);
@@ -324,6 +325,19 @@ export default function Home() {
           <h1 className="text-sm font-semibold dark:text-gray-100">MiniCC</h1>
           <span className={`w-2 h-2 rounded-full ${connStatus === "connected" ? "bg-green-500" : connStatus === "connecting" ? "bg-yellow-500" : "bg-red-500"}`} />
           <span className="text-xs text-gray-400 dark:text-gray-500">{connStatus}</span>
+          <div className="ml-auto flex items-center gap-1">
+            {["ask", "auto", "yolo"].map((m) => (
+              <button key={m} onClick={async () => {
+                setExecMode(m);
+                await fetch("http://localhost:8000/mode", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({session_id: sessionId, mode: m}) });
+              }}
+                className={`px-2 py-0.5 text-[10px] font-medium rounded border transition-colors ${
+                  execMode === m
+                    ? "bg-blue-600 text-white border-blue-600"
+                    : "bg-transparent text-gray-500 dark:text-gray-400 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"
+                }`}>{m === "ask" ? "💬 Ask" : m === "auto" ? "⚡ Auto" : "🔥 YOLO"}</button>
+            ))}
+          </div>
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4 dark:bg-gray-900">

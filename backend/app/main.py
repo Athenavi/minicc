@@ -48,6 +48,7 @@ from app.tools.agent_tools import (
     TaskOutputTool, TaskStopTool, TaskUpdateTool,
 )
 from app.tools.shell_executor import ShellExecutorTool
+from app.tools.codegraph import register_codegraph_tools
 from app.utils.config import settings
 from app.utils.logger import logger
 from app.utils.redis_client import RedisClient
@@ -81,6 +82,7 @@ tool_registry.register(WebSearchTool())
 tool_registry.register(EnterPlanModeTool())
 tool_registry.register(ExitPlanModeTool())
 tool_registry.register(ShellExecutorTool())
+register_codegraph_tools(tool_registry)
 
 command_dispatcher = CommandDispatcher()
 command_dispatcher.register(HelpCommand(command_dispatcher))
@@ -221,6 +223,19 @@ async def cancel_message(request: Request):
             perm.cancel_all_pending()
         await broadcaster.emit(MiniCCEvent(TURN_DONE, {"interrupted": True}))
     return JSONResponse({"status": "cancelled"})
+
+
+@app.post("/mode")
+async def set_mode(request: Request):
+    """设置执行模式：ask / auto / yolo。"""
+    body = await request.json()
+    session_id = body.get("session_id", "default")
+    mode = body.get("mode", "ask")
+    perm = _active_permission.get(session_id)
+    if perm:
+        perm.set_mode(mode)
+        await broadcaster.emit(MiniCCEvent(NOTICE, {"message": f"Mode changed to: {mode}"}))
+    return JSONResponse({"status": "ok", "mode": mode})
 
 
 @app.post("/approve")
