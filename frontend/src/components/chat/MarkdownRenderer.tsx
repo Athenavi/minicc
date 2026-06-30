@@ -2,17 +2,14 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import rehypeHighlight from "rehype-highlight";
-import { useMemo, useState } from "react";
-import { cn } from "../../lib/utils";
+import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 
 export function MarkdownRenderer({ content, className }: { content: string; className?: string }) {
   return (
-    <div className={cn("prose prose-sm dark:prose-invert max-w-none", className)}>
+    <div className={"prose prose-sm dark:prose-invert max-w-none " + (className || "")}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight]}
         components={{
           code: CodeBlock,
           table: ({ children }) => (
