@@ -4,7 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { useMemo, useState } from "react";
-import { cn } from "@/lib/utils";
+import { cn } from "../../lib/utils";
 import { Check, Copy } from "lucide-react";
 
 export function MarkdownRenderer({ content, className }: { content: string; className?: string }) {
