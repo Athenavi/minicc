@@ -6,6 +6,9 @@ Each event has a 'type' field that identifies its kind.
 
 from __future__ import annotations
 
+import asyncio
+import json
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -49,11 +52,6 @@ class MiniCCEvent:
 # - Non-blocking send (dropped if subscriber is slow)
 # - Marshal once, fan to all
 
-
-import asyncio
-import json
-import logging
-from typing import Callable
 
 logger = logging.getLogger("minicc.event")
 
