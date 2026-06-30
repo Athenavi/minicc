@@ -226,8 +226,8 @@ export default function Home() {
     });
   }, [sessionId]);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if ((e.key === "Enter" && !e.shiftKey) || (e.key === "Enter" && e.ctrlKey)) { e.preventDefault(); handleSend(); }
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
   const Skeleton = ({ className }: { className?: string }) => (
@@ -335,9 +335,16 @@ export default function Home() {
 
         <div className="border-t dark:border-gray-700 bg-white dark:bg-gray-800 p-4 shrink-0">
           <div className="flex gap-2 max-w-4xl mx-auto">
-            <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
-              placeholder="Type a message... (/help for commands)" disabled={isGenerating}
-              className="flex-1 px-4 py-2 border dark:border-gray-600 rounded-lg text-sm dark:bg-gray-700 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50" />
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Type a message... (/help for commands)"
+              disabled={isGenerating}
+              rows={Math.min(Math.max(input.split('\n').length, 1), 8)}
+              className="flex-1 px-4 py-2 border dark:border-gray-600 rounded-lg text-sm dark:bg-gray-700 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 resize-none font-mono leading-6"
+              style={{ minHeight: '42px', maxHeight: '200px' }}
+            />
             {isGenerating ? (
               <button onClick={handleCancel} className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700">⏹ Stop</button>
             ) : (
