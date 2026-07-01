@@ -1,6 +1,0 @@
-C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\ClosedRegion\bin\Debug\ClosedRegion.dll
-C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\ClosedRegion\bin\Debug\ClosedRegion.pdb
-C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\ClosedRegion\obj\Debug\ClosedRegion.csproj.AssemblyReference.cache
-C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\ClosedRegion\obj\Debug\ClosedRegion.csproj.CoreCompileInputs.cache
-C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\ClosedRegion\obj\Debug\ClosedRegion.dll
-C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\ClosedRegion\obj\Debug\ClosedRegion.pdb

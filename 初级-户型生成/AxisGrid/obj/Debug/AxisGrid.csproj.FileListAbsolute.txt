@@ -1,6 +1,0 @@
-C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\AxisGrid\obj\Debug\AxisGrid.csproj.AssemblyReference.cache
-C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\AxisGrid\obj\Debug\AxisGrid.csproj.CoreCompileInputs.cache
-C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\AxisGrid\bin\Debug\AxisGrid.dll
-C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\AxisGrid\bin\Debug\AxisGrid.pdb
-C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\AxisGrid\obj\Debug\AxisGrid.dll
-C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\AxisGrid\obj\Debug\AxisGrid.pdb

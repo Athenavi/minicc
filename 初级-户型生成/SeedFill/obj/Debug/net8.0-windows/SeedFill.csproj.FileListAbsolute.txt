@@ -1,4 +1,0 @@
-C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\SeedFill\obj\Debug\net8.0-windows\SeedFill.csproj.AssemblyReference.cache
-C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\SeedFill\obj\Debug\net8.0-windows\SeedFill.GeneratedMSBuildEditorConfig.editorconfig
-C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\SeedFill\obj\Debug\net8.0-windows\SeedFill.csproj.CoreCompileInputs.cache
-C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\SeedFill\obj\Debug\net8.0-windows\SeedFill.sourcelink.json
