@@ -115,20 +115,28 @@ class BaseTool(ABC):
 
     def to_anthropic_tool(self) -> dict:
         """序列化为 Anthropic tool 格式。"""
+        if hasattr(self.input_schema, 'model_json_schema'):
+            schema = self.input_schema.model_json_schema()
+        else:
+            schema = {"type": "object", "properties": {}}
         return {
             "name": self.name,
             "description": self.description,
-            "input_schema": self.input_schema.model_json_schema(),
+            "input_schema": schema,
         }
 
     def to_openai_tool(self) -> dict:
         """序列化为 OpenAI tool 格式。"""
+        if hasattr(self.input_schema, 'model_json_schema'):
+            params = self.input_schema.model_json_schema()
+        else:
+            params = {"type": "object", "properties": {}}
         return {
             "type": "function",
             "function": {
                 "name": self.name,
                 "description": self.description,
-                "parameters": self.input_schema.model_json_schema(),
+                "parameters": params,
             },
         }
 
