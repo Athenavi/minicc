@@ -144,6 +144,8 @@ from app.ops import register_ops_tools
 register_ops_tools(tool_registry)
 from app.crm import register_crm_tools
 register_crm_tools(tool_registry)
+from app.erp import register_erp_tools
+register_erp_tools(tool_registry)
 register_ai_tools(tool_registry)
 register_graph_tools(tool_registry)
 register_agent_cluster_tools(tool_registry)
