@@ -290,6 +290,27 @@ async def list_tools():
     return {"tools": tools, "count": len(tools)}
 
 
+@app.post("/api/tools/execute")
+async def execute_tool(request: Request):
+    """直接执行一个工具。返回同步结果（非流式）。"""
+    body = await request.json()
+    tool_name = body.get("name", "")
+    tool_input = body.get("input", {})
+
+    tool = tool_registry.get(tool_name)
+    if not tool:
+        return {"output": f"Tool not found: {tool_name}", "is_error": True}
+
+    try:
+        # 将输入 dict 解析为工具的 input_schema
+        input_data = tool.input_schema(**tool_input) if isinstance(tool_input, dict) else tool_input
+        result = await tool.execute(input_data)
+        return {"output": result.output, "is_error": result.is_error, "metadata": result.metadata}
+    except Exception as exc:
+        return {"output": f"Error: {exc}", "is_error": True}
+
+
+
 # ── HTTP 命令端点 ──
 # 参照 Reasonix 的 POST /submit, /cancel, /approve
 
