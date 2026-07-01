@@ -57,6 +57,7 @@ from app.tools.web.session import register_session_tools
 from app.tools.office.excel import register_excel_tools
 from app.tools.office.word import register_word_tools
 from app.tools.office.email import register_email_tools
+from app.tools.desktop.mouse_keyboard import register_mouse_keyboard_tools
 from app.utils.config import settings
 from app.utils.logger import logger
 from app.utils.redis_client import RedisClient
@@ -98,6 +99,7 @@ register_session_tools(tool_registry)
 register_excel_tools(tool_registry)
 register_word_tools(tool_registry)
 register_email_tools(tool_registry)
+register_mouse_keyboard_tools(tool_registry)
 
 command_dispatcher = CommandDispatcher()
 command_dispatcher.register(HelpCommand(command_dispatcher))
