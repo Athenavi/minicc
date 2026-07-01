@@ -174,6 +174,10 @@ from app.cosmic import register_cosmic_tools
 register_cosmic_tools(tool_registry)
 from app.transcend import register_transcend_tools
 register_transcend_tools(tool_registry)
+from app.legacy import register_legacy_tools
+register_legacy_tools(tool_registry)
+from app.optimizer import register_opt_tools
+register_opt_tools(tool_registry)
 from app.tools.rag_tools import register_rag_tools
 from app.tools.physical_tools import register_physical_tools
 register_rag_tools(tool_registry)
