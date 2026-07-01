@@ -70,6 +70,7 @@ from app.automator.recorder import register_recorder_tools
 from app.agents.router import register_agent_cluster_tools
 from app.agents.code_agent import CodeAgentTool
 from app.graph.tools import register_graph_tools
+from app.trace import TraceMiddleware, tracer
 from app.tools.web.ai_enhance import register_ai_tools
 from app.utils.config import settings
 from app.utils.logger import logger
