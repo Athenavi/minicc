@@ -160,6 +160,8 @@ from app.learn import register_learn_tools
 register_learn_tools(tool_registry)
 from app.evolve import register_evolve_tools
 register_evolve_tools(tool_registry)
+from app.civilization import register_civilization_tools
+register_civilization_tools(tool_registry)
 register_ai_tools(tool_registry)
 register_graph_tools(tool_registry)
 register_agent_cluster_tools(tool_registry)
