@@ -136,6 +136,8 @@ from app.tools.memory_tools import register_memory_tools
 register_memory_tools(tool_registry)
 from app.tools.debugger import register_debug_tools
 register_debug_tools(tool_registry)
+from app.pm import register_pm_tools
+register_pm_tools(tool_registry)
 register_ai_tools(tool_registry)
 register_graph_tools(tool_registry)
 register_agent_cluster_tools(tool_registry)
