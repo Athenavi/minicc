@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>轴网生成</Name>
+    <Assembly>AxisGrid.dll</Assembly>
+    <AddInId>A1B2C3D4-E5F6-7890-ABCD-1234567890AB</AddInId>
+    <FullClassName>AxisGrid.App</FullClassName>
+    <VendorId>AxisGrid</VendorId>
+    <VendorDescription>轴网生成插件</VendorDescription>
+  </AddIn>
+</RevitAddIns>

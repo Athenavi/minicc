@@ -1,0 +1,12 @@
+C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\SeedFill\obj\Debug\net10.0-windows\SeedFill.csproj.AssemblyReference.cache
+C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\SeedFill\obj\Debug\net10.0-windows\SeedFill.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\SeedFill\obj\Debug\net10.0-windows\SeedFill.csproj.CoreCompileInputs.cache
+C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\SeedFill\obj\Debug\net10.0-windows\SeedFill.sourcelink.json
+C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\SeedFill\bin\Debug\net10.0-windows\SeedFill.dll.config
+C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\SeedFill\bin\Debug\net10.0-windows\SeedFill.deps.json
+C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\SeedFill\bin\Debug\net10.0-windows\SeedFill.dll
+C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\SeedFill\bin\Debug\net10.0-windows\SeedFill.pdb
+C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\SeedFill\obj\Debug\net10.0-windows\SeedFill.dll
+C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\SeedFill\obj\Debug\net10.0-windows\refint\SeedFill.dll
+C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\SeedFill\obj\Debug\net10.0-windows\SeedFill.pdb
+C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\SeedFill\obj\Debug\net10.0-windows\ref\SeedFill.dll

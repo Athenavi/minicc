@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>ClosedRegion</Name>
+    <Assembly>ClosedRegion.dll</Assembly>
+    <AddInId>C3D4E5F6-A7B8-9012-CDEF-345678901234</AddInId>
+    <FullClassName>ClosedRegion.App</FullClassName>
+    <VendorId>YourCompany</VendorId>
+    <VendorDescription>Your Company</VendorDescription>
+    <Description>根据详图线检测封闭区域，生成填充区域</Description>
+  </AddIn>
+</RevitAddIns>

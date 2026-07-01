@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ApplicationPackage SchemaVersion="1.0" 
+    ProductCode="{D4E5F6A7-B8C9-0123-DEF4-567890123456}" 
+    Name="地下室车位排布" 
+    Description="AutoCAD 插件 - 自动排布地下室车位及车行道中心线"
+    AppVersion="1.0.0">
+  
+  <CompanyDetails Name="YourCompany" />
+  
+  <!-- 命令注册 -->
+  <Commands>
+    <Command Local="GTCW" Global="GTCW" 
+             Type="LispFunction" 
+             Description="生成车位排布" />
+  </Commands>
+  
+  <!-- 运行时加载 -->
+  <RuntimeRequirements OS="Win64" />
+  
+  <!-- 启动时加载 LISP 脚本（自动注册命令） -->
+  <Components Description="Main">
+    <RuntimeRequirements OS="Win64" Platform="AutoCAD*" />
+    <ComponentEntry 
+        AppName="ParkingSolver" 
+        ModuleName="./Contents/ParkingSolver.lsp" 
+        LoadOnAutoCADStartup="true" />
+  </Components>
+</ApplicationPackage>

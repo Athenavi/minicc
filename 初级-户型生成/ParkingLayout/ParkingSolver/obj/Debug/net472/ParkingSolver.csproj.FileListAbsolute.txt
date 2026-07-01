@@ -1,0 +1,8 @@
+C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\ParkingLayout\ParkingSolver\obj\Debug\net472\ParkingSolver.csproj.AssemblyReference.cache
+C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\ParkingLayout\ParkingSolver\obj\Debug\net472\ParkingSolver.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\ParkingLayout\ParkingSolver\obj\Debug\net472\ParkingSolver.csproj.CoreCompileInputs.cache
+C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\ParkingLayout\ParkingSolver\obj\Debug\net472\ParkingSolver.sourcelink.json
+C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\ParkingLayout\ParkingSolver\bin\Debug\net472\ParkingSolver.dll
+C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\ParkingLayout\ParkingSolver\bin\Debug\net472\ParkingSolver.pdb
+C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\ParkingLayout\ParkingSolver\obj\Debug\net472\ParkingSolver.dll
+C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\ParkingLayout\ParkingSolver\obj\Debug\net472\ParkingSolver.pdb

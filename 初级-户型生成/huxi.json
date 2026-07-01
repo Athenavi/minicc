@@ -1,0 +1,77 @@
+{
+    "Level": "A户型",
+    "Spaces": [
+        {
+            "CentroidX": 1500,
+            "CentroidY": 1500,
+            "Name": "中庭",
+            "Bay": 3000,
+            "Depth": 3000
+        },
+        {
+            "CentroidX": 4500,
+            "CentroidY": 3500,
+            "Name": "客厅",
+            "Bay": 3000,
+            "Depth": 4000
+        },
+        {
+            "CentroidX": 5000,
+            "CentroidY": 6500,
+            "Name": "厕所",
+            "Bay": 2000,
+            "Depth": 2000
+        },
+        {
+            "CentroidX": 600,
+            "CentroidY": 5250,
+            "Name": "走道",
+            "Bay": 1200,
+            "Depth": 4500
+        },
+        {
+            "CentroidX": 2600,
+            "CentroidY": 6500,
+            "Name": "厨房",
+            "Bay": 2800,
+            "Depth": 2000
+        },
+        {
+            "CentroidX": 2100,
+            "CentroidY": 4250,
+            "Name": "玄关",
+            "Bay": 1800,
+            "Depth": 2500
+        },
+		
+		
+        {
+            "CentroidX": 11500,
+            "CentroidY": 11500,
+            "Name": "客厅",
+            "Bay": 3000,
+            "Depth": 3000
+        },
+        {
+            "CentroidX": 14500,
+            "CentroidY": 13000,
+            "Name": "厨房",
+            "Bay": 3000,
+            "Depth": 3000
+        },
+        {
+            "CentroidX": 14500,
+            "CentroidY": 16000,
+            "Name": "厕所",
+            "Bay": 3000,
+            "Depth": 3000
+        },
+        {
+            "CentroidX": 11500,
+            "CentroidY": 15250,
+            "Name": "卧室",
+            "Bay": 3000,
+            "Depth": 4500
+        }
+    ]
+}

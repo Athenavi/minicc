@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <OutputType>Library</OutputType>
+    <RootNamespace>SeedFill</RootNamespace>
+    <AssemblyName>SeedFill</AssemblyName>
+    <UseWindowsForms>true</UseWindowsForms>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+  </PropertyGroup>
+
+  <!-- 每次编译自动部署到 AutoCAD 2027 插件目录（Bundle 格式） -->
+  <Target Name="DeployToAutoCAD" AfterTargets="Build">
+    <PropertyGroup>
+      <BundleDir>$([System.Environment]::GetFolderPath(SpecialFolder.ApplicationData))\Autodesk\ApplicationPlugins\SeedFill.bundle</BundleDir>
+      <ContentsDir>$(BundleDir)\Contents</ContentsDir>
+    </PropertyGroup>
+    <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll" DestinationFolder="$(ContentsDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(OutputPath)$(AssemblyName).pdb" DestinationFolder="$(ContentsDir)" SkipUnchangedFiles="true" Condition="Exists('$(OutputPath)$(AssemblyName).pdb')" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\PackageContents.xml" DestinationFolder="$(BundleDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\Contents\SeedFill.lsp" DestinationFolder="$(ContentsDir)" SkipUnchangedFiles="true" />
+    <Message Text="已部署到 $(BundleDir)" Importance="High" />
+  </Target>
+
+  <ItemGroup>
+    <Reference Include="acdbmgd">
+      <HintPath>D:\cad\AutoCAD 2027\acdbmgd.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="acmgd">
+      <HintPath>D:\cad\AutoCAD 2027\acmgd.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="accoremgd">
+      <HintPath>D:\cad\AutoCAD 2027\accoremgd.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

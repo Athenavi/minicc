@@ -1,0 +1,6 @@
+C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\FloorPlanGenerator\obj\Debug\FloorPlanGenerator.csproj.AssemblyReference.cache
+C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\FloorPlanGenerator\obj\Debug\FloorPlanGenerator.csproj.CoreCompileInputs.cache
+C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\FloorPlanGenerator\bin\Debug\FloorPlanGenerator.dll
+C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\FloorPlanGenerator\bin\Debug\FloorPlanGenerator.pdb
+C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\FloorPlanGenerator\obj\Debug\FloorPlanGenerator.dll
+C:\Users\athenavi\AppData\Roaming\reasonix\global-workspace\minicc\初级-户型生成\FloorPlanGenerator\obj\Debug\FloorPlanGenerator.pdb
