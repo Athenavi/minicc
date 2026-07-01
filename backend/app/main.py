@@ -61,6 +61,7 @@ from app.tools.desktop.mouse_keyboard import register_mouse_keyboard_tools
 from app.tools.desktop.ocr import register_ocr_tools
 from app.tools.desktop.window import register_window_tools
 from app.tools.desktop.clipboard import register_clipboard_tools
+from app.automator import register_workflow_tools
 from app.utils.config import settings
 from app.utils.logger import logger
 from app.utils.redis_client import RedisClient
@@ -106,6 +107,7 @@ register_mouse_keyboard_tools(tool_registry)
 register_ocr_tools(tool_registry)
 register_window_tools(tool_registry)
 register_clipboard_tools(tool_registry)
+register_workflow_tools(tool_registry)
 
 command_dispatcher = CommandDispatcher()
 command_dispatcher.register(HelpCommand(command_dispatcher))
