@@ -52,6 +52,7 @@ from app.tools.shell_executor import ShellExecutorTool
 from app.tools.codegraph import register_codegraph_tools
 from app.tools.web import register_web_tools
 from app.tools.web.scraper import register_scraper_tools
+from app.tools.web.form_filler import register_form_tools
 from app.utils.config import settings
 from app.utils.logger import logger
 from app.utils.redis_client import RedisClient
@@ -88,6 +89,7 @@ tool_registry.register(ShellExecutorTool())
 register_codegraph_tools(tool_registry)
 register_web_tools(tool_registry)
 register_scraper_tools(tool_registry)
+register_form_tools(tool_registry)
 
 command_dispatcher = CommandDispatcher()
 command_dispatcher.register(HelpCommand(command_dispatcher))
