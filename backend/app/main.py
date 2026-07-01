@@ -132,6 +132,8 @@ from app.agents.session import register_agent_session_tools
 register_agent_session_tools(tool_registry)
 from app.tools.git_workflow import register_git_tools
 register_git_tools(tool_registry)
+from app.tools.memory_tools import register_memory_tools
+register_memory_tools(tool_registry)
 register_ai_tools(tool_registry)
 register_graph_tools(tool_registry)
 register_agent_cluster_tools(tool_registry)
