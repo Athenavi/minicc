@@ -1,0 +1,73 @@
+services:
+  minicc-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./workspace:/workspace
+      - minicc-data:/app/data
+    env_file:
+      - .env
+    environment:
+      - MINICC_WORKSPACE=/workspace
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  minicc-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      - minicc-backend
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    restart: unless-stopped
+
+  # 可选：Redis 用于会话缓存
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    profiles:
+      - redis
+
+  # 可选：SearXNG 自托管搜索
+  searxng:
+    image: searxng/searxng:latest
+    ports:
+      - "8888:8080"
+    volumes:
+      - searxng-data:/etc/searxng:rw
+    environment:
+      - SEARXNG_BASE_URL=https://${SEARXNG_HOSTNAME:-localhost}/
+    restart: unless-stopped
+    profiles:
+      - search
+
+  # 可选：Chrome 用于 Playwright RPA
+  chrome:
+    image: browserless/chrome:latest
+    ports:
+      - "3001:3000"
+    environment:
+      - CONNECTION_TIMEOUT=60000
+      - MAX_CONCURRENT_SESSIONS=5
+    restart: unless-stopped
+    profiles:
+      - rpa
+
+volumes:
+  minicc-data:
+  redis-data:
+  searxng-data:
