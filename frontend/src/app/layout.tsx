@@ -1,4 +1,4 @@
-import Link from "next/link";
+import "./globals.css";
 
 const navItems = [
   { href: "/", label: "💬 Chat", desc: "AI Chat" },
