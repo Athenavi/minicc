@@ -69,6 +69,8 @@ from app.automator.variables import register_var_tools
 from app.automator.recorder import register_recorder_tools
 from app.agents.router import register_agent_cluster_tools
 from app.tools.editor_sync import router as editor_router
+from app.tools.editor_api import router as editor_api_router
+from app.tools.editor_actions import register_editor_tools
 from app.agents.code_agent import CodeAgentTool
 from app.graph.tools import register_graph_tools
 from app.trace import TraceMiddleware, tracer
@@ -123,6 +125,7 @@ register_scheduler_tools(tool_registry)
 register_db_tools(tool_registry)
 register_api_tools(tool_registry)
 register_var_tools(tool_registry)
+register_editor_tools(tool_registry)
 register_ai_tools(tool_registry)
 register_graph_tools(tool_registry)
 register_agent_cluster_tools(tool_registry)
@@ -173,6 +176,7 @@ app.add_middleware(
 )
 
 app.include_router(editor_router)
+app.include_router(editor_api_router)
 
 
 # ── SSE 事件流端点 ──
