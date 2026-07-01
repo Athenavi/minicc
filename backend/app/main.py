@@ -148,6 +148,10 @@ from app.erp import register_erp_tools
 register_erp_tools(tool_registry)
 from app.collab import register_collab_tools
 register_collab_tools(tool_registry)
+from app.support import register_support_tools
+from app.brain import register_brain_tools
+register_support_tools(tool_registry)
+register_brain_tools(tool_registry)
 register_ai_tools(tool_registry)
 register_graph_tools(tool_registry)
 register_agent_cluster_tools(tool_registry)
