@@ -178,6 +178,10 @@ from app.legacy import register_legacy_tools
 register_legacy_tools(tool_registry)
 from app.optimizer import register_opt_tools
 register_opt_tools(tool_registry)
+from app.optimizer.v03 import register_opt_v03_tools
+from app.optimizer.v04_v07 import register_opt_v04_v07_tools
+register_opt_v03_tools(tool_registry)
+register_opt_v04_v07_tools(tool_registry)
 from app.tools.rag_tools import register_rag_tools
 from app.tools.physical_tools import register_physical_tools
 register_rag_tools(tool_registry)
