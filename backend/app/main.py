@@ -140,6 +140,8 @@ from app.pm import register_pm_tools
 register_pm_tools(tool_registry)
 from app.devops import register_devops_tools
 register_devops_tools(tool_registry)
+from app.ops import register_ops_tools
+register_ops_tools(tool_registry)
 register_ai_tools(tool_registry)
 register_graph_tools(tool_registry)
 register_agent_cluster_tools(tool_registry)
