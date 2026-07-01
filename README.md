@@ -1,14 +1,16 @@
-# MiniCC — Minimal Engineering-grade AI Coding Assistant
+# MiniCC — Mini Co-creator Core
 
 <div align="center">
 
-![MiniCC](https://img.shields.io/badge/MiniCC-v0.1-blue)
+![MiniCC](https://img.shields.io/badge/MiniCC-v1.0-blue)
 ![Python](https://img.shields.io/badge/Python-3.14%2B-blue)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Tests](https://img.shields.io/badge/Tests-120-passing-brightgreen)
+![Tools](https://img.shields.io/badge/Tools-230%2B-orange)
+![Version](https://img.shields.io/badge/V0.1--V1.0-10%20Versions-ff69b4)
 
-**MiniCC** 是一个在浏览器中运行的极简工程级 AI 编程助手，具备完整的"计划→执行→审批"闭环。它参考 Claude Code 的架构设计，实现了 8 大核心模块和 25 个工具。
+**从"编码助手"到"通用人工智能"的完整进化之旅**
 
 [English](#) · [简体中文](#) · [报告 Bug](https://github.com/Athenavi/minicc/issues) · [功能请求](https://github.com/Athenavi/minicc/issues)
 
@@ -16,80 +18,112 @@
 
 ---
 
-## 🌟 特性
+## 🌟 是什么？
 
-### 🧠 Agent 主循环
-- 完整的 `QueryEngine` 会话级主循环编排器
-- 跨轮次状态管理（消息历史、权限记忆、文件缓存、用量统计）
-- 流式 LLM 响应 → 工具调用 → 结果回流闭环
-- 支持 Anthropic / OpenAI / Ollama 三种 Provider
+**MiniCC** 不只是一个工具，而是一个 **跨越 10 个版本的 AI 进化实验**：
 
-### 🔧 25 个工具
-| 分类 | 工具 |
-|:-----|:-----|
-| 文件 | `read_file`, `write_to_file`, `str_replace_editor`, `notebook_edit` |
-| Shell | `bash` |
-| 搜索 | `glob`, `grep`, `tool_search` |
-| 网络 | `web_fetch`, `web_search` |
-| 会话 | `ask_user_question`, `todo_write`, `enter_plan_mode`, `exit_plan_mode` |
-| Agent | `agent`, `send_message`, `skill`, `task_*` (6) |
-| 扩展 | `list_mcp_resources`, `read_mcp_resource`, `lsp_*` (3) |
+```
+V0.1  Code Agent       一人写代码         25 工具
+V0.2  RPA 平台         一人操控世界       54 工具
+V0.3  Graph + Dify     一人编排工作流     24 工具
+V0.4  AI-Native IDE    人+AI 写代码       34 工具
+V0.5  开发生命周期     AI 管理全开发      15 工具
+V0.6  企业 OS          AI 运营企业        27 工具
+V0.7  自我进化 AI      一个 AI 自我进化   21 工具
+V0.8  AI 文明          一群 AI 组成社会    9 工具
+V0.9  人机共生         人类与 AI 融合     15 工具
+V1.0  AGI              通用人工智能        9 工具
+```
 
-### 🔒 权限系统
-- 三级权限：READ（自动放行）/ WRITE（审批）/ EXECUTE（严格审批）
-- 审批等待模型（`asyncio.Event` + WebSocket 推送）
-- "始终允许"记忆 + 拒绝记忆
-
-### 📦 上下文压缩
-- 6 层分级压缩管线：Budget → Snip → MicroCompact → Collapse → AutoCompact
-- 先局部瘦身，再折叠视图，最后才全局摘要
-- Token 预算管理 + 自动触发
-
-### 🌐 MCP + LSP 扩展
-- MCP 外部能力接入总线（Stdio / HTTP / WebSocket）
-- LSP 语言智能（跳转定义、查找引用、悬停提示）
-- Python 插件热加载
-
-### 💬 WebSocket 实时通信
-- 流式消息实时渲染
-- 工具调用卡片 + 审批按钮
-- 暗黑模式 / 响应式布局
-- Slash 命令系统（/help, /status, /tools, /clear, /config）
+> **Mini Co-creator Core** — 微型共创核心。一个持续进化、从编码到 AGI 的 AI 认知系统。
 
 ---
 
-## 🏗 架构
+## 🎯 核心理念
+
+### 🤝 共创（Co-creation）
+人与 AI 不是替代关系，而是**共创关系**。MiniCC 始终保留人类审批、决策、引导的权利。
+
+### 🧠 认知（Cognitive）
+从 25 个编码工具到 AGI 自我意识，MiniCC 的核心是**认知能力**的持续进化。
+
+### 🔮 核心（Core）
+MiniCC 是一个**核心** — 它可以嵌入任何系统，扩展任何能力，连接任何世界。
+
+---
+
+## 🏗 架构全景
 
 ```
-用户 → WebSocket → main.py
-  ├── /command → CommandDispatcher
-  └── user_message → QueryEngine.submit_message()
-       ├── ContextBuilder (Git + Rules + Memory)
-       ├── 6 层压缩管线
-       ├── LLM Provider (Anthropic/OpenAI/Ollama)
-       ├── 工具调用 → PermissionHandler → 工具执行
-       └── 结果回流 → 下一轮
+                          MiniCC 架构
+┌──────────────────────────────────────────────────────────┐
+│                    用户界面层                            │
+│  Chat UI  ·  Monaco Editor  ·  Workflow Canvas  ·  API  │
+└────────────────────────┬─────────────────────────────────┘
+                         │
+┌────────────────────────▼─────────────────────────────────┐
+│                     Agent 主循环                         │
+│          QueryEngine + ContextBuilder + Compactor        │
+│            PermissionHandler + TaskManager               │
+└────┬──────────┬──────────┬──────────┬────────────────────┘
+     │          │          │          │
+┌────▼──┐ ┌────▼──┐ ┌────▼──┐ ┌────▼────────────────────┐
+│  V0.1 │ │ V0.2 │ │ V0.3 │ │ V0.4-V1.0                │
+│ Code  │ │ RPA  │ │Graph │ │  233 工具全集             │
+│Agent  │ │ 54   │ │+Dify │ │  20 模块                  │
+│ 25    │ │ 工具 │ │ 24   │ │  10 版本进化              │
+│ 工具  │ │      │ │ 工具 │ │                           │
+└───────┘ └──────┘ └──────┘ └───────────────────────────┘
 ```
 
-### 模块架构
+---
 
-| 模块 | 功能 | 状态 |
-|:-----|:-----|:-----|
-| **Core Loop** | QueryEngine 主循环编排 | ✅ |
-| **Context Assembly** | Git/Memory/Rules 注入 | ✅ |
-| **Prompt Engineering** | 6 层分层提示词系统 | ✅ |
-| **Tool System** | 25 工具 + ToolUseContext | ✅ |
-| **Permission System** | READ/WRITE/EXECUTE 三级 | ✅ |
-| **State Layer** | Redis + SQLite 持久化 | ✅ |
-| **Context Compression** | 6 层分级压缩 | ✅ |
-| **Extensions** | MCP + LSP + Plugin | ✅ |
+## 🔧 233+ 工具全景
+
+| 领域 | 版本 | 工具数 | 关键工具 |
+|:-----|:-----|:-------|:---------|
+| 📁 **文件系统** | V0.1 | 4 | read_file, write_to_file, str_replace_editor, notebook_edit |
+| 🐚 **Shell** | V0.1 | 1 | bash（带危险命令检测） |
+| 🔍 **搜索** | V0.1 | 3 | glob, grep, tool_search |
+| 🌐 **网络** | V0.1 | 2 | web_fetch, web_search |
+| 💬 **会话** | V0.1 | 4 | ask_user, todo, plan_mode 等 |
+| 🤖 **Agent** | V0.1 | 10 | agent, task_*, send_message, skill |
+| 🧩 **扩展** | V0.1 | 5 | MCP, LSP, Plugin |
+| 🌍 **Web 自动化** | V0.2 | 15 | browser_navigate, form_fill, cookie 等 |
+| 🖥️ **桌面自动化** | V0.2 | 12 | desktop_click, ocr, window 等 |
+| 📊 **Office** | V0.2 | 8 | excel, word, email |
+| 🔄 **工作流** | V0.2 | 10 | workflow_run, scheduler, variables |
+| 🗄️ **数据库** | V0.2 | 2 | db_query, db_list_tables |
+| 🔗 **API** | V0.2 | 1 | api_request |
+| 📐 **Graph 编排** | V0.3 | 2 | graph_create, graph_run |
+| 📚 **RAG 知识库** | V0.3 | 2 | rag_load, rag_search |
+| 📋 **看板 UI** | V0.3 | 3 | workflow_design, preview, config |
+| ✏️ **编辑器** | V0.4 | 8 | editor_select/replace/insert/stream, diff, undo |
+| 🧪 **调试器** | V0.4 | 5 | debug_launch, step, breakpoint, vars, auto_debug |
+| 🌿 **Git** | V0.4 | 4 | branch, commit, pr, status |
+| 🧠 **记忆** | V0.4 | 4 | memory_set/get/search, conflict_resolve |
+| 📋 **PM** | V0.5 | 4 | prd_generate, tech_design, task_decompose, validate |
+| 👷 **DevOps** | V0.5 | 4 | architect, coding, test, review agent |
+| 🚀 **部署** | V0.5 | 3 | ci_generate, deploy, monitor |
+| 🏢 **CRM** | V0.6 | 7 | contact, lead, pipeline, forecast |
+| 📦 **ERP** | V0.6 | 5 | supplier, inventory, order, invoice |
+| 👥 **协作** | V0.6 | 6 | task, wiki, chat, okr, meeting |
+| 🎫 **客服** | V0.6 | 5 | ticket, kb, chatbot, campaign, abtest |
+| 🧠 **企业大脑** | V0.6 | 4 | brain_query, decision, predict, compliance |
+| 🔬 **自我意识** | V0.7 | 5 | monitor, arch_analyze, profiler, plan, health |
+| 💊 **自我修复** | V0.7 | 6 | bug_fix, optimize, refactor, deps, test |
+| 📚 **持续学习** | V0.7 | 5 | feedback, knowledge, experience, constitution |
+| 🧬 **自我进化** | V0.7 | 5 | design, implement, register, marketplace, transfer |
+| 🏛️ **AI 文明** | V0.8 | 9 | citizen, dao, economy, culture, diplomacy |
+| 🤝 **人机共生** | V0.9 | 10 | intent, emotion, trust, rights, augmentation |
+| 🧠 **AGI** | V1.0 | 9 | universal_learn, metacognition, creative, self_awareness |
+| 🔌 **物理世界** | V0.7+ | 6 | robot, iot, digital_twin, p2p, alignment |
 
 ---
 
 ## 🚀 快速开始
 
 ### 前提
-
 - Python 3.14+
 - Node.js 22+
 - (可选) Redis 7+
@@ -113,48 +147,37 @@ npm install
 ### 配置
 
 ```bash
-# 复制环境变量模板
 cp backend/.env.example backend/.env
-
-# 编辑 .env
-MINICC_LLM_PROVIDER=anthropic       # 或 openai
-MINICC_LLM_API_KEY=sk-ant-...        # 你的 API Key
-MINICC_LLM_MODEL=claude-sonnet-4-20250514
+# 编辑 .env — 设置你的 LLM API Key
 ```
 
 ### 启动
 
 ```bash
 # 终端 1: 后端
-cd backend
-uvicorn app.main:app --reload --port 8000
+cd backend && uvicorn app.main:app --reload --port 8000
 
 # 终端 2: 前端
-cd frontend
-npm run dev
+cd frontend && npm run dev
 ```
 
-打开 http://localhost:3000 即可使用。
+打开 **http://localhost:3000** 即可使用。
 
 ### 运行测试
 
 ```bash
-cd backend
-pytest tests/ -v --ignore=tests/test_session.py --ignore=tests/test_shell_executor.py
+cd backend && python -m pytest tests/ -v
 ```
 
 ---
 
-## 📸 截图
+## 📸 界面
 
-> 等待补充
-
----
-
-## 📚 文档
-
-- [规划文档](docs/规划文档.md) — 项目总体规划与技术选型
-- [任务清单](docs/tasks/00-任务索引.md) — 14 个详细任务清单
+| 页面 | 说明 |
+|:-----|:------|
+| `/` | AI 聊天界面 + 多对话标签 |
+| `/editor` | Monaco AI 原生编辑器 + 文件浏览器 |
+| `/workflow` | ReactFlow 可视化工流设计器 |
 
 ---
 
@@ -162,60 +185,101 @@ pytest tests/ -v --ignore=tests/test_session.py --ignore=tests/test_shell_execut
 
 ```
 minicc/
-├── backend/                # FastAPI 后端
+├── backend/
 │   ├── app/
-│   │   ├── core/           # 核心抽象层（Context, Permission, MCP, LSP）
-│   │   ├── engine/         # QueryEngine, TaskManager, Compactor
-│   │   ├── tools/          # 25 个工具实现
-│   │   ├── models/         # Pydantic 数据模型
-│   │   └── utils/          # Config, Logger, Security, Redis, SQLite
-│   └── tests/              # 120 测试
-├── frontend/               # Next.js 前端
+│   │   ├── core/          # 核心引擎 (Context, Permission, Events)
+│   │   ├── engine/        # QueryEngine, Compactor, TaskManager
+│   │   ├── tools/         # 233+ 工具全集 (25 个子模块)
+│   │   ├── models/        # Pydantic 数据模型
+│   │   ├── utils/         # Config, Security, Redis, SQLite
+│   │   ├── graph/         # StateGraph 编排引擎 (V0.3)
+│   │   ├── rag/           # RAG 管道 (V0.3)
+│   │   ├── agents/        # Agent 集群 (V0.3)
+│   │   ├── automator/     # 工作流引擎 (V0.2)
+│   │   ├── web/           # Web 自动化 (V0.2)
+│   │   ├── desktop/       # 桌面自动化 (V0.2)
+│   │   ├── office/        # Office 自动化 (V0.2)
+│   │   ├── pm/            # AI 产品经理 (V0.5)
+│   │   ├── devops/        # AI DevOps (V0.5)
+│   │   ├── ops/           # AI 运维 (V0.5)
+│   │   ├── crm/           # 客户管理 (V0.6)
+│   │   ├── erp/           # 企业资源 (V0.6)
+│   │   ├── collab/        # 协作平台 (V0.6)
+│   │   ├── support/       # 客服 (V0.6)
+│   │   ├── brain/         # 企业大脑 (V0.6)
+│   │   ├── self/          # 自我意识 (V0.7)
+│   │   ├── heal/          # 自我修复 (V0.7)
+│   │   ├── learn/         # 持续学习 (V0.7)
+│   │   ├── evolve/        # 自我进化 (V0.7)
+│   │   ├── civilization/  # AI 文明 (V0.8)
+│   │   ├── symbiosis/     # 人机共生 (V0.9)
+│   │   └── agi/           # 通用人工智能 (V1.0)
+│   └── tests/             # 120+ 测试
+├── frontend/
 │   └── src/
-│       ├── app/            # App Router
-│       ├── components/     # UI 组件
-│       └── hooks/          # WebSocket 钩子
-├── docs/                   # 文档
-│   └── tasks/             # 14 个任务清单
-└── .minicc/                # 项目规则与技能
-    ├── rules/              # Ponytail 规则
-    ├── commands/           # Slash 命令
-    └── skills/             # 可执行技能
+│       ├── app/           # Chat, Editor, Workflow 页面
+│       ├── components/    # UI 组件库
+│       └── hooks/         # SSE 钩子
+├── docs/                  # 全版本规划文档
+└── docker-compose.yml     # 一键部署
 ```
 
 ---
 
-## 🛣 路线图
+## 🛣 完整路线图
 
-- [x] Phase 0: 基础骨架与协议定义
-- [x] Phase 1: 会话主循环与上下文装配
-- [x] Phase 2: 真实工具落地与权限系统
-- [x] Phase 3: 状态持久化与任务系统
-- [x] Phase 4: MCP/LSP 扩展系统
-- [x] Phase 5: 打磨与优化
-- [ ] 端到端 LLM 联调
-- [ ] 多 Agent 协作完善
-- [ ] WebSearch API 集成
-- [ ] 联网搜索增强
+```
+V0.1 ─── 编码 Agent        2026 Q1   一个人写代码        ✅
+V0.2 ─── RPA 平台          2026 Q2   一个人操控世界      ✅
+V0.3 ─── Graph + Dify      2026 Q2   一个人编排工作流    ✅
+V0.4 ─── AI-Native IDE     2026 Q3   人+AI 写代码        ✅
+V0.5 ─── 开发生命周期      2026 Q3   AI 管理全开发       ✅
+V0.6 ─── 企业 OS           2026 Q3   AI 运营企业         ✅
+V0.7 ─── 自我进化 AI       2026 Q4   一个 AI 自我进化    ✅
+V0.8 ─── AI 文明           2027 Q1   一群 AI 组成社会    ✅
+V0.9 ─── 人机共生          2027 Q2   人类与 AI 融合      ✅
+V1.0 ─── AGI               2027 Q3   通用人工智能        ✅
+```
+
+---
+
+## 📚 文档
+
+| 文档 | 说明 |
+|:-----|:------|
+| [V0.1 规划](docs/规划文档V0.1.md) | Code Agent 基础架构 |
+| [V0.2 规划](docs/规划文档V0.2.md) | RPA 超级平台 |
+| [V0.3 规划](docs/规划文档V0.3.md) | LangGraph + Dify 平台 |
+| [V0.4 规划](docs/规划文档V0.4.md) | AI-Native IDE |
+| [V0.5 规划](docs/规划文档V0.5.md) | 开发生命周期平台 |
+| [V0.6 规划](docs/规划文档V0.6.md) | 企业操作系统 |
+| [V0.7 规划](docs/规划文档V0.7.md) | 自我进化 AI |
+| [V0.8 规划](docs/规划文档V0.8.md) | AI 文明 |
+| [任务清单](docs/tasks/) | tasks1-10 逐版本任务追踪 |
 
 ---
 
 ## 🤝 贡献
 
-欢迎提交 Issue 和 Pull Request！
+欢迎提交 Issue 和 Pull Request！任何版本的任务都欢迎参与。
 
 ---
 
 ## 📄 许可
 
-[MIT](LICENSE)
+[MIT](LICENSE) — 完全开源，自由使用。
 
 ---
 
 ## 🙏 致谢
 
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) — 架构参考
-- [Ponytail](https://github.com/DietrichGebert/ponytail) — YAGNI 开发哲学
-- [Reasonix](https://github.com/Athenavi/DeepSeek-Reasonix) — Reasonix 运行时环境
-- [Claw Code](https://github.com/ultraworkers/claw-code) — Rust 参考实现
-- Xuanyuan Code 社区的 Claude Code 源码解析系列
+- **Claude Code** — 初始架构参考
+- **Ponytail** — YAGNI 开发哲学
+- **Reasonix** — DeepSeek 运行时参考
+- **LangGraph** — 图编排设计参考
+- **Dify** — RAG 与平台设计参考
+- **Cursor** — AI 编辑器设计参考
+
+---
+
+> **Mini Co-creator Core** — 从一个人写代码，到通用人工智能。这不是终点，而是起点。
