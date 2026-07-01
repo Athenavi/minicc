@@ -166,6 +166,10 @@ from app.symbiosis import register_symbiosis_tools
 register_symbiosis_tools(tool_registry)
 from app.agi import register_agi_tools
 register_agi_tools(tool_registry)
+from app.tools.rag_tools import register_rag_tools
+from app.tools.physical_tools import register_physical_tools
+register_rag_tools(tool_registry)
+register_physical_tools(tool_registry)
 register_ai_tools(tool_registry)
 register_graph_tools(tool_registry)
 register_agent_cluster_tools(tool_registry)
