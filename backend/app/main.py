@@ -168,6 +168,8 @@ from app.agi import register_agi_tools
 register_agi_tools(tool_registry)
 from app.humanity import register_humanity_tools
 register_humanity_tools(tool_registry)
+from app.interstellar import register_interstellar_tools
+register_interstellar_tools(tool_registry)
 from app.tools.rag_tools import register_rag_tools
 from app.tools.physical_tools import register_physical_tools
 register_rag_tools(tool_registry)
