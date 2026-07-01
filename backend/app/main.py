@@ -172,6 +172,8 @@ from app.interstellar import register_interstellar_tools
 register_interstellar_tools(tool_registry)
 from app.cosmic import register_cosmic_tools
 register_cosmic_tools(tool_registry)
+from app.transcend import register_transcend_tools
+register_transcend_tools(tool_registry)
 from app.tools.rag_tools import register_rag_tools
 from app.tools.physical_tools import register_physical_tools
 register_rag_tools(tool_registry)
