@@ -128,6 +128,8 @@ register_var_tools(tool_registry)
 register_editor_tools(tool_registry)
 from app.tools.batch_edit import register_batch_tools
 register_batch_tools(tool_registry)
+from app.agents.session import register_agent_session_tools
+register_agent_session_tools(tool_registry)
 register_ai_tools(tool_registry)
 register_graph_tools(tool_registry)
 register_agent_cluster_tools(tool_registry)
