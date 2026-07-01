@@ -12,6 +12,7 @@ from app.core.permission import PermissionLevel
 from app.models.tool import ToolResult
 from app.tools.base import BaseTool, ToolCategory, ToolUseContext
 from app.tools.editor_sync import _safe
+from starlette.exceptions import HTTPException
 
 
 class _Empty(BaseModel):

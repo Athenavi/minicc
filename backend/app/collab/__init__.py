@@ -48,9 +48,10 @@ class TaskCreateTool(BaseTool):
     async def execute(self, input_data: TaskCreateInput, context=None) -> ToolResult:
         import uuid, datetime
         tid = uuid.uuid4().hex[:12]
-        _db().execute("INSERT INTO tasks VALUES (?,?,?,?,?,?,?)",
+        db = _db()
+        db.execute("INSERT INTO tasks VALUES (?,?,?,?,?,?,?)",
                       (tid, input_data.project_id, input_data.title, "todo", input_data.assignee, input_data.priority, datetime.datetime.now().isoformat()))
-        _db().commit()
+        db.commit()
         return ToolResult(tool_call_id="", output=f"[collab] Task created: {input_data.title} (priority: {input_data.priority})")
 
 
