@@ -67,6 +67,7 @@ from app.tools.database.db_connector import register_db_tools
 from app.tools.api.rest_client import register_api_tools
 from app.automator.variables import register_var_tools
 from app.automator.recorder import register_recorder_tools
+from app.tools.web.ai_enhance import register_ai_tools
 from app.utils.config import settings
 from app.utils.logger import logger
 from app.utils.redis_client import RedisClient
