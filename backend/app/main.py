@@ -152,6 +152,8 @@ from app.support import register_support_tools
 from app.brain import register_brain_tools
 register_support_tools(tool_registry)
 register_brain_tools(tool_registry)
+from app.self import register_self_tools
+register_self_tools(tool_registry)
 register_ai_tools(tool_registry)
 register_graph_tools(tool_registry)
 register_agent_cluster_tools(tool_registry)
