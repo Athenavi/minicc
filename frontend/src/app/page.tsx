@@ -9,10 +9,17 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Toaster, toast } from "sonner";
-import { Send, Square, Plus, MessageSquare, LogIn } from "lucide-react";
+import { Send, Square, Plus, MessageSquare, LogIn, Check, X, AlertTriangle } from "lucide-react";
 
 interface ChatMessage { id: string; role: string; content: string; toolCalls?: any[]; }
 interface Conversation { id: string; title: string; messages: ChatMessage[]; sessionId: string; }
+
+interface PermissionRequest {
+  task_id: string;
+  tool_name: string;
+  task_name: string;
+  session_id: string;
+}
 
 let idCounter = 0;
 function genId() { return (++idCounter).toString(36) + Math.random().toString(36).slice(2, 5); }
@@ -25,6 +32,8 @@ export default function Home() {
   const [streamingMsg, setStreamingMsg] = useState<ChatMessage | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [mode, setMode] = useState("auto");
+  const [permRequest, setPermRequest] = useState<PermissionRequest | null>(null);
   const [clientId] = useState(() => genId());
   const streamingContentRef = useRef("");
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -71,6 +80,22 @@ export default function Home() {
           ? { ...conv, messages: [...conv.messages, { id: genId(), role: "assistant", content: finalContent }] }
           : conv
       ));
+    }
+    if (data.type === "permission_request") {
+      setPermRequest({
+        task_id: data.data?.task_id || "",
+        tool_name: data.data?.tool_name || "",
+        task_name: data.data?.task_name || "",
+        session_id: data.data?.session_id || "",
+      });
+    }
+    if (data.type === "permission_result") {
+      setPermRequest(null);
+      const approved = data.data?.approved === "true";
+      const statusMsg = approved
+        ? `\n\n_✅ Approved_\n`
+        : `\n\n_❌ Rejected_\n`;
+      setStreamingMsg((prev) => prev ? { ...prev, content: prev.content + statusMsg } : prev);
     }
   });
 
@@ -141,6 +166,23 @@ export default function Home() {
     setActiveIdx(conversations.length);
   };
 
+  const switchMode = async (newMode: string) => {
+    setMode(newMode);
+    try {
+      await api("/mode", {
+        method: "POST",
+        body: JSON.stringify({ mode: newMode, session_id: activeConv.sessionId }),
+      });
+    } catch { /* ignore */ }
+  };
+
+  const handleApprove = async (taskId: string) => {
+    try { await api("/approve", { method: "POST", body: JSON.stringify({ task_id: taskId }) }); } catch {}
+  };
+  const handleReject = async (taskId: string) => {
+    try { await api("/reject", { method: "POST", body: JSON.stringify({ task_id: taskId }) }); } catch {}
+  };
+
   const statusColor = connStatus === "connected" ? "bg-green-500" : connStatus === "connecting" ? "bg-amber-500" : "bg-red-500";
 
   const switchConversation = async (idx: number) => {
@@ -196,7 +238,48 @@ export default function Home() {
           <div className={`w-2 h-2 rounded-full ${statusColor}`} />
           <span>{connStatus}</span>
         </div>
+        {/* Mode switcher */}
+        <div className="px-3 py-2 border-t dark:border-gray-700 flex gap-1">
+          {["ask", "auto", "yolo"].map((m) => (
+            <button key={m} onClick={() => switchMode(m)}
+              className={`flex-1 text-[10px] py-1 rounded font-medium transition-all ${
+                mode === m
+                  ? m === "ask" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"
+                    : m === "auto" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"
+                    : "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300"
+                  : "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
+              }`}>
+              {m === "ask" ? "❓Ask" : m === "auto" ? "▶Auto" : "🔥YOLO"}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {/* Permission Request Dialog */}
+      {permRequest && (
+        <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center" onClick={() => {}}>
+          <Card className="w-96 p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 text-amber-600 mb-3">
+              <AlertTriangle className="h-5 w-5" />
+              <span className="font-semibold text-sm">Permission Required</span>
+            </div>
+            <p className="text-sm text-gray-600 dark:text-gray-300 mb-1">
+              The AI wants to execute:
+            </p>
+            <p className="text-sm font-mono bg-gray-100 dark:bg-gray-800 rounded p-2 mb-4">
+              {permRequest.task_name}
+            </p>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" size="sm" onClick={() => handleReject(permRequest.task_id)}>
+                <X className="h-3 w-3 mr-1" /> Reject
+              </Button>
+              <Button size="sm" onClick={() => handleApprove(permRequest.task_id)}>
+                <Check className="h-3 w-3 mr-1" /> Approve
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* Main */}
       <div className="flex-1 flex flex-col">

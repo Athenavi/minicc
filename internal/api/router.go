@@ -59,6 +59,9 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 	})
 
 	// Legacy API endpoints (used by frontend chat)
+	modeStore := NewModeStore()
+	permMgr := NewPermissionManager()
+	modeHandler := NewModeHandler(modeStore, permMgr)
 	r.Post("/submit", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Content   string `json:"content"`
@@ -118,14 +121,45 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 				SaveMessages(ctx, sessionID, userID, content, fullContent)
 				// Detect and save task dispatch from LLM response
 				if taskName, source := detectTaskDispatch(fullContent); taskName != "" {
+					// Check mode — if "ask", request permission first
+					mode := modeStore.Get(sessionID)
+					if mode == ModeAsk {
+						taskID := fmt.Sprintf("perm_%d", time.Now().UnixNano())
+						// Emit permission_request via SSE
+						reqData, _ := json.Marshal(map[string]string{
+							"session_id": sessionID,
+							"tool_name":  source,
+							"task_name":  taskName,
+							"task_id":    taskID,
+						})
+						eventHub.Publish(broadcast.Event{Type: "permission_request", Data: json.RawMessage(reqData)})
+
+						// Wait up to 2 minutes for approval
+						approved, _ := permMgr.WaitForApproval(taskID, 120*time.Second)
+						resultData, _ := json.Marshal(map[string]string{
+							"task_id":   taskID,
+							"approved":  fmt.Sprintf("%v", approved),
+							"task_name": taskName,
+						})
+						eventHub.Publish(broadcast.Event{Type: "permission_result", Data: json.RawMessage(resultData)})
+
+						if !approved {
+							slog.Info("task rejected by user", "task", taskName, "session", sessionID)
+							return
+						}
+						slog.Info("task approved by user", "task", taskName, "session", sessionID)
+					}
+
 					createAndPublishTask(ctx, sessionID, userID, taskName, source, eventHub)
 				}
 			}
 		}(body.Content, body.SessionID, userID)
 	})
 	r.Post("/cancel", handleCancel)
-	r.Post("/approve", handleApprove)
-	r.Post("/mode", handleMode)
+	r.Post("/mode", modeHandler.SetMode)
+	r.Get("/mode", modeHandler.GetMode)
+	r.Post("/approve", modeHandler.ApprovePermission)
+	r.Post("/reject", modeHandler.RejectPermission)
 
 	// SSE events endpoint (long-lived connection, no rate limit)
 	r.Get("/events", func(w http.ResponseWriter, r *http.Request) {
@@ -320,14 +354,6 @@ func NotImplemented(w http.ResponseWriter, r *http.Request) {
 
 func handleCancel(w http.ResponseWriter, r *http.Request) {
 	OK(w, map[string]string{"status": "cancelled"})
-}
-
-func handleApprove(w http.ResponseWriter, r *http.Request) {
-	OK(w, map[string]string{"status": "approved"})
-}
-
-func handleMode(w http.ResponseWriter, r *http.Request) {
-	OK(w, map[string]string{"status": "ok", "mode": "ask"})
 }
 
 // ── Task dispatch detection (from LLM response text) ──
