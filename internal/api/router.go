@@ -98,8 +98,7 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 			}
 
 			toolDefs := engine.BuildToolDefs(toolRegistry)
-			systemPrompt := "You are MiniCC V2, an enterprise AI agent. You have access to tools. " +
-				"When a task requires tools, call them. Always explain what you're doing."
+			systemPrompt := llm.DeterministicSystemPrompt()
 
 			finalContent, usage, err := orchestrator.Execute(ctx, sessionID, messages, systemPrompt, toolDefs)
 			_ = usage

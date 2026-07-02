@@ -9,11 +9,12 @@ import (
 
 // Gateway is the unified LLM entry point with routing, failover, and caching.
 type Gateway struct {
-	mu        sync.RWMutex
-	providers []Provider
-	cache     *ResponseCache
-	breakers  map[string]*CircuitBreaker
-	metrics   *GatewayMetrics
+	mu          sync.RWMutex
+	providers   []Provider
+	cache       *ResponseCache
+	prefixCache *PrefixCache
+	breakers    map[string]*CircuitBreaker
+	metrics     *GatewayMetrics
 }
 
 type GatewayMetrics struct {
@@ -32,9 +33,12 @@ type ProviderMetrics struct {
 }
 
 func NewGateway(cacheTTL time.Duration) *Gateway {
+	pc := NewPrefixCache()
+	pc.LogMetrics(5 * time.Minute)
 	return &Gateway{
-		cache:    NewResponseCache(cacheTTL),
-		breakers: make(map[string]*CircuitBreaker),
+		cache:       NewResponseCache(cacheTTL),
+		prefixCache: pc,
+		breakers:    make(map[string]*CircuitBreaker),
 		metrics: &GatewayMetrics{
 			byProvider: make(map[string]*ProviderMetrics),
 		},
@@ -55,6 +59,11 @@ func (g *Gateway) ChatStream(ctx context.Context, req *Request, onChunk func(str
 	g.metrics.mu.Lock()
 	g.metrics.requests++
 	g.metrics.mu.Unlock()
+
+	// Track prefix caching
+	cached, newTokens := g.prefixCache.IsPrefixCached(req)
+	_ = cached
+	_ = newTokens
 
 	g.mu.RLock()
 	providers := g.providers
@@ -179,7 +188,9 @@ func (g *Gateway) recordMetrics(name string, err error) {
 }
 
 func (g *Gateway) CacheStats() map[string]interface{} {
-	return g.cache.Stats()
+	stats := g.cache.Stats()
+	stats["prefix_cache"] = g.prefixCache.Stats()
+	return stats
 }
 
 func (g *Gateway) Metrics() map[string]interface{} {
