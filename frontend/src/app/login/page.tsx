@@ -26,7 +26,7 @@ export default function LoginPage() {
 
   const checkAuth = async (): Promise<boolean> => {
     try {
-      const data = await api("/v1/profile", { skipAuth: false });
+      const data = await api("/v1/profile", { skipAuth: true });
       return !!data?.data?.user_id;
     } catch { return false; }
   };

@@ -18,7 +18,7 @@ export default function ClientLayout({
   const [userEmail, setUserEmail] = useState("");
 
   useEffect(() => {
-    api("/v1/profile", { skipAuth: false })
+    api("/v1/profile", { skipAuth: true })
       .then((data) => {
         setAuthed(true);
         setUserEmail(data.data?.email || "");
@@ -26,8 +26,8 @@ export default function ClientLayout({
       .catch(() => setAuthed(false));
   }, [pathname]);
 
-  // Hide nav on auth pages
-  const isAuthPage = pathname === "/login" || pathname === "/register";
+  // Hide nav on auth/install pages
+  const isAuthPage = pathname === "/login" || pathname === "/register" || pathname === "/install";
   if (isAuthPage) return <>{children}</>;
 
   const handleLogout = async () => {
