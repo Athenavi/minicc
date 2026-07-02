@@ -125,7 +125,7 @@ func (h *WorkflowHandler) CreateDef(w http.ResponseWriter, r *http.Request) {
 
 	_, err := db.Pool.Exec(r.Context(),
 		`INSERT INTO workflow_definitions (id, user_id, name, description, version, definition, enabled, created_at, updated_at)
-		 VALUES ($1, '', $2, $3, '1.0', $4, true, NOW(), NOW())
+		 VALUES ($1, NULL, $2, $3, '1.0', $4, true, NOW(), NOW())
 		 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description,
 		   definition = EXCLUDED.definition, updated_at = NOW()`,
 		defID, body.Name, body.Description, string(defJSON))
@@ -189,7 +189,7 @@ func (h *WorkflowHandler) Execute(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	_, err = db.Pool.Exec(r.Context(),
 		`INSERT INTO workflow_executions (id, definition_id, user_id, status, trigger, started_at, finished_at)
-		 VALUES ($1, $2, '', 'running', 'manual', $3, NULL)`,
+		 VALUES ($1, $2, NULL, 'running', 'manual', $3, NULL)`,
 		execID, defID, now)
 	if err != nil {
 		InternalError(w, "create execution: "+err.Error())
