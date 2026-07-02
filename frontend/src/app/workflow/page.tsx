@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState, useEffect } from "react";
-import { apiUrl } from "@/lib/api";
+import { api, apiUrl } from "@/lib/api";
 import {
   ReactFlow,
   MiniMap,
@@ -172,6 +172,15 @@ export default function WorkflowPage() {
     }
   }, [selectedNode, setNodes, setEdges, addLog]);
 
+  const [savedWorkflows, setSavedWorkflows] = useState<any[]>([]);
+  const [showSaved, setShowSaved] = useState(false);
+
+  useEffect(() => {
+    api("/v1/workflows", { skipAuth: true }).then((d) => {
+      if (Array.isArray(d?.data)) setSavedWorkflows(d.data);
+    }).catch(() => {});
+  }, []);
+
   const handleRunGraph = async () => {
     setExecuting(true);
     setResult("");
@@ -191,38 +200,113 @@ export default function WorkflowPage() {
         };
       });
 
-    const graphDef = {
-      name: meta.name || "Workflow",
-      steps,
-      env: {},
-    };
+    const graphDef = { name: meta.name || "Workflow", steps, env: {} };
 
-    addLog("Starting workflow execution...", "info");
+    addLog("Saving workflow...", "info");
 
     try {
-      const resp = await fetch(apiUrl("/api/submit"), {
+      // Save workflow definition
+      const createResp = await api("/v1/workflows", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: `Run workflow: ${JSON.stringify(graphDef)}`,
-          session_id: "workflow-ui",
+          name: meta.name || "Workflow",
+          description: meta.description,
+          definition: graphDef,
         }),
       });
-      const data = await resp.json();
-      setResult(data.output || "Workflow execution submitted");
-      addLog(`Workflow completed: ${data.metadata?.status || "submitted"}`, data.metadata?.status === "failed" ? "error" : "success");
-      // Update node statuses
-      setNodes((nds) =>
-        nds.map((n) => ({
-          ...n,
-          data: { ...n.data, status: n.id === "start" ? "success" : n.data.status || undefined },
-        }))
-      );
+      const wfId = createResp?.data?.id;
+      if (!wfId) throw new Error("Failed to create workflow");
+
+      addLog("Executing workflow...", "info");
+
+      // Execute via real workflow API
+      const execResp = await api(`/v1/workflows/${wfId}/execute`, { method: "POST", skipAuth: true });
+      const execData = execResp?.data;
+
+      if (execData?.steps) {
+        const stepResults = execData.steps;
+        setResult(execData.status === "completed" ? "✅ All steps completed" : `❌ Failed: status=${execData.status}`);
+
+        // Update node statuses
+        setNodes((nds) =>
+          nds.map((n) => {
+            const step = stepResults.find((s: any) => s.id === n.id);
+            return {
+              ...n,
+              data: {
+                ...n.data,
+                status: step ? (step.status === "success" ? "success" : "failed") : n.data.status || undefined,
+                output: step?.output || step?.error || undefined,
+              },
+            };
+          })
+        );
+
+        stepResults.forEach((s: any) => {
+          addLog(`${s.tool}: ${s.status} (${s.duration_ms}ms)${s.error ? ` — ${s.error}` : ""}`, s.status === "success" ? "success" : "error");
+        });
+      } else {
+        setResult(JSON.stringify(execData));
+        addLog("Workflow execution completed", "success");
+      }
     } catch (err: any) {
       setResult(`Error: ${err.message}`);
       addLog(`Execution error: ${err.message}`, "error");
     } finally {
       setExecuting(false);
+    }
+  };
+
+  const handleSaveWorkflow = async () => {
+    const steps = nodes.map((n) => ({
+      id: n.id, position: n.position, data: n.data,
+    }));
+    try {
+      await api("/v1/workflows", {
+        method: "POST",
+        body: JSON.stringify({
+          name: meta.name || "Workflow",
+          description: meta.description,
+          definition: { name: meta.name, steps, env: {} },
+        }),
+      });
+      addLog("Workflow saved", "success");
+      // Refresh list
+      const d = await api("/v1/workflows", { skipAuth: true });
+      if (Array.isArray(d?.data)) setSavedWorkflows(d.data);
+    } catch (err: any) {
+      addLog(`Save failed: ${err.message}`, "error");
+    }
+  };
+
+  // Reload saved workflow
+  const handleLoadWorkflow = async (id: string) => {
+    try {
+      const resp = await api(`/v1/workflows/${id}`, { skipAuth: true });
+      const wf = resp?.data;
+      if (!wf?.definition) return;
+      const def = typeof wf.definition === "string" ? JSON.parse(wf.definition) : wf.definition;
+      if (def.steps) {
+        // Reconstruct nodes from saved definition
+        const loadedNodes: Node[] = def.steps.map((s: any, i: number) => ({
+          id: s.id || `node_${i}`,
+          type: "workflowNode",
+          position: s.position || { x: 100, y: i * 100 + 100 },
+          data: s.data || { nodeType: "tool", config: { tool: s.tool || "bash" }, label: s.tool || "Step" },
+        }));
+        // Ensure start node
+        loadedNodes.unshift({
+          id: "start",
+          type: "workflowNode",
+          position: { x: 400, y: 10 },
+          data: { nodeType: "input", config: { trigger: "manual" }, label: "Start", status: "idle" },
+        });
+        setNodes(loadedNodes);
+        setMeta({ ...meta, name: wf.name || "Workflow", description: wf.description || "" });
+        addLog(`Loaded: ${wf.name}`, "info");
+      }
+    } catch (err: any) {
+      addLog(`Load failed: ${err.message}`, "error");
     }
   };
 
@@ -307,12 +391,29 @@ export default function WorkflowPage() {
           >
             {executing ? "⟳ Running..." : "▶ Run Workflow"}
           </button>
+          <button onClick={handleSaveWorkflow} className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 text-sm rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-all">
+            💾 Save
+          </button>
+          <button onClick={() => setShowSaved(!showSaved)} className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 text-sm rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-all">
+            📂 {showSaved ? "Hide Saved" : "Load Saved"}
+          </button>
           <button onClick={handleExportJSON} className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 text-sm rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-all">
             📥 Export JSON
           </button>
           <button onClick={handleClearAll} className="w-full px-3 py-2 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-sm rounded-lg hover:bg-red-100 dark:hover:bg-red-900/50 transition-all">
             🗑 Clear Canvas
           </button>
+          {showSaved && savedWorkflows.length > 0 && (
+            <div className="max-h-40 overflow-auto space-y-1 border-t dark:border-gray-700 pt-2 mt-2">
+              <p className="text-[10px] text-gray-400 font-medium px-1">Saved Workflows</p>
+              {savedWorkflows.map((wf: any) => (
+                <button key={wf.id} onClick={() => handleLoadWorkflow(wf.id)}
+                  className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-gray-100 dark:hover:bg-gray-700 truncate">
+                  {wf.name || wf.id}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

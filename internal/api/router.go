@@ -186,6 +186,18 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 		r.Get("/traces", systemHandler.Traces)
 	})
 
+	// Workflow endpoints (public)
+	workflowHandler := NewWorkflowHandler(toolRegistry)
+	r.Route("/v1/workflows", func(r chi.Router) {
+		r.Use(rateLimiter.Middleware)
+		r.Get("/", workflowHandler.ListDefs)
+		r.Post("/", workflowHandler.CreateDef)
+		r.Get("/{id}", workflowHandler.GetDef)
+		r.Delete("/{id}", workflowHandler.DeleteDef)
+		r.Post("/{id}/execute", workflowHandler.Execute)
+	})
+	r.Get("/v1/executions", workflowHandler.ListExecs)
+
 	// Protected API v1
 	r.Route("/v1", func(r chi.Router) {
 		r.Use(AuthMiddleware(authenticator))
