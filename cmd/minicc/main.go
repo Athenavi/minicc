@@ -46,7 +46,8 @@ func main() {
 	} else {
 		pgConnected = true
 		defer db.ClosePostgres()
-		if err := db.RunMigrations(ctx); err != nil {
+		// Atlas-compatible migrations (in transaction per migration, checksum-verified)
+		if err := db.RunAtlasMigrations(ctx, db.Pool, "migrations"); err != nil {
 			slog.Warn("migrations failed", "error", err)
 		}
 	}
