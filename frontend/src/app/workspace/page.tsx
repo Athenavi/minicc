@@ -28,17 +28,6 @@ interface FileNode { name: string; path: string; type: "file" | "dir"; children?
 let idCounter = 0;
 function genId() { return (++idCounter).toString(36) + Math.random().toString(36).slice(2, 5); }
 
-// Per-user storage UUID — generated once, persisted forever
-function getStorageId(): string {
-  if (typeof window === "undefined") return "default";
-  let id = localStorage.getItem("minicc_storage_id");
-  if (!id) {
-    id = crypto.randomUUID ? crypto.randomUUID() : "s" + genId() + genId() + genId();
-    localStorage.setItem("minicc_storage_id", id);
-  }
-  return id;
-}
-
 export default function WorkspacePage() {
   // ── Conversations ──
   const [conversations, setConversations] = useState<Conversation[]>([{ id: genId(), title: "Chat 1", messages: [], sessionId: genId() + genId() }]);
