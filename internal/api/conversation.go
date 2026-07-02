@@ -14,10 +14,12 @@ import (
 )
 
 // ConversationHandler handles CRUD for chat conversations (sessions).
-type ConversationHandler struct{}
+type ConversationHandler struct {
+	authenticator *auth.Authenticator
+}
 
-func NewConversationHandler() *ConversationHandler {
-	return &ConversationHandler{}
+func NewConversationHandler(a *auth.Authenticator) *ConversationHandler {
+	return &ConversationHandler{authenticator: a}
 }
 
 // Conversation is a chat session returned to the frontend.
@@ -37,9 +39,16 @@ type Message struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// List returns all sessions ordered by most recent.
+// List returns sessions for the current user (or empty for guests).
 func (h *ConversationHandler) List(w http.ResponseWriter, r *http.Request) {
 	if db.Pool == nil {
+		OK(w, []Conversation{})
+		return
+	}
+
+	claims := getAuthClaims(r, h.authenticator)
+	if claims == nil {
+		// Guest users: return empty list
 		OK(w, []Conversation{})
 		return
 	}
@@ -47,8 +56,9 @@ func (h *ConversationHandler) List(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.Pool.Query(r.Context(),
 		`SELECT id, COALESCE(title, ''), created_at, updated_at
 		 FROM sessions
+		 WHERE user_id = $1
 		 ORDER BY updated_at DESC
-		 LIMIT 100`)
+		 LIMIT 100`, claims.UserID)
 	if err != nil {
 		InternalError(w, "query sessions: "+err.Error())
 		return
@@ -117,7 +127,7 @@ func (h *ConversationHandler) Get(w http.ResponseWriter, r *http.Request) {
 	OK(w, conv)
 }
 
-// Create creates a new session.
+// Create creates a new session. If authenticated, links to user account.
 func (h *ConversationHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if db.Pool == nil {
 		OK(w, map[string]string{"id": "", "note": "database not available, session not persisted"})
@@ -140,10 +150,13 @@ func (h *ConversationHandler) Create(w http.ResponseWriter, r *http.Request) {
 		body.Title = "New Chat"
 	}
 
+	claims := getAuthClaims(r, h.authenticator)
+
 	_, err := db.Pool.Exec(r.Context(),
-		`INSERT INTO sessions (id, title, created_at, updated_at) VALUES ($1, $2, NOW(), NOW())
+		`INSERT INTO sessions (id, user_id, title, created_at, updated_at)
+		 VALUES ($1, $2, $3, NOW(), NOW())
 		 ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, updated_at = NOW()`,
-		body.ID, body.Title)
+		body.ID, nullableStr(userIDFromClaims(claims)), body.Title)
 	if err != nil {
 		InternalError(w, "create session: "+err.Error())
 		return
@@ -262,4 +275,11 @@ func getAuthClaims(r *http.Request, a *auth.Authenticator) *auth.Claims {
 		return nil
 	}
 	return claims
+}
+
+func userIDFromClaims(claims *auth.Claims) string {
+	if claims == nil {
+		return ""
+	}
+	return claims.UserID
 }

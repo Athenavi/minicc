@@ -54,7 +54,6 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 	})
 
 	// Legacy API endpoints (used by frontend chat)
-	conversationHandler := NewConversationHandler()
 	r.Post("/submit", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Content   string `json:"content"`
@@ -144,6 +143,16 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 		r.Post("/setup", installHandler.Setup)
 	})
 
+	// Conversation endpoints (auth checked manually inside handler)
+	conversationHandler := NewConversationHandler(authenticator)
+	r.Route("/v1/conversations", func(r chi.Router) {
+		r.Use(rateLimiter.Middleware)
+		r.Get("/", conversationHandler.List)
+		r.Post("/", conversationHandler.Create)
+		r.Get("/{id}", conversationHandler.Get)
+		r.Delete("/{id}", conversationHandler.Delete)
+	})
+
 	// Protected API v1
 	r.Route("/v1", func(r chi.Router) {
 		r.Use(AuthMiddleware(authenticator))
@@ -154,10 +163,6 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 
 		// Chat
 		r.Post("/chat", chatHandler.Chat)
-		r.Get("/conversations", conversationHandler.List)
-		r.Post("/conversations", conversationHandler.Create)
-		r.Get("/conversations/{id}", conversationHandler.Get)
-		r.Delete("/conversations/{id}", conversationHandler.Delete)
 
 		// Tools
 		r.Get("/tools", NotImplemented)
