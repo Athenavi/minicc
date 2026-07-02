@@ -28,13 +28,24 @@ interface FileNode { name: string; path: string; type: "file" | "dir"; children?
 let idCounter = 0;
 function genId() { return (++idCounter).toString(36) + Math.random().toString(36).slice(2, 5); }
 
+// Per-user storage UUID — generated once, persisted forever
+function getStorageId(): string {
+  if (typeof window === "undefined") return "default";
+  let id = localStorage.getItem("minicc_storage_id");
+  if (!id) {
+    id = crypto.randomUUID ? crypto.randomUUID() : "s" + genId() + genId() + genId();
+    localStorage.setItem("minicc_storage_id", id);
+  }
+  return id;
+}
+
 export default function WorkspacePage() {
   // ── Conversations ──
   const [conversations, setConversations] = useState<Conversation[]>([{ id: genId(), title: "Chat 1", messages: [], sessionId: genId() + genId() }]);
   const [activeIdx, setActiveIdx] = useState(0);
   const activeIdxRef = useRef(activeIdx);
   activeIdxRef.current = activeIdx;
-  const activeConv = conversations[activeIdx];
+  const activeConv = conversations[activeIdx] || conversations[0] || { id: "", title: "Chat", messages: [], sessionId: "" };
 
   // ── Chat ──
   const [input, setInput] = useState("");
@@ -255,8 +266,16 @@ export default function WorkspacePage() {
     const conv = conversations[idx];
     if (!conv) return;
     try { await api(`/v1/conversations/${conv.sessionId}`, { method: "DELETE", skipAuth: true }); } catch {}
-    setConversations((prev) => prev.filter((_, i) => i !== idx));
-    if (activeIdx >= idx && activeIdx > 0) setActiveIdx(activeIdx - 1);
+    const newConvs = conversations.filter((_, i) => i !== idx);
+    if (newConvs.length === 0) {
+      // Create a fresh default conversation
+      const fresh: Conversation = { id: genId(), title: "Chat 1", messages: [], sessionId: genId() + genId() };
+      setConversations([fresh]);
+      setActiveIdx(0);
+    } else {
+      setConversations(newConvs);
+      if (activeIdx >= idx && activeIdx > 0) setActiveIdx(activeIdx - 1);
+    }
   };
 
   const [renamingIdx, setRenamingIdx] = useState(-1);
