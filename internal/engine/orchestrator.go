@@ -34,6 +34,9 @@ func NewTurnOrchestrator(gateway *llm.Gateway, tools *tools.ToolRegistry, hub *b
 // Execute runs the full agent turn lifecycle.
 // Returns the final assistant content + total usage.
 func (o *TurnOrchestrator) Execute(ctx context.Context, sessionID string, messages []llm.Message, systemPrompt string, toolDefs []llm.ToolDef) (string, *llm.Usage, error) {
+	if o.llm == nil {
+		return "", nil, fmt.Errorf("LLM gateway not configured")
+	}
 	var totalInput, totalOutput int
 	maxTurns := 10 // safety limit
 

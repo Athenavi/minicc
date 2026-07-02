@@ -248,3 +248,6 @@ out/
 # ── Reasonix research logs (Round 4) ──
 .reasonix/autoresearch/
 .reasonix/desktop-*
+
+# ── Runtime data (Round 5) ──
+workspace/

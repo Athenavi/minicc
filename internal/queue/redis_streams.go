@@ -45,6 +45,9 @@ func New(rdb *redis.Client, streamName, groupName string) *Queue {
 }
 
 func (q *Queue) Enqueue(ctx context.Context, task *Task) (string, error) {
+	if q.rdb == nil {
+		return "", fmt.Errorf("redis not available")
+	}
 	if task.ID == "" {
 		task.ID = fmt.Sprintf("task_%d", time.Now().UnixNano())
 	}
@@ -75,6 +78,9 @@ func (q *Queue) Enqueue(ctx context.Context, task *Task) (string, error) {
 }
 
 func (q *Queue) Dequeue(ctx context.Context, consumerID string, timeout time.Duration) (*Task, string, error) {
+	if q.rdb == nil {
+		return nil, "", nil
+	}
 	results, err := q.rdb.XReadGroup(ctx, &redis.XReadGroupArgs{
 		Group:    q.group,
 		Consumer: consumerID,
@@ -105,10 +111,16 @@ func (q *Queue) Dequeue(ctx context.Context, consumerID string, timeout time.Dur
 }
 
 func (q *Queue) Ack(ctx context.Context, msgID string) error {
+	if q.rdb == nil {
+		return nil
+	}
 	return q.rdb.XAck(ctx, q.stream, q.group, msgID).Err()
 }
 
 func (q *Queue) Nack(ctx context.Context, msgID string) error {
+	if q.rdb == nil {
+		return nil
+	}
 	// Move to dead letter stream
 	return q.rdb.XAdd(ctx, &redis.XAddArgs{
 		Stream: q.stream + ":dead",
@@ -117,5 +129,8 @@ func (q *Queue) Nack(ctx context.Context, msgID string) error {
 }
 
 func (q *Queue) Len(ctx context.Context) (int64, error) {
+	if q.rdb == nil {
+		return -1, nil
+	}
 	return q.rdb.XLen(ctx, q.stream).Result()
 }

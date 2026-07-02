@@ -9,6 +9,7 @@ import (
 
 	"github.com/athenavi/minicc/internal/auth"
 	"github.com/athenavi/minicc/internal/db"
+	"github.com/athenavi/minicc/internal/llm"
 	"github.com/athenavi/minicc/internal/monitor"
 )
 
@@ -55,6 +56,20 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 			"duration", time.Since(start).String(),
 			"ip", r.RemoteAddr,
 		)
+	})
+}
+
+// TracingMiddleware creates a span for each HTTP request and attaches it to the context.
+// Must be placed early in the middleware chain so downstream handlers can use monitor.GetSpan.
+func TracingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, span := monitor.StartSpan(r.Context(), r.Method+" "+r.URL.Path, "server")
+		span.SetTag("http.method", r.Method)
+		span.SetTag("http.path", r.URL.Path)
+		span.SetTag("http.remote_addr", r.RemoteAddr)
+		defer span.End()
+
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
@@ -263,4 +278,28 @@ func MonitoringMiddleware(next http.Handler) http.Handler {
 		defer monitor.DecRequests()
 		next.ServeHTTP(w, r)
 	})
+}
+
+// LLMRateLimitMiddleware wraps llm.RateLimiter into an HTTP middleware.
+// Extracts user ID from auth claims and applies per-user/per-model rate limits.
+// Place on routes that call LLM (chat, agent, etc.).
+func LLMRateLimitMiddleware(rl *llm.RateLimiter) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			claims := auth.GetClaims(r.Context())
+			userID := ""
+			if claims != nil {
+				userID = claims.UserID
+			}
+			model := r.URL.Query().Get("model")
+			if model == "" {
+				model = "default"
+			}
+			if !rl.Allow(r.Context(), userID, model) {
+				http.Error(w, `{"success":false,"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }

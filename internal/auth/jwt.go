@@ -86,6 +86,9 @@ func WithClaims(ctx context.Context, claims *Claims) context.Context {
 }
 
 func GetClaims(ctx context.Context) *Claims {
+	if ctx == nil {
+		return nil
+	}
 	claims, _ := ctx.Value(ClaimsKey).(*Claims)
 	return claims
 }

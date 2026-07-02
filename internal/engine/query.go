@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"github.com/athenavi/minicc/internal/llm"
@@ -37,6 +38,9 @@ type ToolResult struct {
 
 // ProcessTurn handles one user message and returns the assistant response.
 func (e *Engine) ProcessTurn(ctx context.Context, messages []llm.Message) (*TurnResult, error) {
+	if e.llm == nil {
+		return nil, fmt.Errorf("LLM gateway not configured")
+	}
 	req := &llm.Request{
 		Model:       "default",
 		Messages:    messages,

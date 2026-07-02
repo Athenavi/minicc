@@ -2,24 +2,23 @@ package api
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/db"
+	"github.com/athenavi/minicc/internal/session"
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5"
 )
 
 // ConversationHandler handles CRUD for chat conversations (sessions).
 type ConversationHandler struct {
 	authenticator *auth.Authenticator
+	sessionMgr    *session.Manager
 }
 
-func NewConversationHandler(a *auth.Authenticator) *ConversationHandler {
-	return &ConversationHandler{authenticator: a}
+func NewConversationHandler(a *auth.Authenticator, sm *session.Manager) *ConversationHandler {
+	return &ConversationHandler{authenticator: a, sessionMgr: sm}
 }
 
 // Conversation is a chat session returned to the frontend.
@@ -41,99 +40,70 @@ type Message struct {
 
 // List returns sessions for the current user (or empty for guests).
 func (h *ConversationHandler) List(w http.ResponseWriter, r *http.Request) {
-	if db.Pool == nil {
-		OK(w, []Conversation{})
-		return
-	}
-
 	claims := getAuthClaims(r, h.authenticator)
 	if claims == nil {
-		// Guest users: return empty list
 		OK(w, []Conversation{})
 		return
 	}
 
-	rows, err := db.Pool.Query(r.Context(),
-		`SELECT id, COALESCE(title, ''), created_at, updated_at
-		 FROM sessions
-		 WHERE user_id = $1
-		 ORDER BY updated_at DESC
-		 LIMIT 100`, claims.UserID)
+	sessions, err := h.sessionMgr.ListSessions(r.Context(), claims.UserID)
 	if err != nil {
-		InternalError(w, "query sessions: "+err.Error())
+		// Fallback: return empty list
+		OK(w, []Conversation{})
 		return
 	}
-	defer rows.Close()
 
-	convs := make([]Conversation, 0)
-	for rows.Next() {
-		var c Conversation
-		if err := rows.Scan(&c.ID, &c.Title, &c.CreatedAt, &c.UpdatedAt); err != nil {
-			continue
-		}
-		convs = append(convs, c)
+	convs := make([]Conversation, 0, len(sessions))
+	for _, s := range sessions {
+		convs = append(convs, Conversation{
+			ID:        s.ID,
+			Title:     s.Title,
+			CreatedAt: s.CreatedAt,
+			UpdatedAt: s.UpdatedAt,
+		})
 	}
-
 	OK(w, convs)
 }
 
 // Get returns a single session with all its messages.
 func (h *ConversationHandler) Get(w http.ResponseWriter, r *http.Request) {
-	if db.Pool == nil {
-		NotFound(w, "database not available")
-		return
-	}
-
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		BadRequest(w, "id is required")
 		return
 	}
 
-	// Get session
-	var conv Conversation
-	err := db.Pool.QueryRow(r.Context(),
-		`SELECT id, COALESCE(title, ''), created_at, updated_at FROM sessions WHERE id = $1`, id).
-		Scan(&conv.ID, &conv.Title, &conv.CreatedAt, &conv.UpdatedAt)
-	if err == pgx.ErrNoRows {
+	sess, err := h.sessionMgr.GetSession(r.Context(), id)
+	if err != nil {
 		NotFound(w, "conversation not found")
 		return
-	} else if err != nil {
-		InternalError(w, "query session: "+err.Error())
-		return
 	}
 
-	// Get messages
-	rows, err := db.Pool.Query(r.Context(),
-		`SELECT id, role, content, created_at
-		 FROM messages
-		 WHERE session_id = $1
-		 ORDER BY created_at ASC`, id)
+	msgs, err := h.sessionMgr.GetMessages(r.Context(), id)
 	if err != nil {
-		InternalError(w, "query messages: "+err.Error())
-		return
-	}
-	defer rows.Close()
-
-	conv.Messages = make([]Message, 0)
-	for rows.Next() {
-		var m Message
-		if err := rows.Scan(&m.ID, &m.Role, &m.Content, &m.CreatedAt); err != nil {
-			continue
-		}
-		conv.Messages = append(conv.Messages, m)
+		msgs = nil
 	}
 
+	conv := Conversation{
+		ID:        sess.ID,
+		Title:     sess.Title,
+		CreatedAt: sess.CreatedAt,
+		UpdatedAt: sess.UpdatedAt,
+		Messages:  make([]Message, 0),
+	}
+	for _, m := range msgs {
+		conv.Messages = append(conv.Messages, Message{
+			ID:        m.ID,
+			Role:      m.Role,
+			Content:   m.Content,
+			CreatedAt: m.CreatedAt,
+		})
+	}
 	OK(w, conv)
 }
 
 // Create creates a new session. If authenticated, links to user account.
 func (h *ConversationHandler) Create(w http.ResponseWriter, r *http.Request) {
-	if db.Pool == nil {
-		OK(w, map[string]string{"id": "", "note": "database not available, session not persisted"})
-		return
-	}
-
 	var body struct {
 		ID    string `json:"id"`
 		Title string `json:"title"`
@@ -146,17 +116,14 @@ func (h *ConversationHandler) Create(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "id is required")
 		return
 	}
-	if body.Title == "" {
-		body.Title = "New Chat"
-	}
 
 	claims := getAuthClaims(r, h.authenticator)
+	userID := ""
+	if claims != nil {
+		userID = claims.UserID
+	}
 
-	_, err := db.Pool.Exec(r.Context(),
-		`INSERT INTO sessions (id, user_id, title, created_at, updated_at)
-		 VALUES ($1, $2, $3, NOW(), NOW())
-		 ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, updated_at = NOW()`,
-		body.ID, nullableStr(userIDFromClaims(claims)), body.Title)
+	_, err := h.sessionMgr.CreateSession(r.Context(), body.ID, userID, body.Title)
 	if err != nil {
 		InternalError(w, "create session: "+err.Error())
 		return
@@ -167,91 +134,24 @@ func (h *ConversationHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 // SaveMessages inserts user + assistant messages into the database.
 // Called from the /submit goroutine after streaming completes.
-func SaveMessages(ctx context.Context, sessionID, userID, userContent, assistantContent string) {
-	if db.Pool == nil {
-		return
-	}
-
-	// Ensure session exists (create if not)
-	_, err := db.Pool.Exec(ctx,
-		`INSERT INTO sessions (id, user_id, title, created_at, updated_at)
-		 VALUES ($1, $2, '', NOW(), NOW())
-		 ON CONFLICT (id) DO UPDATE SET updated_at = NOW()`,
-		sessionID, nullableStr(userID))
-	if err != nil {
-		return
-	}
-
-	// Save user message
-	if userContent != "" {
-		userID := genID()
-		db.Pool.Exec(ctx,
-			`INSERT INTO messages (id, session_id, role, content, created_at) VALUES ($1, $2, 'user', $3, NOW())`,
-			userID, sessionID, userContent)
-	}
-
-	// Save assistant message
-	if assistantContent != "" {
-		assistantID := genID()
-		db.Pool.Exec(ctx,
-			`INSERT INTO messages (id, session_id, role, content, created_at) VALUES ($1, $2, 'assistant', $3, NOW())`,
-			assistantID, sessionID, assistantContent)
-	}
-
-	// Update session title based on first user message
-	db.Pool.Exec(ctx,
-		`UPDATE sessions SET title = LEFT($1, 255), updated_at = NOW()
-		 WHERE id = $2 AND (title = '' OR title IS NULL)`,
-		truncateTitle(userContent), sessionID)
+func (h *ConversationHandler) SaveMessages(ctx context.Context, sessionID, userID, userContent, assistantContent string) {
+	h.sessionMgr.SaveMessages(ctx, sessionID, userID, userContent, assistantContent)
 }
 
 // Delete removes a session and its messages (CASCADE).
 func (h *ConversationHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	if db.Pool == nil {
-		NotFound(w, "database not available")
-		return
-	}
-
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		BadRequest(w, "id is required")
 		return
 	}
 
-	_, err := db.Pool.Exec(r.Context(), `DELETE FROM sessions WHERE id = $1`, id)
-	if err != nil {
+	if err := h.sessionMgr.DeleteSession(r.Context(), id); err != nil {
 		InternalError(w, "delete session: "+err.Error())
 		return
 	}
 
 	OK(w, map[string]string{"status": "deleted"})
-}
-
-func genID() string {
-	// Simple nanosecond-based ID for DB records
-	return fmt.Sprintf("%d", time.Now().UnixNano())
-}
-
-func truncateTitle(s string) string {
-	// Take first line or first 120 chars
-	idx := strings.Index(s, "\n")
-	if idx > 0 {
-		s = s[:idx]
-	}
-	if len(s) > 120 {
-		s = s[:120]
-	}
-	if s == "" {
-		s = "New Chat"
-	}
-	return s
-}
-
-func nullableStr(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
 }
 
 // getAuthClaims extracts JWT claims optionally — no error if missing.

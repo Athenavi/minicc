@@ -100,8 +100,11 @@ func NewStore(backend, root, endpoint, bucket, accessKey, secretKey string) (Fil
 		}
 		return NewLocalStore(root), nil
 	case "s3":
-		// S3 would be initialized here with minio-go client
-		return nil, fmt.Errorf("s3 storage not implemented yet")
+		store, err := NewS3Store(endpoint, bucket, "", accessKey, secretKey, "", true)
+		if err != nil {
+			return nil, fmt.Errorf("s3 init: %w", err)
+		}
+		return store, nil
 	default:
 		return nil, fmt.Errorf("unknown storage backend: %s", backend)
 	}

@@ -1,0 +1,198 @@
+package monitor
+
+import (
+	"context"
+	"crypto/rand"
+	"fmt"
+	"log/slog"
+	"sync"
+	"time"
+)
+
+type contextKey string
+
+const traceContextKey contextKey = "minicc_trace"
+
+// ── Trace ID / Span ID ────────────────────────────────────────────────────
+
+// TraceID is a 16-byte unique identifier for a trace.
+type TraceID [16]byte
+
+func (t TraceID) String() string {
+	return fmt.Sprintf("%x", [16]byte(t))
+}
+
+// SpanID is an 8-byte unique identifier for a span.
+type SpanID [8]byte
+
+func (s SpanID) String() string {
+	return fmt.Sprintf("%x", [8]byte(s))
+}
+
+func newTraceID() TraceID {
+	var id TraceID
+	rand.Read(id[:])
+	return id
+}
+
+func newSpanID() SpanID {
+	var id SpanID
+	rand.Read(id[:])
+	return id
+}
+
+// ── Span ──────────────────────────────────────────────────────────────────
+
+// Span represents a single operation within a trace.
+type Span struct {
+	TraceID    TraceID              `json:"trace_id"`
+	SpanID     SpanID               `json:"span_id"`
+	ParentID   SpanID               `json:"parent_span_id,omitempty"`
+	Name       string               `json:"name"`
+	Kind       string               `json:"kind"` // internal / server / client
+	StartTime  time.Time            `json:"start_time"`
+	EndTime    time.Time            `json:"end_time,omitempty"`
+	Tags       map[string]interface{} `json:"tags,omitempty"`
+	Events     []SpanEvent          `json:"events,omitempty"`
+	StatusCode string               `json:"status_code,omitempty"` // OK / ERROR
+	StatusMsg  string               `json:"status_msg,omitempty"`
+	mu         sync.Mutex
+}
+
+type SpanEvent struct {
+	Timestamp time.Time              `json:"timestamp"`
+	Name      string                 `json:"name"`
+	Tags      map[string]interface{} `json:"tags,omitempty"`
+}
+
+// Tracer creates and manages spans.
+type Tracer struct {
+	mu       sync.Mutex
+	exportFn func(*Span)
+}
+
+// NewTracer creates a new tracer. If exportFn is nil, spans are logged via slog.
+func NewTracer(exportFn func(*Span)) *Tracer {
+	if exportFn == nil {
+		exportFn = defaultExport
+	}
+	return &Tracer{exportFn: exportFn}
+}
+
+func defaultExport(s *Span) {
+	attrs := []slog.Attr{
+		slog.String("trace_id", s.TraceID.String()),
+		slog.String("span_id", s.SpanID.String()),
+		slog.String("name", s.Name),
+		slog.String("kind", s.Kind),
+		slog.String("duration", s.EndTime.Sub(s.StartTime).String()),
+		slog.String("status", s.StatusCode),
+	}
+	if s.ParentID != (SpanID{}) {
+		attrs = append(attrs, slog.String("parent_span_id", s.ParentID.String()))
+	}
+	if s.StatusMsg != "" {
+		attrs = append(attrs, slog.String("status_msg", s.StatusMsg))
+	}
+	if len(s.Tags) > 0 {
+		attrs = append(attrs, slog.Any("tags", s.Tags))
+	}
+	slog.LogAttrs(context.Background(), slog.LevelDebug, "span", attrs...)
+}
+
+// Global tracer instance.
+var GlobalTracer = NewTracer(nil)
+
+// StartSpan creates a new span within the given context.
+// If the context already contains a trace, the new span becomes a child of it.
+// Returns the new context (with the span attached) and the span itself.
+func StartSpan(ctx context.Context, name, kind string) (context.Context, *Span) {
+	parent := GetSpan(ctx)
+	span := &Span{
+		TraceID:   newTraceID(),
+		SpanID:    newSpanID(),
+		Name:      name,
+		Kind:      kind,
+		StartTime: time.Now(),
+		Tags:      make(map[string]interface{}),
+	}
+	if parent != nil {
+		span.TraceID = parent.TraceID
+		span.ParentID = parent.SpanID
+	}
+	ctx = context.WithValue(ctx, traceContextKey, span)
+	return ctx, span
+}
+
+// GetSpan retrieves the current span from a context. Returns nil if not found.
+func GetSpan(ctx context.Context) *Span {
+	if ctx == nil {
+		return nil
+	}
+	s, _ := ctx.Value(traceContextKey).(*Span)
+	return s
+}
+
+// ── Span methods ──────────────────────────────────────────────────────────
+
+func (s *Span) SetTag(key string, value interface{}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Tags[key] = value
+}
+
+func (s *Span) AddEvent(name string, tags map[string]interface{}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Events = append(s.Events, SpanEvent{
+		Timestamp: time.Now(),
+		Name:      name,
+		Tags:      tags,
+	})
+}
+
+func (s *Span) SetStatus(code, msg string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.StatusCode = code
+	s.StatusMsg = msg
+}
+
+// End finalizes the span and exports it. Call when the operation completes.
+func (s *Span) End() {
+	s.mu.Lock()
+	s.EndTime = time.Now()
+	if s.StatusCode == "" {
+		s.StatusCode = "OK"
+	}
+	s.mu.Unlock()
+
+	GlobalTracer.exportFn(s)
+}
+
+// ── Convenience: context-based tracing ────────────────────────────────────
+
+// Trace wraps a function call with a span. Usage:
+//
+//	ctx, span := monitor.StartSpan(ctx, "operation", "internal")
+//	defer span.End()
+func Trace(ctx context.Context, name, kind string, fn func(ctx context.Context) error) error {
+	ctx, span := StartSpan(ctx, name, kind)
+	err := fn(ctx)
+	if err != nil {
+		span.SetStatus("ERROR", err.Error())
+	} else {
+		span.SetStatus("OK", "")
+	}
+	span.End()
+	return err
+}
+
+// TraceIDFromContext returns the trace ID as a hex string, or "" if none.
+func TraceIDFromContext(ctx context.Context) string {
+	s := GetSpan(ctx)
+	if s == nil {
+		return ""
+	}
+	return s.TraceID.String()
+}

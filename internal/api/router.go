@@ -18,6 +18,7 @@ import (
 	"github.com/athenavi/minicc/internal/engine"
 	"github.com/athenavi/minicc/internal/llm"
 	"github.com/athenavi/minicc/internal/monitor"
+	"github.com/athenavi/minicc/internal/session"
 	"github.com/athenavi/minicc/internal/tools"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -25,7 +26,7 @@ import (
 
 var startTime = time.Now()
 
-func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.ToolRegistry, eventHub *broadcast.Hub, agentRegistry *agent.Registry) *chi.Mux {
+func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.ToolRegistry, eventHub *broadcast.Hub, agentRegistry *agent.Registry, sessionMgr *session.Manager, llmRateLimiter *llm.RateLimiter) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Rate limiter
@@ -34,6 +35,7 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 
 	// Global middleware
 	r.Use(RecoverMiddleware)
+	r.Use(TracingMiddleware)
 	r.Use(LoggingMiddleware)
 	r.Use(SecurityHeadersMiddleware)
 	r.Use(CORSMiddleware(cfg.CORSOrigins))
@@ -135,7 +137,7 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 
 			// Persist to DB if authenticated
 			if userID != "" {
-				SaveMessages(ctx, sessionID, userID, content, finalContent)
+				sessionMgr.SaveMessages(ctx, sessionID, userID, content, finalContent)
 			}
 		}(body.Content, body.SessionID, userID)
 	})
@@ -146,13 +148,11 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 	r.Post("/reject", modeHandler.RejectPermission)
 
 	// SSE events endpoint (long-lived connection, no rate limit)
-	r.Get("/events", func(w http.ResponseWriter, r *http.Request) {
-		subID := r.URL.Query().Get("client_id")
-		if subID == "" {
-			subID = "anon"
-		}
-		handleSSE(w, r, eventHub, subID)
-	})
+	r.Get("/events", SSEHandler(eventHub))
+
+	// WebSocket endpoint (for real-time bidirectional communication)
+	wsHub := NewWebSocketHub()
+	r.Get("/ws/{sessionId}", WebSocketHandler(wsHub))
 
 	// Auth endpoints (rate limited)
 	r.Route("/v1/auth", func(r chi.Router) {
@@ -180,7 +180,7 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 	})
 
 	// Conversation endpoints (auth checked manually inside handler)
-	conversationHandler := NewConversationHandler(authenticator)
+	conversationHandler := NewConversationHandler(authenticator, sessionMgr)
 	r.Route("/v1/conversations", func(r chi.Router) {
 		r.Use(rateLimiter.Middleware)
 		r.Get("/", conversationHandler.List)
@@ -248,6 +248,7 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 	// Protected API v1
 	r.Route("/v1", func(r chi.Router) {
 		r.Use(AuthMiddleware(authenticator))
+		r.Use(LLMRateLimitMiddleware(llmRateLimiter))
 		r.Use(rateLimiter.Middleware)
 
 		r.Get("/status", handleStatus)
@@ -273,12 +274,10 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 		})
 
 		// Admin
+		adminHandler := NewAdminHandler(authenticator)
 		r.Group(func(r chi.Router) {
 			r.Use(RequirePermission(auth.PermAdminRead))
-			r.Get("/admin/metrics", func(w http.ResponseWriter, r *http.Request) {
-				OK(w, monitor.Snapshot())
-			})
-			r.Get("/admin/users", NotImplemented)
+			adminHandler.RegisterRoutes(r)
 		})
 	})
 
@@ -308,43 +307,6 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 			"metrics": monitor.Snapshot(),
 		},
 	})
-}
-
-func handleSSE(w http.ResponseWriter, r *http.Request, hub *broadcast.Hub, subID string) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		InternalError(w, "streaming not supported")
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
-
-	ch := hub.Subscribe(subID)
-	defer hub.Unsubscribe(subID)
-
-	// Send initial connected event
-	w.Write([]byte(broadcast.FormatSSE(broadcast.Event{Type: "connected", Data: map[string]string{"id": subID}})))
-	flusher.Flush()
-
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case event, ok := <-ch:
-			if !ok {
-				return
-			}
-			w.Write([]byte(broadcast.FormatSSE(event)))
-			flusher.Flush()
-		case <-time.After(15 * time.Second):
-			// Keep-alive
-			w.Write([]byte(": ping\n\n"))
-			flusher.Flush()
-		}
-	}
 }
 
 func NotImplemented(w http.ResponseWriter, r *http.Request) {

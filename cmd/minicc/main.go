@@ -11,15 +11,15 @@ import (
 
 	"github.com/athenavi/minicc/internal/agent"
 	"github.com/athenavi/minicc/internal/api"
-
 	"github.com/athenavi/minicc/internal/broadcast"
+	"github.com/athenavi/minicc/internal/cache"
 	"github.com/athenavi/minicc/config"
 	"github.com/athenavi/minicc/internal/db"
 	"github.com/athenavi/minicc/internal/graph"
 	"github.com/athenavi/minicc/internal/llm"
 	"github.com/athenavi/minicc/internal/monitor"
 	"github.com/athenavi/minicc/internal/pm"
-
+	"github.com/athenavi/minicc/internal/session"
 	"github.com/athenavi/minicc/internal/tools"
 )
 
@@ -100,11 +100,54 @@ func main() {
 	pm.RegisterTools(toolRegistry)
 	slog.Info("pm tools registered")
 
-	// ── Enterprise Tools ──
+	// ── Shell Tools ──
+	tools.RegisterShellTools(toolRegistry, nil)
+	slog.Info("shell tools registered")
 
+	// ── Web Tools ──
+	tools.RegisterWebTools(toolRegistry)
+	slog.Info("web tools registered")
+
+	// ── Search Tools ──
+	tools.RegisterSearchTools(toolRegistry, cfg.StorageRoot)
+	slog.Info("search tools registered")
+
+	// ── Enterprise Tools ──
+	tools.RegisterEnterpriseTools(toolRegistry)
+	slog.Info("enterprise tools registered")
+
+	// ── DevOps Tools ──
+	tools.RegisterDevOpsTools(toolRegistry)
+	slog.Info("devops tools registered")
+
+	// ── RPA Tools ──
+	tools.RegisterRPATools(toolRegistry)
+	slog.Info("rpa tools registered")
+
+	slog.Info("all tools registered", "total", len(toolRegistry.List()))
+
+	// ── Session Manager ──
+	sessionMgr := session.NewManager()
+	slog.Info("session manager initialized")
+
+	// ── Redis Cache ──
+	var redisCache *cache.Cache
+	if db.Redis != nil {
+		redisCache = cache.New(db.Redis, "minicc:cache:", 15*time.Minute)
+		slog.Info("redis cache initialized")
+	} else {
+		redisCache = cache.New(nil, "minicc:cache:", 15*time.Minute)
+		slog.Warn("redis cache initialized in local-only mode")
+	}
+	_ = redisCache // available for wiring to components
+
+	// ── LLM Rate Limiter ──
+	rateLimiter := llm.NewRateLimiter(db.Redis, 100, 1000, 10000)
+	rateLimiter.Cleanup(5 * time.Minute)
+	slog.Info("llm rate limiter initialized")
 
 	// ── HTTP Server ──
-	router := api.NewRouter(cfg, llmGateway, toolRegistry, eventHub, agentRegistry)
+	router := api.NewRouter(cfg, llmGateway, toolRegistry, eventHub, agentRegistry, sessionMgr, rateLimiter)
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,
 		Handler:      router,
