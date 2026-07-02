@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/athenavi/minicc/internal/auth"
 	"github.com/athenavi/minicc/internal/db"
 	"github.com/athenavi/minicc/internal/tools"
 	"github.com/go-chi/chi/v5"
@@ -15,10 +16,11 @@ import (
 // WorkflowHandler provides REST API for workflow definitions and executions.
 type WorkflowHandler struct {
 	toolRegistry *tools.ToolRegistry
+	authenticator *auth.Authenticator
 }
 
-func NewWorkflowHandler(tr *tools.ToolRegistry) *WorkflowHandler {
-	return &WorkflowHandler{toolRegistry: tr}
+func NewWorkflowHandler(tr *tools.ToolRegistry, a *auth.Authenticator) *WorkflowHandler {
+	return &WorkflowHandler{toolRegistry: tr, authenticator: a}
 }
 
 // ── Definitions ──
@@ -101,6 +103,13 @@ func (h *WorkflowHandler) CreateDef(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Optional auth — use user_id from JWT if available
+	var userID *string
+	claims := getAuthClaims(r, h.authenticator)
+	if claims != nil {
+		userID = &claims.UserID
+	}
+
 	var body struct {
 		ID          string      `json:"id"`
 		Name        string      `json:"name"`
@@ -125,10 +134,10 @@ func (h *WorkflowHandler) CreateDef(w http.ResponseWriter, r *http.Request) {
 
 	_, err := db.Pool.Exec(r.Context(),
 		`INSERT INTO workflow_definitions (id, user_id, name, description, version, definition, enabled, created_at, updated_at)
-		 VALUES ($1, NULL, $2, $3, '1.0', $4, true, NOW(), NOW())
+		 VALUES ($1, $2, $3, $4, '1.0', $5, true, NOW(), NOW())
 		 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description,
 		   definition = EXCLUDED.definition, updated_at = NOW()`,
-		defID, body.Name, body.Description, string(defJSON))
+		defID, userID, body.Name, body.Description, string(defJSON))
 	if err != nil {
 		InternalError(w, "create workflow: "+err.Error())
 		return

@@ -206,7 +206,7 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 	})
 
 	// Workflow endpoints (public)
-	workflowHandler := NewWorkflowHandler(toolRegistry)
+	workflowHandler := NewWorkflowHandler(toolRegistry, authenticator)
 	r.Route("/v1/workflows", func(r chi.Router) {
 		r.Use(rateLimiter.Middleware)
 		r.Get("/", workflowHandler.ListDefs)
