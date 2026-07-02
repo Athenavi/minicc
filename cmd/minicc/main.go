@@ -20,6 +20,7 @@ import (
 	"github.com/athenavi/minicc/internal/monitor"
 	"github.com/athenavi/minicc/internal/pm"
 	"github.com/athenavi/minicc/internal/session"
+	"github.com/athenavi/minicc/internal/skill"
 	"github.com/athenavi/minicc/internal/tools"
 )
 
@@ -149,6 +150,24 @@ func main() {
 	rateLimiter := llm.NewRateLimiter(db.Redis, 100, 1000, 10000)
 	rateLimiter.Cleanup(5 * time.Minute)
 	slog.Info("llm rate limiter initialized")
+
+	// ── Skill System ──
+	skillDir := cfg.StorageRoot + "/skills"
+	skillStore, err := skill.NewSkillStore(skillDir)
+	if err != nil {
+		slog.Warn("skill store init", "error", err)
+	}
+	skillExecutor := skill.NewExecutor()
+	skillInstaller := skill.NewInstaller(skillStore)
+	skillGenerator := skill.NewGenerator(skillStore)
+
+	dynamicReg, err := skill.NewDynamicRegistry(skillStore, skillExecutor, toolRegistry)
+	if err != nil {
+		slog.Warn("dynamic registry init", "error", err)
+	}
+	skillDiscoverer := skill.NewDiscoverer(skillStore, skillInstaller)
+	skill.RegisterSkillTools(toolRegistry, dynamicReg, skillInstaller, skillGenerator, skillDiscoverer)
+	slog.Info("skill system initialized", "skills", skillStore.Count())
 
 	// ── HTTP Server ──
 	router := api.NewRouter(cfg, llmGateway, toolRegistry, eventHub, agentRegistry, sessionMgr, rateLimiter)

@@ -1,0 +1,20 @@
+{
+  "name": "csv_summarize",
+  "description": "Read a CSV string or file path and return summary statistics for each column",
+  "version": "1.0.0",
+  "author": "minicc",
+  "tags": ["csv", "data", "analysis", "statistics"],
+  "exec": {
+    "type": "python",
+    "source": "import sys, json, csv\nimport io\n\ndef run(input_data):\n    csv_text = input_data.get('csv', '')\n    if not csv_text:\n        return {'error': 'csv input is required'}\n    \n    reader = csv.DictReader(io.StringIO(csv_text))\n    rows = list(reader)\n    \n    if not rows:\n        return {'error': 'no data rows found', 'columns': reader.fieldnames or []}\n    \n    summary = {}\n    for col in reader.fieldnames:\n        values = [row[col] for row in rows]\n        numeric = []\n        for v in values:\n            try:\n                numeric.append(float(v))\n            except ValueError:\n                pass\n        \n        col_info = {\n            'count': len(values),\n            'unique': len(set(values)),\n            'sample': values[:3],\n        }\n        if numeric:\n            col_info['type'] = 'numeric'\n            col_info['min'] = min(numeric)\n            col_info['max'] = max(numeric)\n            col_info['avg'] = sum(numeric) / len(numeric)\n        else:\n            col_info['type'] = 'text'\n        summary[col] = col_info\n    \n    return {'summary': summary, 'row_count': len(rows), 'columns': reader.fieldnames}\n\nresult = run(input_data)\nprint(json.dumps(result))",
+    "timeout": 15
+  },
+  "parameters": [
+    {
+      "name": "csv",
+      "type": "string",
+      "description": "CSV content as a string (comma-separated, first row = headers)",
+      "required": true
+    }
+  ]
+}
