@@ -1,0 +1,1 @@
+-- Re-create if needed (no-op down migration)

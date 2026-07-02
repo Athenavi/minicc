@@ -21,7 +21,6 @@ import (
 	"github.com/athenavi/minicc/internal/pm"
 
 	"github.com/athenavi/minicc/internal/tools"
-	"github.com/athenavi/minicc/internal/workflow"
 )
 
 func main() {
@@ -100,11 +99,6 @@ func main() {
 	// ── PM Tools ──
 	pm.RegisterTools(toolRegistry)
 	slog.Info("pm tools registered")
-
-	// ── Workflow Engine ──
-	wfExecutor := workflow.NewExecutor()
-	workflow.RegisterTools(toolRegistry, wfExecutor)
-	slog.Info("workflow tools registered")
 
 	// ── Enterprise Tools ──
 

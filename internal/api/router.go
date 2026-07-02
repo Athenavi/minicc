@@ -206,18 +206,6 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 	})
 
 	// Workflow endpoints (public)
-	workflowHandler := NewWorkflowHandler(toolRegistry, authenticator)
-	r.Route("/v1/workflows", func(r chi.Router) {
-		r.Use(rateLimiter.Middleware)
-		r.Get("/", workflowHandler.ListDefs)
-		r.Post("/", workflowHandler.CreateDef)
-		r.Get("/{id}", workflowHandler.GetDef)
-		r.Delete("/{id}", workflowHandler.DeleteDef)
-		r.Post("/{id}/execute", workflowHandler.Execute)
-	})
-	r.Get("/v1/executions", workflowHandler.ListExecs)
-
-	// Enterprise list endpoints (public)
 	// Media library endpoints
 	mediaHandler := NewMediaHandler(cfg.StorageRoot)
 	r.Route("/v1/media", func(r chi.Router) {
