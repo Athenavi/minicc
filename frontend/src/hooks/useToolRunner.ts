@@ -1,18 +1,14 @@
 "use client";
 
-/**
- * 工具执行 Hook — 直接调用 POST /api/tools/execute。
- * 替代之前的 /api/submit + /tools <name> 方式。
- */
+import { api } from "@/lib/api";
+
 export function useToolRunner() {
   const runTool = async (name: string, input: Record<string, any> = {}): Promise<string> => {
     try {
-      const resp = await fetch("http://localhost:8000/api/tools/execute", {
+      const data = await api("/v1/tools/execute", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, input }),
       });
-      const data = await resp.json();
       if (data.is_error) {
         return `[${name}] Error: ${data.output}`;
       }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState, useEffect } from "react";
+import { apiUrl } from "@/lib/api";
 import {
   ReactFlow,
   MiniMap,
@@ -196,7 +197,7 @@ export default function WorkflowPage() {
     addLog("Starting workflow execution...", "info");
 
     try {
-      const resp = await fetch("http://localhost:8000/api/submit", {
+      const resp = await fetch(apiUrl("/api/submit"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

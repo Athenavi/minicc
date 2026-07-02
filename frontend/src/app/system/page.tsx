@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { api, apiUrl } from "@/lib/api";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -67,8 +68,8 @@ export default function SystemDashboard() {
     const fetchMetrics = async () => {
       try {
         const [metricsRes, tracesRes] = await Promise.all([
-          fetch("http://localhost:8000/api/metrics").catch(() => null),
-          fetch("http://localhost:8000/api/metrics/traces").catch(() => null),
+          await api("/metrics").catch(() => null),
+          await api("/metrics/traces").catch(() => null),
         ]);
         if (metricsRes?.ok) {
           const data = await metricsRes.json();
@@ -92,7 +93,7 @@ export default function SystemDashboard() {
   const runTool = async (name: string) => {
     setResult(`Running ${name}...`);
     try {
-      const resp = await fetch("http://localhost:8000/api/submit", {
+      const resp = await fetch(apiUrl("/api/submit"), {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: `/tools ${name}`, session_id: "system" }),
       });

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useToolRunner } from "@/hooks/useToolRunner";
+import { apiUrl } from "@/lib/api";
 
 interface ToolCard {
   name: string;
@@ -133,7 +134,7 @@ export default function RPADashboard() {
 
   // Load tools from API
   useEffect(() => {
-    fetch("http://localhost:8000/api/tools")
+    fetch(apiUrl("/api/tools"))
       .then((r) => r.json())
       .then((data) => {
         const allTools: ToolCard[] = (data.tools || data || []).filter(

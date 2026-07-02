@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MarkdownRenderer } from "@/components/chat/MarkdownRenderer";
+import { api, apiUrl } from "@/lib/api";
 
 type ConnStatus = "connecting" | "connected" | "disconnected";
 
@@ -62,7 +63,7 @@ export default function Home() {
     let reconnectTimer: ReturnType<typeof setTimeout>;
     function connectSSE() {
       setConnStatus("connecting");
-      eventSource = new EventSource("http://localhost:8000/events");
+      eventSource = new EventSource(apiUrl("/events"));
       eventSource.onopen = () => setConnStatus("connected");
       eventSource.onmessage = (e) => {
         if (e.data.startsWith(": ping")) return;
@@ -153,7 +154,7 @@ export default function Home() {
     const sid = activeConv.sessionId;
     updateMessages((msgs) => [...msgs, { id: genId(), role: "user", content: text }]);
     try {
-      await fetch("http://localhost:8000/submit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: text, session_id: sid }) });
+      await fetch(apiUrl("/submit"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: text, session_id: sid }) });
     } catch (err) {
       updateMessages((msgs) => [...msgs, { id: genId(), role: "system", content: "❌ Failed: " + err }]);
       setIsGenerating(false);
@@ -161,12 +162,12 @@ export default function Home() {
   }, [input, activeConv, updateMessages]);
 
   const handleCancel = useCallback(async () => {
-    await fetch("http://localhost:8000/cancel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: activeConv.sessionId }) });
+    await fetch(apiUrl("/cancel"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: activeConv.sessionId }) });
     setIsGenerating(false);
   }, [activeConv]);
 
   const handleApproval = useCallback(async (requestId: string, action: string) => {
-    await fetch("http://localhost:8000/approve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: activeConv.sessionId, request_id: requestId, action }) });
+    await fetch(apiUrl("/approve"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: activeConv.sessionId, request_id: requestId, action }) });
     setStreamingMsg((prev) => prev ? { ...prev, toolCalls: (prev.toolCalls || []).map((tc) => tc.requestId === requestId ? { ...tc, status: action === "approve" || action === "always_allow" ? "approved" : "rejected" } : tc) } : prev);
   }, [activeConv]);
 
@@ -273,7 +274,7 @@ export default function Home() {
           {/* Mode toggles */}
           <div className="flex items-center gap-1 ml-auto shrink-0">
             {["ask", "auto", "yolo"].map((m) => (
-              <button key={m} onClick={async () => { setExecMode(m); await fetch("http://localhost:8000/mode", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: activeConv.sessionId, mode: m }) }); }}
+              <button key={m} onClick={async () => { setExecMode(m); await fetch(apiUrl("/mode"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: activeConv.sessionId, mode: m }) }); }}
                 className={`px-1.5 py-0.5 text-[9px] md:text-[10px] font-medium rounded border transition-colors ${execMode === m ? "bg-blue-600 text-white border-blue-600" : "bg-transparent text-gray-500 dark:text-gray-400 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"}`}>{m === "ask" ? "💬Ask" : m === "auto" ? "⚡Auto" : "🔥YOLO"}</button>
             ))}
           </div>
