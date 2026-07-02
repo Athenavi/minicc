@@ -24,7 +24,35 @@ export default function Home() {
   const [streamingMsg, setStreamingMsg] = useState<ChatMessage | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const handleEventRef = useRef<(data: any) => void>(() => {});
+
+  // SSE event handler — updates streaming message as events arrive
+  const handleEventRef = useRef<(data: any) => void>((data) => {
+    if (data.kind === "text" && data.data) {
+      setStreamingMsg((prev) => prev ? { ...prev, content: prev.content + data.data } : prev);
+    }
+    if (data.kind === "tool_dispatch") {
+      setStreamingMsg((prev) => prev ? { ...prev, content: (prev.content || "") + `\n\n_🔧 Using tool: ${data.data?.tool_name || "unknown"}_\n` } : prev);
+    }
+    if (data.kind === "turn_done" || data.kind === "error") {
+      setIsGenerating(false);
+      setStreamingMsg((prev) => {
+        if (prev) {
+          // Finalize: move streaming message to conversation
+          setConversations((c) => c.map((conv, i) =>
+            i === activeIdxRef.current ? { ...conv, messages: [...conv.messages, prev] } : conv
+          ));
+        }
+        return null;
+      });
+    }
+  });
+
+  // Keep ref to activeIdx for use in SSE handler closure
+  const activeIdxRef = useRef(activeIdx);
+  activeIdxRef.current = activeIdx;
+
+  // Auto-scroll to bottom
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [activeConv.messages, streamingMsg]);
 
   const activeConv = conversations[activeIdx];
 
