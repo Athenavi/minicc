@@ -93,10 +93,9 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 
 	// SSE events endpoint (long-lived connection, no rate limit)
 	r.Get("/events", func(w http.ResponseWriter, r *http.Request) {
-		claims := auth.GetClaims(r.Context())
-		subID := "anon"
-		if claims != nil {
-			subID = claims.UserID
+		subID := r.URL.Query().Get("client_id")
+		if subID == "" {
+			subID = "anon"
 		}
 		handleSSE(w, r, eventHub, subID)
 	})

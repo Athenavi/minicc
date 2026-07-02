@@ -23,17 +23,19 @@ export default function Home() {
   const [connStatus, setConnStatus] = useState<"connecting" | "connected" | "disconnected">("disconnected");
   const [streamingMsg, setStreamingMsg] = useState<ChatMessage | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [clientId] = useState(() => genId());
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // SSE event handler — updates streaming message as events arrive
   const handleEventRef = useRef<(data: any) => void>((data) => {
-    if (data.kind === "text" && data.data) {
-      setStreamingMsg((prev) => prev ? { ...prev, content: prev.content + data.data } : prev);
+    if (data.type === "text" && data.data) {
+      const textChunk = typeof data.data === "string" ? data.data : (data.data.content || "");
+      setStreamingMsg((prev) => prev ? { ...prev, content: prev.content + textChunk } : prev);
     }
-    if (data.kind === "tool_dispatch") {
+    if (data.type === "tool_dispatch") {
       setStreamingMsg((prev) => prev ? { ...prev, content: (prev.content || "") + `\n\n_🔧 Using tool: ${data.data?.tool_name || "unknown"}_\n` } : prev);
     }
-    if (data.kind === "turn_done" || data.kind === "error") {
+    if (data.type === "turn_done" || data.type === "error") {
       setIsGenerating(false);
       setStreamingMsg((prev) => {
         if (prev) {
@@ -61,7 +63,7 @@ export default function Home() {
     let es: EventSource | null = null;
     function connect() {
       setConnStatus("connecting");
-      es = new EventSource(apiUrl("/events"));
+      es = new EventSource(apiUrl("/events?client_id=" + clientId));
       es.onopen = () => setConnStatus("connected");
       es.onmessage = (e) => {
         if (e.data.startsWith(": ping")) return;
