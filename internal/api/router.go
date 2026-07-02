@@ -161,6 +161,14 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 		r.Delete("/{id}", conversationHandler.Delete)
 	})
 
+	// Tool endpoints (auth checked manually inside handler)
+	toolHandler := NewToolHandler(toolRegistry)
+	r.Route("/v1/tools", func(r chi.Router) {
+		r.Use(rateLimiter.Middleware)
+		r.Get("/", toolHandler.ListTools)
+		r.Post("/execute", toolHandler.ExecuteTool)
+	})
+
 	// Protected API v1
 	r.Route("/v1", func(r chi.Router) {
 		r.Use(AuthMiddleware(authenticator))
@@ -171,10 +179,6 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 
 		// Chat
 		r.Post("/chat", chatHandler.Chat)
-
-		// Tools
-		r.Get("/tools", NotImplemented)
-		r.Post("/tools/execute", NotImplemented)
 
 		// Tasks (running/completed/failed)
 		r.Get("/tasks", handleTasksList)

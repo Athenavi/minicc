@@ -34,7 +34,7 @@ export default function RPAPage() {
   const { runTool } = useToolRunner();
 
   useEffect(() => {
-    fetch(apiUrl("/api/tools")).then((r) => r.json()).then((d) => setTools((d.tools || []).map((t: any) => t.name))).catch(() => {});
+    fetch(apiUrl("/v1/tools")).then((r) => r.json()).then((d) => setTools((d.data?.tools || []).map((t: any) => t.name))).catch(() => {});
 
     // Load dispatched tasks (auth required — 401 silently ignored for guests)
     api("/v1/tasks", { skipAuth: true }).then((data) => {
