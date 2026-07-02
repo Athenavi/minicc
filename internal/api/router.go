@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -197,6 +198,16 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 		r.Post("/{id}/execute", workflowHandler.Execute)
 	})
 	r.Get("/v1/executions", workflowHandler.ListExecs)
+
+	// Enterprise list endpoints (public)
+	r.Route("/v1/enterprise", func(r chi.Router) {
+		r.Use(rateLimiter.Middleware)
+		r.Get("/tasks", handleEnterpriseList("enterprise_tasks", "title, priority, status"))
+		r.Get("/tickets", handleEnterpriseList("support_tickets", "subject, priority, status"))
+		r.Get("/brain", handleEnterpriseList("", "")) // cross-module overview
+		r.Get("/wiki", handleEnterpriseList("wiki_pages", "title"))
+		r.Get("/campaigns", handleEnterpriseList("marketing_campaigns", "name, status, campaign_type"))
+	})
 
 	// Protected API v1
 	r.Route("/v1", func(r chi.Router) {
@@ -451,4 +462,61 @@ func handleTasksList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	OK(w, tasks)
+}
+
+// ── Enterprise list handlers ──
+
+// handleEnterpriseList returns a handler that lists rows from an enterprise table.
+func handleEnterpriseList(table string, columns string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if db.Pool == nil || table == "" {
+			OK(w, []map[string]interface{}{})
+			return
+		}
+
+		// For brain overview, return counts from all tables
+		if table == "" {
+			counts := map[string]int{}
+			tables := []string{"enterprise_tasks", "wiki_pages", "okrs", "meeting_notes", "support_tickets", "kb_articles", "marketing_campaigns"}
+			for _, t := range tables {
+				var count int
+				db.Pool.QueryRow(r.Context(), fmt.Sprintf("SELECT COUNT(*) FROM %s", t)).Scan(&count)
+				counts[t] = count
+			}
+			OK(w, counts)
+			return
+		}
+
+		cols := "id"
+		if columns != "" {
+			cols = "id, " + columns
+		}
+		query := fmt.Sprintf("SELECT %s FROM %s ORDER BY updated_at DESC NULLS LAST, created_at DESC LIMIT 50", cols, table)
+
+		rows, err := db.Pool.Query(r.Context(), query)
+		if err != nil {
+			OK(w, []map[string]interface{}{})
+			return
+		}
+		defer rows.Close()
+
+		results := make([]map[string]interface{}, 0)
+		colNames := rows.FieldDescriptions()
+
+		for rows.Next() {
+			values, err := rows.Values()
+			if err != nil {
+				continue
+			}
+			row := make(map[string]interface{})
+			for i, val := range values {
+				if i < len(colNames) {
+					row[string(colNames[i].Name)] = val
+				}
+			}
+			results = append(results, row)
+		}
+
+		OK(w, results)
+	}
 }
