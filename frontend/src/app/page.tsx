@@ -51,10 +51,10 @@ export default function Home() {
   const activeIdxRef = useRef(activeIdx);
   activeIdxRef.current = activeIdx;
 
+  const activeConv = conversations[activeIdx];
+
   // Auto-scroll to bottom
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [activeConv.messages, streamingMsg]);
-
-  const activeConv = conversations[activeIdx];
 
   // SSE
   useEffect(() => {

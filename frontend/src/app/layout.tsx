@@ -17,15 +17,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="zh-CN" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{
-          __html: `
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
             try {
               let theme = localStorage.getItem('theme');
               if (!theme) theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
               if (theme === 'dark') document.documentElement.classList.add('dark');
             } catch(e) {}
-          `
-        }} />
+          `}}
+        />
       </head>
       <body className="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
         <TooltipProvider>
