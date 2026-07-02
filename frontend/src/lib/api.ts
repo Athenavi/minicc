@@ -32,7 +32,6 @@ export async function api(path: string, options: FetchOptions = {}): Promise<any
     throw new Error("Unauthorized");
   }
 
-  // SSE responses return plain text
   const contentType = res.headers.get("content-type") || "";
   if (contentType.includes("text/event-stream")) {
     return res;
@@ -47,6 +46,17 @@ export async function api(path: string, options: FetchOptions = {}): Promise<any
   return data;
 }
 
+/** HTTP URL for API requests (e.g. fetch / EventSource). */
 export function apiUrl(path: string): string {
   return `${API_BASE}${path}`;
+}
+
+/** WebSocket URL derived from the same API_BASE. */
+export function wsUrl(path: string): string {
+  return API_BASE.replace(/^http/, "ws") + path;
+}
+
+/** Base URL (for debugging / display). */
+export function getBaseUrl(): string {
+  return API_BASE;
 }

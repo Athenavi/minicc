@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-
-const WS_BASE = "ws://localhost:8080";
+import { wsUrl } from "@/lib/api";
 
 type ConnectionStatus = "connecting" | "connected" | "disconnected";
 type MessageHandler = (data: Record<string, unknown>) => void;
@@ -10,85 +9,58 @@ type MessageHandler = (data: Record<string, unknown>) => void;
 interface UseWebSocketOptions {
   sessionId: string;
   onMessage?: MessageHandler;
-  onStatusChange?: (status: ConnectionStatus) => void;
 }
 
-export function useWebSocket({ sessionId, onMessage, onStatusChange }: UseWebSocketOptions) {
+export function useWebSocket({ sessionId, onMessage }: UseWebSocketOptions) {
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectCount = useRef(0);
-  const handlersRef = useRef<Map<string, MessageHandler[]>>(new Map());
+  const onMessageRef = useRef<MessageHandler | undefined>(onMessage);
+  onMessageRef.current = onMessage;
 
   const connect = useCallback(() => {
-    const url = `ws://localhost:8080/ws/${sessionId}`;
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+
     setStatus("connecting");
-    onStatusChange?.("connecting");
-
+    const url = wsUrl(`/ws/${sessionId}`);
     const ws = new WebSocket(url);
-    wsRef.current = ws;
 
-    ws.onopen = () => {
-      setStatus("connected");
-      onStatusChange?.("connected");
-      reconnectCount.current = 0;
+    ws.onopen = () => setStatus("connected");
+    ws.onclose = () => {
+      setStatus("disconnected");
+      wsRef.current = null;
     };
-
+    ws.onerror = () => {
+      setStatus("disconnected");
+    };
     ws.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data);
-        onMessage?.(data);
-
-        // 按 type 分发到注册的处理器
-        const handlers = handlersRef.current.get(data.type);
-        handlers?.forEach((h) => h(data));
+        const data = JSON.parse(event.data) as Record<string, unknown>;
+        onMessageRef.current?.(data);
       } catch {
-        // ignore parse errors
+        // ignore non-JSON messages
       }
     };
 
-    ws.onclose = () => {
-      setStatus("disconnected");
-      onStatusChange?.("disconnected");
-      scheduleReconnect();
-    };
+    wsRef.current = ws;
+  }, [sessionId]);
 
-    ws.onerror = () => {
-      ws.close();
-    };
-  }, [sessionId, onMessage, onStatusChange]);
+  const disconnect = useCallback(() => {
+    wsRef.current?.close();
+    wsRef.current = null;
+    setStatus("disconnected");
+  }, []);
 
-  const scheduleReconnect = useCallback(() => {
-    const delay = Math.min(1000 * 2 ** reconnectCount.current, 30000);
-    reconnectCount.current += 1;
-    setTimeout(connect, delay);
-  }, [connect]);
-
-  useEffect(() => {
-    connect();
-    return () => {
-      wsRef.current?.close();
-    };
-  }, [connect]);
-
-  const send = useCallback((data: string) => {
+  const send = useCallback((data: Record<string, unknown>) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(data);
+      wsRef.current.send(JSON.stringify(data));
     }
   }, []);
 
-  const sendJSON = useCallback((data: Record<string, unknown>) => {
-    send(JSON.stringify(data));
-  }, [send]);
-
-  const on = useCallback((type: string, handler: MessageHandler) => {
-    const handlers = handlersRef.current.get(type) ?? [];
-    handlers.push(handler);
-    handlersRef.current.set(type, handlers);
+  useEffect(() => {
     return () => {
-      const remaining = handlers.filter((h) => h !== handler);
-      handlersRef.current.set(type, remaining);
+      wsRef.current?.close();
     };
   }, []);
 
-  return { status, send, sendJSON, on };
+  return { status, connect, disconnect, send };
 }
