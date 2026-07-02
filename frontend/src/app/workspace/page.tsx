@@ -72,10 +72,27 @@ export default function WorkspacePage() {
       streamingContentRef.current += chunk;
       setStreamingMsg((p) => p ? { ...p, content: p.content + chunk } : p);
     }
-    if (data.type === "tool_dispatch") {
+    if (data.type === "tool_use") {
       const name = data.data?.tool_name || "tool";
-      streamingContentRef.current += `\n\n_🔧 Using tool: ${name}_\n`;
-      setStreamingMsg((p) => p ? { ...p, content: (p.content || "") + `\n\n_🔧 Using tool: ${name}_\n` } : p);
+      const args = data.data?.arguments || "";
+      streamingContentRef.current += `\n\n_🔧 **${name}** executing_\n`;
+      setStreamingMsg((p) => p ? { ...p, content: p.content + `\n\n_🔧 **${name}** executing_\n` } : p);
+      // Show inline code block with args if present
+      if (args && args !== "{}") {
+        const displayArgs = typeof args === "string" ? args : JSON.stringify(args, null, 2);
+        streamingContentRef.current += `\`\`\`json\n${displayArgs}\n\`\`\`\n`;
+        setStreamingMsg((p) => p ? { ...p, content: p.content + `\`\`\`json\n${displayArgs}\n\`\`\`\n` } : p);
+      }
+    }
+    if (data.type === "tool_result") {
+      const name = data.data?.tool_name || "tool";
+      const output = data.data?.output || "";
+      const error = data.data?.error;
+      const duration = data.data?.duration_ms;
+      const status = error ? "❌" : "✅";
+      const statusText = error ? `Error: ${error}` : `Done (${duration || "?"}ms)`;
+      streamingContentRef.current += `_${status} ${name}: ${statusText}_\n\n`;
+      setStreamingMsg((p) => p ? { ...p, content: p.content + `_${status} ${name}: ${statusText}_\n\n` } : p);
     }
     if (data.type === "turn_done" || data.type === "error") {
       setIsGenerating(false);

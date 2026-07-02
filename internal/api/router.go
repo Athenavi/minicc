@@ -50,6 +50,7 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 
 	// Engine
 	eng := engine.New(llmGateway, toolRegistry)
+	orchestrator := engine.NewTurnOrchestrator(llmGateway, toolRegistry, eventHub)
 	chatHandler := NewChatHandler(eng)
 
 	// Public endpoints (rate limited)
@@ -87,72 +88,32 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 		// Return 202 Accepted — processing continues in background
 		Accepted(w, map[string]string{"status": "accepted", "session_id": body.SessionID})
 
-		// Process in background: call LLM and stream tokens via SSE
+		// Process in background using the TurnOrchestrator (multi-turn agent loop)
 		go func(content, sessionID, userID string) {
-			req := &llm.Request{
-				Messages: []llm.Message{
-					{Role: "system", Content: "You are MiniCC V2, an AI coding assistant. Respond concisely and helpfully."},
-					{Role: "user", Content: content},
-				},
-				MaxTokens:   4096,
-				Temperature: 0.7,
-			}
-
-			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 			defer cancel()
 
-			var fullContent string
-			resp, err := llmGateway.ChatStream(ctx, req, func(chunk string) {
-				fullContent += chunk
-				eventHub.Publish(broadcast.Event{Type: "text", Data: map[string]string{"content": chunk}})
-			})
-
-			if err != nil {
-				slog.Error("llm stream failed", "error", err)
-				eventHub.Publish(broadcast.Event{Type: "error", Data: map[string]string{"error": err.Error()}})
-				eventHub.Publish(broadcast.Event{Type: "turn_done", Data: map[string]string{"session_id": sessionID}})
-				return
+			messages := []llm.Message{
+				{Role: "user", Content: content},
 			}
 
-			_ = resp
+			toolDefs := engine.BuildToolDefs(toolRegistry)
+			systemPrompt := "You are MiniCC V2, an enterprise AI agent. You have access to tools. " +
+				"When a task requires tools, call them. Always explain what you're doing."
+
+			finalContent, usage, err := orchestrator.Execute(ctx, sessionID, messages, systemPrompt, toolDefs)
+			_ = usage
+
+			if err != nil {
+				slog.Error("agent turn failed", "error", err)
+				eventHub.Publish(broadcast.Event{Type: "error", Data: map[string]string{"error": err.Error()}})
+			}
+
 			eventHub.Publish(broadcast.Event{Type: "turn_done", Data: map[string]string{"session_id": sessionID}})
 
 			// Persist to DB if authenticated
 			if userID != "" {
-				SaveMessages(ctx, sessionID, userID, content, fullContent)
-				// Detect and save task dispatch from LLM response
-				if taskName, source := detectTaskDispatch(fullContent); taskName != "" {
-					// Check mode — if "ask", request permission first
-					mode := modeStore.Get(sessionID)
-					if mode == ModeAsk {
-						taskID := fmt.Sprintf("perm_%d", time.Now().UnixNano())
-						// Emit permission_request via SSE
-						reqData, _ := json.Marshal(map[string]string{
-							"session_id": sessionID,
-							"tool_name":  source,
-							"task_name":  taskName,
-							"task_id":    taskID,
-						})
-						eventHub.Publish(broadcast.Event{Type: "permission_request", Data: json.RawMessage(reqData)})
-
-						// Wait up to 2 minutes for approval
-						approved, _ := permMgr.WaitForApproval(taskID, 120*time.Second)
-						resultData, _ := json.Marshal(map[string]string{
-							"task_id":   taskID,
-							"approved":  fmt.Sprintf("%v", approved),
-							"task_name": taskName,
-						})
-						eventHub.Publish(broadcast.Event{Type: "permission_result", Data: json.RawMessage(resultData)})
-
-						if !approved {
-							slog.Info("task rejected by user", "task", taskName, "session", sessionID)
-							return
-						}
-						slog.Info("task approved by user", "task", taskName, "session", sessionID)
-					}
-
-					createAndPublishTask(ctx, sessionID, userID, taskName, source, eventHub)
-				}
+				SaveMessages(ctx, sessionID, userID, content, finalContent)
 			}
 		}(body.Content, body.SessionID, userID)
 	})

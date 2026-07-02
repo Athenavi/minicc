@@ -51,12 +51,10 @@ func (g *Gateway) AddProvider(p Provider) {
 	slog.Info("llm provider added", "name", p.Name(), "available", p.IsAvailable())
 }
 
-func (g *Gateway) ChatStream(ctx context.Context, req *Request, onChunk func(string)) (*Response, error) {
+func (g *Gateway) ChatStream(ctx context.Context, req *Request, onChunk func(string), onToolCall func(ToolCall)) (*Response, error) {
 	g.metrics.mu.Lock()
 	g.metrics.requests++
 	g.metrics.mu.Unlock()
-
-	// Don't cache streaming requests
 
 	g.mu.RLock()
 	providers := g.providers
@@ -78,7 +76,7 @@ func (g *Gateway) ChatStream(ctx context.Context, req *Request, onChunk func(str
 			continue
 		}
 
-		resp, err := p.ChatStream(ctx, req, onChunk)
+		resp, err := p.ChatStream(ctx, req, onChunk, onToolCall)
 		g.recordMetrics(p.Name(), err)
 
 		if err == nil {
