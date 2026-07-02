@@ -29,6 +29,20 @@ var startTime = time.Now()
 func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.ToolRegistry, eventHub *broadcast.Hub, agentRegistry *agent.Registry, sessionMgr *session.Manager, llmRateLimiter *llm.RateLimiter) *chi.Mux {
 	r := chi.NewRouter()
 
+	// Custom 404 handler (returns JSON, not empty body)
+	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
+		JSON(w, http.StatusNotFound, APIResponse{
+			Success: false,
+			Error:   "not found",
+		})
+	})
+	r.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
+		JSON(w, http.StatusMethodNotAllowed, APIResponse{
+			Success: false,
+			Error:   "method not allowed",
+		})
+	})
+
 	// Rate limiter
 	rateLimiter := NewRateLimiter(cfg.RateLimitRPM)
 	rateLimiter.CleanupVisitors(5 * time.Minute)
@@ -102,8 +116,7 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 			toolDefs := engine.BuildToolDefs(toolRegistry)
 			systemPrompt := llm.DeterministicSystemPrompt()
 
-			finalContent, usage, err := orchestrator.Execute(ctx, sessionID, messages, systemPrompt, toolDefs)
-			_ = usage
+			finalContent, _, err := orchestrator.Execute(ctx, sessionID, messages, systemPrompt, toolDefs)
 
 			// Fallback: if orchestrator returns empty content, do a simple text-only LLM call
 			if err != nil || finalContent == "" {
