@@ -27,6 +27,9 @@ type Config struct {
 	JWTSecret     string
 	JWTExpiration time.Duration
 
+	// CORS
+	CORSOrigins string
+
 	// LLM
 	LLMProvider    string
 	LLMAPIKey      string
@@ -50,19 +53,20 @@ type Config struct {
 }
 
 func Load() *Config {
-	return &Config{
+	cfg := &Config{
 		Port:            getEnv("PORT", "8080"),
 		ReadTimeout:     getDuration("READ_TIMEOUT", 10*time.Second),
-		WriteTimeout:    getDuration("WRITE_TIMEOUT", 30*time.Second),
-		IdleTimeout:     getDuration("IDLE_TIMEOUT", 60*time.Second),
+		WriteTimeout:    getDuration("WRITE_TIMEOUT", 60*time.Second),
+		IdleTimeout:     getDuration("IDLE_TIMEOUT", 120*time.Second),
 		PostgresDSN:     getEnv("POSTGRES_DSN", "postgres://minicc:minicc@localhost:5432/minicc?sslmode=disable"),
 		PostgresMaxConn: getInt("POSTGRES_MAX_CONN", 50),
 		PostgresMinConn: getInt("POSTGRES_MIN_CONN", 10),
 		RedisAddr:       getEnv("REDIS_ADDR", "localhost:6379"),
 		RedisPassword:   getEnv("REDIS_PASSWORD", ""),
 		RedisDB:         getInt("REDIS_DB", 0),
-		JWTSecret:       getEnv("JWT_SECRET", "dev-secret-change-in-production"),
+		JWTSecret:       getEnv("JWT_SECRET", ""),
 		JWTExpiration:   getDuration("JWT_EXPIRATION", 24*time.Hour),
+		CORSOrigins:     getEnv("CORS_ORIGINS", "http://localhost:3000"),
 		LLMProvider:     getEnv("LLM_PROVIDER", "openai"),
 		LLMAPIKey:       getEnv("LLM_API_KEY", ""),
 		LLMModel:        getEnv("LLM_MODEL", "gpt-4o"),
@@ -77,6 +81,14 @@ func Load() *Config {
 		RateLimitGlobal: getInt("RATE_LIMIT_GLOBAL", 10000),
 		LogLevel:        getEnv("LOG_LEVEL", "info"),
 	}
+
+	// JWT_SECRET is required. Refuse to start with empty or default dev secret.
+	if cfg.JWTSecret == "" || cfg.JWTSecret == "dev-secret-change-in-production" {
+		os.Stderr.WriteString("FATAL: JWT_SECRET environment variable must be set to a strong, unique value\n")
+		os.Exit(1)
+	}
+
+	return cfg
 }
 
 func getEnv(key, fallback string) string {

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { apiUrl } from "@/lib/api";
+import { api, apiUrl } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -15,9 +15,15 @@ export default function LoginPage() {
 
   // Redirect if already logged in
   useEffect(() => {
-    const token = localStorage.getItem("minicc_token");
-    if (token) router.push("/");
+    checkAuth().then((authed) => { if (authed) router.push("/"); });
   }, [router]);
+
+  const checkAuth = async (): Promise<boolean> => {
+    try {
+      const data = await api("/v1/profile", { skipAuth: false });
+      return !!data?.data?.user_id;
+    } catch { return false; }
+  };
 
   const validate = (): boolean => {
     if (!email.trim()) { setError("Email is required"); return false; }
@@ -34,18 +40,10 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      const res = await fetch(apiUrl("/v1/auth/login"), {
+      const data = await api("/v1/auth/login", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim(), password }),
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        setError(data.error || "Login failed");
-        return;
-      }
-      localStorage.setItem("minicc_token", data.data.token);
-      localStorage.setItem("minicc_user", JSON.stringify(data.data.user));
       router.push("/");
     } catch (err: any) {
       setError(`Connection failed: ${err.message}`);

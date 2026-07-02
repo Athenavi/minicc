@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { apiUrl } from "@/lib/api";
+import { api, apiUrl } from "@/lib/api";
 
 interface AgentInfo {
   type: string;
@@ -45,18 +45,13 @@ export default function AgentsPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const token = localStorage.getItem("minicc_token");
-    if (!token) { router.push("/login"); return; }
     fetchData();
   }, [router]);
 
   const fetchData = async () => {
-    const token = localStorage.getItem("minicc_token");
     try {
       const [agentsRes] = await Promise.all([
-        fetch(apiUrl("/v1/tools"), {
-          headers: { Authorization: `Bearer ${token}` },
-        }).catch(() => null),
+        api("/v1/tools", { skipAuth: true }).catch(() => null),
       ]);
       // Agent info is from the tool definitions; for now use hardcoded agents
       setAgents([
@@ -75,14 +70,9 @@ export default function AgentsPage() {
     setResult("");
     setError("");
 
-    const token = localStorage.getItem("minicc_token");
     try {
-      const res = await fetch(apiUrl("/v1/chat"), {
+      const data = await api("/v1/chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
         body: JSON.stringify({
           session_id: "agent-console",
           message: dispatchAgent === "auto"
@@ -90,11 +80,10 @@ export default function AgentsPage() {
             : `Dispatch to ${dispatchAgent} agent: ${dispatchTask}`,
         }),
       });
-      const data = await res.json();
-      if (data.success) {
+      if (data.data) {
         setResult(data.data.response);
       } else {
-        setError(data.error || "Dispatch failed");
+        setError("Dispatch failed");
       }
     } catch (err: any) {
       setError(`Connection failed: ${err.message}`);

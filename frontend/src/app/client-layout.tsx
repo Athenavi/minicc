@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
+import { api, apiUrl } from "@/lib/api";
 
 export default function ClientLayout({
   children,
@@ -13,24 +14,24 @@ export default function ClientLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [token, setToken] = useState<string | null>(null);
-  const [userName, setUserName] = useState("");
+  const [authed, setAuthed] = useState(false);
+  const [userEmail, setUserEmail] = useState("");
 
   useEffect(() => {
-    setToken(localStorage.getItem("minicc_token"));
-    const stored = localStorage.getItem("minicc_user");
-    if (stored) {
-      try { setUserName(JSON.parse(stored).name || ""); } catch {}
-    }
+    api("/v1/profile", { skipAuth: false })
+      .then((data) => {
+        setAuthed(true);
+        setUserEmail(data.data?.email || "");
+      })
+      .catch(() => setAuthed(false));
   }, [pathname]);
 
   // Hide nav on auth pages
   const isAuthPage = pathname === "/login" || pathname === "/register";
   if (isAuthPage) return <>{children}</>;
 
-  const handleLogout = () => {
-    localStorage.removeItem("minicc_token");
-    localStorage.removeItem("minicc_user");
+  const handleLogout = async () => {
+    await fetch(apiUrl("/v1/auth/logout"), { method: "POST", credentials: "include" });
     router.push("/login");
   };
 
@@ -58,7 +59,7 @@ export default function ClientLayout({
 
             {/* Auth - right side */}
             <div className="ml-auto flex items-center gap-2 shrink-0">
-              {token ? (
+              {authed ? (
                 <>
                   <Link href="/profile"
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
@@ -67,9 +68,9 @@ export default function ClientLayout({
                         : "text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                     }`}>
                     <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px] font-bold">
-                      {userName?.charAt(0)?.toUpperCase() || "?"}
+                      {userEmail?.charAt(0)?.toUpperCase() || "?"}
                     </span>
-                    <span className="hidden sm:inline">{userName || "Profile"}</span>
+                    <span className="hidden sm:inline">{userEmail?.split("@")[0] || "Profile"}</span>
                   </Link>
                   <button onClick={handleLogout}
                     className="px-2 py-1.5 text-xs text-gray-400 hover:text-red-500 transition-colors">

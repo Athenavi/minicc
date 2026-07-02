@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { apiUrl } from "@/lib/api";
+import { api } from "@/lib/api";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -32,18 +32,10 @@ export default function RegisterPage() {
 
     setLoading(true);
     try {
-      const res = await fetch(apiUrl("/v1/auth/register"), {
+      const data = await api("/v1/auth/register", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: name.trim(), email: email.trim(), password }),
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        setError(data.error || "Registration failed");
-        return;
-      }
-      localStorage.setItem("minicc_token", data.data.token);
-      localStorage.setItem("minicc_user", JSON.stringify(data.data.user));
       setStep("success");
       setTimeout(() => router.push("/"), 1500);
     } catch (err: any) {

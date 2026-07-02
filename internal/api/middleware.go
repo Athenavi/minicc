@@ -62,10 +62,24 @@ func RecoverMiddleware(next http.Handler) http.Handler {
 func CORSMiddleware(allowOrigin string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Access-Control-Allow-Origin", allowOrigin)
+			origin := r.Header.Get("Origin")
+			allowed := false
+			for _, o := range strings.Split(allowOrigin, ",") {
+				if strings.TrimSpace(o) == origin || allowOrigin == "*" {
+					allowed = true
+					break
+				}
+			}
+			if allowed {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+			}
+			if !allowed && allowOrigin != "*" {
+				// Still need to handle preflight even for disallowed origins
+				w.Header().Set("Access-Control-Allow-Origin", allowOrigin)
+			}
 			w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type,Authorization,X-API-Key")
-			w.Header().Set("Access-Control-Allow-Credentials", "true")
 			w.Header().Set("Access-Control-Max-Age", "86400")
 
 			if r.Method == http.MethodOptions {
@@ -87,15 +101,23 @@ func SecurityHeadersMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// AuthMiddleware validates JWT from Authorization header or X-API-Key header.
+// AuthMiddleware validates JWT from cookie or Authorization header.
 func AuthMiddleware(a *auth.Authenticator) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// 1. Try Authorization: Bearer <token>
 			tokenStr := ""
-			if ah := r.Header.Get("Authorization"); ah != "" {
-				if strings.HasPrefix(ah, "Bearer ") {
-					tokenStr = strings.TrimPrefix(ah, "Bearer ")
+
+			// 1. Try cookie (primary for browser clients)
+			if c, err := r.Cookie("minicc_token"); err == nil && c.Value != "" {
+				tokenStr = c.Value
+			}
+
+			// 2. Try Authorization: Bearer <token> (for API clients)
+			if tokenStr == "" {
+				if ah := r.Header.Get("Authorization"); ah != "" {
+					if strings.HasPrefix(ah, "Bearer ") {
+						tokenStr = strings.TrimPrefix(ah, "Bearer ")
+					}
 				}
 			}
 

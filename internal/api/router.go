@@ -28,7 +28,7 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 	r.Use(RecoverMiddleware)
 	r.Use(LoggingMiddleware)
 	r.Use(SecurityHeadersMiddleware)
-	r.Use(CORSMiddleware("*"))
+	r.Use(CORSMiddleware(cfg.CORSOrigins))
 	r.Use(MonitoringMiddleware)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -64,6 +64,7 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 		r.Post("/login", authHandler.Login)
 		r.Post("/register", authHandler.Register)
 		r.Post("/refresh", authHandler.Refresh)
+		r.Post("/logout", authHandler.Logout)
 	})
 
 	// Protected API v1

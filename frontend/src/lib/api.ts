@@ -11,21 +11,13 @@ export async function api(path: string, options: FetchOptions = {}): Promise<any
     ...(fetchOpts.headers as Record<string, string>),
   };
 
-  if (!skipAuth) {
-    const token = localStorage.getItem("minicc_token");
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    }
-  }
-
   const res = await fetch(`${API_BASE}${path}`, {
     ...fetchOpts,
     headers,
+    credentials: "include", // send cookies
   });
 
   if (res.status === 401 && !skipAuth) {
-    localStorage.removeItem("minicc_token");
-    localStorage.removeItem("minicc_user");
     if (typeof window !== "undefined") {
       window.location.href = "/login";
     }
