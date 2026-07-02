@@ -103,9 +103,32 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 			finalContent, usage, err := orchestrator.Execute(ctx, sessionID, messages, systemPrompt, toolDefs)
 			_ = usage
 
-			if err != nil {
-				slog.Error("agent turn failed", "error", err)
-				eventHub.Publish(broadcast.Event{Type: "error", Data: map[string]string{"error": err.Error()}})
+			// Fallback: if orchestrator returns empty content, do a simple text-only LLM call
+			if err != nil || finalContent == "" {
+				slog.Warn("orchestrator returned empty, falling back to text-only LLM", "error", err)
+				fallbackReq := &llm.Request{
+					Messages: []llm.Message{
+						{Role: "system", Content: systemPrompt},
+						{Role: "user", Content: content},
+					},
+					MaxTokens:   4096,
+					Temperature: 0.7,
+					Stream:      true,
+				}
+				var fbContent string
+				_, fbErr := llmGateway.ChatStream(ctx, fallbackReq,
+					func(chunk string) {
+						fbContent += chunk
+						eventHub.Publish(broadcast.Event{Type: "text", Data: map[string]string{"content": chunk}})
+					},
+					func(tc llm.ToolCall) {},
+				)
+				if fbErr == nil && fbContent != "" {
+					finalContent = fbContent
+				} else if finalContent == "" {
+					finalContent = "I encountered an error processing your request. Please try again."
+					eventHub.Publish(broadcast.Event{Type: "text", Data: map[string]string{"content": finalContent}})
+				}
 			}
 
 			eventHub.Publish(broadcast.Event{Type: "turn_done", Data: map[string]string{"session_id": sessionID}})
