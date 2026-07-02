@@ -223,3 +223,29 @@ __marimo__/
 # Environment files
 backend/.env
 .env
+
+# ── Go (Round 0) ──
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+
+# ── Node / Next.js (Round 0) ──
+node_modules/
+.next/
+out/
+
+# ── IDE (Round 0) ──
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── Reasonix research logs (Round 4) ──
+.reasonix/autoresearch/
+.reasonix/desktop-*
