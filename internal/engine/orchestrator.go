@@ -103,64 +103,97 @@ func (o *TurnOrchestrator) Execute(ctx context.Context, sessionID string, messag
 			break
 		}
 
-		// Execute each tool call
+		// Execute each tool call — ASYNC: run independent tools in parallel goroutines
+		type toolResult struct {
+			tc     llm.ToolCall
+			output string
+			err    error
+			ms     int64
+		}
+		resultCh := make(chan toolResult, len(resp.ToolCalls))
+
 		for _, tc := range resp.ToolCalls {
 			executedTools++
-			stepStart := time.Now()
+			tc := tc // capture loop variable
 
-			// Parse arguments
-			var args map[string]interface{}
-			json.Unmarshal([]byte(tc.Arguments), &args)
+			go func() {
+				stepStart := time.Now()
 
-			// Execute tool
-			var output string
-			var toolErr error
+				// Emit tool_start event immediately (before execution)
+				startData, _ := json.Marshal(map[string]string{
+					"tool_call_id": tc.ID,
+					"tool_name":    tc.Name,
+					"arguments":    tc.Arguments,
+					"session_id":   sessionID,
+					"status":       "running",
+				})
+				o.hub.Publish(broadcast.Event{Type: "tool_start", Data: json.RawMessage(startData)})
 
-			tool := o.tools.Get(tc.Name)
-			if tool == nil {
-				toolErr = fmt.Errorf("tool not found: %s", tc.Name)
-			} else {
-				var result map[string]interface{}
-				result, toolErr = tool.Execute(ctx, args)
-				if toolErr == nil {
-					if out, ok := result["output"]; ok {
-						output = fmt.Sprintf("%v", out)
-					} else {
-						outJSON, _ := json.Marshal(result)
-						output = string(outJSON)
+				// Parse arguments
+				var args map[string]interface{}
+				json.Unmarshal([]byte(tc.Arguments), &args)
+
+				// Execute tool
+				var output string
+				var toolErr error
+
+				tool := o.tools.Get(tc.Name)
+				if tool == nil {
+					toolErr = fmt.Errorf("tool not found: %s", tc.Name)
+				} else {
+					var result map[string]interface{}
+					result, toolErr = tool.Execute(ctx, args)
+					if toolErr == nil {
+						if out, ok := result["output"]; ok {
+							output = fmt.Sprintf("%v", out)
+						} else {
+							outJSON, _ := json.Marshal(result)
+							output = string(outJSON)
+						}
 					}
 				}
-			}
 
-			durationMs := time.Since(stepStart).Milliseconds()
+				durationMs := time.Since(stepStart).Milliseconds()
 
-			// Emit tool_result event
-			resultData, _ := json.Marshal(map[string]interface{}{
-				"tool_call_id": tc.ID,
-				"tool_name":    tc.Name,
-				"output":       output,
-				"error":        map[bool]interface{}{true: toolErr.Error(), false: nil}[toolErr != nil],
-				"duration_ms":  durationMs,
-				"session_id":   sessionID,
-			})
-			o.hub.Publish(broadcast.Event{Type: "tool_result", Data: json.RawMessage(resultData)})
+				// Emit tool_result event
+				resultData, _ := json.Marshal(map[string]interface{}{
+					"tool_call_id": tc.ID,
+					"tool_name":    tc.Name,
+					"output":       output,
+					"error":        map[bool]interface{}{true: toolErr.Error(), false: nil}[toolErr != nil],
+					"duration_ms":  durationMs,
+					"session_id":   sessionID,
+				})
+				o.hub.Publish(broadcast.Event{Type: "tool_result", Data: json.RawMessage(resultData)})
 
-			// Also append inline markdown for display
-			status := "✅"
-			if toolErr != nil {
-				status = "❌"
-			}
-			o.hub.Publish(broadcast.Event{Type: "text", Data: map[string]string{"content": fmt.Sprintf("\n\n_%s Tool: %s (%dms)_\n", status, tc.Name, durationMs)}})
+				// Also append inline markdown for display
+				status := "✅"
+				if toolErr != nil {
+					status = "❌"
+				}
+				o.hub.Publish(broadcast.Event{Type: "text", Data: map[string]string{"content": fmt.Sprintf("\n\n_%s Tool: %s (%dms)_\n", status, tc.Name, durationMs)}})
 
-			// Add tool result message for next LLM call
-			resultContent := output
-			if toolErr != nil {
-				resultContent = "Error: " + toolErr.Error()
+				resultCh <- toolResult{tc: tc, output: output, err: toolErr, ms: durationMs}
+			}()
+		}
+
+		// Collect results (preserving order)
+		orderedResults := make([]toolResult, len(resp.ToolCalls))
+		for i := 0; i < len(resp.ToolCalls); i++ {
+			r := <-resultCh
+			orderedResults[i] = r
+		}
+
+		// Add tool result messages for next LLM call
+		for _, r := range orderedResults {
+			resultContent := r.output
+			if r.err != nil {
+				resultContent = "Error: " + r.err.Error()
 			}
 			allMsgs = append(allMsgs, llm.Message{
 				Role:       "tool",
-				ToolCallID: tc.ID,
-				Name:       tc.Name,
+				ToolCallID: r.tc.ID,
+				Name:       r.tc.Name,
 				Content:    resultContent,
 			})
 		}
