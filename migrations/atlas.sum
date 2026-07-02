@@ -1,2 +1,2 @@
-h1:IKjE29bywZgViocwsAvcQS3+01Jb9Zm4+5zv+Bzp9n4= migrations/202607020001_initial.up.sql
-h1:QuMuIw41Zmcdq+LurUG23PMwo+yv774/v+2RMCTziLc= migrations/202607020001_initial.down.sql
+h1:koWfcCjmLEnzKAMXgCLfdMzCfQcMSevcLhVa8pz1jsU= migrations/202607020001_initial.up.sql
+h1:P+7eEZC+9ijpUPqpkrQwPiKmcq1HDjk5cKY1xnfqnKQ= migrations/202607020001_initial.down.sql

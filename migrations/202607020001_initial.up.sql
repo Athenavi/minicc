@@ -101,3 +101,60 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 CREATE INDEX idx_audit_user ON audit_logs(user_id);
 CREATE INDEX idx_audit_action ON audit_logs(action);
 CREATE INDEX idx_audit_created ON audit_logs(created_at);
+
+-- Agent 会话表 (internal/agent/session.go)
+CREATE TABLE IF NOT EXISTS agent_sessions (
+    id VARCHAR(32) PRIMARY KEY,
+    user_id VARCHAR(32) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(128) NOT NULL,
+    task TEXT NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'pending',
+    result TEXT DEFAULT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_agent_sessions_user ON agent_sessions(user_id);
+CREATE INDEX idx_agent_sessions_status ON agent_sessions(status);
+
+-- 工作流定义表 (internal/workflow/engine.go)
+CREATE TABLE IF NOT EXISTS workflow_definitions (
+    id VARCHAR(32) PRIMARY KEY,
+    user_id VARCHAR(32) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(128) NOT NULL,
+    description TEXT DEFAULT NULL,
+    version VARCHAR(16) NOT NULL DEFAULT '1.0',
+    definition JSONB NOT NULL DEFAULT '{}',
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_workflow_defs_user ON workflow_definitions(user_id);
+CREATE INDEX idx_workflow_defs_name ON workflow_definitions(name);
+
+-- 工作流执行记录表 (internal/workflow/engine.go)
+CREATE TABLE IF NOT EXISTS workflow_executions (
+    id VARCHAR(32) PRIMARY KEY,
+    definition_id VARCHAR(32) NOT NULL REFERENCES workflow_definitions(id) ON DELETE CASCADE,
+    user_id VARCHAR(32) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status VARCHAR(16) NOT NULL DEFAULT 'running',
+    trigger VARCHAR(32) NOT NULL DEFAULT 'manual',
+    input JSONB NOT NULL DEFAULT '{}',
+    output TEXT DEFAULT NULL,
+    error TEXT DEFAULT NULL,
+    duration_ms BIGINT NOT NULL DEFAULT 0,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    finished_at TIMESTAMPTZ DEFAULT NULL
+);
+CREATE INDEX idx_workflow_exec_def ON workflow_executions(definition_id);
+CREATE INDEX idx_workflow_exec_user ON workflow_executions(user_id);
+CREATE INDEX idx_workflow_exec_status ON workflow_executions(status);
+
+-- Agent 注册表 (internal/agent/router.go)
+CREATE TABLE IF NOT EXISTS agent_registry (
+    agent_type VARCHAR(32) PRIMARY KEY,
+    name VARCHAR(128) NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    config JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

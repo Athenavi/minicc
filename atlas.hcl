@@ -187,3 +187,97 @@ table "schema_migrations" {
 
   primary_key { columns = [column.version] }
 }
+
+// ── Agent Sessions (internal/agent/session.go) ──
+
+table "agent_sessions" {
+  schema = schema.public
+  column "id"         { type = varchar(32) }
+  column "user_id"    { type = varchar(32) }
+  column "name"       { type = varchar(128) }
+  column "task"       { type = text }
+  column "status"     { type = varchar(16), default = "pending" }
+  column "result"     { type = text, null = true }
+  column "created_at" { type = timestamptz }
+  column "updated_at" { type = timestamptz }
+
+  primary_key { columns = [column.id] }
+  foreign_key "fk_agent_sessions_user" {
+    columns     = [column.user_id]
+    ref_columns = [table.users.column.id]
+    on_delete   = CASCADE
+  }
+  index "idx_agent_sessions_user"   { columns = [column.user_id] }
+  index "idx_agent_sessions_status" { columns = [column.status] }
+}
+
+// ── Workflow Definitions (internal/workflow/engine.go) ──
+
+table "workflow_definitions" {
+  schema = schema.public
+  column "id"          { type = varchar(32) }
+  column "user_id"     { type = varchar(32) }
+  column "name"        { type = varchar(128) }
+  column "description" { type = text, null = true }
+  column "version"     { type = varchar(16), default = "1.0" }
+  column "definition"  { type = jsonb }
+  column "enabled"     { type = boolean, default = true }
+  column "created_at"  { type = timestamptz }
+  column "updated_at"  { type = timestamptz }
+
+  primary_key { columns = [column.id] }
+  foreign_key "fk_workflow_defs_user" {
+    columns     = [column.user_id]
+    ref_columns = [table.users.column.id]
+    on_delete   = CASCADE
+  }
+  index "idx_workflow_defs_user" { columns = [column.user_id] }
+  index "idx_workflow_defs_name" { columns = [column.name] }
+}
+
+// ── Workflow Executions (internal/workflow/engine.go) ──
+
+table "workflow_executions" {
+  schema = schema.public
+  column "id"              { type = varchar(32) }
+  column "definition_id"   { type = varchar(32) }
+  column "user_id"         { type = varchar(32) }
+  column "status"          { type = varchar(16), default = "running" }
+  column "trigger"         { type = varchar(32), default = "manual" }
+  column "input"           { type = jsonb }
+  column "output"          { type = text, null = true }
+  column "error"           { type = text, null = true }
+  column "duration_ms"     { type = bigint, default = 0 }
+  column "started_at"      { type = timestamptz }
+  column "finished_at"     { type = timestamptz, null = true }
+
+  primary_key { columns = [column.id] }
+  foreign_key "fk_workflow_exec_def" {
+    columns     = [column.definition_id]
+    ref_columns = [table.workflow_definitions.column.id]
+    on_delete   = CASCADE
+  }
+  foreign_key "fk_workflow_exec_user" {
+    columns     = [column.user_id]
+    ref_columns = [table.users.column.id]
+    on_delete   = CASCADE
+  }
+  index "idx_workflow_exec_def"  { columns = [column.definition_id] }
+  index "idx_workflow_exec_user" { columns = [column.user_id] }
+  index "idx_workflow_exec_status" { columns = [column.status] }
+}
+
+// ── Agent Registry (internal/agent/router.go) ──
+
+table "agent_registry" {
+  schema = schema.public
+  column "agent_type"  { type = varchar(32) }
+  column "name"        { type = varchar(128) }
+  column "description" { type = text }
+  column "enabled"     { type = boolean, default = true }
+  column "config"      { type = jsonb }
+  column "created_at"  { type = timestamptz }
+
+  primary_key { columns = [column.agent_type] }
+  index "idx_agent_registry_type" { columns = [column.agent_type] }
+}
