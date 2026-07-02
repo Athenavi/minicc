@@ -48,5 +48,6 @@ type Usage struct {
 type Provider interface {
 	Name() string
 	Chat(ctx context.Context, req *Request) (*Response, error)
+	ChatStream(ctx context.Context, req *Request, onChunk func(string)) (*Response, error)
 	IsAvailable() bool
 }

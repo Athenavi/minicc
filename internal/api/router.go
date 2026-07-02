@@ -1,6 +1,8 @@
 package api
 
 import (
+	"context"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -66,26 +68,37 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 			return
 		}
 
-		// Publish task started event via SSE
-		eventHub.Publish(broadcast.Event{Type: "text", Data: map[string]string{"content": "Processing your request...\n\n"}})
+		// Return 202 Accepted — processing continues in background
+		Accepted(w, map[string]string{"status": "accepted", "session_id": body.SessionID})
 
-		// Start async processing in background
+		// Process in background: call LLM and stream tokens via SSE
 		go func(content, sessionID string) {
-			time.Sleep(500 * time.Millisecond)
+			req := &llm.Request{
+				Messages: []llm.Message{
+					{Role: "system", Content: "You are MiniCC V2, an AI coding assistant. Respond concisely and helpfully."},
+					{Role: "user", Content: content},
+				},
+				MaxTokens:   4096,
+				Temperature: 0.7,
+			}
 
-			eventHub.Publish(broadcast.Event{Type: "text", Data: map[string]string{"content": "Hello! I am MiniCC V2. "}})
-			time.Sleep(300 * time.Millisecond)
-			eventHub.Publish(broadcast.Event{Type: "text", Data: map[string]string{"content": "I'm running in demonstration mode. "}})
-			time.Sleep(300 * time.Millisecond)
-			eventHub.Publish(broadcast.Event{Type: "text", Data: map[string]string{"content": "Connect an LLM provider via the `LLM_API_KEY` environment variable to enable full AI capabilities.\n\n"}})
-			time.Sleep(200 * time.Millisecond)
-			eventHub.Publish(broadcast.Event{Type: "text", Data: map[string]string{"content": "For now, you can explore the available tools and pages:\n- **Agents**: Dispatch tasks to specialized agents\n- **Workflow**: Create visual workflow graphs\n- **Enterprise**: Use business tools\n- **System**: Monitor system metrics"}})
+			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+			defer cancel()
 
-			time.Sleep(500 * time.Millisecond)
+			resp, err := llmGateway.ChatStream(ctx, req, func(chunk string) {
+				eventHub.Publish(broadcast.Event{Type: "text", Data: map[string]string{"content": chunk}})
+			})
+
+			if err != nil {
+				slog.Error("llm stream failed", "error", err)
+				eventHub.Publish(broadcast.Event{Type: "error", Data: map[string]string{"error": err.Error()}})
+				eventHub.Publish(broadcast.Event{Type: "turn_done", Data: map[string]string{"session_id": sessionID}})
+				return
+			}
+
+			_ = resp // usage info available if needed
 			eventHub.Publish(broadcast.Event{Type: "turn_done", Data: map[string]string{"session_id": sessionID}})
 		}(body.Content, body.SessionID)
-
-		Accepted(w, map[string]string{"status": "accepted", "session_id": body.SessionID})
 	})
 	r.Post("/cancel", handleCancel)
 	r.Post("/approve", handleApprove)

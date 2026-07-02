@@ -51,6 +51,59 @@ func (g *Gateway) AddProvider(p Provider) {
 	slog.Info("llm provider added", "name", p.Name(), "available", p.IsAvailable())
 }
 
+func (g *Gateway) ChatStream(ctx context.Context, req *Request, onChunk func(string)) (*Response, error) {
+	g.metrics.mu.Lock()
+	g.metrics.requests++
+	g.metrics.mu.Unlock()
+
+	// Don't cache streaming requests
+
+	g.mu.RLock()
+	providers := g.providers
+	g.mu.RUnlock()
+
+	if len(providers) == 0 {
+		return nil, ErrNoProvider
+	}
+
+	var lastErr error
+	for i, p := range providers {
+		if !p.IsAvailable() {
+			continue
+		}
+
+		cb := g.breakers[p.Name()]
+		if !cb.Allow(p.Name()) {
+			slog.Debug("circuit open, skipping", "provider", p.Name())
+			continue
+		}
+
+		resp, err := p.ChatStream(ctx, req, onChunk)
+		g.recordMetrics(p.Name(), err)
+
+		if err == nil {
+			cb.Success(p.Name())
+			return resp, nil
+		}
+
+		cb.Fail(p.Name())
+		lastErr = err
+		slog.Warn("llm provider stream failed",
+			"provider", p.Name(),
+			"error", err,
+			"remaining", len(providers)-i-1,
+		)
+
+		if i < len(providers)-1 {
+			g.metrics.mu.Lock()
+			g.metrics.failovers++
+			g.metrics.mu.Unlock()
+		}
+	}
+
+	return nil, lastErr
+}
+
 func (g *Gateway) Chat(ctx context.Context, req *Request) (*Response, error) {
 	g.metrics.mu.Lock()
 	g.metrics.requests++
