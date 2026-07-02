@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { apiUrl } from "@/lib/api";
 
 interface AgentInfo {
   type: string;
@@ -53,7 +54,7 @@ export default function AgentsPage() {
     const token = localStorage.getItem("minicc_token");
     try {
       const [agentsRes] = await Promise.all([
-        fetch("http://localhost:8000/v1/tools", {
+        fetch(apiUrl("/v1/tools"), {
           headers: { Authorization: `Bearer ${token}` },
         }).catch(() => null),
       ]);
@@ -76,7 +77,7 @@ export default function AgentsPage() {
 
     const token = localStorage.getItem("minicc_token");
     try {
-      const res = await fetch("http://localhost:8000/v1/chat", {
+      const res = await fetch(apiUrl("/v1/chat"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

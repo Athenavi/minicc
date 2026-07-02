@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+const WS_BASE = "ws://localhost:8080";
+
 type ConnectionStatus = "connecting" | "connected" | "disconnected";
 type MessageHandler = (data: Record<string, unknown>) => void;
 
@@ -18,7 +20,7 @@ export function useWebSocket({ sessionId, onMessage, onStatusChange }: UseWebSoc
   const handlersRef = useRef<Map<string, MessageHandler[]>>(new Map());
 
   const connect = useCallback(() => {
-    const url = `ws://localhost:8000/ws/${sessionId}`;
+    const url = `ws://localhost:8080/ws/${sessionId}`;
     setStatus("connecting");
     onStatusChange?.("connecting");
 
