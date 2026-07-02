@@ -222,6 +222,26 @@ export default function WorkspacePage() {
   const doApprove = async (tid: string) => { try { await api("/approve", { method: "POST", body: JSON.stringify({ task_id: tid }) }); } catch {} };
   const doReject = async (tid: string) => { try { await api("/reject", { method: "POST", body: JSON.stringify({ task_id: tid }) }); } catch {} };
 
+  const deleteConversation = async (idx: number) => {
+    const conv = conversations[idx];
+    if (!conv) return;
+    try { await api(`/v1/conversations/${conv.sessionId}`, { method: "DELETE", skipAuth: true }); } catch {}
+    setConversations((prev) => prev.filter((_, i) => i !== idx));
+    if (activeIdx >= idx && activeIdx > 0) setActiveIdx(activeIdx - 1);
+  };
+
+  const [renamingIdx, setRenamingIdx] = useState(-1);
+  const [renameValue, setRenameValue] = useState("");
+  const startRename = (idx: number) => { setRenamingIdx(idx); setRenameValue(conversations[idx]?.title || ""); };
+  const commitRename = async (idx: number) => {
+    const conv = conversations[idx];
+    if (!conv || !renameValue.trim()) { setRenamingIdx(-1); return; }
+    const newTitle = renameValue.trim();
+    setConversations((prev) => prev.map((c, i) => i === idx ? { ...c, title: newTitle } : c));
+    setRenamingIdx(-1);
+    try { await api("/v1/conversations", { method: "POST", body: JSON.stringify({ id: conv.sessionId, title: newTitle }) }); } catch {}
+  };
+
   const openFile = async (path: string) => {
     try {
       const r = await fetch(apiUrl(`/api/editor/read?path=${encodeURIComponent(path)}`));
@@ -343,12 +363,28 @@ export default function WorkspacePage() {
           </div>
           <ScrollArea className="flex-1">
             {conversations.map((conv, i) => (
-              <div key={conv.id} onClick={() => switchConv(i)}
-                className={`flex items-center gap-2 px-2.5 py-1.5 cursor-pointer text-xs border-l-2 transition-colors ${
+              <div key={conv.id}
+                className={`group flex items-center gap-1 px-2.5 py-1.5 cursor-pointer text-xs border-l-2 transition-colors ${
                   i === activeIdx ? "bg-blue-50 dark:bg-blue-950 border-l-blue-500" : "border-l-transparent hover:bg-gray-50 dark:hover:bg-gray-800"
                 }`}>
-                <MessageSquare className="h-3 w-3 text-gray-400 shrink-0" />
-                <span className="truncate text-gray-700 dark:text-gray-300">{conv.title}</span>
+                <div className="flex-1 min-w-0" onClick={() => switchConv(i)} onDoubleClick={() => startRename(i)}>
+                  {renamingIdx === i ? (
+                    <input autoFocus className="w-full text-xs px-1 py-0.5 border rounded dark:bg-gray-700 dark:border-gray-600 outline-none"
+                      value={renameValue} onChange={(e) => setRenameValue(e.target.value)}
+                      onBlur={() => commitRename(i)}
+                      onKeyDown={(e) => { if (e.key === "Enter") commitRename(i); if (e.key === "Escape") setRenamingIdx(-1); }}
+                      onClick={(e) => e.stopPropagation()} />
+                  ) : (
+                    <span className="truncate text-gray-700 dark:text-gray-300 flex items-center gap-1">
+                      <MessageSquare className="h-3 w-3 text-gray-400 shrink-0" />
+                      {conv.title}
+                    </span>
+                  )}
+                </div>
+                <button onClick={(e) => { e.stopPropagation(); deleteConversation(i); }}
+                  className="shrink-0 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-all p-0.5">
+                  ✕
+                </button>
               </div>
             ))}
           </ScrollArea>

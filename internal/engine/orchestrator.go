@@ -158,14 +158,38 @@ func (o *TurnOrchestrator) Execute(ctx context.Context, sessionID string, messag
 		)
 	}
 
-	// Build the final display content (all assistant messages concatenated)
+	// Build the final display content — includes tool annotations so
+	// streaming display matches persisted content.
 	var finalContent strings.Builder
-	for _, msg := range allMsgs {
+	for i, msg := range allMsgs {
 		if msg.Role == "assistant" && msg.Content != "" {
 			if finalContent.Len() > 0 {
 				finalContent.WriteString("\n\n")
 			}
 			finalContent.WriteString(msg.Content)
+		}
+		// After each assistant message with tool_calls, check for
+		// the corresponding tool messages and add annotations.
+		// The tool messages immediately follow the assistant message.
+		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
+			// Look ahead for tool results (they come right after)
+			for j := i + 1; j < len(allMsgs) && j < i+1+len(msg.ToolCalls); j++ {
+				if allMsgs[j].Role == "tool" {
+					// Find which tool call this corresponds to
+					tcID := allMsgs[j].ToolCallID
+					tcName := allMsgs[j].Name
+					isErr := strings.HasPrefix(allMsgs[j].Content, "Error:")
+					status := "✅"
+					if isErr { status = "❌" }
+					annotation := fmt.Sprintf("\n\n_%s Tool: %s_\n", status, tcName)
+					finalContent.WriteString(annotation)
+					_ = tcID
+					// Include error message if present
+					if isErr {
+						finalContent.WriteString(fmt.Sprintf("_Error: %s_\n\n", strings.TrimPrefix(allMsgs[j].Content, "Error: ")))
+					}
+				}
+			}
 		}
 	}
 
