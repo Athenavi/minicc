@@ -1,7 +1,0 @@
-fix: config auto-loads .env file + Redis fail-fast
-
-- config.Load() now reads .env before reading env vars
-- Env vars take precedence over .env values
-- Redis client: MinIdleConns=0, MaxRetries=0, shorter pool timeout
-- Fixes server startup without JWT_SECRET in env
-- Fixes Redis retry log spam when unavailable
