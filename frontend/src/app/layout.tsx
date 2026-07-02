@@ -2,11 +2,9 @@ import "./globals.css";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 const navItems = [
-  { href: "/", label: "💬 Chat", desc: "AI Chat" },
+  { href: "/workspace", label: "⚡ Workspace", desc: "AI Agent Workspace" },
   { href: "/agents", label: "🤖 Agents", desc: "Agent Console" },
-  { href: "/editor", label: "✏️ Editor", desc: "AI Code Editor" },
   { href: "/workflow", label: "🔀 Workflow", desc: "Visual Graph" },
-  { href: "/rpa", label: "🤖 RPA", desc: "Automation" },
   { href: "/enterprise", label: "🏢 Enterprise", desc: "Business" },
   { href: "/system", label: "🔬 System", desc: "Monitor" },
 ];
