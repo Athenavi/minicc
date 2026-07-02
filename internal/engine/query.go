@@ -268,8 +268,13 @@ func (e *Engine) executeTools(ctx context.Context, sessionID string, toolCalls [
 
 	results := make([]toolExecResult, len(toolCalls))
 	for i := 0; i < len(toolCalls); i++ {
-		j := <-ch
-		results[i] = j.res
+		select {
+		case j := <-ch:
+			results[i] = j.res
+		case <-ctx.Done():
+			slog.Warn("tool execution cancelled", "error", ctx.Err())
+			return results
+		}
 	}
 	return results
 }

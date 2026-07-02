@@ -177,12 +177,19 @@ func (o *TurnOrchestrator) Execute(ctx context.Context, sessionID string, messag
 			}()
 		}
 
-		// Collect results (preserving order)
+		// Collect results (preserving order) with context cancellation check
 		orderedResults := make([]toolResult, len(resp.ToolCalls))
 		for i := 0; i < len(resp.ToolCalls); i++ {
-			r := <-resultCh
-			orderedResults[i] = r
+			select {
+			case r := <-resultCh:
+				orderedResults[i] = r
+			case <-ctx.Done():
+				slog.Warn("tool execution cancelled", "error", ctx.Err())
+				// Return partial results
+				goto afterCollect
+			}
 		}
+	afterCollect:
 
 		// Add tool result messages for next LLM call
 		for _, r := range orderedResults {

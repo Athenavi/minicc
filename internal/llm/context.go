@@ -29,9 +29,9 @@ func NewContextManager(llm *Gateway, maxMessages int) *ContextManager {
 
 // CompressIfNeeded checks if the message history exceeds the limit and
 // compresses the oldest messages into a summary.
+// CRITICAL: Does NOT hold the lock during the LLM summarize call.
 func (cm *ContextManager) CompressIfNeeded(ctx context.Context, messages []Message) ([]Message, error) {
 	cm.mu.Lock()
-	defer cm.mu.Unlock()
 
 	// Separate system prompt from conversation
 	var systemPrompt string
@@ -46,6 +46,7 @@ func (cm *ContextManager) CompressIfNeeded(ctx context.Context, messages []Messa
 
 	// Check if compression is needed
 	if len(convMsgs) <= cm.maxMessages {
+		cm.mu.Unlock()
 		return messages, nil // no compression needed
 	}
 
@@ -54,7 +55,6 @@ func (cm *ContextManager) CompressIfNeeded(ctx context.Context, messages []Messa
 	if compressCount < 2 {
 		compressCount = 2
 	}
-	// Must be even (pairs of user+assistant or tool rounds)
 	if compressCount%2 != 0 {
 		compressCount++
 	}
@@ -65,7 +65,10 @@ func (cm *ContextManager) CompressIfNeeded(ctx context.Context, messages []Messa
 	toCompress := convMsgs[:compressCount]
 	remaining := convMsgs[compressCount:]
 
-	// Build summary
+	// Release lock before LLM call (could take seconds)
+	cm.mu.Unlock()
+
+	// Build summary (NO lock held — may call LLM)
 	summary := cm.summarize(ctx, toCompress, systemPrompt)
 
 	slog.Info("context compressed",

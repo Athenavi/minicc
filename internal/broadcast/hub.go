@@ -63,16 +63,22 @@ func (h *Hub) Unsubscribe(id string) {
 func (h *Hub) Publish(event Event) {
 	data, _ := json.Marshal(event)
 
-	// Local fan-out
+	// Snapshot subscriber list under RLock (release before sending)
 	h.mu.RLock()
-	for id, ch := range h.subs {
+	subs := make([]chan Event, 0, len(h.subs))
+	for _, ch := range h.subs {
+		subs = append(subs, ch)
+	}
+	h.mu.RUnlock()
+
+	// Local fan-out (no lock held)
+	for _, ch := range subs {
 		select {
 		case ch <- event:
 		default:
-			slog.Warn("subscriber slow, dropping", "id", id)
+			slog.Warn("subscriber slow, dropping")
 		}
 	}
-	h.mu.RUnlock()
 
 	// Cross-instance via Redis
 	if !h.localOnly {

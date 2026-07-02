@@ -81,6 +81,10 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 	modeStore := NewModeStore()
 	permMgr := NewPermissionManager()
 	modeHandler := NewModeHandler(modeStore, permMgr)
+
+	// Agent execution semaphore — max 20 concurrent agent runs
+	agentSem := make(chan struct{}, 20)
+
 	r.Post("/submit", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Content   string `json:"content"`
@@ -106,7 +110,15 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 		Accepted(w, map[string]string{"status": "accepted", "session_id": body.SessionID})
 
 		// Process in background using the TurnOrchestrator (multi-turn agent loop)
+		// Acquire semaphore slot (max 20 concurrent runs), drop if full
+		select {
+		case agentSem <- struct{}{}:
+		default:
+			slog.Warn("agent semaphore full, dropping submit", "session", body.SessionID)
+			return
+		}
 		go func(content, sessionID, userID string) {
+			defer func() { <-agentSem }()
 			ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 			defer cancel()
 
