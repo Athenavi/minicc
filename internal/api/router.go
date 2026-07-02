@@ -1,7 +1,6 @@
 package api
 
 import (
-	"fmt"
 	"net/http"
 	"time"
 
@@ -53,7 +52,41 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 	})
 
 	// Legacy API endpoints (used by frontend chat)
-	r.Post("/submit", handleSubmit)
+	r.Post("/submit", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Content   string `json:"content"`
+			SessionID string `json:"session_id"`
+		}
+		if err := DecodeJSON(w, r, &body); err != nil {
+			BadRequest(w, "invalid request")
+			return
+		}
+		if body.Content == "" {
+			BadRequest(w, "content is required")
+			return
+		}
+
+		// Publish task started event via SSE
+		eventHub.Publish(broadcast.Event{Type: "text", Data: map[string]string{"content": "Processing your request...\n\n"}})
+
+		// Start async processing in background
+		go func(content, sessionID string) {
+			time.Sleep(500 * time.Millisecond)
+
+			eventHub.Publish(broadcast.Event{Type: "text", Data: map[string]string{"content": "Hello! I am MiniCC V2. "}})
+			time.Sleep(300 * time.Millisecond)
+			eventHub.Publish(broadcast.Event{Type: "text", Data: map[string]string{"content": "I'm running in demonstration mode. "}})
+			time.Sleep(300 * time.Millisecond)
+			eventHub.Publish(broadcast.Event{Type: "text", Data: map[string]string{"content": "Connect an LLM provider via the `LLM_API_KEY` environment variable to enable full AI capabilities.\n\n"}})
+			time.Sleep(200 * time.Millisecond)
+			eventHub.Publish(broadcast.Event{Type: "text", Data: map[string]string{"content": "For now, you can explore the available tools and pages:\n- **Agents**: Dispatch tasks to specialized agents\n- **Workflow**: Create visual workflow graphs\n- **Enterprise**: Use business tools\n- **System**: Monitor system metrics"}})
+
+			time.Sleep(500 * time.Millisecond)
+			eventHub.Publish(broadcast.Event{Type: "turn_done", Data: map[string]string{"session_id": sessionID}})
+		}(body.Content, body.SessionID)
+
+		Accepted(w, map[string]string{"status": "accepted", "session_id": body.SessionID})
+	})
 	r.Post("/cancel", handleCancel)
 	r.Post("/approve", handleApprove)
 	r.Post("/mode", handleMode)
@@ -193,25 +226,6 @@ func NotImplemented(w http.ResponseWriter, r *http.Request) {
 	JSON(w, http.StatusNotImplemented, APIResponse{
 		Success: false,
 		Error:   "not implemented yet",
-	})
-}
-
-func handleSubmit(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Content   string `json:"content"`
-		SessionID string `json:"session_id"`
-	}
-	if err := DecodeJSON(w, r, &body); err != nil {
-		BadRequest(w, fmt.Sprintf("invalid request: %v", err))
-		return
-	}
-	if body.Content == "" {
-		BadRequest(w, "content is required")
-		return
-	}
-	Accepted(w, map[string]string{
-		"status":     "accepted",
-		"session_id": body.SessionID,
 	})
 }
 
