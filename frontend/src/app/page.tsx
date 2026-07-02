@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Toaster, toast } from "sonner";
-import { Send, Square, Plus, MessageSquare } from "lucide-react";
+import { Send, Square, Plus, MessageSquare, LogIn } from "lucide-react";
 
 interface ChatMessage { id: string; role: string; content: string; toolCalls?: any[]; }
 interface Conversation { id: string; title: string; messages: ChatMessage[]; sessionId: string; }
@@ -24,9 +24,31 @@ export default function Home() {
   const [connStatus, setConnStatus] = useState<"connecting" | "connected" | "disconnected">("disconnected");
   const [streamingMsg, setStreamingMsg] = useState<ChatMessage | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [clientId] = useState(() => genId());
   const streamingContentRef = useRef("");
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // On mount: check login status and load conversations from backend
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await api("/v1/conversations", { skipAuth: true });
+        if (Array.isArray(data?.data) && data.data.length > 0) {
+          const serverConvs: Conversation[] = data.data.map((c: any) => ({
+            id: c.id,
+            title: c.title || "Chat",
+            messages: [],
+            sessionId: c.id,
+          }));
+          setConversations(serverConvs);
+          setIsLoggedIn(true);
+        }
+      } catch {
+        // Not logged in — use in-memory conversations
+      }
+    })();
+  }, []);
 
   // SSE event handler — updates streaming message as events arrive
   const handleEventRef = useRef<(data: any) => void>((data) => {
@@ -97,12 +119,50 @@ export default function Home() {
     } catch { setIsGenerating(false); }
   }, [input, isGenerating, activeIdx, activeConv.sessionId]);
 
-  const newChat = () => {
-    setConversations((prev) => [...prev, { id: genId(), title: `Chat ${prev.length + 1}`, messages: [], sessionId: genId() + genId() }]);
+  const newChat = async () => {
+    const newConv: Conversation = {
+      id: genId(),
+      title: `Chat ${conversations.length + 1}`,
+      messages: [],
+      sessionId: genId() + genId(),
+    };
+
+    // If logged in, persist to backend
+    if (isLoggedIn) {
+      try {
+        await api("/v1/conversations", {
+          method: "POST",
+          body: JSON.stringify({ id: newConv.sessionId, title: newConv.title }),
+        });
+      } catch { /* fall back to in-memory */ }
+    }
+
+    setConversations((prev) => [...prev, newConv]);
     setActiveIdx(conversations.length);
   };
 
   const statusColor = connStatus === "connected" ? "bg-green-500" : connStatus === "connecting" ? "bg-amber-500" : "bg-red-500";
+
+  const switchConversation = async (idx: number) => {
+    setActiveIdx(idx);
+    const conv = conversations[idx];
+    // Load messages from server if logged in and messages not yet loaded
+    if (isLoggedIn && conv.messages.length === 0 && conv.sessionId) {
+      try {
+        const data = await api(`/v1/conversations/${conv.sessionId}`, { skipAuth: true });
+        const msgs: ChatMessage[] = (data?.data?.messages || []).map((m: any) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+        }));
+        if (msgs.length > 0) {
+          setConversations((prev) => prev.map((c, i) =>
+            i === idx ? { ...c, messages: msgs } : c
+          ));
+        }
+      } catch { /* ignore */ }
+    }
+  };
 
   return (
     <div className="flex h-[calc(100vh-48px)] bg-gray-50 dark:bg-gray-900">
@@ -116,7 +176,7 @@ export default function Home() {
         </div>
         <ScrollArea className="flex-1">
           {conversations.map((conv, i) => (
-            <div key={conv.id} onClick={() => setActiveIdx(i)}
+            <div key={conv.id} onClick={() => switchConversation(i)}
               className={`flex items-center gap-2 px-3 py-2 cursor-pointer text-xs border-l-2 transition-colors ${
                 i === activeIdx ? "bg-blue-50 dark:bg-blue-950 border-l-blue-500" : "border-l-transparent hover:bg-gray-50 dark:hover:bg-gray-800"
               }`}>
@@ -126,8 +186,15 @@ export default function Home() {
           ))}
         </ScrollArea>
         <div className="p-3 border-t dark:border-gray-700 flex items-center gap-2 text-xs text-gray-500">
+          {isLoggedIn ? (
+            <span className="text-green-600">Logged in</span>
+          ) : (
+            <a href="/login" className="flex items-center gap-1 text-blue-500 hover:text-blue-600">
+              <LogIn className="h-3 w-3" /> Log in
+            </a>
+          )}
           <div className={`w-2 h-2 rounded-full ${statusColor}`} />
-          {connStatus}
+          <span>{connStatus}</span>
         </div>
       </div>
 

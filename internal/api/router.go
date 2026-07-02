@@ -54,6 +54,7 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 	})
 
 	// Legacy API endpoints (used by frontend chat)
+	conversationHandler := NewConversationHandler()
 	r.Post("/submit", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Content   string `json:"content"`
@@ -68,11 +69,18 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 			return
 		}
 
+		// Optional auth: if logged in, persist to DB
+		claims := getAuthClaims(r, authenticator)
+		userID := ""
+		if claims != nil {
+			userID = claims.UserID
+		}
+
 		// Return 202 Accepted — processing continues in background
 		Accepted(w, map[string]string{"status": "accepted", "session_id": body.SessionID})
 
 		// Process in background: call LLM and stream tokens via SSE
-		go func(content, sessionID string) {
+		go func(content, sessionID, userID string) {
 			req := &llm.Request{
 				Messages: []llm.Message{
 					{Role: "system", Content: "You are MiniCC V2, an AI coding assistant. Respond concisely and helpfully."},
@@ -85,7 +93,9 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 			defer cancel()
 
+			var fullContent string
 			resp, err := llmGateway.ChatStream(ctx, req, func(chunk string) {
+				fullContent += chunk
 				eventHub.Publish(broadcast.Event{Type: "text", Data: map[string]string{"content": chunk}})
 			})
 
@@ -96,9 +106,14 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 				return
 			}
 
-			_ = resp // usage info available if needed
+			_ = resp
 			eventHub.Publish(broadcast.Event{Type: "turn_done", Data: map[string]string{"session_id": sessionID}})
-		}(body.Content, body.SessionID)
+
+			// Persist to DB if authenticated
+			if userID != "" {
+				SaveMessages(ctx, sessionID, userID, content, fullContent)
+			}
+		}(body.Content, body.SessionID, userID)
 	})
 	r.Post("/cancel", handleCancel)
 	r.Post("/approve", handleApprove)
@@ -139,8 +154,10 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 
 		// Chat
 		r.Post("/chat", chatHandler.Chat)
-		r.Get("/sessions", NotImplemented)
-		r.Get("/sessions/{id}", NotImplemented)
+		r.Get("/conversations", conversationHandler.List)
+		r.Post("/conversations", conversationHandler.Create)
+		r.Get("/conversations/{id}", conversationHandler.Get)
+		r.Delete("/conversations/{id}", conversationHandler.Delete)
 
 		// Tools
 		r.Get("/tools", NotImplemented)
