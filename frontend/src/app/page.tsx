@@ -14,7 +14,8 @@ import { Send, Square, Plus, MessageSquare } from "lucide-react";
 interface ChatMessage { id: string; role: string; content: string; toolCalls?: any[]; }
 interface Conversation { id: string; title: string; messages: ChatMessage[]; sessionId: string; }
 
-function genId() { return Math.random().toString(36).slice(2, 10); }
+let idCounter = 0;
+function genId() { return (++idCounter).toString(36) + Math.random().toString(36).slice(2, 5); }
 
 export default function Home() {
   const [conversations, setConversations] = useState<Conversation[]>([{ id: genId(), title: "Chat 1", messages: [], sessionId: genId() + genId() }]);
@@ -40,13 +41,14 @@ export default function Home() {
     }
     if (data.type === "turn_done" || data.type === "error") {
       setIsGenerating(false);
-      setConversations((c) => c.map((conv, i) =>
-        i === activeIdxRef.current
-          ? { ...conv, messages: [...conv.messages, { id: genId(), role: "assistant", content: streamingContentRef.current }] }
-          : conv
-      ));
+      const finalContent = streamingContentRef.current;
       streamingContentRef.current = "";
       setStreamingMsg(null);
+      setConversations((c) => c.map((conv, i) =>
+        i === activeIdxRef.current
+          ? { ...conv, messages: [...conv.messages, { id: genId(), role: "assistant", content: finalContent }] }
+          : conv
+      ));
     }
   });
 
