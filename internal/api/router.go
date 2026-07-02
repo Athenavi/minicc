@@ -227,6 +227,16 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 		r.Get("/campaigns", handleEnterpriseList("marketing_campaigns", "name, status, campaign_type"))
 	})
 
+	// Media library endpoints
+	mediaHandler := NewMediaHandler(cfg.StorageRoot)
+	r.Route("/v1/media", func(r chi.Router) {
+		r.Use(rateLimiter.Middleware)
+		r.Get("/", mediaHandler.List)
+		r.Post("/", mediaHandler.Create)
+		r.Post("/upload", mediaHandler.Upload)
+		r.Delete("/", mediaHandler.Delete)
+	})
+
 	// Agent list endpoint
 	r.Route("/v1/agents", func(r chi.Router) {
 		r.Use(rateLimiter.Middleware)

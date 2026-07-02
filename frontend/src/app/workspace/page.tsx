@@ -64,6 +64,8 @@ export default function WorkspacePage() {
   const [agentStatuses, setAgentStatuses] = useState<Record<string, string>>({});
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [files, setFiles] = useState<FileNode[]>([]);
+  const [mediaAssets, setMediaAssets] = useState<any[]>([]);
+  const [mediaFilter, setMediaFilter] = useState("all");
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set(["."]));
 
   // ── SSE handler ──
@@ -179,7 +181,15 @@ export default function WorkspacePage() {
     } catch {}
   }, []);
 
-  useEffect(() => { fetchConvs(); fetchTasks(); fetchAgents(); fetchFiles(); }, []);
+  const fetchMedia = useCallback(async (category?: string) => {
+    try {
+      const params = category && category !== "all" ? `?category=${category}` : "";
+      const d = await api(`/v1/media${params}`, { skipAuth: true });
+      if (Array.isArray(d?.data)) setMediaAssets(d.data);
+    } catch {}
+  }, []);
+
+  useEffect(() => { fetchConvs(); fetchTasks(); fetchAgents(); fetchFiles(); fetchMedia(); }, []);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [activeConv.messages, streamingMsg]);
 
   // ── SSE setup ──
@@ -330,7 +340,7 @@ export default function WorkspacePage() {
 
   const rightTabs = [
     { id: "agents", label: "Agents", icon: Bot },
-    { id: "files", label: "Files", icon: FileCode },
+    { id: "media", label: "Media", icon: FileCode },
     { id: "tasks", label: "Tasks", icon: ListTodo },
     { id: "tools", label: "Tools", icon: Building2 },
   ];
@@ -518,14 +528,67 @@ export default function WorkspacePage() {
                 )}
               </TabsContent>
 
-              {/* Files tab — real data from /api/editor/files */}
-              <TabsContent value="files" className="flex-1 overflow-auto p-2 mt-0">
-                {files.length > 0 ? renderTree(files) : (
-                  <div className="text-xs text-gray-400 text-center py-8">
-                    <p className="text-lg mb-1">📁</p>
-                    <p>No workspace files</p>
-                  </div>
-                )}
+              {/* Media Library tab */}
+              <TabsContent value="media" className="flex-1 flex flex-col overflow-auto mt-0">
+                {/* Category filters */}
+                <div className="flex gap-1 p-2 flex-wrap border-b dark:border-gray-700">
+                  {[
+                    { id: "all", label: "All" },
+                    { id: "writing", label: "Writing" },
+                    { id: "image", label: "Images" },
+                    { id: "translation", label: "Translation" },
+                    { id: "office", label: "Office" },
+                    { id: "code", label: "Code" },
+                  ].map((c) => (
+                    <button key={c.id} onClick={() => { setMediaFilter(c.id); fetchMedia(c.id); }}
+                      className={`text-[10px] px-2 py-0.5 rounded-full transition-colors ${
+                        mediaFilter === c.id ? "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300" : "text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      }`}>
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
+                {/* Media grid */}
+                <div className="flex-1 overflow-auto p-2">
+                  {mediaAssets.length === 0 ? (
+                    <div className="text-xs text-gray-400 text-center py-8">
+                      <p className="text-lg mb-1">📦</p>
+                      <p>No media yet</p>
+                      <p className="text-[10px] mt-1">AI-generated content appears here</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                      {mediaAssets.map((asset) => (
+                        <div key={asset.id} className="p-2 rounded-lg border dark:border-gray-700 hover:shadow-sm cursor-pointer transition-shadow"
+                          onClick={() => {
+                            if (asset.type === "image" && asset.file_path) {
+                              setOutputContent(`![${asset.name}](/${asset.file_path})`);
+                              setOutputLang("markdown");
+                            } else {
+                              setOutputContent(asset.content || "");
+                              setOutputLang(asset.type === "code" ? "plaintext" : "markdown");
+                            }
+                            setOutputPath(asset.name);
+                            setOutputPanel(true);
+                          }}>
+                          <div className="text-[10px] text-gray-400 mb-1 flex items-center gap-1">
+                            <span>{asset.type === "image" ? "🖼" : asset.type === "text" ? "📝" : asset.type === "code" ? "💻" : "📄"}</span>
+                            <span className="font-medium text-gray-600 dark:text-gray-300 truncate">{asset.name}</span>
+                          </div>
+                          {asset.type === "image" && asset.file_path ? (
+                            <img src={`/${asset.file_path}`} alt={asset.name} className="w-full h-20 object-cover rounded" />
+                          ) : (
+                            <p className="text-[10px] text-gray-500 line-clamp-3">{asset.content?.slice(0, 120) || "No preview"}</p>
+                          )}
+                          <div className="flex items-center gap-1 mt-1">
+                            <span className="text-[9px] text-gray-400">{asset.category || asset.type}</span>
+                            <span className="text-[9px] text-gray-400 ml-auto">{Math.ceil(asset.size / 100) / 10}k</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </TabsContent>
 
               {/* Tasks tab — real data from /v1/tasks */}
