@@ -80,6 +80,7 @@ type openAIRequest struct {
 	Model       string           `json:"model"`
 	Messages    []openAIMessage  `json:"messages"`
 	Tools       []openAIToolDef  `json:"tools,omitempty"`
+	ToolChoice  string           `json:"tool_choice,omitempty"`
 	MaxTokens   int              `json:"max_tokens,omitempty"`
 	Temperature float64          `json:"temperature,omitempty"`
 	Stream      bool             `json:"stream,omitempty"`
@@ -87,6 +88,7 @@ type openAIRequest struct {
 
 type openAIResponse struct {
 	Choices []struct {
+		FinishReason *string `json:"finish_reason"`
 		Message struct {
 			Content   string           `json:"content"`
 			ToolCalls []openAIToolCall `json:"tool_calls,omitempty"`
@@ -165,11 +167,17 @@ func (p *OpenAIProvider) Chat(ctx context.Context, req *Request) (*Response, err
 	respModel := result.Model
 	if respModel == "" { respModel = p.model }
 
+	finishReason := ""
+	if choice.FinishReason != nil {
+		finishReason = *choice.FinishReason
+	}
+
 	return &Response{
 		Content:      choice.Message.Content,
 		Model:        respModel,
 		InputTokens:  result.Usage.PromptTokens,
 		OutputTokens: result.Usage.CompletionTokens,
+		FinishReason: finishReason,
 		ToolCalls:    p.toToolCalls(choice.Message.ToolCalls),
 	}, nil
 }
@@ -322,6 +330,10 @@ func (p *OpenAIProvider) buildRequest(req *Request, stream bool) openAIRequest {
 			r.Tools[i].Function.Description = t.Description
 			r.Tools[i].Function.Parameters = t.Parameters
 		}
+	}
+
+	if req.ToolChoice != "" {
+		r.ToolChoice = req.ToolChoice
 	}
 
 	return r

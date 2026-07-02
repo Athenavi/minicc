@@ -64,6 +64,13 @@ func (c *ResponseCache) Set(req *Request, resp *Response) {
 func (c *ResponseCache) hash(req *Request) string {
 	h := sha256.New()
 	h.Write([]byte(req.Model))
+	if len(req.Tools) > 0 {
+		sorted := make([]ToolDef, len(req.Tools))
+		copy(sorted, req.Tools)
+		sort.Slice(sorted, func(i, j int) bool { return sorted[i].Name < sorted[j].Name })
+		toolJSON, _ := json.Marshal(sorted)
+		h.Write([]byte("tools:" + string(toolJSON) + "\n"))
+	}
 	for _, m := range req.Messages {
 		h.Write([]byte(m.Role))
 		h.Write([]byte(m.Content))
