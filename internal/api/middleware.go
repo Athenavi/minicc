@@ -16,6 +16,7 @@ type responseWriter struct {
 	http.ResponseWriter
 	status int
 	bytes  int
+	flusher http.Flusher
 }
 
 func (rw *responseWriter) WriteHeader(status int) {
@@ -29,10 +30,20 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 	return n, err
 }
 
+func (rw *responseWriter) Flush() {
+	if rw.flusher != nil {
+		rw.flusher.Flush()
+	}
+}
+
 func LoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
+		var flusher http.Flusher
+		if f, ok := w.(http.Flusher); ok {
+			flusher = f
+		}
+		rw := &responseWriter{ResponseWriter: w, status: http.StatusOK, flusher: flusher}
 
 		next.ServeHTTP(rw, r)
 
