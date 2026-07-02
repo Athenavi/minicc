@@ -2,13 +2,17 @@ package api
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/athenavi/minicc/config"
 	"github.com/athenavi/minicc/internal/auth"
 	"github.com/athenavi/minicc/internal/broadcast"
+	"github.com/athenavi/minicc/internal/db"
 	"github.com/athenavi/minicc/internal/engine"
 	"github.com/athenavi/minicc/internal/llm"
 	"github.com/athenavi/minicc/internal/monitor"
@@ -111,6 +115,10 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 			// Persist to DB if authenticated
 			if userID != "" {
 				SaveMessages(ctx, sessionID, userID, content, fullContent)
+				// Detect and save task dispatch from LLM response
+				if taskName, source := detectTaskDispatch(fullContent); taskName != "" {
+					createAndPublishTask(ctx, sessionID, userID, taskName, source, eventHub)
+				}
 			}
 		}(body.Content, body.SessionID, userID)
 	})
@@ -167,6 +175,9 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 		// Tools
 		r.Get("/tools", NotImplemented)
 		r.Post("/tools/execute", NotImplemented)
+
+		// Tasks (running/completed/failed)
+		r.Get("/tasks", handleTasksList)
 
 		// Metrics
 		r.Get("/metrics", func(w http.ResponseWriter, r *http.Request) {
@@ -273,4 +284,138 @@ func handleApprove(w http.ResponseWriter, r *http.Request) {
 
 func handleMode(w http.ResponseWriter, r *http.Request) {
 	OK(w, map[string]string{"status": "ok", "mode": "ask"})
+}
+
+// ── Task dispatch detection (from LLM response text) ──
+
+var dispatchPatterns = []string{
+	"已分派至", "已分配至", "已派发至",
+	"dispatched to", "assigned to",
+}
+
+// detectTaskDispatch scans LLM response for known dispatch keywords
+// and returns (taskName, source) if found.
+func detectTaskDispatch(response string) (string, string) {
+	for _, pattern := range dispatchPatterns {
+		idx := strings.Index(response, pattern)
+		if idx < 0 {
+			continue
+		}
+		// Extract text after the pattern (up to next newline or 80 chars)
+		start := idx + len(pattern)
+		if start >= len(response) {
+			continue
+		}
+		end := start + 80
+		if end > len(response) {
+			end = len(response)
+		}
+		snippet := response[start:end]
+		// Take up to newline or colon/comma
+		termIdx := strings.IndexAny(snippet, "\n，,：:")
+		if termIdx > 0 {
+			snippet = snippet[:termIdx]
+		}
+		snippet = strings.TrimSpace(snippet)
+		if snippet != "" {
+			return snippet, pattern
+		}
+	}
+	return "", ""
+}
+
+// createAndPublishTask inserts a task record and emits tool_dispatch SSE event.
+func createAndPublishTask(ctx context.Context, sessionID, userID, taskName, source string, hub *broadcast.Hub) {
+	if db.Pool == nil {
+		return
+	}
+
+	payload := map[string]interface{}{
+		"session_id": sessionID,
+		"source":     source,
+		"task":       taskName,
+		"dispatch":   true,
+	}
+	payloadJSON, _ := json.Marshal(payload)
+
+	taskID := genID()
+	_, err := db.Pool.Exec(ctx,
+		`INSERT INTO tasks (id, user_id, type, status, payload, created_at, updated_at)
+		 VALUES ($1, $2, 'tool', 'running', $3, NOW(), NOW())`,
+		taskID, userID, string(payloadJSON))
+	if err != nil {
+		slog.Warn("create task failed", "error", err)
+		return
+	}
+
+	// Emit tool_dispatch SSE event so the frontend can show it inline
+	hub.Publish(broadcast.Event{
+		Type: "tool_dispatch",
+		Data: map[string]string{
+			"tool_name":  taskName,
+			"task_id":    taskID,
+			"session_id": sessionID,
+		},
+	})
+
+	slog.Info("task dispatched", "id", taskID, "name", taskName, "user", userID)
+}
+
+// ── Task list API ──
+
+func handleTasksList(w http.ResponseWriter, r *http.Request) {
+	if db.Pool == nil {
+		OK(w, []map[string]interface{}{})
+		return
+	}
+
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		Unauthorized(w, "not authenticated")
+		return
+	}
+
+	rows, err := db.Pool.Query(r.Context(),
+		`SELECT id, type, status, payload, error, created_at, updated_at
+		 FROM tasks
+		 WHERE user_id = $1
+		 ORDER BY created_at DESC
+		 LIMIT 50`, claims.UserID)
+	if err != nil {
+		InternalError(w, "query tasks: "+err.Error())
+		return
+	}
+	defer rows.Close()
+
+	tasks := make([]map[string]interface{}, 0)
+	for rows.Next() {
+		var id, typ, status string
+		var payload, error sql.NullString
+		var createdAt, updatedAt time.Time
+
+		if err := rows.Scan(&id, &typ, &status, &payload, &error, &createdAt, &updatedAt); err != nil {
+			continue
+		}
+
+		task := map[string]interface{}{
+			"id":         id,
+			"type":       typ,
+			"status":     status,
+			"created_at": createdAt,
+			"updated_at": updatedAt,
+		}
+		if payload.Valid {
+			var p interface{}
+			json.Unmarshal([]byte(payload.String), &p)
+			task["payload"] = p
+		} else {
+			task["payload"] = map[string]interface{}{}
+		}
+		if error.Valid {
+			task["error"] = error.String
+		}
+		tasks = append(tasks, task)
+	}
+
+	OK(w, tasks)
 }

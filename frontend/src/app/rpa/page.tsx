@@ -2,12 +2,22 @@
 
 import { useState, useEffect } from "react";
 import { useToolRunner } from "@/hooks/useToolRunner";
-import { apiUrl } from "@/lib/api";
+import { api, apiUrl } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Toaster, toast } from "sonner";
+
+interface Task {
+  id: string;
+  type: string;
+  status: string;
+  payload: { task?: string; session_id?: string };
+  error?: string;
+  created_at: string;
+  updated_at: string;
+}
 
 const CATEGORIES = [
   { id: "browser", label: "🌐 Browser", filter: (n: string) => n.startsWith("browser_") || n.startsWith("web_") },
@@ -18,18 +28,36 @@ const CATEGORIES = [
 
 export default function RPAPage() {
   const [tools, setTools] = useState<string[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const { runTool } = useToolRunner();
 
   useEffect(() => {
     fetch(apiUrl("/api/tools")).then((r) => r.json()).then((d) => setTools((d.tools || []).map((t: any) => t.name))).catch(() => {});
+
+    // Load dispatched tasks (auth required — 401 silently ignored for guests)
+    api("/v1/tasks", { skipAuth: true }).then((data) => {
+      if (Array.isArray(data?.data)) {
+        setTasks(data.data);
+      }
+    }).catch(() => {});
   }, []);
 
   const handleRun = async (name: string) => {
     setLoading(name);
     toast.success(await runTool(name));
     setLoading(null);
+  };
+
+  const statusBadge = (status: string) => {
+    const colors: Record<string, string> = {
+      pending: "bg-yellow-100 text-yellow-800",
+      running: "bg-blue-100 text-blue-800",
+      completed: "bg-green-100 text-green-800",
+      failed: "bg-red-100 text-red-800",
+    };
+    return colors[status] || "bg-gray-100 text-gray-800";
   };
 
   return (
@@ -39,11 +67,39 @@ export default function RPAPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold">🤖 RPA Control Center</h1>
-            <p className="text-sm text-gray-500">Enterprise RPA Platform · {tools.length} tools</p>
+            <p className="text-sm text-gray-500">{tasks.length} tasks · {tools.length} tools</p>
           </div>
           <Input className="w-48" placeholder="Search tools..." value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
 
+        {/* Running / Recent Tasks */}
+        {tasks.length > 0 && (
+          <Card>
+            <CardContent className="p-4">
+              <h2 className="text-sm font-semibold mb-3">📋 Recent Tasks</h2>
+              <div className="space-y-2">
+                {tasks.map((t) => (
+                  <div key={t.id} className="flex items-center justify-between text-sm border-b pb-2 last:border-b-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${statusBadge(t.status)}`}>
+                        {t.status}
+                      </span>
+                      <span className="truncate font-medium">{t.payload?.task || t.type}</span>
+                      {t.payload?.session_id && (
+                        <span className="text-gray-400 text-[10px] truncate">session: {t.payload.session_id.slice(0, 8)}…</span>
+                      )}
+                    </div>
+                    <span className="text-gray-400 text-[10px] shrink-0">
+                      {new Date(t.created_at).toLocaleString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Tool Categories */}
         <Tabs defaultValue="browser">
           <TabsList className="w-full">
             {CATEGORIES.map((c) => <TabsTrigger key={c.id} value={c.id} className="flex-1">{c.label}</TabsTrigger>)}
