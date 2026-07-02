@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/athenavi/minicc/internal/db"
+	"github.com/athenavi/minicc/internal/monitor"
 	"github.com/athenavi/minicc/internal/tools"
 )
 
@@ -56,6 +57,12 @@ func (h *ToolHandler) ExecuteTool(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	result, err := h.registry.Execute(r.Context(), body.Name, body.Input)
 	elapsed := time.Since(start)
+
+	// Track in monitor
+	monitor.IncToolCall()
+	if err != nil {
+		monitor.IncToolError()
+	}
 
 	// Record tool execution in DB
 	toolCallID := recordToolCall(r, body.Name, body.Input, body.SessionID, result, err, elapsed)

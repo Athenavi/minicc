@@ -178,6 +178,14 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 		r.Post("/execute", toolHandler.ExecuteTool)
 	})
 
+	// System endpoints (public)
+	systemHandler := NewSystemHandler()
+	r.Route("/v1/system", func(r chi.Router) {
+		r.Use(rateLimiter.Middleware)
+		r.Get("/health", systemHandler.HealthScores)
+		r.Get("/traces", systemHandler.Traces)
+	})
+
 	// Protected API v1
 	r.Route("/v1", func(r chi.Router) {
 		r.Use(AuthMiddleware(authenticator))
