@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 )
 
@@ -66,6 +67,9 @@ func TooManyRequests(w http.ResponseWriter) {
 
 func DecodeJSON(w http.ResponseWriter, r *http.Request, v interface{}) error {
 	defer r.Body.Close()
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB limit
+	// Limit request body to 1MB
+	if r.ContentLength > 1<<20 {
+		return fmt.Errorf("request body too large (max 1MB)")
+	}
 	return json.NewDecoder(r.Body).Decode(v)
 }

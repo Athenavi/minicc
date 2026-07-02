@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -50,6 +51,12 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 		r.Get("/health", handleHealth)
 		r.Get("/ready", handleReadiness)
 	})
+
+	// Legacy API endpoints (used by frontend chat)
+	r.Post("/submit", handleSubmit)
+	r.Post("/cancel", handleCancel)
+	r.Post("/approve", handleApprove)
+	r.Post("/mode", handleMode)
 
 	// SSE events endpoint (long-lived connection, no rate limit)
 	r.Get("/events", func(w http.ResponseWriter, r *http.Request) {
@@ -187,4 +194,35 @@ func NotImplemented(w http.ResponseWriter, r *http.Request) {
 		Success: false,
 		Error:   "not implemented yet",
 	})
+}
+
+func handleSubmit(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Content   string `json:"content"`
+		SessionID string `json:"session_id"`
+	}
+	if err := DecodeJSON(w, r, &body); err != nil {
+		BadRequest(w, fmt.Sprintf("invalid request: %v", err))
+		return
+	}
+	if body.Content == "" {
+		BadRequest(w, "content is required")
+		return
+	}
+	Accepted(w, map[string]string{
+		"status":     "accepted",
+		"session_id": body.SessionID,
+	})
+}
+
+func handleCancel(w http.ResponseWriter, r *http.Request) {
+	OK(w, map[string]string{"status": "cancelled"})
+}
+
+func handleApprove(w http.ResponseWriter, r *http.Request) {
+	OK(w, map[string]string{"status": "approved"})
+}
+
+func handleMode(w http.ResponseWriter, r *http.Request) {
+	OK(w, map[string]string{"status": "ok", "mode": "ask"})
 }
