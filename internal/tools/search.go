@@ -159,3 +159,8 @@ func RegisterSearchTools(registry *ToolRegistry, workspaceDir string) {
 	registry.Register(NewSearchTool(workspaceDir))
 	registry.Register(NewGrepTool(workspaceDir))
 }
+
+// RegisterMediaTools registers media library tools.
+func RegisterMediaTools(registry *ToolRegistry) {
+	registry.Register(NewMediaCreateTool())
+}

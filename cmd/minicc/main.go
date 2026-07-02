@@ -124,6 +124,10 @@ func main() {
 	tools.RegisterRPATools(toolRegistry)
 	slog.Info("rpa tools registered")
 
+	// ── Media Library Tools ──
+	tools.RegisterMediaTools(toolRegistry)
+	slog.Info("media tools registered")
+
 	slog.Info("all tools registered", "total", len(toolRegistry.List()))
 
 	// ── Session Manager ──
