@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { MonacoEditor } from "@/components/editor/MonacoEditor";
+import { apiUrl } from "@/lib/api";
 
 interface FileNode {
   name: string;
@@ -74,9 +75,9 @@ export default function EditorPage() {
 
   // Load file tree
   useEffect(() => {
-    fetch("/api/editor/files")
+    fetch(apiUrl("/api/editor/files"))
       .then((r) => r.json())
-      .then((data) => setFiles(data.files || []))
+      .then((d) => setFiles(d.data?.files || d.files || []))
       .catch(() => {});
   }, []);
 
@@ -84,9 +85,10 @@ export default function EditorPage() {
     const existing = tabs.find((t) => t.path === path);
     if (existing) { setActiveTab(path); return; }
     try {
-      const resp = await fetch(`/api/editor/read?path=${encodeURIComponent(path)}`);
+      const resp = await fetch(apiUrl(`/api/editor/read?path=${encodeURIComponent(path)}`));
       const data = await resp.json();
-      setTabs((prev) => [...prev, { path, name, content: data.content || "", dirty: false, language: getFileLanguage(name) }]);
+      const content = data.data?.content || data.content || "";
+      setTabs((prev) => [...prev, { path, name, content, dirty: false, language: getFileLanguage(name) }]);
       setActiveTab(path);
     } catch {}
   }, [tabs]);
@@ -108,7 +110,7 @@ export default function EditorPage() {
     const tab = tabs.find((t) => t.path === activeTab);
     if (!tab || !tab.dirty) return;
     try {
-      await fetch("/api/editor/write", {
+      await fetch(apiUrl("/api/editor/write"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path: tab.path, content: tab.content }),

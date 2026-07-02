@@ -151,6 +151,15 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 		r.Post("/setup", installHandler.Setup)
 	})
 
+	// Editor endpoints (public, rate limited)
+	editorHandler := NewEditorHandler(cfg.StorageRoot)
+	r.Route("/api/editor", func(r chi.Router) {
+		r.Use(rateLimiter.Middleware)
+		r.Get("/files", editorHandler.ListFiles)
+		r.Get("/read", editorHandler.ReadFile)
+		r.Post("/write", editorHandler.WriteFile)
+	})
+
 	// Conversation endpoints (auth checked manually inside handler)
 	conversationHandler := NewConversationHandler(authenticator)
 	r.Route("/v1/conversations", func(r chi.Router) {
