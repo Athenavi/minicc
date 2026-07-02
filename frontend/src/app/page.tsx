@@ -24,28 +24,29 @@ export default function Home() {
   const [streamingMsg, setStreamingMsg] = useState<ChatMessage | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [clientId] = useState(() => genId());
+  const streamingContentRef = useRef("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // SSE event handler — updates streaming message as events arrive
   const handleEventRef = useRef<(data: any) => void>((data) => {
     if (data.type === "text" && data.data) {
       const textChunk = typeof data.data === "string" ? data.data : (data.data.content || "");
+      streamingContentRef.current += textChunk;
       setStreamingMsg((prev) => prev ? { ...prev, content: prev.content + textChunk } : prev);
     }
     if (data.type === "tool_dispatch") {
+      streamingContentRef.current += `\n\n_🔧 Using tool: ${data.data?.tool_name || "unknown"}_\n`;
       setStreamingMsg((prev) => prev ? { ...prev, content: (prev.content || "") + `\n\n_🔧 Using tool: ${data.data?.tool_name || "unknown"}_\n` } : prev);
     }
     if (data.type === "turn_done" || data.type === "error") {
       setIsGenerating(false);
-      setStreamingMsg((prev) => {
-        if (prev) {
-          // Finalize: move streaming message to conversation
-          setConversations((c) => c.map((conv, i) =>
-            i === activeIdxRef.current ? { ...conv, messages: [...conv.messages, prev] } : conv
-          ));
-        }
-        return null;
-      });
+      setConversations((c) => c.map((conv, i) =>
+        i === activeIdxRef.current
+          ? { ...conv, messages: [...conv.messages, { id: genId(), role: "assistant", content: streamingContentRef.current }] }
+          : conv
+      ));
+      streamingContentRef.current = "";
+      setStreamingMsg(null);
     }
   });
 
