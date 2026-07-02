@@ -56,9 +56,12 @@ type openAIMessage struct {
 }
 
 type openAIToolDef struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Parameters  any    `json:"parameters"`
+	Type       string `json:"type"`
+	Function   struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Parameters  any    `json:"parameters"`
+	} `json:"function"`
 }
 
 type openAIToolCall struct {
@@ -314,7 +317,10 @@ func (p *OpenAIProvider) buildRequest(req *Request, stream bool) openAIRequest {
 	if len(req.Tools) > 0 {
 		r.Tools = make([]openAIToolDef, len(req.Tools))
 		for i, t := range req.Tools {
-			r.Tools[i] = openAIToolDef{Name: t.Name, Description: t.Description, Parameters: t.Parameters}
+			r.Tools[i] = openAIToolDef{Type: "function"}
+			r.Tools[i].Function.Name = t.Name
+			r.Tools[i].Function.Description = t.Description
+			r.Tools[i].Function.Parameters = t.Parameters
 		}
 	}
 
