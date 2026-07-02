@@ -61,6 +61,7 @@ export default function WorkspacePage() {
 
   // ── Right panel data ──
   const [agents, setAgents] = useState<AgentItem[]>([]);
+  const [agentStatuses, setAgentStatuses] = useState<Record<string, string>>({});
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [files, setFiles] = useState<FileNode[]>([]);
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set(["."]));
@@ -124,6 +125,24 @@ export default function WorkspacePage() {
       setPermRequest(null);
       const ok = data.data?.approved === "true";
       setStreamingMsg((p) => p ? { ...p, content: p.content + (ok ? "\n\n_✅ Approved_\n" : "\n\n_❌ Rejected_\n") } : p);
+    }
+    if (data.type === "agent_status") {
+      const st = data.data?.status || "";
+      const agentType = data.data?.agent_type || "";
+      const task = data.data?.task || "";
+      const result = data.data?.result || "";
+      // Update agent status in the panel
+      setAgentStatuses((prev) => ({ ...prev, [agentType]: st }));
+      // Refresh tasks when agent completes
+      if (st === "completed" || st === "failed") { fetchTasks(); }
+      // Show inline status
+      const statusMsg = st === "running" ? `_🤖 **${agentType}** agent: ${task}_\n` :
+        st === "completed" ? `_✅ **${agentType}** agent completed_\n` :
+        st === "failed" ? `_❌ **${agentType}** agent failed: ${result}_\n` : "";
+      if (statusMsg) {
+        streamingContentRef.current += `\n\n${statusMsg}`;
+        setStreamingMsg((p) => p ? { ...p, content: p.content + `\n\n${statusMsg}` } : p);
+      }
     }
   });
 
@@ -257,14 +276,19 @@ export default function WorkspacePage() {
   const dispatchToAgent = async (agentType: string, taskDesc?: string) => {
     const task = taskDesc || input.trim();
     if (!task) return;
-    setInput(`Dispatch to ${agentType}: ${task}`);
-    // Auto-send via /submit
-    const text = `Dispatch to ${agentType}: ${task}`;
-    setIsGenerating(true);
-    const asstMsg: ChatMessage = { id: genId(), role: "assistant", content: "" };
-    setStreamingMsg(asstMsg);
-    try { await api("/submit", { method: "POST", body: JSON.stringify({ content: text, session_id: activeConv.sessionId }) }); }
-    catch { setIsGenerating(false); }
+    setInput("");
+    setAgentStatuses((prev) => ({ ...prev, [agentType]: "running" }));
+    try {
+      await api("/v1/agents/dispatch", {
+        method: "POST",
+        body: JSON.stringify({
+          session_id: activeConv.sessionId,
+          agent_type: agentType,
+          task: task,
+          user_id: isLoggedIn ? "user" : "",
+        }),
+      });
+    } catch {}
   };
 
   const runEnterpriseTool = async (name: string, toolLabel: string) => {
@@ -476,15 +500,21 @@ export default function WorkspacePage() {
                 {agents.length === 0 ? (
                   <div className="text-xs text-gray-400 text-center py-8"><Loader2 className="h-4 w-4 animate-spin mx-auto mb-2" />Loading agents...</div>
                 ) : (
-                  agents.map((a) => (
-                    <Card key={a.type} className="p-3 hover:shadow-sm transition-shadow cursor-pointer" onClick={() => dispatchToAgent(a.type)}>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-medium">{a.type === "code" ? "💻" : a.type === "knowledge" ? "📚" : a.type === "rpa" ? "🤖" : "🔧"} {a.name}</span>
-                        <span className="text-[10px] text-blue-600 hover:underline">Dispatch →</span>
-                      </div>
-                      <p className="text-[10px] text-gray-500">{a.description}</p>
-                    </Card>
-                  ))
+                  agents.map((a) => {
+                    const st = agentStatuses[a.type] || "idle";
+                    const stColor = st === "running" ? "bg-blue-100 text-blue-700 animate-pulse" :
+                      st === "completed" ? "bg-green-100 text-green-700" :
+                      st === "failed" ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-500";
+                    return (
+                      <Card key={a.type} className="p-3 hover:shadow-sm transition-shadow cursor-pointer" onClick={() => dispatchToAgent(a.type)}>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm font-medium">{a.type === "code" ? "💻" : a.type === "knowledge" ? "📚" : a.type === "rpa" ? "🤖" : "🔧"} {a.name}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${stColor}`}>{st}</span>
+                        </div>
+                        <p className="text-[10px] text-gray-500">{a.description}</p>
+                      </Card>
+                    );
+                  })
                 )}
               </TabsContent>
 

@@ -19,10 +19,16 @@ type TurnOrchestrator struct {
 	llm     *llm.Gateway
 	tools   *tools.ToolRegistry
 	hub     *broadcast.Hub
+	ctxMgr  *llm.ContextManager
 }
 
-func NewTurnOrchestrator(llm *llm.Gateway, tools *tools.ToolRegistry, hub *broadcast.Hub) *TurnOrchestrator {
-	return &TurnOrchestrator{llm: llm, tools: tools, hub: hub}
+func NewTurnOrchestrator(gateway *llm.Gateway, tools *tools.ToolRegistry, hub *broadcast.Hub) *TurnOrchestrator {
+	return &TurnOrchestrator{
+		llm:    gateway,
+		tools:  tools,
+		hub:    hub,
+		ctxMgr: llm.NewContextManager(gateway, 30),
+	}
 }
 
 // Execute runs the full agent turn lifecycle.
@@ -39,6 +45,12 @@ func (o *TurnOrchestrator) Execute(ctx context.Context, sessionID string, messag
 	allMsgs = append(allMsgs, messages...)
 
 	for turn := 0; turn < maxTurns; turn++ {
+		// Compress context if needed (before each LLM round)
+		compressed, compressErr := o.ctxMgr.CompressIfNeeded(ctx, allMsgs)
+		if compressErr == nil {
+			allMsgs = compressed
+		}
+
 		req := &llm.Request{
 			Messages:    allMsgs,
 			Tools:       toolDefs,

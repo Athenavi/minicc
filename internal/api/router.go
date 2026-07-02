@@ -233,6 +233,27 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 			OK(w, agentRegistry.List())
 		})
+		// Agent dispatch endpoint
+		agentRuntime := agent.NewAgentRuntime(llmGateway, toolRegistry, eventHub)
+		r.Post("/dispatch", func(w http.ResponseWriter, r *http.Request) {
+			var body struct {
+				SessionID string `json:"session_id"`
+				AgentType string `json:"agent_type"`
+				Task      string `json:"task"`
+				UserID    string `json:"user_id"`
+			}
+			if err := DecodeJSON(w, r, &body); err != nil {
+				BadRequest(w, "invalid request")
+				return
+			}
+			if body.Task == "" || body.AgentType == "" {
+				BadRequest(w, "task and agent_type required")
+				return
+			}
+			Accepted(w, map[string]string{"status": "dispatched", "agent_type": body.AgentType})
+			// Execute in background
+			go agentRuntime.Dispatch(context.Background(), body.SessionID, body.UserID, body.AgentType, body.Task)
+		})
 	})
 
 	// Protected API v1
