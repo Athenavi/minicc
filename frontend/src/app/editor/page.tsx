@@ -237,7 +237,6 @@ export default function EditorPage() {
               path={activeContent.path}
               language={activeContent.language}
               onChange={handleEditorChange}
-              onCursorChange={handleCursorChange}
             />
           ) : (
             <div className="flex items-center justify-center h-full text-sm text-gray-400 dark:text-gray-500">

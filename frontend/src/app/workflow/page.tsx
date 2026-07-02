@@ -85,8 +85,8 @@ const nodeTypes: NodeTypes = {
 // ─── Main Page ─────────────────────────────────────────────────────────────
 
 export default function WorkflowPage() {
-  const [nodes, setNodes] = useNodesState([]);
-  const [edges, setEdges] = useEdgesState([]);
+  const [nodes, setNodes] = useNodesState<Node>([]);
+  const [edges, setEdges] = useEdgesState<Edge>([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [executing, setExecuting] = useState(false);
   const [result, setResult] = useState("");
@@ -179,14 +179,17 @@ export default function WorkflowPage() {
 
     const steps = nodes
       .filter((n) => n.id !== "start")
-      .map((n) => ({
-        id: n.id,
-        tool: n.data.nodeType === "llm" ? "llm_chat" :
-              n.data.nodeType === "tool" ? (n.data.config?.tool || "bash") :
-              n.data.nodeType === "wait" ? "sleep" :
-              n.data.nodeType === "condition" ? "condition_check" : "custom_code",
-        params: n.data.config || {},
-      }));
+      .map((n) => {
+        const d = n.data as Record<string, any>;
+        return {
+          id: n.id,
+          tool: d.nodeType === "llm" ? "llm_chat" :
+                d.nodeType === "tool" ? (d.config?.tool || "bash") :
+                d.nodeType === "wait" ? "sleep" :
+                d.nodeType === "condition" ? "condition_check" : "custom_code",
+          params: d.config || {},
+        };
+      });
 
     const graphDef = {
       name: meta.name || "Workflow",
@@ -335,7 +338,7 @@ export default function WorkflowPage() {
             style={{ borderRadius: 8, border: "1px solid #e5e7eb" }}
           />
           <Controls showInteractive={false} />
-          <Background variant="dots" gap={20} size={1} color="#e5e7eb" />
+          <Background variant={"dots" as any} gap={20} size={1} color="#e5e7eb" />
         </ReactFlow>
       </div>
 
@@ -361,7 +364,7 @@ export default function WorkflowPage() {
             <div>
               <div className="flex items-center justify-between mb-3">
                 <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                  {selectedNode.data.label} <span className="text-xs text-gray-400 font-normal">({selectedNode.id})</span>
+                  {(selectedNode.data as any).label} <span className="text-xs text-gray-400 font-normal">({selectedNode.id})</span>
                 </h4>
                 <button onClick={deleteSelected} className="px-2 py-1 text-xs bg-red-100 dark:bg-red-900/30 text-red-600 rounded hover:bg-red-200">Delete</button>
               </div>
@@ -369,19 +372,19 @@ export default function WorkflowPage() {
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Label</label>
                   <input className="w-full p-1.5 text-xs border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
-                    value={selectedNode.data.label}
+                    value={(selectedNode.data as any).label}
                     onChange={(e) => setNodes((nds) => nds.map((n) => n.id === selectedNode.id ? { ...n, data: { ...n.data, label: e.target.value } } : n))} />
                 </div>
-                {(selectedNode.data.config ? Object.keys(selectedNode.data.config) : []).map((key) => (
+                {(selectedNode.data as any).config ? Object.keys((selectedNode.data as any).config).map((key) => (
                   <div key={key}>
                     <label className="block text-xs text-gray-500 mb-1 capitalize">{key.replace(/_/g, " ")}</label>
                     <input className="w-full p-1.5 text-xs border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 font-mono"
-                      value={selectedNode.data.config?.[key] || ""}
+                      value={(selectedNode.data as any).config?.[key] || ""}
                       onChange={(e) => setNodes((nds) =>
-                        nds.map((n) => n.id === selectedNode.id ? { ...n, data: { ...n.data, config: { ...n.data.config, [key]: e.target.value } } } : n)
+                        nds.map((n) => n.id === selectedNode.id ? { ...n, data: { ...n.data, config: { ...(n.data as any).config, [key]: e.target.value } } } : n)
                       )} />
                   </div>
-                ))}
+                )) : null}
               </div>
             </div>
           )}
