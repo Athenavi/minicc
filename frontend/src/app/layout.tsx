@@ -1,4 +1,5 @@
 import "./globals.css";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 const navItems = [
   { href: "/", label: "💬 Chat", desc: "AI Chat" },
@@ -27,7 +28,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         }} />
       </head>
       <body className="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-        <ClientLayout navItems={navItems}>{children}</ClientLayout>
+        <TooltipProvider>
+          <ClientLayout navItems={navItems}>{children}</ClientLayout>
+        </TooltipProvider>
       </body>
     </html>
   );
