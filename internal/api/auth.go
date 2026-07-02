@@ -63,7 +63,7 @@ func clearTokenCookie(w http.ResponseWriter) {
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
-	if err := DecodeJSON(r, &req); err != nil {
+	if err := DecodeJSON(w, r, &req); err != nil {
 		BadRequest(w, "invalid request body")
 		return
 	}
@@ -113,7 +113,7 @@ type RegisterRequest struct {
 
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req RegisterRequest
-	if err := DecodeJSON(r, &req); err != nil {
+	if err := DecodeJSON(w, r, &req); err != nil {
 		BadRequest(w, "invalid request body")
 		return
 	}

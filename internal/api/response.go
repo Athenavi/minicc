@@ -64,7 +64,8 @@ func TooManyRequests(w http.ResponseWriter) {
 	JSON(w, http.StatusTooManyRequests, APIResponse{Success: false, Error: "rate limit exceeded"})
 }
 
-func DecodeJSON(r *http.Request, v interface{}) error {
+func DecodeJSON(w http.ResponseWriter, r *http.Request, v interface{}) error {
 	defer r.Body.Close()
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB limit
 	return json.NewDecoder(r.Body).Decode(v)
 }

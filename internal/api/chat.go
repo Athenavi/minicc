@@ -23,7 +23,7 @@ type ChatRequest struct {
 
 func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 	var req ChatRequest
-	if err := DecodeJSON(r, &req); err != nil {
+	if err := DecodeJSON(w, r, &req); err != nil {
 		BadRequest(w, "invalid request body")
 		return
 	}
