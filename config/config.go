@@ -1,8 +1,10 @@
 package config
 
 import (
+	"bufio"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -53,6 +55,7 @@ type Config struct {
 }
 
 func Load() *Config {
+	loadDotEnv()
 	cfg := &Config{
 		Port:            getEnv("PORT", "8080"),
 		ReadTimeout:     getDuration("READ_TIMEOUT", 10*time.Second),
@@ -119,4 +122,33 @@ func getDuration(key string, fallback time.Duration) time.Duration {
 		}
 	}
 	return fallback
+}
+
+// loadDotEnv reads .env file and sets environment variables if not already set.
+func loadDotEnv() {
+	data, err := os.ReadFile(".env")
+	if err != nil {
+		return // .env file not found, skip
+	}
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		val := strings.TrimSpace(parts[1])
+		// Strip quotes if present
+		if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
+			val = val[1 : len(val)-1]
+		}
+		// Only set if not already set (env vars take precedence)
+		if os.Getenv(key) == "" {
+			os.Setenv(key, val)
+		}
+	}
 }

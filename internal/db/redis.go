@@ -19,10 +19,10 @@ func ConnectRedis(ctx context.Context, addr, password string, db int) error {
 		DialTimeout:  3 * time.Second,
 		ReadTimeout:  3 * time.Second,
 		WriteTimeout: 3 * time.Second,
-		PoolSize:     50,
-		MinIdleConns: 5,
-		MaxRetries:   1,
-		PoolTimeout:  4 * time.Second,
+		PoolSize:     10,
+		MinIdleConns: 0,
+		MaxRetries:   0,
+		PoolTimeout:  2 * time.Second,
 	}
 
 	client := redis.NewClient(opts)
