@@ -10,6 +10,8 @@ import {
   useNodesState,
   useEdgesState,
   addEdge,
+  Handle,
+  Position,
   type Connection,
   type Node,
   type Edge,
@@ -58,6 +60,7 @@ const nodeTypeColors: Record<string, string> = Object.fromEntries(
 function WorkflowNode({ data }: { data: any }) {
   return (
     <div className={`px-4 py-2 rounded-lg border-2 shadow-sm min-w-[140px] ${nodeTypeColors[data.nodeType] || "border-gray-300 bg-white"}`}>
+      <Handle type="target" position={Position.Left} className="!w-2.5 !h-2.5 !bg-blue-500 !border-2 !border-white" />
       <div className="flex items-center gap-2">
         <span className="text-base">{data.icon || "●"}</span>
         <div>
@@ -74,6 +77,7 @@ function WorkflowNode({ data }: { data: any }) {
           {data.status === "running" ? "⟳ Running" : data.status === "success" ? "✓ Success" : data.status === "error" ? "✗ Failed" : ""}
         </div>
       )}
+      <Handle type="source" position={Position.Right} className="!w-2.5 !h-2.5 !bg-green-500 !border-2 !border-white" />
     </div>
   );
 }
