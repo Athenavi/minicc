@@ -2,12 +2,12 @@ import "./globals.css";
 
 const navItems = [
   { href: "/", label: "💬 Chat", desc: "AI Chat" },
+  { href: "/agents", label: "🤖 Agents", desc: "Agent Console" },
   { href: "/editor", label: "✏️ Editor", desc: "AI Code Editor" },
   { href: "/workflow", label: "🔀 Workflow", desc: "Visual Graph" },
   { href: "/rpa", label: "🤖 RPA", desc: "Automation" },
-  { href: "/enterprise", label: "🏢 Enterprise", desc: "CRM/ERP" },
-  { href: "/devops", label: "🚀 DevOps", desc: "CI/CD" },
-  { href: "/system", label: "🔬 System", desc: "Self-Monitor" },
+  { href: "/enterprise", label: "🏢 Enterprise", desc: "Business" },
+  { href: "/system", label: "🔬 System", desc: "Monitor" },
 ];
 
 import ClientLayout from "./client-layout";
