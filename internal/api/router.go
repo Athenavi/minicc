@@ -37,6 +37,9 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 	authenticator := auth.NewAuthenticator(cfg.JWTSecret, cfg.JWTExpiration)
 	authHandler := NewAuthHandler(cfg)
 
+	// Install
+	installHandler := NewInstallHandler(cfg)
+
 	// Engine
 	eng := engine.New(llmGateway, toolRegistry)
 	chatHandler := NewChatHandler(eng)
@@ -65,6 +68,13 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 		r.Post("/register", authHandler.Register)
 		r.Post("/refresh", authHandler.Refresh)
 		r.Post("/logout", authHandler.Logout)
+	})
+
+	// Install endpoints (no auth, rate limited)
+	r.Route("/v1/install", func(r chi.Router) {
+		r.Use(rateLimiter.Middleware)
+		r.Get("/status", installHandler.Status)
+		r.Post("/setup", installHandler.Setup)
 	})
 
 	// Protected API v1

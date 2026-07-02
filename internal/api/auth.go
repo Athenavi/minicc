@@ -37,7 +37,8 @@ type UserResponse struct {
 	Role  string `json:"role"`
 }
 
-func (h *AuthHandler) setTokenCookie(w http.ResponseWriter, token string) {
+// SetTokenCookie sets the JWT as an HTTP-only secure cookie.
+func SetTokenCookie(w http.ResponseWriter, token string, maxAge int) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     tokenCookieName,
 		Value:    token,
@@ -45,11 +46,11 @@ func (h *AuthHandler) setTokenCookie(w http.ResponseWriter, token string) {
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
-		MaxAge:   int(h.cfg.JWTExpiration.Seconds()),
+		MaxAge:   maxAge,
 	})
 }
 
-func clearTokenCookie(w http.ResponseWriter) {
+func ClearTokenCookie(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     tokenCookieName,
 		Value:    "",
@@ -99,7 +100,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.setTokenCookie(w, token)
+	SetTokenCookie(w, token, int(h.cfg.JWTExpiration.Seconds()))
 	OK(w, map[string]interface{}{
 		"user": user,
 	})
@@ -167,14 +168,14 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.setTokenCookie(w, token)
+	SetTokenCookie(w, token, int(h.cfg.JWTExpiration.Seconds()))
 	Created(w, map[string]interface{}{
 		"user": UserResponse{ID: userID, Email: req.Email, Name: req.Name, Role: "user"},
 	})
 }
 
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
-	clearTokenCookie(w)
+	ClearTokenCookie(w)
 	OK(w, map[string]string{"message": "logged out"})
 }
 
@@ -211,7 +212,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.setTokenCookie(w, newToken)
+	SetTokenCookie(w, newToken, int(h.cfg.JWTExpiration.Seconds()))
 	OK(w, map[string]string{"message": "token refreshed"})
 }
 

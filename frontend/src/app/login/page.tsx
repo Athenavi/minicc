@@ -13,9 +13,15 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
-  // Redirect if already logged in
+  // Redirect if already logged in, or to install if not initialized
   useEffect(() => {
-    checkAuth().then((authed) => { if (authed) router.push("/"); });
+    checkAuth().then((authed) => {
+      if (authed) { router.push("/"); return; }
+      // Check if system needs initialization
+      api("/v1/install/status", { skipAuth: true })
+        .then((data) => { if (data.data?.needed) router.push("/install"); })
+        .catch(() => {});
+    });
   }, [router]);
 
   const checkAuth = async (): Promise<boolean> => {
