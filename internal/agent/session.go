@@ -83,6 +83,13 @@ func NewCodeAgentTool() *CodeAgentTool {
 
 func (t *CodeAgentTool) Name() string       { return "code_agent" }
 func (t *CodeAgentTool) Description() string { return "Execute a code-related task — write, modify, analyze, debug code." }
+func (t *CodeAgentTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"task":      map[string]interface{}{"type": "string", "description": "Task description"},
+		"file_path": map[string]interface{}{"type": "string", "description": "File path to work on (optional)"},
+		"language":  map[string]interface{}{"type": "string", "description": "Programming language (optional)"},
+	}
+}
 
 func (t *CodeAgentTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	task, _ := input["task"].(string)
@@ -126,6 +133,12 @@ func NewAgentSessionTool(sm *SessionManager) *AgentSessionTool {
 
 func (t *AgentSessionTool) Name() string       { return "agent_session_create" }
 func (t *AgentSessionTool) Description() string { return "Create a sub-agent session for an independent task." }
+func (t *AgentSessionTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"name": map[string]interface{}{"type": "string", "description": "Session name"},
+		"task": map[string]interface{}{"type": "string", "description": "Task for the sub-agent"},
+	}
+}
 
 func (t *AgentSessionTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	name, _ := input["name"].(string)
@@ -153,6 +166,7 @@ func NewAgentSessionListTool(sm *SessionManager) *AgentSessionListTool {
 
 func (t *AgentSessionListTool) Name() string       { return "agent_session_list" }
 func (t *AgentSessionListTool) Description() string { return "List all sub-agent sessions." }
+func (t *AgentSessionListTool) Parameters() map[string]interface{} { return map[string]interface{}{} }
 
 func (t *AgentSessionListTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	sessions := t.sm.List()

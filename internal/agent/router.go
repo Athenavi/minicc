@@ -97,6 +97,12 @@ func NewDispatchTool(registry *Registry) *DispatchTool {
 
 func (t *DispatchTool) Name() string        { return "agent_dispatch" }
 func (t *DispatchTool) Description() string  { return "Dispatch a task to the most suitable agent based on task description." }
+func (t *DispatchTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"task":       map[string]interface{}{"type": "string", "description": "Task description to dispatch"},
+		"agent_type": map[string]interface{}{"type": "string", "description": "Agent type: code, knowledge, rpa, tool (auto-detected if empty)"},
+	}
+}
 
 func (t *DispatchTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	task, _ := input["task"].(string)
@@ -133,6 +139,7 @@ func NewListTool(registry *Registry) *ListTool {
 
 func (t *ListTool) Name() string       { return "agent_list" }
 func (t *ListTool) Description() string { return "List all available agents and their capabilities." }
+func (t *ListTool) Parameters() map[string]interface{} { return map[string]interface{}{} }
 
 func (t *ListTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	agents := t.registry.List()

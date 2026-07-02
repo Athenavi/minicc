@@ -84,6 +84,17 @@ type SkillTool struct {
 
 func (st *SkillTool) Name() string        { return st.def.Name }
 func (st *SkillTool) Description() string  { return st.def.Description }
+func (st *SkillTool) Parameters() map[string]interface{} {
+	props := make(map[string]interface{})
+	for _, p := range st.def.Parameters {
+		prop := map[string]interface{}{
+			"type":        p.Type,
+			"description": p.Description,
+		}
+		props[p.Name] = prop
+	}
+	return props
+}
 
 func (st *SkillTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	result, err := st.executor.Execute(ctx, st.def, input)

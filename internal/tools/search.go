@@ -19,6 +19,18 @@ func NewSearchTool(workspaceDir string) *SearchTool {
 
 func (t *SearchTool) Name() string       { return "search_files" }
 func (t *SearchTool) Description() string { return "Search for files matching a glob pattern in the workspace." }
+func (t *SearchTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"pattern": map[string]interface{}{
+			"type":        "string",
+			"description": "Glob pattern to match filenames against (e.g. *.go, test*)",
+		},
+		"root": map[string]interface{}{
+			"type":        "string",
+			"description": "Root directory to search (default: workspace root)",
+		},
+	}
+}
 
 func (t *SearchTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	pattern, _ := input["pattern"].(string)
@@ -75,6 +87,18 @@ func NewGrepTool(workspaceDir string) *GrepTool {
 
 func (t *GrepTool) Name() string       { return "grep_files" }
 func (t *GrepTool) Description() string { return "Search file contents for a text pattern in the workspace." }
+func (t *GrepTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"query": map[string]interface{}{
+			"type":        "string",
+			"description": "Text to search for within file contents",
+		},
+		"root": map[string]interface{}{
+			"type":        "string",
+			"description": "Root directory to search (default: workspace root)",
+		},
+	}
+}
 
 func (t *GrepTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	query, _ := input["query"].(string)

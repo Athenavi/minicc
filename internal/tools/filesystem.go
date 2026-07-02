@@ -18,6 +18,14 @@ func NewReadFileTool(workspaceDir string) *ReadFileTool {
 
 func (t *ReadFileTool) Name() string        { return "read_file" }
 func (t *ReadFileTool) Description() string  { return "Read the contents of a file" }
+func (t *ReadFileTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"path": map[string]interface{}{
+			"type":        "string",
+			"description": "Path to the file to read, relative to workspace root",
+		},
+	}
+}
 
 func (t *ReadFileTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	path, _ := input["path"].(string)
@@ -56,6 +64,18 @@ func NewWriteFileTool(workspaceDir string) *WriteFileTool {
 
 func (t *WriteFileTool) Name() string       { return "write_file" }
 func (t *WriteFileTool) Description() string { return "Write content to a file" }
+func (t *WriteFileTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"path": map[string]interface{}{
+			"type":        "string",
+			"description": "Path to the file to write, relative to workspace root",
+		},
+		"content": map[string]interface{}{
+			"type":        "string",
+			"description": "Content to write to the file",
+		},
+	}
+}
 
 func (t *WriteFileTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	path, _ := input["path"].(string)

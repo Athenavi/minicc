@@ -17,6 +17,7 @@ type skillListTool struct {
 
 func (t *skillListTool) Name() string        { return "skill_list" }
 func (t *skillListTool) Description() string  { return "List all installed skills with their descriptions and versions." }
+func (t *skillListTool) Parameters() map[string]interface{} { return map[string]interface{}{} }
 
 func (t *skillListTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	skills := t.registry.ListSkills()
@@ -41,6 +42,13 @@ type skillInstallTool struct {
 
 func (t *skillInstallTool) Name() string        { return "skill_install" }
 func (t *skillInstallTool) Description() string  { return "Install a skill from a URL, local file path, or inline JSON definition." }
+func (t *skillInstallTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"url": map[string]interface{}{"type": "string", "description": "URL to download the skill JSON from"},
+		"file": map[string]interface{}{"type": "string", "description": "Local file path to the .skill.json file"},
+		"inline": map[string]interface{}{"type": "string", "description": "Inline JSON skill definition"},
+	}
+}
 
 func (t *skillInstallTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	url, _ := input["url"].(string)
@@ -85,6 +93,12 @@ type skillGenerateTool struct {
 
 func (t *skillGenerateTool) Name() string        { return "skill_generate" }
 func (t *skillGenerateTool) Description() string  { return "Generate a new skill from a natural language description and optionally install it." }
+func (t *skillGenerateTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"description": map[string]interface{}{"type": "string", "description": "Natural language description of the skill to generate"},
+		"install": map[string]interface{}{"type": "boolean", "description": "Auto-install after generation (default: false)"},
+	}
+}
 
 func (t *skillGenerateTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	desc, _ := input["description"].(string)
@@ -134,6 +148,11 @@ type skillDiscoverTool struct {
 
 func (t *skillDiscoverTool) Name() string        { return "skill_discover" }
 func (t *skillDiscoverTool) Description() string  { return "Discover available skills from local directory or remote index." }
+func (t *skillDiscoverTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"url": map[string]interface{}{"type": "string", "description": "Remote index URL to discover skills from (optional, local scan if empty)"},
+	}
+}
 
 func (t *skillDiscoverTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	remoteURL, _ := input["url"].(string)

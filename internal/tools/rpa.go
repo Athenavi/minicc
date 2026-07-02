@@ -15,6 +15,9 @@ type BrowserNavigateTool struct{}
 func NewBrowserNavigateTool() *BrowserNavigateTool { return &BrowserNavigateTool{} }
 func (t *BrowserNavigateTool) Name() string        { return "browser_navigate" }
 func (t *BrowserNavigateTool) Description() string  { return "Navigate to a URL and retrieve page content." }
+func (t *BrowserNavigateTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{"url": map[string]interface{}{"type": "string", "description": "URL to navigate to"}}
+}
 func (t *BrowserNavigateTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	url, _ := input["url"].(string)
 	if url == "" {
@@ -36,6 +39,9 @@ type BrowserExtractTool struct{}
 func NewBrowserExtractTool() *BrowserExtractTool { return &BrowserExtractTool{} }
 func (t *BrowserExtractTool) Name() string        { return "browser_extract" }
 func (t *BrowserExtractTool) Description() string  { return "Extract text content from a web page." }
+func (t *BrowserExtractTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{"url": map[string]interface{}{"type": "string", "description": "URL to extract content from"}}
+}
 func (t *BrowserExtractTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	url, _ := input["url"].(string)
 	if url == "" {
@@ -58,6 +64,9 @@ func NewDesktopAutomationTool() *DesktopAutomationTool {
 
 func (t *DesktopAutomationTool) Name() string       { return "desktop_automation" }
 func (t *DesktopAutomationTool) Description() string { return "Execute desktop automation tasks (list processes, system info, etc.)." }
+func (t *DesktopAutomationTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{"action": map[string]interface{}{"type": "string", "description": "Action: info, processes"}}
+}
 func (t *DesktopAutomationTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	action, _ := input["action"].(string)
 	if action == "" {
@@ -90,6 +99,9 @@ type ExcelReadTool struct{}
 func NewExcelReadTool() *ExcelReadTool { return &ExcelReadTool{} }
 func (t *ExcelReadTool) Name() string       { return "excel_read" }
 func (t *ExcelReadTool) Description() string { return "Read structured data from a CSV or tabular file." }
+func (t *ExcelReadTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{"path": map[string]interface{}{"type": "string", "description": "Path to the CSV or tabular file"}}
+}
 func (t *ExcelReadTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	path, _ := input["path"].(string)
 	if path == "" {
@@ -110,6 +122,12 @@ type ExcelWriteTool struct{}
 func NewExcelWriteTool() *ExcelWriteTool { return &ExcelWriteTool{} }
 func (t *ExcelWriteTool) Name() string       { return "excel_write" }
 func (t *ExcelWriteTool) Description() string { return "Write structured data to a CSV or tabular file." }
+func (t *ExcelWriteTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"path": map[string]interface{}{"type": "string", "description": "Path to the file to write"},
+		"content": map[string]interface{}{"type": "string", "description": "CSV content to write"},
+	}
+}
 func (t *ExcelWriteTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	path, _ := input["path"].(string)
 	content, _ := input["content"].(string)
@@ -131,6 +149,13 @@ type EmailSendTool struct{}
 func NewEmailSendTool() *EmailSendTool { return &EmailSendTool{} }
 func (t *EmailSendTool) Name() string       { return "email_send" }
 func (t *EmailSendTool) Description() string { return "Send an email message (SMTP)." }
+func (t *EmailSendTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"to": map[string]interface{}{"type": "string", "description": "Recipient email address"},
+		"subject": map[string]interface{}{"type": "string", "description": "Email subject"},
+		"body": map[string]interface{}{"type": "string", "description": "Email body content"},
+	}
+}
 func (t *EmailSendTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	to, _ := input["to"].(string)
 	subject, _ := input["subject"].(string)
@@ -154,6 +179,9 @@ type WorkflowRunTool struct{}
 func NewWorkflowRunTool() *WorkflowRunTool { return &WorkflowRunTool{} }
 func (t *WorkflowRunTool) Name() string       { return "workflow_run" }
 func (t *WorkflowRunTool) Description() string { return "Execute a workflow by name or ID." }
+func (t *WorkflowRunTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{"name": map[string]interface{}{"type": "string", "description": "Name or ID of the workflow to run"}}
+}
 func (t *WorkflowRunTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	name, _ := input["name"].(string)
 	if name == "" {
@@ -173,6 +201,9 @@ type WorkflowStatusTool struct{}
 func NewWorkflowStatusTool() *WorkflowStatusTool { return &WorkflowStatusTool{} }
 func (t *WorkflowStatusTool) Name() string       { return "workflow_status" }
 func (t *WorkflowStatusTool) Description() string { return "Check the status of a workflow execution." }
+func (t *WorkflowStatusTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{"instance_id": map[string]interface{}{"type": "string", "description": "Workflow instance ID to check"}}
+}
 func (t *WorkflowStatusTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	instanceID, _ := input["instance_id"].(string)
 	if instanceID == "" {

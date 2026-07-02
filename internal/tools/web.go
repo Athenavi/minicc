@@ -30,6 +30,14 @@ func NewWebFetchTool() *WebFetchTool {
 
 func (t *WebFetchTool) Name() string        { return "web_fetch" }
 func (t *WebFetchTool) Description() string  { return "Fetch a URL and return its content as text." }
+func (t *WebFetchTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"url": map[string]interface{}{
+			"type":        "string",
+			"description": "URL to fetch (must start with http:// or https://)",
+		},
+	}
+}
 
 func (t *WebFetchTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	urlStr, _ := input["url"].(string)

@@ -39,6 +39,22 @@ func defaultAllowedCommands() []string {
 
 func (t *ShellTool) Name() string        { return "shell_exec" }
 func (t *ShellTool) Description() string { return "Execute a shell command and return its output." }
+func (t *ShellTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"command": map[string]interface{}{
+			"type":        "string",
+			"description": "Shell command to execute",
+		},
+		"timeout": map[string]interface{}{
+			"type":        "number",
+			"description": "Timeout in seconds (default 30)",
+		},
+		"working_dir": map[string]interface{}{
+			"type":        "string",
+			"description": "Working directory for the command",
+		},
+	}
+}
 
 func (t *ShellTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	raw, _ := input["command"].(string)
@@ -116,6 +132,14 @@ func NewExecutePythonTool() *ExecutePythonTool { return &ExecutePythonTool{} }
 
 func (t *ExecutePythonTool) Name() string        { return "execute_python" }
 func (t *ExecutePythonTool) Description() string  { return "Execute Python code and return the output." }
+func (t *ExecutePythonTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"code": map[string]interface{}{
+			"type":        "string",
+			"description": "Python code to execute",
+		},
+	}
+}
 
 func (t *ExecutePythonTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	code, _ := input["code"].(string)

@@ -244,6 +244,13 @@ type CreateTool struct{}
 func NewCreateTool() *CreateTool { return &CreateTool{} }
 func (t *CreateTool) Name() string       { return "graph_create" }
 func (t *CreateTool) Description() string { return "Create a StateGraph workflow from node/edge definitions." }
+func (t *CreateTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"name": map[string]interface{}{"type": "string", "description": "Graph name"},
+		"nodes": map[string]interface{}{"type": "array", "description": "List of graph nodes", "items": map[string]interface{}{"type": "object"}},
+		"edges": map[string]interface{}{"type": "array", "description": "List of graph edges", "items": map[string]interface{}{"type": "object"}},
+	}
+}
 
 func (t *CreateTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	name, _ := input["name"].(string)
@@ -299,6 +306,14 @@ type RunTool struct{}
 func NewRunTool() *RunTool { return &RunTool{} }
 func (t *RunTool) Name() string       { return "graph_run" }
 func (t *RunTool) Description() string { return "Create and execute a StateGraph workflow in one step." }
+func (t *RunTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"name": map[string]interface{}{"type": "string", "description": "Graph name"},
+		"nodes": map[string]interface{}{"type": "array", "description": "List of graph nodes", "items": map[string]interface{}{"type": "object"}},
+		"edges": map[string]interface{}{"type": "array", "description": "List of graph edges", "items": map[string]interface{}{"type": "object"}},
+		"initial_state": map[string]interface{}{"type": "object", "description": "Initial state data"},
+	}
+}
 
 func (t *RunTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	name, _ := input["name"].(string)

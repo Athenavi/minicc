@@ -18,6 +18,18 @@ type EnterpriseQueryTool struct{}
 func NewEnterpriseQueryTool() *EnterpriseQueryTool { return &EnterpriseQueryTool{} }
 func (t *EnterpriseQueryTool) Name() string       { return "enterprise_query" }
 func (t *EnterpriseQueryTool) Description() string { return "Query enterprise data (tasks, wiki, OKRs, meetings, tickets, KB, campaigns)." }
+func (t *EnterpriseQueryTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"table": map[string]interface{}{
+			"type":        "string",
+			"description": "Table to query: tasks, wiki, okrs, meetings, tickets, kb, campaigns",
+		},
+		"limit": map[string]interface{}{
+			"type":        "number",
+			"description": "Maximum number of records to return (default 20)",
+		},
+	}
+}
 
 var enterpriseTables = map[string]string{
 	"tasks":    "enterprise_tasks",
@@ -105,6 +117,22 @@ type EnterpriseInsertTool struct{}
 func NewEnterpriseInsertTool() *EnterpriseInsertTool { return &EnterpriseInsertTool{} }
 func (t *EnterpriseInsertTool) Name() string       { return "enterprise_insert" }
 func (t *EnterpriseInsertTool) Description() string { return "Insert a record into an enterprise table." }
+func (t *EnterpriseInsertTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"table": map[string]interface{}{
+			"type":        "string",
+			"description": "Table to insert into: tasks, wiki, okrs, meetings, tickets, kb, campaigns",
+		},
+		"title": map[string]interface{}{
+			"type":        "string",
+			"description": "Title or name of the record",
+		},
+		"payload": map[string]interface{}{
+			"type":        "string",
+			"description": "Optional JSON payload with additional fields",
+		},
+	}
+}
 func (t *EnterpriseInsertTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	if db.Pool == nil {
 		return nil, fmt.Errorf("database not available")
@@ -150,6 +178,9 @@ type DevOpsHealthTool struct{}
 func NewDevOpsHealthTool() *DevOpsHealthTool { return &DevOpsHealthTool{} }
 func (t *DevOpsHealthTool) Name() string       { return "devops_health" }
 func (t *DevOpsHealthTool) Description() string { return "Check system health — DB, Redis, uptime." }
+func (t *DevOpsHealthTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{}
+}
 func (t *DevOpsHealthTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	health := map[string]string{
 		"postgres": "unknown",

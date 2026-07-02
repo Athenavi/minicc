@@ -10,6 +10,7 @@ import (
 type Tool interface {
 	Name() string
 	Description() string
+	Parameters() map[string]interface{} // JSON Schema properties (keys: name → {type, description})
 	Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error)
 }
 

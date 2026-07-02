@@ -13,6 +13,12 @@ type PRDTool struct{}
 func NewPRDTool() *PRDTool { return &PRDTool{} }
 func (t *PRDTool) Name() string       { return "prd_generate" }
 func (t *PRDTool) Description() string { return "Generate a structured Product Requirements Document from a natural language description." }
+func (t *PRDTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"description": map[string]interface{}{"type": "string", "description": "Product description in natural language"},
+		"context": map[string]interface{}{"type": "string", "description": "Additional context or constraints"},
+	}
+}
 
 func (t *PRDTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	desc, _ := input["description"].(string)
@@ -39,6 +45,9 @@ type TechDesignTool struct{}
 func NewTechDesignTool() *TechDesignTool { return &TechDesignTool{} }
 func (t *TechDesignTool) Name() string       { return "tech_design" }
 func (t *TechDesignTool) Description() string { return "Generate architecture, API design, and data models from PRD." }
+func (t *TechDesignTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{"prd": map[string]interface{}{"type": "string", "description": "PRD content to base the design on"}}
+}
 
 func (t *TechDesignTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	return map[string]interface{}{
@@ -52,6 +61,9 @@ type TaskDecomposeTool struct{}
 func NewTaskDecomposeTool() *TaskDecomposeTool { return &TaskDecomposeTool{} }
 func (t *TaskDecomposeTool) Name() string       { return "task_decompose" }
 func (t *TaskDecomposeTool) Description() string { return "Break down PRD into a graph of executable development tasks." }
+func (t *TaskDecomposeTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{"prd": map[string]interface{}{"type": "string", "description": "PRD content to decompose into tasks"}}
+}
 
 func (t *TaskDecomposeTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	return map[string]interface{}{
@@ -65,6 +77,9 @@ type RequirementValidateTool struct{}
 func NewRequirementValidateTool() *RequirementValidateTool { return &RequirementValidateTool{} }
 func (t *RequirementValidateTool) Name() string       { return "requirement_validate" }
 func (t *RequirementValidateTool) Description() string { return "Validate requirements for completeness and consistency." }
+func (t *RequirementValidateTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{"requirements": map[string]interface{}{"type": "string", "description": "Requirements text to validate"}}
+}
 
 func (t *RequirementValidateTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	return map[string]interface{}{

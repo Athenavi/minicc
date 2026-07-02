@@ -216,12 +216,16 @@ func BuildToolDefs(registry *tools.ToolRegistry) []llm.ToolDef {
 	list := registry.List()
 	defs := make([]llm.ToolDef, 0, len(list))
 	for _, t := range list {
+		props := t.Parameters()
+		if props == nil {
+			props = map[string]interface{}{}
+		}
 		defs = append(defs, llm.ToolDef{
 			Name:        t.Name(),
 			Description: t.Description(),
 			Parameters: map[string]interface{}{
 				"type":       "object",
-				"properties": map[string]interface{}{},
+				"properties": props,
 			},
 		})
 	}

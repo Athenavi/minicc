@@ -18,6 +18,31 @@ func NewMediaCreateTool() *MediaCreateTool { return &MediaCreateTool{} }
 
 func (t *MediaCreateTool) Name() string        { return "media_create" }
 func (t *MediaCreateTool) Description() string  { return "Save generated content (CSV, code, text, markdown, etc.) to the media library for later reference." }
+func (t *MediaCreateTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"name": map[string]interface{}{
+			"type":        "string",
+			"description": "Name for the media asset (e.g. report.csv, output.txt)",
+		},
+		"content": map[string]interface{}{
+			"type":        "string",
+			"description": "Content to save",
+		},
+		"type": map[string]interface{}{
+			"type":        "string",
+			"description": "Asset type: text, csv, code, image, document, etc.",
+		},
+		"category": map[string]interface{}{
+			"type":        "string",
+			"description": "Category for organization (default: generated)",
+		},
+		"tags": map[string]interface{}{
+			"type":        "array",
+			"description": "Tags for the media asset",
+			"items":       map[string]interface{}{"type": "string"},
+		},
+	}
+}
 
 func (t *MediaCreateTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	if db.Pool == nil {

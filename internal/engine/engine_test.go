@@ -78,6 +78,7 @@ type testTool struct {
 
 func (t *testTool) Name() string        { return t.name }
 func (t *testTool) Description() string  { return t.desc }
+func (t *testTool) Parameters() map[string]interface{} { return map[string]interface{}{} }
 func (t *testTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	return map[string]interface{}{"output": "done"}, nil
 }
