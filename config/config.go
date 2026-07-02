@@ -82,13 +82,18 @@ func Load() *Config {
 		LogLevel:        getEnv("LOG_LEVEL", "info"),
 	}
 
-	// JWT_SECRET is required. Refuse to start with empty or default dev secret.
-	if cfg.JWTSecret == "" || cfg.JWTSecret == "dev-secret-change-in-production" {
+	// JWT_SECRET is required.
+	if !ValidateJWTSecret(cfg.JWTSecret) {
 		os.Stderr.WriteString("FATAL: JWT_SECRET environment variable must be set to a strong, unique value\n")
 		os.Exit(1)
 	}
 
 	return cfg
+}
+
+// ValidateJWTSecret returns true if the secret is valid for production use.
+func ValidateJWTSecret(secret string) bool {
+	return secret != "" && secret != "dev-secret-change-in-production" && len(secret) >= 16
 }
 
 func getEnv(key, fallback string) string {

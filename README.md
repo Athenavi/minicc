@@ -1,285 +1,157 @@
-# MiniCC — Mini Co-creator Core
+# MiniCC V2
 
-<div align="center">
+**企业级 AI 引擎 — Go 实现，零 Python 依赖**
 
-![MiniCC](https://img.shields.io/badge/MiniCC-v1.0-blue)
-![Python](https://img.shields.io/badge/Python-3.14%2B-blue)
-![Next.js](https://img.shields.io/badge/Next.js-16-black)
-![License](https://img.shields.io/badge/License-MIT-green)
-![Tests](https://img.shields.io/badge/Tests-120-passing-brightgreen)
-![Tools](https://img.shields.io/badge/Tools-230%2B-orange)
-![Version](https://img.shields.io/badge/V0.1--V1.0-10%20Versions-ff69b4)
-
-**从"编码助手"到"通用人工智能"的完整进化之旅**
-
-[English](#) · [简体中文](#) · [报告 Bug](https://github.com/Athenavi/minicc/issues) · [功能请求](https://github.com/Athenavi/minicc/issues)
-
-</div>
+> 从"编码助手"到"企业 AI 操作系统"的 Go 重构版本。
+> 原 Python 版（V0.1-V1.5）已全部迁移到 Go。
 
 ---
 
-## 🌟 是什么？
-
-**MiniCC** 不只是一个工具，而是一个 **跨越 10 个版本的 AI 进化实验**：
+## 🏗 架构
 
 ```
-V0.1  Code Agent       一人写代码         25 工具
-V0.2  RPA 平台         一人操控世界       54 工具
-V0.3  Graph + Dify     一人编排工作流     24 工具
-V0.4  AI-Native IDE    人+AI 写代码       34 工具
-V0.5  开发生命周期     AI 管理全开发      15 工具
-V0.6  企业 OS          AI 运营企业        27 工具
-V0.7  自我进化 AI      一个 AI 自我进化   21 工具
-V0.8  AI 文明          一群 AI 组成社会    9 工具
-V0.9  人机共生         人类与 AI 融合     15 工具
-V1.0  AGI              通用人工智能        9 工具
+cmd/minicc/main.go  ← 单二进制入口 (~15MB, scratch 镜像)
+internal/
+├── agent/          Agent 路由 + 会话管理
+├── api/            HTTP 层 (router/middleware/response/auth/chat)
+├── auth/           JWT + API Key + RBAC
+├── brain/          企业大脑 (query/decision/predict/compliance)
+├── broadcast/      Redis Pub/Sub 跨实例事件广播
+├── collab/         协作平台 (task/wiki/okr/message/meeting)
+├── commands/       Slash 命令系统
+├── db/             PostgreSQL + Redis 连接池 + 迁移
+├── devops/         DevOps 工具 (architect/coding/test/review/ci)
+├── engine/         引擎主循环
+├── graph/          StateGraph DAG 构建+执行
+├── llm/            LLM 网关 (多Provider路由+熔断+缓存)
+├── model/          数据模型
+├── monitor/        监控计数
+├── pm/             产品经理 (PRD/techdesign/taskdecomp)
+├── queue/          Redis Streams 消息队列
+├── storage/        文件存储抽象 (Local/S3)
+├── support/        客服营销 (ticket/kb/chatbot/campaign)
+├── tools/          工具注册表 (文件读写等)
+└── workflow/       工作流引擎 (DSL/执行器/状态追踪)
+config/config.go    环境变量配置
 ```
-
-> **Mini Co-creator Core** — 微型共创核心。一个持续进化、从编码到 AGI 的 AI 认知系统。
-
----
-
-## 🎯 核心理念
-
-### 🤝 共创（Co-creation）
-人与 AI 不是替代关系，而是**共创关系**。MiniCC 始终保留人类审批、决策、引导的权利。
-
-### 🧠 认知（Cognitive）
-从 25 个编码工具到 AGI 自我意识，MiniCC 的核心是**认知能力**的持续进化。
-
-### 🔮 核心（Core）
-MiniCC 是一个**核心** — 它可以嵌入任何系统，扩展任何能力，连接任何世界。
-
----
-
-## 🏗 架构全景
-
-```
-                          MiniCC 架构
-┌──────────────────────────────────────────────────────────┐
-│                    用户界面层                            │
-│  Chat UI  ·  Monaco Editor  ·  Workflow Canvas  ·  API  │
-└────────────────────────┬─────────────────────────────────┘
-                         │
-┌────────────────────────▼─────────────────────────────────┐
-│                     Agent 主循环                         │
-│          QueryEngine + ContextBuilder + Compactor        │
-│            PermissionHandler + TaskManager               │
-└────┬──────────┬──────────┬──────────┬────────────────────┘
-     │          │          │          │
-┌────▼──┐ ┌────▼──┐ ┌────▼──┐ ┌────▼────────────────────┐
-│  V0.1 │ │ V0.2 │ │ V0.3 │ │ V0.4-V1.0                │
-│ Code  │ │ RPA  │ │Graph │ │  233 工具全集             │
-│Agent  │ │ 54   │ │+Dify │ │  20 模块                  │
-│ 25    │ │ 工具 │ │ 24   │ │  10 版本进化              │
-│ 工具  │ │      │ │ 工具 │ │                           │
-└───────┘ └──────┘ └──────┘ └───────────────────────────┘
-```
-
----
-
-## 🔧 233+ 工具全景
-
-| 领域 | 版本 | 工具数 | 关键工具 |
-|:-----|:-----|:-------|:---------|
-| 📁 **文件系统** | V0.1 | 4 | read_file, write_to_file, str_replace_editor, notebook_edit |
-| 🐚 **Shell** | V0.1 | 1 | bash（带危险命令检测） |
-| 🔍 **搜索** | V0.1 | 3 | glob, grep, tool_search |
-| 🌐 **网络** | V0.1 | 2 | web_fetch, web_search |
-| 💬 **会话** | V0.1 | 4 | ask_user, todo, plan_mode 等 |
-| 🤖 **Agent** | V0.1 | 10 | agent, task_*, send_message, skill |
-| 🧩 **扩展** | V0.1 | 5 | MCP, LSP, Plugin |
-| 🌍 **Web 自动化** | V0.2 | 15 | browser_navigate, form_fill, cookie 等 |
-| 🖥️ **桌面自动化** | V0.2 | 12 | desktop_click, ocr, window 等 |
-| 📊 **Office** | V0.2 | 8 | excel, word, email |
-| 🔄 **工作流** | V0.2 | 10 | workflow_run, scheduler, variables |
-| 🗄️ **数据库** | V0.2 | 2 | db_query, db_list_tables |
-| 🔗 **API** | V0.2 | 1 | api_request |
-| 📐 **Graph 编排** | V0.3 | 2 | graph_create, graph_run |
-| 📚 **RAG 知识库** | V0.3 | 2 | rag_load, rag_search |
-| 📋 **看板 UI** | V0.3 | 3 | workflow_design, preview, config |
-| ✏️ **编辑器** | V0.4 | 8 | editor_select/replace/insert/stream, diff, undo |
-| 🧪 **调试器** | V0.4 | 5 | debug_launch, step, breakpoint, vars, auto_debug |
-| 🌿 **Git** | V0.4 | 4 | branch, commit, pr, status |
-| 🧠 **记忆** | V0.4 | 4 | memory_set/get/search, conflict_resolve |
-| 📋 **PM** | V0.5 | 4 | prd_generate, tech_design, task_decompose, validate |
-| 👷 **DevOps** | V0.5 | 4 | architect, coding, test, review agent |
-| 🚀 **部署** | V0.5 | 3 | ci_generate, deploy, monitor |
-| 🏢 **CRM** | V0.6 | 7 | contact, lead, pipeline, forecast |
-| 📦 **ERP** | V0.6 | 5 | supplier, inventory, order, invoice |
-| 👥 **协作** | V0.6 | 6 | task, wiki, chat, okr, meeting |
-| 🎫 **客服** | V0.6 | 5 | ticket, kb, chatbot, campaign, abtest |
-| 🧠 **企业大脑** | V0.6 | 4 | brain_query, decision, predict, compliance |
-| 🔬 **自我意识** | V0.7 | 5 | monitor, arch_analyze, profiler, plan, health |
-| 💊 **自我修复** | V0.7 | 6 | bug_fix, optimize, refactor, deps, test |
-| 📚 **持续学习** | V0.7 | 5 | feedback, knowledge, experience, constitution |
-| 🧬 **自我进化** | V0.7 | 5 | design, implement, register, marketplace, transfer |
-| 🏛️ **AI 文明** | V0.8 | 9 | citizen, dao, economy, culture, diplomacy |
-| 🤝 **人机共生** | V0.9 | 10 | intent, emotion, trust, rights, augmentation |
-| 🧠 **AGI** | V1.0 | 9 | universal_learn, metacognition, creative, self_awareness |
-| 🔌 **物理世界** | V0.7+ | 6 | robot, iot, digital_twin, p2p, alignment |
 
 ---
 
 ## 🚀 快速开始
 
-### 前提
-- Python 3.14+
-- Node.js 22+
-- (可选) Redis 7+
+### 前置要求
 
-### 安装
-
-```bash
-# 克隆
-git clone https://github.com/Athenavi/minicc.git
-cd minicc
-
-# 后端
-cd backend
-pip install -e ".[dev]"
-
-# 前端
-cd ../frontend
-npm install
-```
-
-### 配置
-
-```bash
-cp backend/.env.example backend/.env
-# 编辑 .env — 设置你的 LLM API Key
-```
+- Go 1.24+
+- PostgreSQL 17+（可选，无 DB 时运行在降级模式）
+- Redis 7+（可选，无 Redis 时运行在降级模式）
 
 ### 启动
 
 ```bash
-# 终端 1: 后端
-cd backend && uvicorn app.main:app --reload --port 8000
+# 设置 JWT_SECRET（必须）
+export JWT_SECRET=$(openssl rand -hex 32)
 
-# 终端 2: 前端
-cd frontend && npm run dev
+# 启动
+go run ./cmd/minicc
+
+# 或构建后启动
+make build
+./build/minicc
 ```
 
-打开 **http://localhost:3000** 即可使用。
+### 环境变量
 
-### 运行测试
+| 变量 | 默认值 | 说明 |
+|:-----|:-------|:-----|
+| `PORT` | `8080` | 监听端口 |
+| `JWT_SECRET` | **必填** | JWT 签名密钥，32+ 字节 hex |
+| `JWT_EXPIRATION` | `24h` | Token 有效期 |
+| `CORS_ORIGINS` | `http://localhost:3000` | 允许的 CORS 来源（逗号分隔） |
+| `POSTGRES_DSN` | `postgres://minicc:minicc@localhost:5432/minicc?sslmode=disable` | PostgreSQL 连接串 |
+| `REDIS_ADDR` | `localhost:6379` | Redis 地址 |
+| `LLM_API_KEY` | — | LLM 提供商 API Key |
+| `LLM_MODEL` | `gpt-4o` | 默认模型 |
+| `STORAGE_BACKEND` | `local` | 存储后端 (local/s3) |
+| `LOG_LEVEL` | `info` | 日志级别 (debug/info/warn/error) |
+
+---
+
+## 📡 API
+
+| 方法 | 路径 | 说明 | 认证 |
+|:-----|:-----|:-----|:-----|
+| GET | `/health` | 健康检查 | 否 |
+| GET | `/ready` | 就绪检查 | 否 |
+| GET | `/events` | SSE 事件流 | 否 |
+| POST | `/v1/auth/login` | 登录 | 否 |
+| POST | `/v1/auth/register` | 注册 | 否 |
+| POST | `/v1/auth/refresh` | 刷新 token | Cookie |
+| POST | `/v1/auth/logout` | 登出 | Cookie |
+| GET | `/v1/profile` | 用户资料 | Cookie |
+| GET | `/v1/status` | 系统状态 | Cookie |
+| POST | `/v1/chat` | 发送消息 | Cookie |
+| GET | `/v1/metrics` | 监控指标 | Cookie |
+| GET | `/v1/llm/metrics` | LLM 指标 | Cookie |
+
+认证方式：HTTP-only Cookie（浏览器）或 `Authorization: Bearer <token>`（API 客户端）。
+
+---
+
+## 🖥️ 前端
 
 ```bash
-cd backend && python -m pytest tests/ -v
+cd frontend
+npm install
+npm run dev  # → http://localhost:3000
+```
+
+| 页面 | 路由 | 说明 |
+|:-----|:-----|:------|
+| 聊天 | `/` | AI 对话界面 |
+| Agent 控制台 | `/agents` | Agent 调度与监控 |
+| 代码编辑器 | `/editor` | AI 代码编辑器 |
+| 工作流 | `/workflow` | 可视化工作流编辑器 |
+| RPA | `/rpa` | 自动化控制台 |
+| 企业 OS | `/enterprise` | Collab/Brain/Support |
+| DevOps | `/devops` | DevOps 平台 |
+| 系统 | `/system` | 可观测性仪表盘 |
+| 登录 | `/login` | 登录页 |
+| 注册 | `/register` | 注册页 |
+| 个人 | `/profile` | 用户资料 |
+
+---
+
+## 🔒 安全特性
+
+- **口令**: bcrypt 哈希（无明文存储，无 dev 绕过）
+- **会话**: JWT 存储于 HTTP-only Secure SameSite=Strict Cookie
+- **CORS**: 白名单模式（默认仅 localhost:3000）
+- **CSP**: Content-Security-Policy 头保护
+- **限流**: 令牌桶 per-IP（生产建议切换 Redis 滑动窗口）
+- **请求体**: 1MB 上限
+- **路径安全**: 文件路径遍历防护
+
+---
+
+## 🧪 测试
+
+```bash
+make test      # Go 单元测试
+make lint      # go vet + golangci-lint
+make build     # 编译
 ```
 
 ---
 
-## 📸 界面
+## 📦 构建
 
-| 页面 | 说明 |
-|:-----|:------|
-| `/` | AI 聊天界面 + 多对话标签 |
-| `/editor` | Monaco AI 原生编辑器 + 文件浏览器 |
-| `/workflow` | ReactFlow 可视化工流设计器 |
-
----
-
-## 🧩 项目结构
-
-```
-minicc/
-├── backend/
-│   ├── app/
-│   │   ├── core/          # 核心引擎 (Context, Permission, Events)
-│   │   ├── engine/        # QueryEngine, Compactor, TaskManager
-│   │   ├── tools/         # 233+ 工具全集 (25 个子模块)
-│   │   ├── models/        # Pydantic 数据模型
-│   │   ├── utils/         # Config, Security, Redis, SQLite
-│   │   ├── graph/         # StateGraph 编排引擎 (V0.3)
-│   │   ├── rag/           # RAG 管道 (V0.3)
-│   │   ├── agents/        # Agent 集群 (V0.3)
-│   │   ├── automator/     # 工作流引擎 (V0.2)
-│   │   ├── web/           # Web 自动化 (V0.2)
-│   │   ├── desktop/       # 桌面自动化 (V0.2)
-│   │   ├── office/        # Office 自动化 (V0.2)
-│   │   ├── pm/            # AI 产品经理 (V0.5)
-│   │   ├── devops/        # AI DevOps (V0.5)
-│   │   ├── ops/           # AI 运维 (V0.5)
-│   │   ├── crm/           # 客户管理 (V0.6)
-│   │   ├── erp/           # 企业资源 (V0.6)
-│   │   ├── collab/        # 协作平台 (V0.6)
-│   │   ├── support/       # 客服 (V0.6)
-│   │   ├── brain/         # 企业大脑 (V0.6)
-│   │   ├── self/          # 自我意识 (V0.7)
-│   │   ├── heal/          # 自我修复 (V0.7)
-│   │   ├── learn/         # 持续学习 (V0.7)
-│   │   ├── evolve/        # 自我进化 (V0.7)
-│   │   ├── civilization/  # AI 文明 (V0.8)
-│   │   ├── symbiosis/     # 人机共生 (V0.9)
-│   │   └── agi/           # 通用人工智能 (V1.0)
-│   └── tests/             # 120+ 测试
-├── frontend/
-│   └── src/
-│       ├── app/           # Chat, Editor, Workflow 页面
-│       ├── components/    # UI 组件库
-│       └── hooks/         # SSE 钩子
-├── docs/                  # 全版本规划文档
-└── docker-compose.yml     # 一键部署
+```bash
+make build             # 本地编译 → build/minicc
+make docker-build      # Docker 多阶段构建 → ~15MB
 ```
 
 ---
 
-## 🛣 完整路线图
+## 📄 License
 
-```
-V0.1 ─── 编码 Agent        2026 Q1   一个人写代码        ✅
-V0.2 ─── RPA 平台          2026 Q2   一个人操控世界      ✅
-V0.3 ─── Graph + Dify      2026 Q2   一个人编排工作流    ✅
-V0.4 ─── AI-Native IDE     2026 Q3   人+AI 写代码        ✅
-V0.5 ─── 开发生命周期      2026 Q3   AI 管理全开发       ✅
-V0.6 ─── 企业 OS           2026 Q3   AI 运营企业         ✅
-V0.7 ─── 自我进化 AI       2026 Q4   一个 AI 自我进化    ✅
-V0.8 ─── AI 文明           2027 Q1   一群 AI 组成社会    ✅
-V0.9 ─── 人机共生          2027 Q2   人类与 AI 融合      ✅
-V1.0 ─── AGI               2027 Q3   通用人工智能        ✅
-```
-
----
-
-## 📚 文档
-
-| 文档 | 说明 |
-|:-----|:------|
-| [V0.1 规划](docs/规划文档V0.1.md) | Code Agent 基础架构 |
-| [V0.2 规划](docs/规划文档V0.2.md) | RPA 超级平台 |
-| [V0.3 规划](docs/规划文档V0.3.md) | LangGraph + Dify 平台 |
-| [V0.4 规划](docs/规划文档V0.4.md) | AI-Native IDE |
-| [V0.5 规划](docs/规划文档V0.5.md) | 开发生命周期平台 |
-| [V0.6 规划](docs/规划文档V0.6.md) | 企业操作系统 |
-| [V0.7 规划](docs/规划文档V0.7.md) | 自我进化 AI |
-| [V0.8 规划](docs/规划文档V0.8.md) | AI 文明 |
-| [任务清单](docs/tasks/) | tasks1-10 逐版本任务追踪 |
-
----
-
-## 🤝 贡献
-
-欢迎提交 Issue 和 Pull Request！任何版本的任务都欢迎参与。
-
----
-
-## 📄 许可
-
-[MIT](LICENSE) — 完全开源，自由使用。
-
----
-
-## 🙏 致谢
-
-- **Claude Code** — 初始架构参考
-- **Ponytail** — YAGNI 开发哲学
-- **Reasonix** — DeepSeek 运行时参考
-- **LangGraph** — 图编排设计参考
-- **Dify** — RAG 与平台设计参考
-- **Cursor** — AI 编辑器设计参考
-
----
-
-> **Mini Co-creator Core** — 从一个人写代码，到通用人工智能。这不是终点，而是起点。
+MIT
