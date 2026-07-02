@@ -12,6 +12,7 @@ import (
 
 	"github.com/athenavi/minicc/config"
 	"github.com/athenavi/minicc/internal/auth"
+	"github.com/athenavi/minicc/internal/agent"
 	"github.com/athenavi/minicc/internal/broadcast"
 	"github.com/athenavi/minicc/internal/db"
 	"github.com/athenavi/minicc/internal/engine"
@@ -24,7 +25,7 @@ import (
 
 var startTime = time.Now()
 
-func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.ToolRegistry, eventHub *broadcast.Hub) *chi.Mux {
+func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.ToolRegistry, eventHub *broadcast.Hub, agentRegistry *agent.Registry) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Rate limiter
@@ -241,6 +242,14 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 		r.Get("/brain", handleEnterpriseList("", "")) // cross-module overview
 		r.Get("/wiki", handleEnterpriseList("wiki_pages", "title"))
 		r.Get("/campaigns", handleEnterpriseList("marketing_campaigns", "name, status, campaign_type"))
+	})
+
+	// Agent list endpoint
+	r.Route("/v1/agents", func(r chi.Router) {
+		r.Use(rateLimiter.Middleware)
+		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+			OK(w, agentRegistry.List())
+		})
 	})
 
 	// Protected API v1

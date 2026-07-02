@@ -114,7 +114,7 @@ func main() {
 	slog.Info("enterprise tools registered")
 
 	// ── HTTP Server ──
-	router := api.NewRouter(cfg, llmGateway, toolRegistry, eventHub)
+	router := api.NewRouter(cfg, llmGateway, toolRegistry, eventHub, agentRegistry)
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,
 		Handler:      router,
