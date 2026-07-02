@@ -5,7 +5,6 @@ import (
 
 	"github.com/athenavi/minicc/internal/auth"
 	"github.com/athenavi/minicc/internal/engine"
-	"github.com/athenavi/minicc/internal/llm"
 )
 
 type ChatHandler struct {
@@ -35,23 +34,17 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 
 	claims := auth.GetClaims(r.Context())
 
-	// Build messages
-	messages := []llm.Message{
-		{Role: "system", Content: "You are MiniCC V2, an AI coding assistant."},
-		{Role: "user", Content: req.Message},
-	}
-
-	// Process
-	result, err := h.engine.ProcessTurn(r.Context(), messages)
+	// Process via ReAct engine
+	result, usage, err := h.engine.ExecuteTask(r.Context(), req.Message, req.SessionID, nil)
 	if err != nil {
 		InternalError(w, "processing failed: "+err.Error())
 		return
 	}
 
 	OK(w, map[string]interface{}{
-		"response":     result.Content,
-		"usage":        result.Usage,
-		"session_id":   req.SessionID,
-		"user_id":      claims.UserID,
+		"response":   result,
+		"usage":      usage,
+		"session_id": req.SessionID,
+		"user_id":    claims.UserID,
 	})
 }

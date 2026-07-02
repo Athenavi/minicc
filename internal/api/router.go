@@ -66,6 +66,7 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 
 	// Engine
 	eng := engine.New(llmGateway, toolRegistry)
+	eng.SetHub(eventHub)
 	orchestrator := engine.NewTurnOrchestrator(llmGateway, toolRegistry, eventHub)
 	chatHandler := NewChatHandler(eng)
 

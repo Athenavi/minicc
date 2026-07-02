@@ -23,13 +23,19 @@ func TestBuildToolDefs_Empty(t *testing.T) {
 	}
 }
 
-func TestProcessTurn_NoGateway(t *testing.T) {
+func TestExecuteTask_NoGateway(t *testing.T) {
 	e := New(nil, nil)
-	_, err := e.ProcessTurn(context.Background(), []llm.Message{
-		{Role: "user", Content: "hello"},
-	})
+	_, _, err := e.ExecuteTask(context.Background(), "hello", "session-1", nil)
 	if err == nil {
 		t.Fatal("expected error with nil gateway")
+	}
+}
+
+func TestSystemPrompt(t *testing.T) {
+	e := New(nil, nil)
+	prompt := e.SystemPrompt()
+	if prompt == "" {
+		t.Fatal("expected non-empty system prompt")
 	}
 }
 
@@ -37,14 +43,6 @@ func TestTurnOrchestrator_New(t *testing.T) {
 	o := NewTurnOrchestrator(nil, nil, nil)
 	if o == nil {
 		t.Fatal("expected non-nil orchestrator")
-	}
-}
-
-func TestTurnOrchestrator_Execute_NoGateway(t *testing.T) {
-	o := NewTurnOrchestrator(nil, nil, nil)
-	_, _, err := o.Execute(context.Background(), "session-1", nil, "", nil)
-	if err == nil {
-		t.Fatal("expected error with nil gateway")
 	}
 }
 
@@ -76,38 +74,11 @@ type testTool struct {
 	desc string
 }
 
-func (t *testTool) Name() string        { return t.name }
-func (t *testTool) Description() string  { return t.desc }
+func (t *testTool) Name() string                     { return t.name }
+func (t *testTool) Description() string               { return t.desc }
 func (t *testTool) Parameters() map[string]interface{} { return map[string]interface{}{} }
 func (t *testTool) Execute(ctx context.Context, input map[string]interface{}) (map[string]interface{}, error) {
 	return map[string]interface{}{"output": "done"}, nil
-}
-
-func TestToolResult(t *testing.T) {
-	r := ToolResult{
-		Name:   "test_tool",
-		Input:  "{}",
-		Output: "done",
-	}
-	if r.Name != "test_tool" {
-		t.Fatalf("expected 'test_tool', got %q", r.Name)
-	}
-	if r.Error != "" {
-		t.Fatalf("expected empty error, got %q", r.Error)
-	}
-}
-
-func TestTurnResult(t *testing.T) {
-	r := &TurnResult{
-		Content: "Hello",
-		Usage:   &llm.Usage{InputTokens: 10, OutputTokens: 20, TotalTokens: 30},
-	}
-	if r.Content != "Hello" {
-		t.Fatalf("expected 'Hello', got %q", r.Content)
-	}
-	if r.Usage.TotalTokens != 30 {
-		t.Fatalf("expected 30 total tokens, got %d", r.Usage.TotalTokens)
-	}
 }
 
 func TestBuildToolDefs_Description(t *testing.T) {
@@ -123,10 +94,14 @@ func TestBuildToolDefs_Description(t *testing.T) {
 	}
 }
 
-func TestEngine_ProcessTurn_EmptyMessages(t *testing.T) {
+func TestExecuteTask_WithHistory(t *testing.T) {
 	e := New(nil, nil)
-	_, err := e.ProcessTurn(context.Background(), nil)
+	history := []llm.Message{
+		{Role: "user", Content: "previous message"},
+		{Role: "assistant", Content: "previous response"},
+	}
+	_, _, err := e.ExecuteTask(context.Background(), "new task", "session-1", history)
 	if err == nil {
-		t.Fatal("expected error with nil gateway and nil messages")
+		t.Fatal("expected error with nil gateway")
 	}
 }

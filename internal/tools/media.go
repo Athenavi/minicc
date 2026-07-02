@@ -18,7 +18,7 @@ type MediaCreateTool struct{}
 func NewMediaCreateTool() *MediaCreateTool { return &MediaCreateTool{} }
 
 func (t *MediaCreateTool) Name() string        { return "media_create" }
-func (t *MediaCreateTool) Description() string  { return "Save generated content (CSV, code, text, markdown, etc.) to the media library for later reference." }
+func (t *MediaCreateTool) Description() string  { return "保存生成的内容(CSV/代码/文本/Markdown等)到媒体库(media_library)中供后续引用。当用户要求'保存到媒体库'、'存入媒体库'、'添加到媒体库'、'生成文件到媒体库'时，必须使用此工具。Save generated content to the media library for later reference." }
 func (t *MediaCreateTool) Parameters() map[string]interface{} {
 	return map[string]interface{}{
 		"name": map[string]interface{}{
