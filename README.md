@@ -45,6 +45,19 @@ config/config.go    环境变量配置
 - PostgreSQL 17+（可选，无 DB 时运行在降级模式）
 - Redis 7+（可选，无 Redis 时运行在降级模式）
 
+### 数据库初始化
+
+首次使用需要初始化数据库。详见完整的 [数据库迁移指南](docs/database-migrations.md)。
+
+快速初始化：
+
+```bash
+# 确保 PostgreSQL 运行中
+# 启动服务（自动建库 + 自动迁移）
+export JWT_SECRET=$(openssl rand -hex 32)
+go run ./cmd/minicc
+```
+
 ### 启动
 
 ```bash
@@ -140,6 +153,15 @@ make test      # Go 单元测试
 make lint      # go vet + golangci-lint
 make build     # 编译
 ```
+
+## 🗄️ 数据库迁移
+
+参考 [docs/database-migrations.md](docs/database-migrations.md)：
+
+- **初始化**：首次创建数据库 + 应用全部迁移
+- **升级**：启动时自动应用新迁移
+- **降级**：执行 `.down.sql` 回滚
+- **新增**：修改 `atlas.hcl` → `atlas migrate diff`
 
 ---
 
