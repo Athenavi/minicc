@@ -346,12 +346,7 @@ export default function WorkspacePage() {
     yolo: "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300",
   };
 
-  const rightTabs = [
-    { id: "agents", label: "Agents", icon: Bot },
-    { id: "media", label: "Media", icon: FileCode },
-    { id: "tasks", label: "Tasks", icon: ListTodo },
-    { id: "tools", label: "Tools", icon: Building2 },
-  ];
+  const rightTabs = [{ id: "media", label: "Media", icon: FileCode }];
 
   const toolShortcuts = [
     { name: "collab_task_create", icon: "📋", label: "Task" },

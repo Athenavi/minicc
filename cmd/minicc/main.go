@@ -11,16 +11,15 @@ import (
 
 	"github.com/athenavi/minicc/internal/agent"
 	"github.com/athenavi/minicc/internal/api"
-	"github.com/athenavi/minicc/internal/brain"
+
 	"github.com/athenavi/minicc/internal/broadcast"
-	"github.com/athenavi/minicc/internal/collab"
 	"github.com/athenavi/minicc/config"
 	"github.com/athenavi/minicc/internal/db"
 	"github.com/athenavi/minicc/internal/graph"
 	"github.com/athenavi/minicc/internal/llm"
 	"github.com/athenavi/minicc/internal/monitor"
 	"github.com/athenavi/minicc/internal/pm"
-	"github.com/athenavi/minicc/internal/support"
+
 	"github.com/athenavi/minicc/internal/tools"
 	"github.com/athenavi/minicc/internal/workflow"
 )
@@ -108,10 +107,7 @@ func main() {
 	slog.Info("workflow tools registered")
 
 	// ── Enterprise Tools ──
-	collab.RegisterTools(toolRegistry)
-	brain.RegisterTools(toolRegistry)
-	support.RegisterTools(toolRegistry)
-	slog.Info("enterprise tools registered")
+
 
 	// ── HTTP Server ──
 	router := api.NewRouter(cfg, llmGateway, toolRegistry, eventHub, agentRegistry)

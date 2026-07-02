@@ -4,7 +4,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 const navItems = [
   { href: "/workspace", label: "⚡ Workspace", desc: "AI Agent Hub" },
   { href: "/workflow", label: "🔀 Workflow", desc: "Visual Graph" },
-  { href: "/enterprise", label: "🏢 Enterprise", desc: "Business" },
   { href: "/system", label: "🔬 System", desc: "Monitor" },
 ];
 

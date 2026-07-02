@@ -218,15 +218,6 @@ func NewRouter(cfg *config.Config, llmGateway *llm.Gateway, toolRegistry *tools.
 	r.Get("/v1/executions", workflowHandler.ListExecs)
 
 	// Enterprise list endpoints (public)
-	r.Route("/v1/enterprise", func(r chi.Router) {
-		r.Use(rateLimiter.Middleware)
-		r.Get("/tasks", handleEnterpriseList("enterprise_tasks", "title, priority, status"))
-		r.Get("/tickets", handleEnterpriseList("support_tickets", "subject, priority, status"))
-		r.Get("/brain", handleEnterpriseList("", "")) // cross-module overview
-		r.Get("/wiki", handleEnterpriseList("wiki_pages", "title"))
-		r.Get("/campaigns", handleEnterpriseList("marketing_campaigns", "name, status, campaign_type"))
-	})
-
 	// Media library endpoints
 	mediaHandler := NewMediaHandler(cfg.StorageRoot)
 	r.Route("/v1/media", func(r chi.Router) {
