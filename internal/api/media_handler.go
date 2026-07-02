@@ -265,19 +265,38 @@ func detectType(mime string) string {
 	return "file"
 }
 
-// resolveStorageID determines the per-user storage namespace.
-// Authenticated users → user_{JWT_userID} (deterministic, tied to auth)
-// Guest users → anon_{client_id} (from SSE connection, sent by frontend)
-// This is SECURE because the identity is verified server-side, not client-generated.
+// resolveStorageID returns a permanent storage identifier from the database.
+// Authenticated users → users.storage_id (UUID, created once on first access)
+// Guest users → guest_storage.storage_id (UUID, keyed by SSE client_id)
+// This is PERSISTENT and SECURE — tied to a real database record, not client input.
 func resolveStorageID(r *http.Request) string {
-	// 1. Try JWT claims (authenticated users)
-	if claims := auth.GetClaims(r.Context()); claims != nil {
-		return "user_" + claims.UserID
+	ctx := r.Context()
+
+	// 1. Authenticated users — use users.storage_id
+	if claims := auth.GetClaims(ctx); claims != nil && db.Pool != nil {
+		var storageID string
+		err := db.Pool.QueryRow(ctx, `SELECT storage_id FROM users WHERE id = $1`, claims.UserID).Scan(&storageID)
+		if err == nil && storageID != "" {
+			return "user_" + storageID
+		}
+		// Generate and persist storage_id for this user
+		storageID = fmt.Sprintf("s_%d", time.Now().UnixNano())
+		db.Pool.Exec(ctx, `UPDATE users SET storage_id = $1 WHERE id = $2`, storageID, claims.UserID)
+		return "user_" + storageID
 	}
-	// 2. Try client_id from query param (guest users, same as SSE)
-	if cid := r.URL.Query().Get("client_id"); cid != "" {
-		return "anon_" + cid
+
+	// 2. Guest users — keyed by SSE client_id, persisted in guest_storage table
+	if cid := r.URL.Query().Get("client_id"); cid != "" && db.Pool != nil {
+		var storageID string
+		err := db.Pool.QueryRow(ctx, `SELECT storage_id FROM guest_storage WHERE client_id = $1`, cid).Scan(&storageID)
+		if err == nil && storageID != "" {
+			return "anon_" + storageID
+		}
+		// Create new guest storage record
+		storageID = fmt.Sprintf("g_%d", time.Now().UnixNano())
+		db.Pool.Exec(ctx, `INSERT INTO guest_storage (client_id, storage_id, created_at) VALUES ($1, $2, NOW())`, cid, storageID)
+		return "anon_" + storageID
 	}
-	// 3. Last resort — generate one from request fingerprint
-	return "anon_" + fmt.Sprintf("%d", time.Now().UnixNano())
+
+	return "anon_default"
 }

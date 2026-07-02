@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS guest_storage;
+ALTER TABLE users DROP COLUMN IF EXISTS storage_id;
