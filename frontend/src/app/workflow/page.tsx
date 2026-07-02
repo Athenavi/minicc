@@ -192,11 +192,13 @@ export default function WorkflowPage() {
         const d = n.data as Record<string, any>;
         return {
           id: n.id,
+          position: n.position,
           tool: d.nodeType === "llm" ? "llm_chat" :
                 d.nodeType === "tool" ? (d.config?.tool || "bash") :
                 d.nodeType === "wait" ? "sleep" :
                 d.nodeType === "condition" ? "condition_check" : "custom_code",
           params: d.config || {},
+          data: { label: d.label, nodeType: d.nodeType, icon: d.icon, config: d.config },
         };
       });
 
@@ -216,6 +218,9 @@ export default function WorkflowPage() {
       });
       const wfId = createResp?.data?.id;
       if (!wfId) throw new Error("Failed to create workflow");
+      // Refresh saved list
+      const d = await api("/v1/workflows", { skipAuth: true });
+      if (Array.isArray(d?.data)) setSavedWorkflows(d.data);
 
       addLog("Executing workflow...", "info");
 
@@ -258,9 +263,19 @@ export default function WorkflowPage() {
   };
 
   const handleSaveWorkflow = async () => {
-    const steps = nodes.map((n) => ({
-      id: n.id, position: n.position, data: n.data,
-    }));
+    const steps = nodes
+      .filter((n) => n.id !== "start")
+      .map((n) => {
+        const d = n.data as Record<string, any>;
+        return {
+          id: n.id,
+          position: n.position,
+          tool: d.nodeType === "llm" ? "llm_chat" :
+                d.nodeType === "tool" ? (d.config?.tool || "bash") : "custom_code",
+          params: d.config || {},
+          data: { label: d.label, nodeType: d.nodeType, icon: d.icon, config: d.config },
+        };
+      });
     try {
       await api("/v1/workflows", {
         method: "POST",
@@ -287,14 +302,12 @@ export default function WorkflowPage() {
       if (!wf?.definition) return;
       const def = typeof wf.definition === "string" ? JSON.parse(wf.definition) : wf.definition;
       if (def.steps) {
-        // Reconstruct nodes from saved definition
         const loadedNodes: Node[] = def.steps.map((s: any, i: number) => ({
           id: s.id || `node_${i}`,
           type: "workflowNode",
           position: s.position || { x: 100, y: i * 100 + 100 },
           data: s.data || { nodeType: "tool", config: { tool: s.tool || "bash" }, label: s.tool || "Step" },
         }));
-        // Ensure start node
         loadedNodes.unshift({
           id: "start",
           type: "workflowNode",
@@ -307,6 +320,16 @@ export default function WorkflowPage() {
       }
     } catch (err: any) {
       addLog(`Load failed: ${err.message}`, "error");
+    }
+  };
+
+  const handleDeleteWorkflow = async (id: string) => {
+    try {
+      await api(`/v1/workflows/${id}`, { method: "DELETE", skipAuth: true });
+      setSavedWorkflows((prev) => prev.filter((wf: any) => wf.id !== id));
+      addLog("Workflow deleted", "warning");
+    } catch (err: any) {
+      addLog(`Delete failed: ${err.message}`, "error");
     }
   };
 
@@ -407,10 +430,14 @@ export default function WorkflowPage() {
             <div className="max-h-40 overflow-auto space-y-1 border-t dark:border-gray-700 pt-2 mt-2">
               <p className="text-[10px] text-gray-400 font-medium px-1">Saved Workflows</p>
               {savedWorkflows.map((wf: any) => (
-                <button key={wf.id} onClick={() => handleLoadWorkflow(wf.id)}
-                  className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-gray-100 dark:hover:bg-gray-700 truncate">
-                  {wf.name || wf.id}
-                </button>
+                <div key={wf.id} className="flex items-center gap-1 group">
+                  <button onClick={() => handleLoadWorkflow(wf.id)}
+                    className="flex-1 text-left px-2 py-1.5 text-xs rounded hover:bg-gray-100 dark:hover:bg-gray-700 truncate">
+                    {wf.name || wf.id}
+                  </button>
+                  <button onClick={() => handleDeleteWorkflow(wf.id)}
+                    className="shrink-0 opacity-0 group-hover:opacity-100 px-1 text-gray-400 hover:text-red-500 text-xs">✕</button>
+                </div>
               ))}
             </div>
           )}
