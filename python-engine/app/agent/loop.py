@@ -34,7 +34,11 @@ def build_messages(system_prompt: str, history: list[dict], content: str) -> lis
         if msg.get("tool_calls"):
             from app.gateway.provider import ToolCall
             tool_calls = [
-                ToolCall(id=tc.get("id", ""), name=tc.get("name", ""), arguments=tc.get("arguments", ""))
+                ToolCall(
+                    id=tc.get("id", ""),
+                    name=tc.get("function", {}).get("name", "") if isinstance(tc.get("function"), dict) else tc.get("name", ""),
+                    arguments=tc.get("function", {}).get("arguments", "") if isinstance(tc.get("function"), dict) else tc.get("arguments", ""),
+                )
                 for tc in msg["tool_calls"]
             ]
         messages.append(ChatMessage(
@@ -194,11 +198,14 @@ async def run_agent_with_llm_provider(
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
     for msg in history:
-        messages.append({
+        entry = {
             "role": msg.get("role", "user"),
             "content": msg.get("content", ""),
             "tool_call_id": msg.get("tool_call_id", ""),
-        })
+        }
+        if msg.get("tool_calls"):
+            entry["tool_calls"] = msg["tool_calls"]
+        messages.append(entry)
     if content:
         messages.append({"role": "user", "content": content})
 

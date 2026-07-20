@@ -461,6 +461,7 @@ class AgentRuntime:
                 role=msg.get("role", "user"),
                 content=msg.get("content", ""),
                 tool_call_id=msg.get("tool_call_id", ""),
+                tool_calls=msg.get("tool_calls"),
             ))
         if task.content:
             messages.append(_normalize_msg(role="user", content=task.content))
@@ -476,6 +477,7 @@ class AgentRuntime:
                 role=msg.get("role", "user"),
                 content=msg.get("content", ""),
                 tool_call_id=msg.get("tool_call_id", ""),
+                tool_calls=msg.get("tool_calls"),
             ))
         return messages
     
