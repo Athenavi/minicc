@@ -9,6 +9,16 @@ import { AddOutline, SaveOutline, PlayOutline, TrashOutline, CloseOutline, ListO
 import { api } from '../api'
 import type { Node, Edge, Connection } from '@vue-flow/core'
 
+ // 从 JWT token 中解析 user_id（不依赖 auth store 的异步加载）
+function getUserIdFromToken(): string | null {
+  const token = localStorage.getItem('token')
+  if (!token) return null
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]))
+    return (payload as Record<string, any>).uid || null
+  } catch { return null }
+}
+
 // ── Types ──
 interface GraphNodeBackend {
   id: string
@@ -307,13 +317,14 @@ function fromBackendFormat(data: any) {
 // ── API: Save ──
 async function saveWorkflow() {
   const graphData = toBackendFormat()
-  const payload = {
+  const payload: Record<string, any> = {
     id: workflowId.value || undefined,
     name: workflowName.value,
     graph_json: JSON.stringify({
       name: workflowName.value,
       ...graphData,
     }),
+    user_id: getUserIdFromToken() || undefined,
   }
 
   try {

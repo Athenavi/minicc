@@ -23,6 +23,7 @@ class GraphCreateRequest(BaseModel):
     id: Optional[str] = None
     name: str
     graph_json: Any = {}
+    user_id: Optional[str] = None
 
 
 class GraphExecuteRequest(BaseModel):
@@ -67,7 +68,9 @@ async def create_graph(body: GraphCreateRequest, user_id: str = Query("", alias=
     """Create or update a graph definition."""
     import uuid as _uuid
 
-    if not user_id:
+    # 优先使用请求体中的 user_id，再回退到查询参数
+    effective_user_id = body.user_id or user_id
+    if not effective_user_id:
         raise HTTPException(status_code=400, detail="user_id is required")
 
     graph_id = body.id or f"g-{_uuid.uuid4().hex[:10]}"
@@ -83,7 +86,7 @@ async def create_graph(body: GraphCreateRequest, user_id: str = Query("", alias=
     record = {
         "id": graph_id,
         "name": body.name,
-        "user_id": user_id,
+        "user_id": effective_user_id,
         "graph_json": graph_json,
         "created_at": now.isoformat(),
         "updated_at": now.isoformat(),
@@ -95,7 +98,7 @@ async def create_graph(body: GraphCreateRequest, user_id: str = Query("", alias=
             """INSERT INTO workflow_graphs (id, name, user_id, graph_json, created_at, updated_at)
                VALUES ($1, $2, $3, $4, $5, $6)
                ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, graph_json = EXCLUDED.graph_json, updated_at = EXCLUDED.updated_at""",
-            graph_id, body.name, user_id or None, json.dumps(graph_json), now, now,
+            graph_id, body.name, effective_user_id or None, json.dumps(graph_json), now, now,
         )
     except Exception as e:
         logger.error("graph insert failed: %s", e)
