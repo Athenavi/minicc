@@ -86,7 +86,9 @@ class Settings(BaseSettings):
         if self.llm_api_key and not self.openai_api_key:
             self.openai_api_key = self.llm_api_key
             self.openai_base_url = self.llm_base_url or self.openai_base_url
-        if self.llm_model:
+        # 仅当 llm_model 被显式设置（非默认值）时才覆盖 default_model，
+        # 否则用户通过 DEFAULT_MODEL 环境变量设置的值会被静默忽略。
+        if "llm_model" in self.model_fields_set:
             self.default_model = self.llm_model
         return self
 

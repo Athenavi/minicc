@@ -102,15 +102,8 @@ class RAGRetriever:
             chunk_ids = [f"chunk_{i}" for i in range(len(chunks))]
 
             # 插入数据
-            await asyncio.to_thread(
-                collection.insert,
-                ids,
-                tenant_ids,
-                document_ids,
-                chunk_ids,
-                chunks,
-                embeddings,
-            )
+            data = [ids, tenant_ids, document_ids, chunk_ids, chunks, embeddings]
+            await asyncio.to_thread(collection.insert, data)
             await asyncio.to_thread(collection.flush)
 
             logger.info(f"文档索引完成: {document_id}, {len(chunks)} 个分块")

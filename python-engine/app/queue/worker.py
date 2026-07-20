@@ -13,6 +13,7 @@ from app.observability.metrics import (
     QUEUE_DEPTH,
     QUEUE_PROCESSING_DURATION,
     QUEUE_DLQ_TOTAL,
+    QUEUE_RETRY_TOTAL,
 )
 
 logger = logging.getLogger(__name__)

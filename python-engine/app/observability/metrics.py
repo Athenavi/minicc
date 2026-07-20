@@ -74,6 +74,11 @@ QUEUE_DLQ_TOTAL = Counter(
     "Total tasks moved to dead letter queue",
     ["task_type"],
 )
+QUEUE_RETRY_TOTAL = Counter(
+    "queue_retry_total",
+    "Total tasks re-queued for retry",
+    ["task_type"],
+)
 
 # ── 实例级 ──
 INSTANCE_ACTIVE_REQUESTS = Gauge(
