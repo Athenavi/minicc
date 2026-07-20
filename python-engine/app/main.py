@@ -490,7 +490,7 @@ async def agent_submit(
         session_id=body.get("session_id", ""),
         content=body.get("content", ""),
         history=body.get("history", []),
-        max_turns=min(body.get("max_turns", settings.max_turns), settings.max_turns),
+        max_turns=max(1, min(body.get("max_turns") or settings.max_turns, settings.max_turns)),
     )
 
     # ── 深度推理模式：设置 system_prompt 要求输出思考过程 ──

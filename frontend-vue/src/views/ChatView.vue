@@ -277,6 +277,10 @@ async function sendMessage() {
       nextTick(() => renderMermaid())
       persistMessages()
     }
+  }, () => {
+    streaming.value = false
+    loading.value = false
+    if (typewriterTimer) { clearInterval(typewriterTimer); typewriterTimer = null }
   })
 
   try {
@@ -327,6 +331,9 @@ interface SplitContent {
   thinking: string
   answer: string
 }
+
+const _thinkingRe = /\[thinking\][\s\S]*?\[\/thinking\]/g
+
 function splitThinking(content: string): SplitContent {
   // 提取所有 [thinking] 块内容
   const thinking: string[] = []
@@ -336,8 +343,29 @@ function splitThinking(content: string): SplitContent {
     thinking.push(match[1].trim())
   }
   // 移除所有 [thinking]...[/thinking] 标签得到最终答案
-  const answer = content.replace(/\[thinking\][\s\S]*?\[\/thinking\]/g, '').trim()
+  const answer = content.replace(_thinkingRe, '').trim()
   return { thinking: thinking.join('\n\n'), answer }
+}
+
+// 缓存 splitThinking 结果避免模板重复解析
+const _splitCache = new Map<string, SplitContent>()
+function getSplitResult(content: string): SplitContent {
+  const cached = _splitCache.get(content)
+  if (cached) return cached
+  const result = splitThinking(content)
+  _splitCache.set(content, result)
+  return result
+}
+
+// 流式渲染时去掉 [thinking] 标签，只显示纯文本
+function stripThinkingTags(content: string): string {
+  return content.replace(_thinkingRe, '').trim()
+}
+
+// 打字机显示的文本：去掉 thinking 标签后 slice
+function typewriterSlice(content: string, displayedLength: number): string {
+  const display = stripThinkingTags(content)
+  return display.slice(0, Math.min(displayedLength, display.length))
 }
 
 const thinkingExpanded = ref<Record<string, boolean>>({})
@@ -461,23 +489,24 @@ function collapsedStyle(id: string) {
               :class="['message-text', msg.role === 'assistant' ? 'markdown-body' : '']"
               :style="collapsedStyle(msg.id)"
             >
-              <template v-if="msg.role === 'assistant' && (msg.displayedLength ?? 0) < (msg.content?.length ?? 0)">
-                <span class="typewriter-text">{{ msg.content.slice(0, msg.displayedLength ?? 0) }}</span><span class="cursor-blink">▌</span>
-              </template>
-              <!-- 深度推理：思考过程与最终回答分开渲染 -->
-              <div v-else-if="msg.role === 'assistant'" class="thinking-wrapper">
-                <template v-if="splitThinking(msg.content).thinking">
+              <!-- 助手消息：统一使用 thinking-wrapper 模式，流式中逐步打字、完成后 markdown -->
+              <div v-if="msg.role === 'assistant'" class="thinking-wrapper">
+                <template v-if="getSplitResult(msg.content).thinking">
                   <div class="thinking-section">
                     <button class="thinking-toggle" @click="thinkingExpanded[msg.id] = !thinkingExpanded[msg.id]">
                       <span class="thinking-icon">🧠</span>
                       <span>{{ thinkingExpanded[msg.id] ? '收起思考过程' : '展开思考过程' }}</span>
                       <span class="thinking-arrow">{{ thinkingExpanded[msg.id] ? '▼' : '▶' }}</span>
                     </button>
-                    <div v-show="thinkingExpanded[msg.id]" class="thinking-content" v-html="renderMarkdown(splitThinking(msg.content).thinking)"></div>
+                    <div v-show="thinkingExpanded[msg.id]" class="thinking-content" v-html="renderMarkdown(getSplitResult(msg.content).thinking)"></div>
                   </div>
                 </template>
-                <div v-if="splitThinking(msg.content).answer" class="rendered-content" v-html="renderMarkdown(splitThinking(msg.content).answer)"></div>
-                <div v-else-if="!splitThinking(msg.content).thinking" class="rendered-content" v-html="renderMarkdown(msg.content)"></div>
+                <!-- answer 区域：流式中纯文本打字，完成时 markdown -->
+                <div v-if="(msg.displayedLength ?? 0) < (msg.content?.length ?? 0)" class="rendered-content">
+                  <span class="typewriter-text">{{ typewriterSlice(msg.content, msg.displayedLength ?? 0) }}</span><span class="cursor-blink">▌</span>
+                </div>
+                <div v-else-if="getSplitResult(msg.content).answer" class="rendered-content" v-html="renderMarkdown(getSplitResult(msg.content).answer)"></div>
+                <div v-else class="rendered-content" v-html="renderMarkdown(stripThinkingTags(msg.content))"></div>
               </div>
               <div v-else class="rendered-content" v-html="renderMarkdown(msg.content)"></div>
             </div>

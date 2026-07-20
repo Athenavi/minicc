@@ -46,65 +46,73 @@ func NewDistributedRateLimiter(rdb db.RedisClient, globalLimit, tenantLimit, use
 	}
 }
 
-// rateLimitLua Redis Lua 脚本实现原子限流
+// rateLimitLua 三级限流原子脚本 — 预检查全部三级后统一递增，防止配额泄漏
+//
+// KEYS[1]  全局 key     KEYS[2] 租户 key（空串则跳过）  KEYS[3] 用户 key（空串则跳过）
+// ARGV[1]  全局上限     ARGV[2] 租户上限               ARGV[3] 用户上限
+// ARGV[4]  窗口秒数
+// 返回 "ok" / "global" / "tenant" / "user"
 const rateLimitLua = `
-local key = KEYS[1]
-local limit = tonumber(ARGV[1])
-local window = tonumber(ARGV[2])
-local current = tonumber(redis.call('GET', key) or "0")
-if current >= limit then
-    return 0
-else
-    redis.call('INCR', key)
-    redis.call('EXPIRE', key, window)
-    return 1
+local function check(key, limit_str)
+    if key == "" or limit_str == "" then return true end
+    local cur = tonumber(redis.call("GET", key) or "0")
+    local lim = tonumber(limit_str)
+    return cur < lim
 end
+if not check(KEYS[1], ARGV[1]) then return "global" end
+if not check(KEYS[2], ARGV[2]) then return "tenant" end
+if not check(KEYS[3], ARGV[3]) then return "user" end
+local w = tonumber(ARGV[4])
+if KEYS[1] ~= "" then redis.call("INCR", KEYS[1]); redis.call("EXPIRE", KEYS[1], w) end
+if KEYS[2] ~= "" then redis.call("INCR", KEYS[2]); redis.call("EXPIRE", KEYS[2], w) end
+if KEYS[3] ~= "" then redis.call("INCR", KEYS[3]); redis.call("EXPIRE", KEYS[3], w) end
+return "ok"
 `
 
-// Allow 检查是否允许请求
+// Allow 检查是否允许请求 — 单次原子 eval 完成三级检查
 func (l *DistributedRateLimiter) Allow(ctx context.Context, tenantID, userID string) (bool, error) {
 	if l.rdb == nil {
 		return true, nil // Redis 不可用时放行
 	}
 
-	// 1. 全局限流
 	globalKey := "ratelimit:global:minute"
-	result, err := l.rdb.Eval(ctx, rateLimitLua, []string{globalKey}, l.globalLimit, 60).Int()
+	tenantKey := ""
+	if tenantID != "" {
+		tenantKey = fmt.Sprintf("ratelimit:tenant:%s:minute", tenantID)
+	}
+	userKey := ""
+	if userID != "" {
+		userKey = fmt.Sprintf("ratelimit:user:%s:minute", userID)
+	}
+
+	// 限流失效的参数（limit≤0）直接跳过
+	tenantLim := l.tenantLimit
+	if tenantKey == "" {
+		tenantLim = 0
+	}
+	userLim := l.userLimit
+	if userKey == "" {
+		userLim = 0
+	}
+
+	result, err := l.rdb.Eval(ctx, rateLimitLua,
+		[]string{globalKey, tenantKey, userKey},
+		l.globalLimit, tenantLim, userLim, 60).Text()
 	if err != nil {
-		slog.Warn("全局限流检查失败", "error", err)
+		slog.Warn("限流检查失败", "error", err)
 		return true, nil // Redis 错误时放行
 	}
-	if result == 0 {
+
+	switch result {
+	case "global":
 		return false, fmt.Errorf("全局请求频率超限")
+	case "tenant":
+		return false, fmt.Errorf("租户 %s 请求频率超限", tenantID)
+	case "user":
+		return false, fmt.Errorf("用户 %s 请求频率超限", userID)
+	default:
+		return true, nil
 	}
-
-	// 2. 租户限流
-	if tenantID != "" {
-		tenantKey := fmt.Sprintf("ratelimit:tenant:%s:minute", tenantID)
-		result, err = l.rdb.Eval(ctx, rateLimitLua, []string{tenantKey}, l.tenantLimit, 60).Int()
-		if err != nil {
-			slog.Warn("租户限流检查失败", "tenant", tenantID, "error", err)
-			return true, nil
-		}
-		if result == 0 {
-			return false, fmt.Errorf("租户 %s 请求频率超限", tenantID)
-		}
-	}
-
-	// 3. 用户限流
-	if userID != "" {
-		userKey := fmt.Sprintf("ratelimit:user:%s:minute", userID)
-		result, err = l.rdb.Eval(ctx, rateLimitLua, []string{userKey}, l.userLimit, 60).Int()
-		if err != nil {
-			slog.Warn("用户限流检查失败", "user", userID, "error", err)
-			return true, nil
-		}
-		if result == 0 {
-			return false, fmt.Errorf("用户 %s 请求频率超限", userID)
-		}
-	}
-
-	return true, nil
 }
 
 // DistributedRateLimitMiddleware 分布式限流中间件

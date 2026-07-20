@@ -38,7 +38,7 @@ api.interceptors.response.use(
 )
 
 // SSE 连接
-export function createSSEConnection(sessionId: string, onMessage: (data: any) => void) {
+export function createSSEConnection(sessionId: string, onMessage: (data: any) => void, onError?: () => void) {
   const url = `${API_URL}/events?session_id=${encodeURIComponent(sessionId)}`
 
   const eventSource = new EventSource(url)
@@ -54,6 +54,7 @@ export function createSSEConnection(sessionId: string, onMessage: (data: any) =>
 
   eventSource.onerror = (error) => {
     console.error('SSE error:', error)
+    onError?.()
     eventSource.close()
   }
 
