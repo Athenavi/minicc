@@ -265,7 +265,14 @@ func (m *Manager) GetMessages(ctx context.Context, sessionID string, limit ...in
 	args := []interface{}{sessionID}
 
 	if len(limit) > 0 && limit[0] > 0 {
-		query += ` LIMIT $2`
+		// 子查询：先取最新的 N 条，再按正序排列，保持"最早优先"的返回契约
+		query = `SELECT id, session_id, role, content, created_at FROM (
+			   SELECT id, session_id, role, content, created_at
+			   FROM messages
+			   WHERE session_id = $1
+			   ORDER BY created_at DESC
+			   LIMIT $2
+		   ) sub ORDER BY created_at ASC`
 		args = append(args, limit[0])
 	}
 

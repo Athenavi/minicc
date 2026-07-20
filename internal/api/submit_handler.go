@@ -96,6 +96,9 @@ func (h *SubmitHandler) HandleSubmit(ctx context.Context, userID, sessionID, con
 
 	if finalContent != "" {
 		h.sessionMgr.SaveMessages(ctx, sessionID, userID, content, finalContent)
+	} else {
+		// 纯工具调用场景：助手未返回文本内容，但仍需保存用户消息以维持对话历史完整性
+		h.sessionMgr.SaveMessages(ctx, sessionID, userID, content, "")
 	}
 
 	if inputTokens > 0 || outputTokens > 0 {

@@ -631,15 +631,21 @@ async def admin_delete_api_key(
 ):
     """删除 API Key"""
     key_id = request.path_params.get("key_id", "")
-    # SmartKeyPool remove_key 需要 provider+key，无法按 ID 删除
-    # 前端需要传 provider 和 key_preview 来匹配删除
-    # 这里先按 body 中的 provider+key 删除
     try:
         body = await request.json()
         provider = body.get("provider", "")
         key_full = body.get("key", "")
-        if provider and key_full:
-            await pool.remove_key(provider, key_full)
+        if not provider or not key_full:
+            return JSONResponse(
+                {"status": "error", "error": "provider and key are required in request body", "id": key_id},
+                status_code=400,
+            )
+        removed = await pool.remove_key(provider, key_full)
+        if not removed:
+            return JSONResponse(
+                {"status": "not_found", "error": "API key not found", "id": key_id},
+                status_code=404,
+            )
     except Exception as e:
         logger.error("Failed to delete API key %s: %s", key_id, e)
         return {"status": "error", "error": str(e), "id": key_id}
