@@ -19,6 +19,12 @@ function getUserIdFromToken(): string | null {
   } catch { return null }
 }
 
+function formatDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
+  return isNaN(d.getTime()) ? '' : d.toLocaleString()
+}
+
 // ── Types ──
 interface GraphNodeBackend {
   id: string
@@ -707,8 +713,8 @@ onUnmounted(() => {
           >
             <div class="wf-item-row">
               <div class="wf-item-info" @click="loadWorkflow(wf); showDrawer = false">
-                <div class="wf-item-name">{{ wf.name }}</div>
-                <div class="wf-item-time">{{ new Date(wf.updated_at || wf.created_at).toLocaleString() }}</div>
+                <div class="wf-item-name">{{ wf.name || '未命名工作流' }}</div>
+                <div class="wf-item-time">{{ formatDate(wf.updated_at) || formatDate(wf.created_at) }}</div>
               </div>
               <NPopconfirm @positive-click="deleteWorkflow(wf.id)">
                 <template #trigger>

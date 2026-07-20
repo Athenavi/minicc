@@ -172,23 +172,29 @@ func NewGatewayRouter(
 			case "GET":
 				err = pythonClient.GetJSON(r.Context(), proxiedPath, &resp)
 			case "POST":
-				if body == nil {
+				var reqBody map[string]interface{}
+				if body != nil {
+					reqBody = body.(map[string]interface{})
+				} else {
 					var b map[string]interface{}
 					if err2 := DecodeJSON(w, r, &b); err2 != nil {
 						return
 					}
-					body = b
+					reqBody = b
 				}
-				err = pythonClient.PostJSON(r.Context(), proxiedPath, body, &resp)
+				err = pythonClient.PostJSON(r.Context(), proxiedPath, reqBody, &resp)
 			case "PUT":
-				if body == nil {
+				var putBody map[string]interface{}
+				if body != nil {
+					putBody = body.(map[string]interface{})
+				} else {
 					var b map[string]interface{}
 					if err2 := DecodeJSON(w, r, &b); err2 != nil {
 						return
 					}
-					body = b
+					putBody = b
 				}
-				err = pythonClient.PutJSON(r.Context(), proxiedPath, body, &resp)
+				err = pythonClient.PutJSON(r.Context(), proxiedPath, putBody, &resp)
 			case "DELETE":
 				err = pythonClient.DeleteJSON(r.Context(), proxiedPath, &resp)
 			}
@@ -348,14 +354,15 @@ func NewGatewayRouter(
 			case "GET":
 				err = pythonClient.GetJSON(r.Context(), proxiedPath, &resp)
 			case "POST":
-				if body == nil {
-					var b map[string]interface{}
-					if err2 := DecodeJSON(w, r, &b); err2 != nil {
+				var reqBody map[string]interface{}
+				if body != nil {
+					reqBody = body.(map[string]interface{})
+				} else {
+					if err2 := DecodeJSON(w, r, &reqBody); err2 != nil {
 						return
 					}
-					body = b
 				}
-				err = pythonClient.PostJSON(r.Context(), proxiedPath, body, &resp)
+				err = pythonClient.PostJSON(r.Context(), proxiedPath, reqBody, &resp)
 			case "DELETE":
 				err = pythonClient.DeleteJSON(r.Context(), proxiedPath, &resp)
 			}
