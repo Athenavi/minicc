@@ -26,7 +26,7 @@ const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
-const collapsed = ref(false)
+const collapsed = ref(window.innerWidth <= 768)
 
 function renderIcon(icon: any) {
   return () => h(NIcon, null, { default: () => h(icon) })
@@ -123,10 +123,11 @@ function handleUserMenu(key: string) {
     <NLayoutSider
       bordered
       collapse-mode="width"
-      :collapsed-width="64"
+      :collapsed-width="0"
       :width="240"
       :collapsed="collapsed"
       show-trigger
+      class="nav-sider"
       @collapse="collapsed = true"
       @expand="collapsed = false"
     >
@@ -180,8 +181,70 @@ function handleUserMenu(key: string) {
         </div>
       </template>
     </NLayoutSider>
+    <!-- 移动端导航菜单按钮 -->
+    <button v-if="collapsed" class="nav-menu-btn" @click="collapsed = false" title="打开菜单">☰</button>
+    <!-- 移动端导航遮罩 -->
+    <div v-if="!collapsed" class="nav-overlay" @click="collapsed = true"></div>
     <NLayoutContent>
       <router-view />
     </NLayoutContent>
   </NLayout>
 </template>
+
+<style scoped>
+/* 移动端导航按钮 */
+.nav-menu-btn {
+  display: none;
+}
+.nav-overlay {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .nav-menu-btn {
+    display: flex;
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    left: auto;
+    z-index: 200;
+    width: 36px;
+    height: 36px;
+    border: none;
+    background: var(--chat-bg, #fff);
+    color: var(--text-color, #333);
+    font-size: 20px;
+    cursor: pointer;
+    border-radius: 8px;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  }
+  .nav-menu-btn:active {
+    background: var(--hover-color, #e8e8ec);
+  }
+  .nav-sider {
+    position: fixed !important;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 300 !important;
+  }
+  .nav-sider.n-layout-sider--collapsed {
+    transform: translateX(-100%);
+  }
+  .nav-sider:not(.n-layout-sider--collapsed) {
+    transform: translateX(0);
+  }
+  :deep([class*="toggle-button"]) {
+    display: none !important;
+  }
+  .nav-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 250;
+    background: rgba(0,0,0,0.35);
+  }
+}
+</style>

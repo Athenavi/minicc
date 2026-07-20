@@ -55,6 +55,15 @@ const loading = ref(false)
 const streaming = ref(false)
 const scrollRef = ref<InstanceType<typeof NScrollbar> | null>(null)
 const sidebarCollapsed = ref(false)
+const mobileSidebarOpen = ref(false)
+
+function toggleSidebar() {
+  if (window.innerWidth <= 768) {
+    mobileSidebarOpen.value = !mobileSidebarOpen.value
+  } else {
+    sidebarCollapsed.value = !sidebarCollapsed.value
+  }
+}
 let typewriterTimer: ReturnType<typeof setInterval> | null = null
 
 // ── 功能选项 ──
@@ -450,9 +459,9 @@ function collapsedStyle(id: string) {
 <template>
   <div class="chat-layout">
     <!-- 侧边栏 -->
-    <div :class="['sidebar', { collapsed: sidebarCollapsed }]">
+    <div :class="['sidebar', { collapsed: sidebarCollapsed, 'mobile-open': mobileSidebarOpen }]">
       <div class="sidebar-header">
-        <NButton quaternary size="small" @click="sidebarCollapsed = !sidebarCollapsed">
+        <NButton quaternary size="small" @click="sidebarCollapsed = !sidebarCollapsed; mobileSidebarOpen = false">
           <template #icon><NIcon><ChatbubbleEllipsesOutline /></NIcon></template>
         </NButton>
         <span v-if="!sidebarCollapsed" class="sidebar-title">对话</span>
@@ -486,10 +495,12 @@ function collapsedStyle(id: string) {
         </div>
       </NScrollbar>
     </div>
-
+    <!-- 移动端侧边栏遮罩 -->
+    <div v-if="mobileSidebarOpen" class="sidebar-overlay" @click="mobileSidebarOpen = false"></div>
     <!-- 主聊天区 -->
     <div class="chat-main">
       <div class="chat-header">
+        <button class="sidebar-toggle-btn" @click="toggleSidebar" title="切换对话列表">☰</button>
         <h3>{{ getActiveTitle() }}</h3>
       </div>
 
@@ -619,7 +630,7 @@ function collapsedStyle(id: string) {
   background: var(--sidebar-bg, #fafafa);
   transition: width 0.2s;
 }
-.sidebar.collapsed { width: 48px; }
+.sidebar.collapsed { width: 0; overflow: hidden; border-right: none; padding: 0; min-width: 0; }
 
 .sidebar-header {
   display: flex;
@@ -658,6 +669,88 @@ function collapsedStyle(id: string) {
 .session-time { font-size: 11px; color: var(--text-color-3, #999); margin-top: 2px; }
 .session-delete { opacity: 0; transition: opacity 0.15s; }
 .session-item:hover .session-delete { opacity: 1; }
+
+/* ── 侧边栏切换按钮 ── */
+.sidebar-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  font-size: 20px;
+  cursor: pointer;
+  border-radius: 6px;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+.sidebar-toggle-btn:hover { background: var(--hover-color, #e8e8ec); }
+
+/* ── 移动端遮罩（桌面隐藏） ── */
+.sidebar-overlay { display: none; }
+
+@media (max-width: 768px) {
+  .sidebar-toggle-btn { display: inline-flex; }
+}
+
+
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 100;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    width: 280px;
+    display: flex;
+  }
+  .sidebar.mobile-open {
+    transform: translateX(0);
+  }
+  .sidebar.collapsed {
+    width: 280px;
+  }
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 99;
+    background: rgba(0,0,0,0.35);
+  }
+  .sidebar-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: transparent;
+    font-size: 20px;
+    cursor: pointer;
+    border-radius: 6px;
+    margin-right: 4px;
+    flex-shrink: 0;
+  }
+  .sidebar-toggle-btn:hover { background: var(--hover-color, #e8e8ec); }
+  .chat-header { padding: 12px 16px; }
+  .chat-header h3 { font-size: 16px; }
+  .chat-messages { padding: 12px 16px; }
+  .message-body { max-width: 85%; }
+  .message { gap: 8px; margin-bottom: 16px; }
+  .message-text { padding: 10px 14px; font-size: 14px; }
+  .chat-input { padding: 8px 12px; }
+}
+
+@media (max-width: 480px) {
+  .message-body { max-width: 92%; }
+  .avatar-col { display: none; }
+  .chat-messages { padding: 8px 12px; }
+  .message-text { padding: 8px 12px; font-size: 13px; }
+  .thinking-content { font-size: 12px; padding: 8px 12px; }
+}
 
 /* ── 主聊天区 ── */
 .chat-main {
