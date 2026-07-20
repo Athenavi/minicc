@@ -1,0 +1,15 @@
+apiVersion: v2
+name: minicc-frontend
+description: MiniCC Vue 前端
+type: application
+version: 2.0.0
+appVersion: "2.0.0"
+
+keywords:
+  - minicc
+  - frontend
+  - vue
+
+maintainers:
+  - name: MiniCC Team
+    email: dev@athenavi.com

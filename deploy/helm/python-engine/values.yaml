@@ -1,0 +1,97 @@
+# MiniCC Python Engine Helm Values v3.0
+
+replicaCount: 2
+
+image:
+  repository: minicc/python-engine
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+nameOverride: ""
+fullnameOverride: ""
+
+# 环境变量
+env:
+  # HTTP Server
+  HTTP_PORT: "8000"
+  HTTP_HOST: "0.0.0.0"
+  # Redis
+  REDIS_URL: ""
+  REDIS_MAX_CONNECTIONS: "50"
+  # Milvus
+  MILVUS_ADDRESS: ""
+  MILVUS_COLLECTION: "knowledge_base"
+  # LLM Provider API Keys（从 Secret 注入）
+  ANTHROPIC_API_KEY: ""
+  OPENAI_API_KEY: ""
+  DEEPSEEK_API_KEY: ""
+  # Agent
+  MAX_TURNS: "10"
+  DEFAULT_MODEL: "claude-sonnet-4-20250514"
+  DEFAULT_MAX_TOKENS: "4096"
+  DEFAULT_TEMPERATURE: "0.7"
+  # RAG
+  EMBEDDING_MODEL: "text-embedding-3-small"
+  CHUNK_SIZE: "1000"
+  CHUNK_OVERLAP: "200"
+  DEFAULT_TOP_K: "5"
+  DEFAULT_THRESHOLD: "0.7"
+  # Memory
+  SHORT_TERM_TTL: "604800"
+  # 缓存
+  CACHE_L1_CAPACITY: "2048"
+  CACHE_L2_TTL: "3600"
+  SEMANTIC_CACHE_THRESHOLD: "0.95"
+  # 限流
+  RATE_LIMIT_RPM: "60"
+  RATE_LIMIT_RPS: "10"
+  # 队列
+  QUEUE_WORKER_CONCURRENCY: "10"
+  # 可观测性
+  LOG_LEVEL: "INFO"
+  OTEL_ENDPOINT: ""
+
+# 端口
+service:
+  type: ClusterIP
+  port: 8000
+
+# 资源限制
+resources:
+  limits:
+    cpu: "4"
+    memory: "8Gi"
+    # nvidia.com/gpu: "1"  # GPU 推理时启用
+  requests:
+    cpu: "1"
+    memory: "2Gi"
+
+# 健康检查 (HTTP)
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 8000
+  initialDelaySeconds: 15
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: 8000
+  initialDelaySeconds: 5
+  periodSeconds: 5
+
+# HPA
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 50
+  targetCPUUtilizationPercentage: 70
+
+# 节点选择 (GPU 节点)
+nodeSelector: {}
+  # nvidia.com/gpu: "true"
+
+tolerations: []
+
+affinity: {}

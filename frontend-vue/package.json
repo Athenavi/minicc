@@ -1,0 +1,44 @@
+{
+  "name": "frontend-vue",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
+    "@es-plus/vue3": "^1.4.2",
+    "@file-viewer/preset-all": "^2.1.23",
+    "@file-viewer/vue3": "^2.1.23",
+    "@types/markdown-it": "^14.1.2",
+    "@vicons/ionicons5": "^0.13.0",
+    "@vue-flow/background": "^1.3.2",
+    "@vue-flow/controls": "^1.1.3",
+    "@vue-flow/core": "^1.48.2",
+    "@vue-flow/minimap": "^1.5.4",
+    "axios": "^1.18.1",
+    "echarts": "^6.1.0",
+    "element-plus": "^2.14.2",
+    "katex": "^0.17.0",
+    "markdown-it": "^14.3.0",
+    "markdown-it-texmath": "^1.0.0",
+    "mermaid": "^11.16.0",
+    "naive-ui": "^2.44.1",
+    "pinia": "^3.0.4",
+    "vue": "^3.5.39",
+    "vue-echarts": "^8.0.1",
+    "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "@file-viewer/vite-plugin": "^2.1.23",
+    "@types/node": "^24.13.2",
+    "@vitejs/plugin-vue": "^6.0.7",
+    "@vue/tsconfig": "^0.9.1",
+    "typescript": "~6.0.2",
+    "vite": "^8.1.1",
+    "vue-tsc": "^3.3.5"
+  }
+}

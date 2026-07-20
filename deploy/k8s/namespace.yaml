@@ -1,0 +1,28 @@
+# MiniCC K8s 命名空间
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: minicc
+  labels:
+    app.kubernetes.io/part-of: minicc
+    app.kubernetes.io/managed-by: kubectl
+
+---
+# 开发环境命名空间
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: minicc-staging
+  labels:
+    app.kubernetes.io/part-of: minicc
+    app.kubernetes.io/managed-by: kubectl
+
+---
+# 生产环境命名空间
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: minicc-prod
+  labels:
+    app.kubernetes.io/part-of: minicc
+    app.kubernetes.io/managed-by: kubectl

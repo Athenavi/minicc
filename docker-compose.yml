@@ -1,0 +1,192 @@
+version: "3.9"
+
+services:
+  # ── 基础设施 ──
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: minicc
+      POSTGRES_PASSWORD: minicc
+      POSTGRES_DB: minicc
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U minicc"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Temporal 工作流引擎 ──
+
+  temporal:
+    image: temporalio/auto-setup:latest
+    ports:
+      - "7233:7233"
+      - "8233:8233"
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_USER=minicc
+      - POSTGRES_PWD=minicc
+      - POSTGRES_SEEDS=postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── Go 服务（网关 + 业务） ──
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+    environment:
+      PORT: "8080"
+      POSTGRES_DSN: "postgres://minicc:minicc@postgres:5432/minicc?sslmode=disable"
+      REDIS_ADDR: "redis:6379"
+      STORAGE_BACKEND: "s3"
+      S3_ENDPOINT: "minio:9000"
+      S3_BUCKET: "minicc-media"
+      S3_ACCESS_KEY: "minioadmin"
+      S3_SECRET_KEY: "minioadmin123"
+      JWT_SECRET: "minicc-dev-jwt-secret-2026"
+      # Python AI 引擎地址
+      PYTHON_ENGINE_ADDRESS: "python-engine:8000"
+      # Temporal 地址
+      TEMPORAL_ADDRESS: "temporal:7233"
+      # LLM Provider Keys（Go 侧直连用）
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      # Stripe
+      STRIPE_SECRET_KEY: "${STRIPE_SECRET_KEY:-}"
+      STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:-}"
+    volumes:
+      - workspace:/app/workspace
+
+  # ── Python AI 引擎（自研 LLM Gateway） ──
+
+  python-engine:
+    build:
+      context: python-engine
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      HTTP_PORT: "8000"
+      REDIS_URL: "redis://redis:6379"
+      MILVUS_ADDRESS: "milvus-standalone:19530"
+      # LLM Provider Keys
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY:-}"
+      # 可观测性
+      LOG_LEVEL: "INFO"
+      OTEL_ENDPOINT: ""
+
+  # ── Milvus 向量数据库 ──
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.18
+    environment:
+      ETCD_AUTO_COMPACTION_MODE: revision
+      ETCD_AUTO_COMPACTION_RETENTION: "1000"
+      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
+      ETCD_SNAPSHOT_COUNT: "50000"
+    volumes:
+      - etcddata:/etcd
+    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+
+  minio-setup:
+    image: minio/minio:latest
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set myminio http://minio:9000 minioadmin minioadmin123;
+      mc mb --ignore-existing myminio/a-bucket;
+      "
+
+  milvus-standalone:
+    image: milvusdb/milvus:latest
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    volumes:
+      - milvusdata:/var/lib/milvus
+    depends_on:
+      - etcd
+      - minio
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── 前端（Vue 3） ──
+
+  frontend:
+    build:
+      context: frontend-vue
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - gateway
+    environment:
+      VITE_API_URL: "http://localhost:8080"
+      VITE_WS_URL: "ws://localhost:8080"
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:
+  workspace:
+  etcddata:
+  milvusdata:

@@ -1,0 +1,15 @@
+apiVersion: v2
+name: minicc-gateway
+description: MiniCC Go 网关服务 - API Gateway + 业务逻辑
+type: application
+version: 2.0.0
+appVersion: "2.0.0"
+
+keywords:
+  - minicc
+  - ai-agent
+  - gateway
+
+maintainers:
+  - name: MiniCC Team
+    email: dev@athenavi.com

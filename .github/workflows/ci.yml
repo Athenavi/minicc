@@ -1,0 +1,193 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Go 服务 ──
+  go-service:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: true
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./... -race -count=1 -coverprofile=coverage.out -timeout=120s
+
+      - name: Build (minicc server)
+        run: go build -ldflags="-s -w" -o minicc ./cmd/minicc
+
+      - name: Build (migrate CLI)
+        run: go build -ldflags="-s -w" -o migrate ./cmd/migrate
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "Unformatted files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Upload coverage
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-coverage
+          path: coverage.out
+
+  # ── Python AI 引擎 ──
+  python-engine:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python-engine
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: python-engine/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Type check
+        run: mypy app/ --ignore-missing-imports || true
+
+      - name: Test
+        run: pytest tests/ -v --tb=short -x
+
+      - name: Docker Build
+        run: docker build -t minicc-python:${{ github.sha }} .
+
+  # ── Vue 前端 ──
+  frontend-vue:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend-vue
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend-vue/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint --if-present
+
+      - name: Type check
+        run: npx vue-tsc --noEmit || true
+
+      - name: Test
+        run: npm run test --if-present
+
+      - name: Build
+        run: npm run build
+
+      - name: Docker Build
+        run: docker build -t minicc-vue:${{ github.sha }} .
+
+  # ── 集成测试 ──
+  integration:
+    needs: [go-service, python-engine]
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: minicc_test
+          POSTGRES_USER: minicc
+          POSTGRES_PASSWORD: testpass
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U minicc"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - "6379:6379"
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: true
+
+      - name: Integration Tests
+        run: go test -tags=integration ./... -count=1 -timeout=300s
+        env:
+          POSTGRES_DSN: postgres://minicc:testpass@localhost:5432/minicc_test?sslmode=disable
+          REDIS_ADDR: localhost:6379
+          JWT_SECRET: integration-test-secret-key-at-least-16-chars
+
+  # ── Docker 镜像构建 ──
+  docker-build:
+    needs: [go-service, python-engine]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Go image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: minicc/go:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build Python image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./python-engine
+          push: false
+          tags: minicc/python:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

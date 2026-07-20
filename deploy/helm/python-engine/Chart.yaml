@@ -1,0 +1,16 @@
+apiVersion: v2
+name: minicc-python-engine
+description: MiniCC Python AI 引擎 - Agent推理 / RAG / 记忆管理
+type: application
+version: 2.0.0
+appVersion: "2.0.0"
+
+keywords:
+  - minicc
+  - ai-engine
+  - python
+  - grpc
+
+maintainers:
+  - name: MiniCC Team
+    email: dev@athenavi.com

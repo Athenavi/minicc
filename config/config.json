@@ -1,0 +1,11 @@
+{
+  "port": "8080",
+  "llm_provider": "openai",
+  "llm_model": "gpt-4o",
+  "storage_backend": "local",
+  "storage_root": "./workspace",
+  "log_level": "info",
+  "postgres_max_conn": 50,
+  "postgres_min_conn": 10,
+  "rate_limit_rpm": 100
+}

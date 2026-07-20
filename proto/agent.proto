@@ -1,0 +1,61 @@
+syntax = "proto3";
+package minicc;
+option go_package = "github.com/athenavi/minicc/proto";
+
+import "common.proto";
+
+// Agent 推理引擎服务
+service AgentEngine {
+  // Agent 推理：接收用户输入，返回流式推理过程
+  rpc Run(RunRequest) returns (stream RunResponse);
+
+  // 提交工具执行结果，继续推理
+  rpc SubmitToolOutput(ToolOutputRequest) returns (stream RunResponse);
+
+  // 健康检查
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+// 推理请求
+message RunRequest {
+  string session_id = 1;
+  string user_id = 2;
+  string tenant_id = 3;
+  string content = 4;              // 用户输入内容
+  string system_prompt = 5;        // 系统提示
+  repeated Message history = 6;    // 对话历史
+  repeated ToolDef tools = 7;      // 可用工具定义
+  LLMConfig llm_config = 8;        // LLM 配置
+  int32 max_turns = 9;             // 最大推理轮数
+  int64 timeout_seconds = 10;      // 超时时间（秒）
+}
+
+// 推理响应（流式）
+message RunResponse {
+  oneof event {
+    string text_chunk = 1;           // 流式文本片段
+    ToolCallRequest tool_call = 2;   // 请求 Go 执行工具
+    Usage usage = 3;                 // Token 用量
+    string error = 4;                // 错误信息
+    bool done = 5;                   // 推理完成标记
+  }
+}
+
+// 工具调用请求（Python → Go）
+message ToolCallRequest {
+  string id = 1;        // 工具调用 ID
+  string name = 2;      // 工具名称
+  string arguments = 3; // JSON 参数
+}
+
+// 工具执行结果提交（Go → Python）
+message ToolOutputRequest {
+  string session_id = 1;
+  string tool_call_id = 2;
+  string output = 3;    // 工具执行结果
+  bool is_error = 4;    // 是否为错误
+  repeated Message history = 5;  // 更新后的对话历史
+  repeated ToolDef tools = 6;    // 工具定义
+  LLMConfig llm_config = 7;      // LLM 配置
+  int32 max_turns = 8;           // 剩余最大轮数
+}

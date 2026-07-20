@@ -1,0 +1,56 @@
+syntax = "proto3";
+package minicc;
+option go_package = "github.com/athenavi/minicc/proto";
+
+import "common.proto";
+
+// RAG 检索引擎服务
+service RAGEngine {
+  // 文档索引：分块 + 嵌入 + 存入 Milvus
+  rpc IndexDocument(IndexDocumentRequest) returns (IndexDocumentResponse);
+
+  // 向量检索：查询相关文档片段
+  rpc Retrieve(RetrieveRequest) returns (RetrieveResponse);
+
+  // 健康检查
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+// 文档索引请求
+message IndexDocumentRequest {
+  string tenant_id = 1;
+  string document_id = 2;
+  string content = 3;              // 文档内容
+  string file_type = 4;            // "pdf" | "txt" | "md" | "csv"
+  map<string, string> metadata = 5; // 元数据
+}
+
+// 文档索引响应
+message IndexDocumentResponse {
+  string document_id = 1;
+  int32 chunks_count = 2;  // 分块数量
+  string status = 3;       // "indexed" | "failed"
+  string error = 4;        // 失败原因
+}
+
+// 向量检索请求
+message RetrieveRequest {
+  string tenant_id = 1;
+  string query = 2;
+  int32 top_k = 3;         // 返回数量，默认 5
+  float threshold = 4;     // 相似度阈值，默认 0.7
+}
+
+// 向量检索响应
+message RetrieveResponse {
+  repeated RetrieveResult results = 1;
+}
+
+// 检索结果
+message RetrieveResult {
+  string document_id = 1;
+  string chunk_id = 2;
+  string content = 3;
+  float score = 4;                  // 相似度分数
+  map<string, string> metadata = 5;
+}

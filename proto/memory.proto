@@ -1,0 +1,58 @@
+syntax = "proto3";
+package minicc;
+option go_package = "github.com/athenavi/minicc/proto";
+
+import "common.proto";
+
+// 记忆管理引擎服务
+service MemoryEngine {
+  // 保存记忆
+  rpc SaveMemory(SaveMemoryRequest) returns (SaveMemoryResponse);
+
+  // 查询记忆
+  rpc QueryMemory(QueryMemoryRequest) returns (QueryMemoryResponse);
+
+  // 健康检查
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+// 保存记忆请求
+message SaveMemoryRequest {
+  string tenant_id = 1;
+  string user_id = 2;
+  string session_id = 3;
+  string content = 4;
+  string memory_type = 5;           // "short_term" | "long_term"
+  map<string, string> metadata = 6;
+}
+
+// 保存记忆响应
+message SaveMemoryResponse {
+  string memory_id = 1;
+  string status = 2;  // "saved" | "failed"
+  string error = 3;
+}
+
+// 查询记忆请求
+message QueryMemoryRequest {
+  string tenant_id = 1;
+  string user_id = 2;
+  string query = 3;
+  int32 top_k = 4;                  // 返回数量
+  string memory_type = 5;           // "short_term" | "long_term" | "all"
+}
+
+// 查询记忆响应
+message QueryMemoryResponse {
+  repeated MemoryResult results = 1;
+}
+
+// 记忆结果
+message MemoryResult {
+  string memory_id = 1;
+  string content = 2;
+  float relevance = 3;              // 相关度分数
+  string created_at = 4;
+  string memory_type = 5;
+  map<string, string> metadata = 6;
+}

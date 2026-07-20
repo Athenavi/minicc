@@ -1,0 +1,104 @@
+# MiniCC Gateway Helm Values
+
+replicaCount: 2
+
+image:
+  repository: minicc/gateway
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+nameOverride: ""
+fullnameOverride: ""
+
+# 环境变量
+env:
+  PORT: "8080"
+  LOG_LEVEL: "info"
+  # 数据库
+  POSTGRES_DSN: ""
+  POSTGRES_MAX_CONN: "20"
+  POSTGRES_MIN_CONN: "2"
+  # Redis
+  REDIS_ADDR: ""
+  REDIS_PASSWORD: ""
+  # Auth
+  JWT_SECRET: ""
+  JWT_EXPIRATION: "24h"
+  # Python AI 引擎（内置 LLM Gateway）
+  PYTHON_ENGINE_ADDRESS: ""
+  PYTHON_ENGINE_TIMEOUT: "5m"
+  # Temporal
+  TEMPORAL_ADDRESS: ""
+  # Storage
+  STORAGE_BACKEND: "s3"
+  S3_ENDPOINT: ""
+  S3_BUCKET: "minicc-media"
+  S3_ACCESS_KEY: ""
+  S3_SECRET_KEY: ""
+  # LLM (fallback)
+  LLM_PROVIDER: "openai"
+  LLM_API_KEY: ""
+  LLM_MODEL: "gpt-4o"
+  # CORS
+  CORS_ORIGINS: "*"
+  # Rate Limit
+  RATE_LIMIT_RPM: "100"
+  RATE_LIMIT_GLOBAL: "10000"
+
+# 端口
+service:
+  type: ClusterIP
+  port: 8080
+
+# 资源限制
+resources:
+  limits:
+    cpu: "2"
+    memory: "4Gi"
+  requests:
+    cpu: "500m"
+    memory: "512Mi"
+
+# 健康检查
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 15
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+# HPA
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Ingress
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: api.minicc.io
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# 节点选择
+nodeSelector: {}
+
+# 容忍度
+tolerations: []
+
+# 亲和性
+affinity: {}

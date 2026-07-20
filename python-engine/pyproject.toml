@@ -1,0 +1,87 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "minicc-python-engine"
+version = "3.0.0"
+description = "MiniCC Python AI Engine - LLM Gateway / Agent推理 / RAG / 记忆管理"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "MiniCC Team", email = "dev@athenavi.com"},
+]
+
+dependencies = [
+    # Web 框架
+    "fastapi>=0.115.0",
+    "uvicorn>=0.34.0",
+    # LLM Provider SDK（自研多 Provider 适配）
+    "anthropic>=0.52.0",
+    "openai>=1.93.0",
+    # 向量数据库
+    "pymilvus>=2.5.0",
+    "qdrant-client>=1.12.0",
+    # gRPC
+    "grpcio>=1.70.0",
+    "protobuf>=5.29.0",
+    # Redis
+    "redis>=5.3.0",
+    # 文档处理
+    "python-multipart>=0.0.20",
+    "pymupdf>=1.25.0",
+    "python-docx>=1.1.0",
+    # 工具
+    "pydantic>=2.11.0",
+    "pydantic-settings>=2.10.0",
+    "python-dotenv>=1.1.0",
+    # 认证
+    "PyJWT>=2.10.0",
+    # 日志
+    "structlog>=25.4.0",
+    # 可观测性
+    "prometheus-client>=0.22.0",
+    "opentelemetry-api>=1.33.0",
+    "opentelemetry-sdk>=1.33.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.33.0",
+    "opentelemetry-instrumentation-fastapi>=0.54b0",
+    "opentelemetry-instrumentation-redis>=0.54b0",
+    "opentelemetry-instrumentation-httpx>=0.54b0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.4.0",
+    "pytest-asyncio>=1.0.0",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.11.0",
+    "mypy>=1.15.0",
+]
+
+[project.scripts]
+minicc-engine = "app.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true

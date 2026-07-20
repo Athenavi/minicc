@@ -1,0 +1,77 @@
+syntax = "proto3";
+package minicc;
+option go_package = "github.com/athenavi/minicc/proto";
+
+import "common.proto";
+
+// 知识库引擎服务
+service KnowledgeEngine {
+  // 构建文档索引（解析 + 分块 + 嵌入）
+  rpc BuildDocument(BuildDocumentRequest) returns (stream BuildDocumentResponse);
+
+  // 查询知识库（RAG 语义检索）
+  rpc Query(QueryRequest) returns (QueryResponse);
+
+  // 健康检查
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+// 文档构建请求
+message BuildDocumentRequest {
+  string kb_id = 1;           // 知识库 ID
+  string doc_id = 2;          // 文档 ID
+  bytes content = 3;          // 文件内容
+  string file_type = 4;       // 文件类型 (pdf/md/txt/csv/docx)
+  string filename = 5;        // 文件名
+  string tenant_id = 6;       // 租户 ID
+  string vector_db = 7;       // 向量数据库 (milvus/qdrant/pgvector)
+  int32 chunk_size = 8;       // 分块大小
+  int32 chunk_overlap = 9;    // 分块重叠
+}
+
+// 文档构建响应（流式）
+message BuildDocumentResponse {
+  oneof event {
+    BuildProgress progress = 1;  // 进度
+    BuildComplete complete = 2;  // 完成
+    string error = 3;            // 错误
+  }
+}
+
+// 构建进度
+message BuildProgress {
+  string step = 1;      // parsing/chunking/embedding/storing
+  float progress = 2;   // 0.0 - 1.0
+  string message = 3;   // 进度描述
+}
+
+// 构建完成
+message BuildComplete {
+  int32 chunk_count = 1;   // 分块数量
+  int64 char_count = 2;    // 字符数
+  int32 page_count = 3;    // 页数
+  string status = 4;       // "completed"
+}
+
+// 查询请求
+message QueryRequest {
+  string kb_id = 1;        // 知识库 ID
+  string query = 2;        // 查询文本
+  int32 top_k = 3;         // 返回数量
+  float threshold = 4;     // 相似度阈值
+  string vector_db = 5;    // 向量数据库
+}
+
+// 查询响应
+message QueryResponse {
+  repeated QueryResult results = 1;
+}
+
+// 查询结果
+message QueryResult {
+  string id = 1;
+  string content = 2;
+  string doc_id = 3;
+  int32 chunk_index = 4;
+  float score = 5;
+}

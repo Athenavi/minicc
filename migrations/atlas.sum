@@ -1,0 +1,2 @@
+h1:8gasOyBhBibumF0/U/77DXqz8hkFS6YxzCUzzvgCcRU= migrations/20260709000001_initial.up.sql
+h1:rWa0V5+o30rqslP87Q2TSE6y3yYR1stRpT6cJdD7usU= migrations/20260709000001_initial.down.sql
