@@ -16,9 +16,9 @@ class ChatMessage:
 
     def to_dict(self) -> dict:
         d: dict = {"role": self.role}
-        # tool_calls 存在时 content 必须为 None（OpenAI API 规范）
+        # tool_calls 存在时 content 应为 None（OpenAI API 规范），但非空文本应保留
         if self.tool_calls:
-            d["content"] = None
+            d["content"] = self.content or None
         else:
             d["content"] = self.content
         if self.tool_call_id:

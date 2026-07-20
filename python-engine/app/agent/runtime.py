@@ -45,9 +45,9 @@ def _normalize_msg(role: str, content: str = "", tool_call_id: str = "",
     确保 byte-exact 一致的 JSON 序列化。
     """
     msg: dict = {"role": role}
-    # tool_calls 存在时 content 必须为 None（OpenAI API 规范），否则用传入值
+    # tool_calls 存在时 content 应为 None（OpenAI API 规范），但非空文本应保留
     if tool_calls:
-        msg["content"] = None
+        msg["content"] = content if content else None
     else:
         msg["content"] = content if content is not None else ""
     if tool_call_id and role == "tool":
@@ -325,6 +325,7 @@ class AgentRuntime:
                 response_content = ""
                 reasoning_content = ""
                 tool_calls = []
+                has_reasoned = False  # 是否已收到 native reasoning_content（DeepSeek 模式）
 
                 async for chunk in self._gateway.chat_stream(
                     messages=messages,
@@ -337,6 +338,7 @@ class AgentRuntime:
                     # DeepSeek thinking mode 思考过程
                     if chunk.reasoning_content:
                         reasoning_content += chunk.reasoning_content
+                        has_reasoned = True
                         # 累积 reasoning_content，在 content 开始前按 ~80 字为单位 yield
                         if not response_content:
                             new_len = len(reasoning_content)
@@ -349,8 +351,15 @@ class AgentRuntime:
 
                     # 文本片段
                     if chunk.content:
-                        if not response_content and not tool_calls:
-                            # 推理阶段的内容合并到 reasoning_content，不直接输出
+                        if has_reasoned:
+                            # 已有 native reasoning_content → content 是实际回答
+                            response_content += chunk.content
+                            yield AgentEvent(
+                                type="text",
+                                content=chunk.content,
+                            )
+                        elif not response_content and not tool_calls:
+                            # 无 reasoning_content，无工具 → 兼容模式：首段内容可能含 [thinking]
                             reasoning_content += chunk.content
                         else:
                             response_content += chunk.content
@@ -395,7 +404,7 @@ class AgentRuntime:
                         for tc in tool_calls
                     ]
                     tc_msg_kwargs = {
-                        "role": "assistant", "content": "",
+                        "role": "assistant", "content": response_content or "",
                         "tool_calls": all_tool_calls,
                     }
                     messages.append(_normalize_msg(**tc_msg_kwargs))
