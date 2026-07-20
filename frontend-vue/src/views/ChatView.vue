@@ -23,12 +23,20 @@ md.renderer.rules.fence = (tokens, idx) => {
 }
 
 // ── 类型 ──
+interface ToolCallEvent {
+  id: string
+  name: string
+  arguments: string
+  result?: string
+}
+
 interface Message {
   id: string
   role: 'user' | 'assistant' | 'system'
   content: string
   displayedLength: number
   timestamp: number
+  toolCalls?: ToolCallEvent[]
 }
 
 interface Session {
@@ -268,16 +276,20 @@ async function sendMessage() {
         assistantMessage.displayedLength = assistantMessage.content.length - 40
       }
     } else if (data.type === 'tool_call') {
-      // 在消息中显示工具调用信息
-      const toolName = data.data?.name || data.name || ''
-      const toolArgs = data.data?.arguments || data.arguments || ''
-      assistantMessage.content += `\n\n🔧 调用工具: **${toolName}**\n\`\`\`json\n${toolArgs}\n\`\`\`\n`
+      const tc: ToolCallEvent = {
+        id: data.data?.id || data.id || `tc_${Date.now()}`,
+        name: data.data?.name || data.name || '',
+        arguments: data.data?.arguments || data.arguments || '',
+      }
+      if (!assistantMessage.toolCalls) assistantMessage.toolCalls = []
+      assistantMessage.toolCalls.push(tc)
     } else if (data.type === 'tool_result') {
-      // 在消息中显示工具执行结果（截断过长内容）
-      const toolName = data.data?.name || data.name || ''
-      let result = data.data?.content || data.content || ''
-      if (result.length > 500) result = result.slice(0, 500) + '\n...(已截断)'
-      assistantMessage.content += `\n\n📎 **${toolName}** 执行结果:\n\`\`\`\n${result}\n\`\`\`\n`
+      const tcId = data.data?.id || data.id || ''
+      const result = data.data?.content || data.content || ''
+      if (assistantMessage.toolCalls) {
+        const match = assistantMessage.toolCalls.find(t => t.id === tcId)
+        if (match) match.result = result
+      }
     } else if (data.type === 'turn_done' || data.type === 'error') {
       if (data.type === 'error') assistantMessage.content += `\n\n错误: ${data.data?.content || data.content || ''}`
       assistantMessage.displayedLength = assistantMessage.content.length
@@ -380,6 +392,8 @@ function typewriterSlice(content: string, displayedLength: number): string {
 }
 
 const thinkingExpanded = ref<Record<string, boolean>>({})
+const toolCallExpanded = ref<Record<string, boolean>>({})
+const toolResultExpanded = ref<Record<string, boolean>>({})
 
 function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
@@ -510,6 +524,35 @@ function collapsedStyle(id: string) {
                       <span class="thinking-arrow">{{ thinkingExpanded[msg.id] ? '▼' : '▶' }}</span>
                     </button>
                     <div v-show="thinkingExpanded[msg.id]" class="thinking-content" v-html="renderMarkdown(getSplitResult(msg.content).thinking)"></div>
+                  </div>
+                </template>
+                <!-- 工具调用区域 -->
+                <template v-if="msg.toolCalls && msg.toolCalls.length > 0">
+                  <div class="tool-calls-section">
+                    <div v-for="(tc, idx) in msg.toolCalls" :key="tc.id" class="tool-call-item">
+                      <div class="tool-call-header">
+                        <span class="tool-call-icon">🔧</span>
+                        <span class="tool-call-name">{{ tc.name }}</span>
+                        <button class="tool-call-toggle" @click="toolCallExpanded[`${msg.id}_${idx}`] = !toolCallExpanded[`${msg.id}_${idx}`]">
+                          {{ toolCallExpanded[`${msg.id}_${idx}`] ? '收起参数' : '查看参数' }}
+                        </button>
+                      </div>
+                      <div v-show="toolCallExpanded[`${msg.id}_${idx}`]" class="tool-call-args">
+                        <pre><code>{{ tc.arguments }}</code></pre>
+                      </div>
+                      <div v-if="tc.result" class="tool-call-result">
+                        <div class="tool-result-header">
+                          <span class="tool-result-icon">📎</span>
+                          <span>执行结果</span>
+                          <button class="tool-call-toggle" @click="toolResultExpanded[`${msg.id}_${idx}`] = !toolResultExpanded[`${msg.id}_${idx}`]">
+                            {{ toolResultExpanded[`${msg.id}_${idx}`] ? '收起结果' : '查看结果' }}
+                          </button>
+                        </div>
+                        <div v-show="toolResultExpanded[`${msg.id}_${idx}`]" class="tool-call-result-content">
+                          <pre><code>{{ tc.result.length > 1000 ? tc.result.slice(0, 1000) + '\n...(已截断)' : tc.result }}</code></pre>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </template>
                 <!-- answer 区域：流式中纯文本打字，完成时 markdown -->
@@ -695,6 +738,24 @@ function collapsedStyle(id: string) {
 .thinking-content p { margin: 4px 0; }
 .thinking-content code { font-size: 12px; background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 3px; }
 .dark .thinking-content code { background: rgba(255,255,255,0.08); }
+
+/* ── 工具调用 ── */
+.tool-calls-section { margin: 8px 0; border-left: 3px solid #4a90d9; padding-left: 12px; }
+.tool-call-item { margin-bottom: 8px; }
+.tool-call-header { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.tool-call-icon { font-size: 14px; }
+.tool-call-name { font-weight: 600; color: var(--text-color, #333); }
+.tool-call-toggle { margin-left: auto; cursor: pointer; border: none; background: none; color: #4a90d9; font-size: 12px; padding: 2px 6px; border-radius: 3px; }
+.tool-call-toggle:hover { background: rgba(74,144,217,0.1); }
+.tool-call-args { margin-top: 4px; }
+.tool-call-args pre { margin: 0; padding: 8px; background: #f5f5f5; border-radius: 6px; font-size: 12px; overflow-x: auto; max-height: 200px; }
+.dark .tool-call-args pre { background: #1e1e1e; color: #ccc; }
+.tool-call-result { margin-top: 4px; }
+.tool-result-header { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #888; }
+.tool-result-icon { font-size: 13px; }
+.tool-call-result-content { margin-top: 4px; }
+.tool-call-result-content pre { margin: 0; padding: 8px; background: #f5f5f5; border-radius: 6px; font-size: 11px; overflow-x: auto; max-height: 150px; white-space: pre-wrap; word-break: break-all; }
+.dark .tool-call-result-content pre { background: #1e1e1e; color: #aaa; }
 .cursor-blink { animation: blink 0.8s step-end infinite; font-size: 1em; line-height: 1; }
 @keyframes blink { 50% { opacity: 0; } }
 .typewriter-text { white-space: pre-wrap; }
