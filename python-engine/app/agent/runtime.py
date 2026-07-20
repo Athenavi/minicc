@@ -44,11 +44,19 @@ def _normalize_msg(role: str, content: str = "", tool_call_id: str = "",
     """规范化消息：固定字段顺序 role → content → tool_call_id → tool_calls
     确保 byte-exact 一致的 JSON 序列化。
     """
-    msg = {"role": role, "content": content}
+    msg: dict = {"role": role}
+    # tool_calls 存在时 content 必须为 None（OpenAI API 规范），否则用传入值
+    if tool_calls:
+        msg["content"] = None
+    else:
+        msg["content"] = content if content is not None else ""
     if tool_call_id and role == "tool":
         msg["tool_call_id"] = tool_call_id
     if extra:
-        msg.update(extra)
+        # 剥离只应由模型输出的字段，避免泄漏到后续请求中
+        extra.pop("reasoning_content", None)
+        if extra:
+            msg.update(extra)
     if tool_calls:
         enriched = []
         for tc in tool_calls:

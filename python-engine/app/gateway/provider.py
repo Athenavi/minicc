@@ -15,7 +15,12 @@ class ChatMessage:
     tool_calls: list[ToolCall] | None = None
 
     def to_dict(self) -> dict:
-        d: dict = {"role": self.role, "content": self.content}
+        d: dict = {"role": self.role}
+        # tool_calls 存在时 content 必须为 None（OpenAI API 规范）
+        if self.tool_calls:
+            d["content"] = None
+        else:
+            d["content"] = self.content
         if self.tool_call_id:
             d["tool_call_id"] = self.tool_call_id
         if self.tool_calls:
