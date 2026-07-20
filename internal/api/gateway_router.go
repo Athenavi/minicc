@@ -331,11 +331,22 @@ func NewGatewayRouter(
 				InternalError(w, "python engine not available")
 				return
 			}
+			claims := getAuthClaims(r, authenticator)
+			if claims == nil {
+				Unauthorized(w, "authentication required")
+				return
+			}
+			proxiedPath := path
+			if strings.Contains(path, "?") {
+				proxiedPath = path + "&user_id=" + claims.UserID
+			} else {
+				proxiedPath = path + "?user_id=" + claims.UserID
+			}
 			var resp interface{}
 			var err error
 			switch method {
 			case "GET":
-				err = pythonClient.GetJSON(r.Context(), path, &resp)
+				err = pythonClient.GetJSON(r.Context(), proxiedPath, &resp)
 			case "POST":
 				if body == nil {
 					var b map[string]interface{}
@@ -344,12 +355,12 @@ func NewGatewayRouter(
 					}
 					body = b
 				}
-				err = pythonClient.PostJSON(r.Context(), path, body, &resp)
+				err = pythonClient.PostJSON(r.Context(), proxiedPath, body, &resp)
 			case "DELETE":
-				err = pythonClient.DeleteJSON(r.Context(), path, &resp)
+				err = pythonClient.DeleteJSON(r.Context(), proxiedPath, &resp)
 			}
 			if err != nil {
-				slog.Error("graph proxy error", "path", path, "error", err)
+				slog.Error("graph proxy error", "path", proxiedPath, "error", err)
 				InternalError(w, strings.TrimSpace(err.Error()))
 				return
 			}
