@@ -38,7 +38,7 @@ onMounted(async () => {
       agents.value = response.data.data.filter((a: AgentItem) => a.type !== 'tool' && a.type !== 'knowledge')
     }
   } catch (error) {
-    // 忽略错误
+    message.error('获取 Agent 列表失败，请检查网络连接')
   } finally {
     loading.value = false
   }

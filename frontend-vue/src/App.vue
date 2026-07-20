@@ -1,13 +1,26 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { darkTheme, NConfigProvider, NMessageProvider, NDialogProvider } from 'naive-ui'
+import { darkTheme, NConfigProvider, NMessageProvider, NDialogProvider, useMessage } from 'naive-ui'
 import AppLayout from './components/AppLayout.vue'
 import { useThemeStore } from './stores/theme'
 
 const route = useRoute()
 const themeStore = useThemeStore()
 const showLayout = computed(() => !['Login', 'Register'].includes(route.name as string))
+
+// 全局 API 错误监听
+const message = useMessage()
+function handleApiError(e: Event) {
+  const detail = (e as CustomEvent).detail
+  message.error(detail.message || '请求失败')
+}
+onMounted(() => {
+  window.addEventListener('api:error', handleApiError)
+})
+onUnmounted(() => {
+  window.removeEventListener('api:error', handleApiError)
+})
 </script>
 
 <template>

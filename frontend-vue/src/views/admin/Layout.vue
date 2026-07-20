@@ -60,7 +60,11 @@
       
       <!-- 内容区 -->
       <n-layout-content content-style="padding: 24px;" :native-scrollbar="false">
-        <router-view />
+        <router-view v-slot="{ Component }">
+          <Transition name="fade" mode="out-in">
+            <component :is="Component" />
+          </Transition>
+        </router-view>
       </n-layout-content>
     </n-layout>
   </n-layout>
@@ -138,6 +142,16 @@ const handleUserAction = (key: string) => {
 </script>
 
 <style scoped>
+/* ── 路由过渡动画 ── */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
 .logo {
   height: 64px;
   display: flex;

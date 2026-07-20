@@ -32,6 +32,17 @@ api.interceptors.response.use(
       // Token 过期，清除并跳转登录
       localStorage.removeItem('token')
       window.location.href = '/login'
+    } else if (error.response?.status >= 500) {
+      console.error('Server error:', error.response.status, error.response.data)
+      // 触发全局错误事件，App.vue 中的监听器会显示提示
+      window.dispatchEvent(new CustomEvent('api:error', {
+        detail: { message: `服务器错误 (${error.response.status})，请稍后重试` }
+      }))
+    } else if (error.code === 'ECONNABORTED' || !error.response) {
+      // 网络超时或无法连接
+      window.dispatchEvent(new CustomEvent('api:error', {
+        detail: { message: '网络连接失败，请检查网络后重试' }
+      }))
     }
     return Promise.reject(error)
   }

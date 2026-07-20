@@ -3,12 +3,10 @@ import { createPinia } from 'pinia'
 import router from './router'
 import App from './App.vue'
 import './style.css'
-import FileViewer from '@file-viewer/vue3'
 
 const app = createApp(App)
 const pinia = createPinia()
 
 app.use(pinia)
 app.use(router)
-app.use(FileViewer)
 app.mount('#app')

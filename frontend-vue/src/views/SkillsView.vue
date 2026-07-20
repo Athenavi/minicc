@@ -37,7 +37,7 @@ async function loadSkills() {
       skills.value = response.data.data.skills
     }
   } catch (error) {
-    // 忽略错误
+    message.error('获取技能列表失败，请检查网络连接')
   } finally {
     loading.value = false
   }

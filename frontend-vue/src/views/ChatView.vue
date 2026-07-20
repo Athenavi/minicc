@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
-import { NInput, NButton, NScrollbar, NAvatar, NSpin, NEmpty, NIcon, NTooltip, NPopconfirm, NSelect, NUpload, NImage } from 'naive-ui'
+import { NInput, NButton, NScrollbar, NAvatar, NSpin, NEmpty, NIcon, NTooltip, NPopconfirm, NSelect, NUpload, NImage, useMessage } from 'naive-ui'
 import { SendOutline, AddOutline, TrashOutline, ChatbubbleEllipsesOutline } from '@vicons/ionicons5'
 import { api, createSSEConnection } from '../api'
 import MarkdownIt from 'markdown-it'
@@ -47,6 +47,7 @@ interface Session {
 }
 
 // ── 状态 ──
+const message = useMessage()
 const sessions = ref<Session[]>([])
 const activeSessionId = ref('')
 const messages = ref<Message[]>([])
@@ -94,7 +95,7 @@ async function handleFileUpload({ file }: { file: File }) {
     }
   } catch (e: any) {
     console.error('Upload failed:', e)
-    window.$message?.error?.('文件上传失败: ' + (e.response?.data?.error || e.message))
+    message.error('文件上传失败: ' + (e.response?.data?.error || e.message))
   } finally {
     uploading.value = false
   }

@@ -3,6 +3,7 @@ import { h, ref, computed, onMounted } from 'vue'
 import { NCard, NButton, NDataTable, NSpin, NEmpty, NIcon, NUpload, NModal, NSelect, NPagination, NInput, NDropdown, useMessage } from 'naive-ui'
 import { ImageOutline, CloudUploadOutline, EyeOutline, BookOutline, SearchOutline } from '@vicons/ionicons5'
 import { api } from '../api'
+import { FileViewer } from '@file-viewer/vue3'
 import allPreset from '@file-viewer/preset-all'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080'

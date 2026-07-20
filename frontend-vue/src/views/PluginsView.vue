@@ -25,7 +25,7 @@ async function loadPlugins() {
     const response = await api.get('/v1/plugins')
     plugins.value = response.data?.data || []
   } catch (error) {
-    // 忽略错误
+    message.error('获取插件列表失败，请检查网络连接')
   } finally {
     loading.value = false
   }

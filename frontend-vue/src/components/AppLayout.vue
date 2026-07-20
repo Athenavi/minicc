@@ -104,6 +104,10 @@ const userMenuOptions = computed(() => [
 
 function handleMenuUpdate(key: string) {
   router.push(key)
+  // 移动端导航后自动关闭侧边栏
+  if (window.innerWidth <= 768) {
+    collapsed.value = true
+  }
 }
 
 function handleUserMenu(key: string) {
@@ -186,12 +190,26 @@ function handleUserMenu(key: string) {
     <!-- 移动端导航遮罩 -->
     <div v-if="!collapsed" class="nav-overlay" @click="collapsed = true"></div>
     <NLayoutContent>
-      <router-view />
+      <router-view v-slot="{ Component }">
+        <Transition name="fade" mode="out-in">
+          <component :is="Component" />
+        </Transition>
+      </router-view>
     </NLayoutContent>
   </NLayout>
 </template>
 
 <style scoped>
+/* ── 路由过渡动画 ── */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
 /* 移动端导航按钮 */
 .nav-menu-btn {
   display: none;

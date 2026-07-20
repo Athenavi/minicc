@@ -14,4 +14,18 @@ export default defineConfig({
       '@': path.resolve(__dirname, 'src'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (id.includes('node_modules/vue') || id.includes('node_modules/pinia') || id.includes('node_modules/vue-router')) return 'vendor-vue'
+          if (id.includes('node_modules/naive-ui')) return 'vendor-naive'
+          if (id.includes('node_modules/echarts')) return 'vendor-charts'
+          if (id.includes('node_modules/mermaid')) return 'vendor-diagram'
+          if (id.includes('node_modules/katex') || id.includes('node_modules/markdown-it')) return 'vendor-markdown'
+          if (id.includes('node_modules/@vue-flow')) return 'vendor-flow'
+        },
+      },
+    },
+  },
 })
