@@ -175,13 +175,15 @@ def _ensure_valid_tool_sequence(messages: list[dict]) -> list[dict]:
     此函数删除孤立的 tool 消息以保证序列符合 API 要求。
     """
     result = []
+    last_tc = False  # 最近一条 assistant 是否有 tool_calls
     for msg in messages:
         if msg.get("role") == "tool":
-            # tool 消息前面必须有带 tool_calls 的 assistant 消息
-            if not result or result[-1].get("role") != "assistant" or not result[-1].get("tool_calls"):
+            if not last_tc:
                 logger.warning("Dropping orphan tool message (no preceding assistant with tool_calls)")
                 continue
         result.append(msg)
+        if msg.get("role") == "assistant":
+            last_tc = bool(msg.get("tool_calls"))
     return result
 
 
@@ -313,12 +315,15 @@ class AgentRuntime:
                 
                 # ── 强制清理孤立的 tool 消息（确保 API 兼容性）──
                 clean = []
+                last_tc = False  # 最近一条 assistant 是否有 tool_calls
                 for m in messages:
                     if m.get("role") == "tool":
-                        if not clean or clean[-1].get("role") != "assistant" or not clean[-1].get("tool_calls"):
+                        if not last_tc:
                             logger.warning("Pre-call: dropping orphan tool msg (id=%s)", m.get("tool_call_id", "?"))
                             continue
                     clean.append(m)
+                    if m.get("role") == "assistant":
+                        last_tc = bool(m.get("tool_calls"))
                 messages = clean
 
                 # 调用 LLM

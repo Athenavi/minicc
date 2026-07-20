@@ -267,6 +267,17 @@ async function sendMessage() {
       if (assistantMessage.content.length - assistantMessage.displayedLength > 80) {
         assistantMessage.displayedLength = assistantMessage.content.length - 40
       }
+    } else if (data.type === 'tool_call') {
+      // 在消息中显示工具调用信息
+      const toolName = data.data?.name || data.name || ''
+      const toolArgs = data.data?.arguments || data.arguments || ''
+      assistantMessage.content += `\n\n🔧 调用工具: **${toolName}**\n\`\`\`json\n${toolArgs}\n\`\`\`\n`
+    } else if (data.type === 'tool_result') {
+      // 在消息中显示工具执行结果（截断过长内容）
+      const toolName = data.data?.name || data.name || ''
+      let result = data.data?.content || data.content || ''
+      if (result.length > 500) result = result.slice(0, 500) + '\n...(已截断)'
+      assistantMessage.content += `\n\n📎 **${toolName}** 执行结果:\n\`\`\`\n${result}\n\`\`\`\n`
     } else if (data.type === 'turn_done' || data.type === 'error') {
       if (data.type === 'error') assistantMessage.content += `\n\n错误: ${data.data?.content || data.content || ''}`
       assistantMessage.displayedLength = assistantMessage.content.length
@@ -506,7 +517,7 @@ function collapsedStyle(id: string) {
                   <span class="typewriter-text">{{ typewriterSlice(msg.content, msg.displayedLength ?? 0) }}</span><span class="cursor-blink">▌</span>
                 </div>
                 <div v-else-if="getSplitResult(msg.content).answer" class="rendered-content" v-html="renderMarkdown(getSplitResult(msg.content).answer)"></div>
-                <div v-else class="rendered-content" v-html="renderMarkdown(stripThinkingTags(msg.content))"></div>
+                <div v-else-if="stripThinkingTags(msg.content)" class="rendered-content" v-html="renderMarkdown(stripThinkingTags(msg.content))"></div>
               </div>
               <div v-else class="rendered-content" v-html="renderMarkdown(msg.content)"></div>
             </div>
