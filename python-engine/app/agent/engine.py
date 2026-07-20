@@ -433,9 +433,15 @@ class AgentEngine:
                 results = await self._execute_tool_calls(tool_calls, task, session)
 
                 # ── 9. Append results to session ──────────────────────────
+                # 将全部 tool_calls 合并到一条 assistant 消息（OpenAI API 要求）
+                all_tool_calls = [
+                    {"id": tc["id"], "function": {"name": tc["name"], "arguments": tc["arguments"]}}
+                    for tc in tool_calls
+                ]
+                session.append_message("assistant", None, tool_calls=all_tool_calls)
+
                 for tc, result in zip(tool_calls, results):
                     result_json = json.dumps(result, ensure_ascii=False)
-                    session.append_tool_call(tc["id"], tc["name"], tc["arguments"])
                     session.append_tool_result(tc["id"], result_json)
                     yield AgentEvent(
                         type="tool_result",
