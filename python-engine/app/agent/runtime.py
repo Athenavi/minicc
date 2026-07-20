@@ -299,6 +299,8 @@ class AgentRuntime:
             
             # 推理循环
             _thinking_last_flushed = 0  # 跨 turn 持久化，跟踪已向前端发送的 reasoning_content
+            _last_reasoning = ""  # 保存最后轮次的思考内容，用于兜底输出
+            _answered = False  # 是否已产生最终回答
             for turn in range(task.max_turns):
                 logger.info("Agent turn %d/%d (task=%s, msgs=%d)", turn + 1, task.max_turns, task.id, len(messages))
                 
@@ -403,6 +405,7 @@ class AgentRuntime:
                 
                 # 如果有工具调用，执行工具
                 if tool_calls:
+                    _last_reasoning = reasoning_content  # 保存思考内容供后续兜底
                     # 先追加一条 assistant 消息，包含所有 tool_calls（OpenAI API 格式要求）
                     all_tool_calls = [
                         {"id": tc["id"], "function": {"name": tc["name"], "arguments": tc["arguments"]}}
@@ -440,11 +443,13 @@ class AgentRuntime:
                 
                 # 无工具调用，推理完成
                 if response_content:
+                    _answered = True
                     msg_kwargs = {"role": "assistant", "content": response_content}
                     if reasoning_content:
                         msg_kwargs["reasoning_content"] = reasoning_content
                     messages.append(_normalize_msg(**msg_kwargs))
                 elif reasoning_content:
+                    _answered = True
                     # 仅有思考内容（无 content 输出时），将思考内容作为最终回答
                     msg_kwargs = {"role": "assistant", "content": reasoning_content}
                     messages.append(_normalize_msg(**msg_kwargs))
@@ -453,6 +458,18 @@ class AgentRuntime:
                         content=reasoning_content,
                     )
                 break
+            
+            # ── 兜底：循环用尽但未产生回答时，输出最后的思考内容 ──
+            if not _answered and _last_reasoning:
+                logger.warning("Agent loop exhausted without final answer, using reasoning as fallback")
+                yield AgentEvent(
+                    type="text",
+                    content=_last_reasoning,
+                )
+                # 仅当 reasoning 尚未作为消息保存时才追加
+                if not messages or messages[-1].get("role") != "assistant":
+                    msg_kwargs = {"role": "assistant", "content": _last_reasoning}
+                    messages.append(_normalize_msg(**msg_kwargs))
             
             # ── 保存累积消息到 session cache（含工具调用消息，保持前缀稳定）──
             if self._session_store and task.session_id:
