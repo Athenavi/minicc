@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, h } from 'vue'
+import { ref, computed, h, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { NLayout, NLayoutSider, NLayoutContent, NMenu, NButton, NAvatar, NDropdown, NIcon } from 'naive-ui'
+import { NLayout, NLayoutSider, NLayoutContent, NMenu, NButton, NAvatar, NDropdown, NIcon, useMessage } from 'naive-ui'
 import { useAuthStore } from '../stores/auth'
 import { useThemeStore } from '../stores/theme'
 import {
@@ -27,6 +27,19 @@ const route = useRoute()
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
 const collapsed = ref(window.innerWidth <= 768)
+
+// 全局 API 错误监听（AppLayout 在 NMessageProvider 内部渲染）
+const message = useMessage()
+function handleApiError(e: Event) {
+  const detail = (e as CustomEvent).detail
+  message.error(detail.message || '请求失败')
+}
+onMounted(() => {
+  window.addEventListener('api:error', handleApiError)
+})
+onUnmounted(() => {
+  window.removeEventListener('api:error', handleApiError)
+})
 
 function renderIcon(icon: any) {
   return () => h(NIcon, null, { default: () => h(icon) })
