@@ -1,7 +1,12 @@
 <script setup lang="ts">
-import { h, ref, computed, onMounted } from 'vue'
-import { NCard, NButton, NDataTable, NSpin, NEmpty, NIcon, NUpload, NModal, NSelect, NPagination, NInput, NDropdown, useMessage } from 'naive-ui'
-import { ImageOutline, CloudUploadOutline, EyeOutline, BookOutline, SearchOutline } from '@vicons/ionicons5'
+import { ref, computed, onMounted } from 'vue'
+import {
+  Card, Button, Table, Spin, Empty, Upload, Modal, Select,
+  Pagination, Input, message,
+} from 'ant-design-vue'
+import {
+  PictureOutlined, CloudUploadOutlined, BookOutlined, SearchOutlined,
+} from '@ant-design/icons-vue'
 import { api } from '../api'
 import { FileViewer } from '@file-viewer/vue3'
 import allPreset from '@file-viewer/preset-all'
@@ -24,7 +29,6 @@ interface KnowledgeBase {
   visibility: string
 }
 
-const message = useMessage()
 const loading = ref(true)
 const files = ref<MediaFile[]>([])
 const showPreview = ref(false)
@@ -39,7 +43,7 @@ const searchQuery = ref('')
 // 知识库相关
 const knowledgeBases = ref<KnowledgeBase[]>([])
 const showKbModal = ref(false)
-const selectedKbId = ref<string | null>(null)
+const selectedKbId = ref<string | undefined>(undefined)
 const uploadingToKb = ref(false)
 
 const previewUrl = computed(() => {
@@ -76,49 +80,14 @@ const paginatedFiles = computed(() => {
 const totalItems = computed(() => filteredFiles.value.length)
 
 const columns = [
-  { type: 'selection' as const },
-  { title: '名称', key: 'name', ellipsis: { tooltip: true } },
-  { title: '类型', key: 'type', width: 100 },
+  { title: '名称', dataIndex: 'name', ellipsis: true },
+  { title: '类型', dataIndex: 'type', width: 100 },
   {
-    title: '大小', key: 'size', width: 100,
-    render(row: MediaFile) {
-      return formatSize(row.size)
-    },
+    title: '大小', dataIndex: 'size', width: 100,
+    customRender: ({ text }: { text: number }) => formatSize(text),
   },
-  { title: '上传时间', key: 'created_at', width: 170 },
-  {
-    title: '操作',
-    key: 'actions',
-    width: 100,
-    render(row: MediaFile) {
-      const previewBtn = h('button', {
-        style: 'color:#2080f0;cursor:pointer;border:none;background:none;padding:4px 8px;font-size:13px',
-        onClick: () => {
-          previewFile.value = row
-          showPreview.value = true
-        },
-      }, '预览')
-      const moreMenu = h(
-        NDropdown,
-        {
-          options: [
-            { label: '添加到知识库', key: 'kb' },
-            { label: '删除', key: 'delete' },
-          ],
-          onSelect: (key: string) => {
-            if (key === 'kb') openKbModal([row])
-            if (key === 'delete') handleDelete(row.id)
-          },
-        },
-        {
-          default: () => h('button', {
-            style: 'cursor:pointer;border:none;background:none;padding:4px 8px;font-size:16px;color:#666',
-          }, '⋯'),
-        }
-      )
-      return h('div', { style: 'display:flex;gap:4px;align-items:center' }, [previewBtn, moreMenu])
-    },
-  },
+  { title: '上传时间', dataIndex: 'created_at', width: 170 },
+  { title: '操作', dataIndex: 'actions', width: 120 },
 ]
 
 onMounted(async () => {
@@ -146,17 +115,8 @@ async function loadKnowledgeBases() {
   }
 }
 
-function handleSelectionChange(keys: string[]) {
+function handleSelectionChange(keys: any[]) {
   selectedRowKeys.value = keys
-}
-
-function handlePageChange(newPage: number) {
-  page.value = newPage
-}
-
-function handlePageSizeChange(newSize: number) {
-  pageSize.value = newSize
-  page.value = 1
 }
 
 function openKbModal(fileList?: MediaFile[]) {
@@ -167,7 +127,7 @@ function openKbModal(fileList?: MediaFile[]) {
     message.warning('请先选择文件')
     return
   }
-  selectedKbId.value = null
+  selectedKbId.value = undefined
   showKbModal.value = true
 }
 
@@ -227,9 +187,9 @@ async function handleDelete(id: string) {
   }
 }
 
-function handleUpload({ file }: any) {
+function handleUpload(info: any) {
   const formData = new FormData()
-  formData.append('file', file.file)
+  formData.append('file', info.file)
   api.post('/v1/media/upload', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
@@ -254,88 +214,88 @@ function formatSize(bytes: number): string {
 <template>
   <div class="media-container">
     <div class="media-header">
-      <NIcon size="24" color="#2080f0">
-        <ImageOutline />
-      </NIcon>
+      <PictureOutlined style="font-size: 24px; color: #2080f0" />
       <h1>媒体库</h1>
     </div>
 
-    <NCard>
-      <template #header>
+    <Card>
+      <template #title>
         <div class="card-header">
-          <NIcon><CloudUploadOutline /></NIcon>
-          <span>文件管理</span>
+          <CloudUploadOutlined /> 文件管理
           <div class="header-actions">
-            <NInput
+            <Input
               v-model:value="searchQuery"
               placeholder="搜索文件..."
-              clearable
+              allow-clear
               style="width: 200px"
               size="small"
             >
-              <template #prefix>
-                <NIcon><SearchOutline /></NIcon>
-              </template>
-            </NInput>
-            <NButton
+              <template #prefix><SearchOutlined /></template>
+            </Input>
+            <Button
               v-if="selectedRowKeys.length > 0"
-              type="success"
+              type="primary"
               size="small"
               @click="openKbModal()"
             >
-              <template #icon>
-                <NIcon><BookOutline /></NIcon>
-              </template>
+              <template #icon><BookOutlined /></template>
               添加到知识库 ({{ selectedRowKeys.length }})
-            </NButton>
-            <NUpload
-              :show-file-list="false"
+            </Button>
+            <Upload
+              :show-upload-list="false"
               :custom-request="handleUpload"
             >
-              <NButton type="primary" size="small">
-                <template #icon>
-                  <NIcon><CloudUploadOutline /></NIcon>
-                </template>
+              <Button type="primary" size="small">
+                <template #icon><CloudUploadOutlined /></template>
                 上传文件
-              </NButton>
-            </NUpload>
+              </Button>
+            </Upload>
           </div>
         </div>
       </template>
 
-      <NSpin :show="loading">
-        <NEmpty v-if="filteredFiles.length === 0 && !loading" description="暂无文件" />
+      <Spin :spinning="loading">
+        <Empty v-if="filteredFiles.length === 0 && !loading" description="暂无文件" />
         <div v-else>
-          <NDataTable
+          <Table
             :columns="columns"
-            :data="paginatedFiles"
-            :bordered="false"
-            :single-line="false"
-            :row-key="(row: MediaFile) => row.id"
-            :checked-row-keys="selectedRowKeys"
-            @update:checked-row-keys="handleSelectionChange"
-          />
+            :dataSource="paginatedFiles"
+            :rowKey="'id'"
+            :rowSelection="{ selectedRowKeys, onChange: handleSelectionChange }"
+            :pagination="false"
+          >
+            <template #bodyCell="{ column, record: rawRecord }">
+              <template v-if="column.dataIndex === 'size'">
+                {{ formatSize((rawRecord as any).size) }}
+              </template>
+              <template v-else-if="column.dataIndex === 'actions'">
+                <Button type="link" size="small" @click="previewFile = rawRecord as any; showPreview = true">预览</Button>
+                <Button type="link" size="small" danger @click="handleDelete((rawRecord as any).id)">删除</Button>
+                <Button type="link" size="small" @click="selectedRowKeys = [(rawRecord as any).id]; openKbModal()">知识库</Button>
+              </template>
+            </template>
+          </Table>
           <div class="pagination-wrapper">
-            <NPagination
-              v-model:page="page"
-              v-model:page-size="pageSize"
-              :item-count="totalItems"
-              :page-sizes="[10, 20, 50, 100]"
-              show-size-picker
-              @update:page="handlePageChange"
-              @update:page-size="handlePageSizeChange"
+            <Pagination
+              v-model:current="page"
+              v-model:pageSize="pageSize"
+              :total="totalItems"
+              :pageSizeOptions="['10', '20', '50', '100']"
+              showSizeChanger
+              @change="page = $event"
             />
           </div>
         </div>
-      </NSpin>
-    </NCard>
+      </Spin>
+    </Card>
 
     <!-- 文件预览弹窗 -->
-    <NModal
-      v-model:show="showPreview"
+    <Modal
+      v-model:visible="showPreview"
       title="文件预览"
-      preset="card"
-      style="width: 90vw; max-width: 1200px"
+      :width="'90vw'"
+      :style="{ maxWidth: '1200px' }"
+      :footer="null"
     >
       <div class="preview-shell" v-if="previewFile">
         <file-viewer
@@ -351,109 +311,53 @@ function formatSize(bytes: number): string {
       <div v-else class="preview-empty">
         <p>暂无预览文件</p>
       </div>
-    </NModal>
+    </Modal>
 
     <!-- 添加到知识库弹窗 -->
-    <NModal
-      v-model:show="showKbModal"
+    <Modal
+      v-model:visible="showKbModal"
       title="添加到知识库"
-      preset="card"
-      style="max-width: 500px"
+      :style="{ maxWidth: '500px' }"
+      :footer="null"
     >
       <div class="kb-modal-content">
         <p>已选择 <strong>{{ selectedRowKeys.length }}</strong> 个文件</p>
         <div class="kb-select">
           <label>选择目标知识库：</label>
-          <NSelect
+          <Select
             v-model:value="selectedKbId"
             :options="kbOptions"
             placeholder="请选择知识库"
-            filterable
+            show-search
+            style="width: 100%"
           />
         </div>
       </div>
-      <template #footer>
-        <div style="display: flex; justify-content: flex-end; gap: 8px;">
-          <NButton @click="showKbModal = false">取消</NButton>
-          <NButton
-            type="primary"
-            :loading="uploadingToKb"
-            :disabled="!selectedKbId"
-            @click="uploadToKnowledgeBase"
-          >
-            开始上传
-          </NButton>
-        </div>
-      </template>
-    </NModal>
+      <div class="modal-footer">
+        <Button @click="showKbModal = false">取消</Button>
+        <Button
+          type="primary"
+          :loading="uploadingToKb"
+          :disabled="!selectedKbId"
+          @click="uploadToKnowledgeBase"
+        >
+          开始上传
+        </Button>
+      </div>
+    </Modal>
   </div>
 </template>
 
 <style scoped>
-.media-container {
-  padding: 24px;
-}
-
-.media-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 24px;
-}
-
-.media-header h1 {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 600;
-}
-
-.card-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-}
-
-.header-actions {
-  margin-left: auto;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.pagination-wrapper {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid #f0f0f0;
-}
-
-/* 预览弹窗 */
-.preview-shell {
-  height: 75vh;
-  min-height: 400px;
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.preview-empty {
-  height: 300px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #999;
-}
-
-.kb-modal-content {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.kb-select label {
-  display: block;
-  margin-bottom: 8px;
-  font-weight: 500;
-}
+.media-container { padding: 24px; }
+.media-header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+.media-header h1 { margin: 0; font-size: 24px; font-weight: 600; }
+.card-header { display: flex; align-items: center; gap: 8px; font-weight: 600; flex-wrap: wrap; }
+.header-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.pagination-wrapper { display: flex; justify-content: flex-end; margin-top: 16px; padding-top: 16px; border-top: 1px solid #f0f0f0; }
+.preview-shell { height: 75vh; min-height: 400px; border-radius: 4px; overflow: hidden; }
+.preview-empty { height: 300px; display: flex; align-items: center; justify-content: center; color: #999; }
+.kb-modal-content { display: flex; flex-direction: column; gap: 16px; }
+.kb-select label { display: block; margin-bottom: 8px; font-weight: 500; }
+.modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 </style>

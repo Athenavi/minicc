@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { NCard, NButton, NInput, NForm, NFormItem, NIcon, useMessage } from 'naive-ui'
-import { PersonOutline } from '@vicons/ionicons5'
+import { Card, Button, Input, Form, FormItem, message } from 'ant-design-vue'
+import { UserOutlined } from '@ant-design/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { api } from '../api'
 
-const message = useMessage()
 const authStore = useAuthStore()
 const loading = ref(false)
 const form = ref({
@@ -37,27 +36,25 @@ async function handleUpdateProfile() {
 <template>
   <div class="profile-container">
     <div class="profile-header">
-      <NIcon size="24" color="#2080f0">
-        <PersonOutline />
-      </NIcon>
+      <UserOutlined style="font-size: 24px; color: var(--primary)" />
       <h1>个人资料</h1>
     </div>
 
-    <NCard class="profile-card">
-      <NForm label-placement="left" label-width="80">
-        <NFormItem label="姓名">
-          <NInput v-model:value="form.name" placeholder="请输入姓名" />
-        </NFormItem>
-        <NFormItem label="邮箱">
-          <NInput v-model:value="form.email" placeholder="请输入邮箱" disabled />
-        </NFormItem>
-        <NFormItem>
-          <NButton type="primary" :loading="loading" @click="handleUpdateProfile">
+    <Card class="profile-card">
+      <Form :model="form" layout="vertical">
+        <FormItem label="姓名">
+          <Input v-model:value="form.name" placeholder="请输入姓名" />
+        </FormItem>
+        <FormItem label="邮箱">
+          <Input v-model:value="form.email" placeholder="请输入邮箱" disabled />
+        </FormItem>
+        <FormItem>
+          <Button type="primary" :loading="loading" @click="handleUpdateProfile">
             保存修改
-          </NButton>
-        </NFormItem>
-      </NForm>
-    </NCard>
+          </Button>
+        </FormItem>
+      </Form>
+    </Card>
   </div>
 </template>
 

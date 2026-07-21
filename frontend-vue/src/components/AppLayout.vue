@@ -1,26 +1,36 @@
 <script setup lang="ts">
 import { ref, computed, h, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { NLayout, NLayoutSider, NLayoutContent, NMenu, NButton, NAvatar, NDropdown, NIcon, useMessage } from 'naive-ui'
-import { useAuthStore } from '../stores/auth'
 import { useThemeStore } from '../stores/theme'
+import { useAuthStore } from '../stores/auth'
+
+// Ant Design Vue 组件
 import {
-  ChatbubbleOutline,
-  PeopleOutline,
-  ExtensionPuzzleOutline,
-  CardOutline,
-  SettingsOutline,
-  LogOutOutline,
-  PersonOutline,
-  ServerOutline,
-  ImageOutline,
-  PulseOutline,
-  BookOutline,
-  SunnyOutline,
-  MoonOutline,
-  GitNetworkOutline,
-} from '@vicons/ionicons5'
-import type { MenuOption } from 'naive-ui'
+  Layout,
+  LayoutSider,
+  LayoutContent,
+  Menu,
+  Button,
+  Avatar,
+  Dropdown,
+  message,
+} from 'ant-design-vue'
+// Ant Design 图标
+import {
+  MessageOutlined,
+  UserOutlined,
+  ApartmentOutlined,
+  BlockOutlined,
+  PictureOutlined,
+  BookOutlined,
+  ThunderboltOutlined,
+  CreditCardOutlined,
+  SettingOutlined,
+  LogoutOutlined,
+  UserSwitchOutlined,
+  BulbOutlined,
+  MenuOutlined,
+} from '@ant-design/icons-vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -28,8 +38,7 @@ const authStore = useAuthStore()
 const themeStore = useThemeStore()
 const collapsed = ref(window.innerWidth <= 768)
 
-// 全局 API 错误监听（AppLayout 在 NMessageProvider 内部渲染）
-const message = useMessage()
+// 监听 API 错误
 function handleApiError(e: Event) {
   const detail = (e as CustomEvent).detail
   message.error(detail.message || '请求失败')
@@ -41,178 +50,140 @@ onUnmounted(() => {
   window.removeEventListener('api:error', handleApiError)
 })
 
-function renderIcon(icon: any) {
-  return () => h(NIcon, null, { default: () => h(icon) })
+// 菜单配置
+interface MenuItem {
+  key: string
+  label: string
+  icon?: any
+  children?: MenuItem[]
 }
 
-const menuOptions = computed<MenuOption[]>(() => [
-  {
-    label: '对话',
-    key: '/chat',
-    icon: renderIcon(ChatbubbleOutline),
-  },
-  {
-    label: 'Agent',
-    key: '/agents',
-    icon: renderIcon(PeopleOutline),
-  },
-  {
-    label: '工作流',
-    key: '/workflow',
-    icon: renderIcon(GitNetworkOutline),
-  },
-  {
-    label: '技能',
-    key: '/skills',
-    icon: renderIcon(ExtensionPuzzleOutline),
-  },
-  {
-    label: '媒体库',
-    key: '/media',
-    icon: renderIcon(ImageOutline),
-  },
-  {
-    label: '知识库',
-    key: '/knowledge',
-    icon: renderIcon(BookOutline),
-  },
-  {
-    label: '插件',
-    key: '/plugins',
-    icon: renderIcon(PulseOutline),
-  },
-  {
-    label: '计费',
-    key: '/billing',
-    icon: renderIcon(CardOutline),
-  },
-  ...(authStore.isAdmin
-    ? [
-        {
-          label: '管理',
-          key: '/admin',
-          icon: renderIcon(SettingsOutline),
-        },
-      ]
-    : []),
+const menuItems = computed<MenuItem[]>(() => {
+  const items: MenuItem[] = [
+    { key: '/chat', label: '对话', icon: () => h(MessageOutlined) },
+    { key: '/agents', label: 'Agent', icon: () => h(UserOutlined) },
+    { key: '/workflow', label: '工作流', icon: () => h(ApartmentOutlined) },
+    { key: '/skills', label: '技能', icon: () => h(BlockOutlined) },
+    { key: '/media', label: '媒体库', icon: () => h(PictureOutlined) },
+    { key: '/knowledge', label: '知识库', icon: () => h(BookOutlined) },
+    { key: '/plugins', label: '插件', icon: () => h(ThunderboltOutlined) },
+    { key: '/billing', label: '计费', icon: () => h(CreditCardOutlined) },
+    ...(authStore.isAdmin
+      ? [{ key: '/admin', label: '管理', icon: () => h(SettingOutlined) }]
+      : []),
+  ]
+  return items
+})
+
+const selectedKeys = computed(() => [route.path])
+
+const userMenuItems = computed<any[]>(() => [
+  { key: 'profile', label: '个人资料', icon: () => h(UserSwitchOutlined) },
+  { key: 'toggle-theme', label: themeStore.isDark ? '浅色模式' : '深色模式', icon: () => h(BulbOutlined) },
+  { key: 'logout', label: '退出登录', icon: () => h(LogoutOutlined) },
 ])
 
-const userMenuOptions = computed(() => [
-  {
-    label: '个人资料',
-    key: 'profile',
-    icon: renderIcon(PersonOutline),
-  },
-  {
-    label: themeStore.isDark ? '浅色模式' : '深色模式',
-    key: 'toggle-theme',
-    icon: renderIcon(themeStore.isDark ? SunnyOutline : MoonOutline),
-  },
-  {
-    label: '退出登录',
-    key: 'logout',
-    icon: renderIcon(LogOutOutline),
-  },
-])
-
-function handleMenuUpdate(key: string) {
-  router.push(key)
-  // 移动端导航后自动关闭侧边栏
+function handleMenuClick(info: any) {
+  router.push(info.key)
   if (window.innerWidth <= 768) {
     collapsed.value = true
   }
 }
 
-function handleUserMenu(key: string) {
-  if (key === 'logout') {
+function handleUserMenuClick(info: any) {
+  if (info.key === 'logout') {
     authStore.logout()
     router.push('/login')
-  } else if (key === 'profile') {
+  } else if (info.key === 'profile') {
     router.push('/profile')
-  } else if (key === 'toggle-theme') {
+  } else if (info.key === 'toggle-theme') {
     themeStore.toggleTheme()
   }
 }
 </script>
 
 <template>
-  <NLayout has-sider style="height: 100vh">
-    <NLayoutSider
-      bordered
-      collapse-mode="width"
-      :collapsed-width="0"
+  <Layout style="height: 100vh">
+    <LayoutSider
+      v-model:collapsed="collapsed"
+      :trigger="null"
+      collapsible
       :width="240"
-      :collapsed="collapsed"
-      show-trigger
-      class="nav-sider"
-      @collapse="collapsed = true"
-      @expand="collapsed = false"
+      :collapsed-width="0"
+      :class="['nav-sider', { 'nav-sider-mobile': collapsed }]"
+      :style="{ position: 'relative', zIndex: 300, height: '100vh', overflow: 'auto' }"
     >
-      <div class="sidebar-header">
-        <div v-if="!collapsed" class="sidebar-title">MiniCC</div>
-        <div v-else class="sidebar-title-mini">MC</div>
+      <div class="sidebar-header" :class="{ collapsed }">
+        <span v-if="!collapsed" class="sidebar-title">MiniCC</span>
+        <span v-else class="sidebar-title-mini">MC</span>
       </div>
-      <NMenu
-        :collapsed="collapsed"
-        :collapsed-width="64"
-        :collapsed-icon-size="22"
-        :options="menuOptions"
-        :value="route.path"
-        @update:value="handleMenuUpdate"
+      <Menu
+        theme="dark"
+        mode="inline"
+        :selectedKeys="selectedKeys"
+        :items="menuItems"
+        @click="handleMenuClick"
+        :style="{ borderRight: 0, flex: 1 }"
       />
-      <template #footer>
-        <div class="sidebar-footer">
-          <!-- 已登录用户菜单 -->
-          <NDropdown
-            v-if="authStore.user"
-            :options="userMenuOptions"
-            @select="handleUserMenu"
-          >
-            <NButton quaternary size="small">
-              <NAvatar
-                round
-                size="small"
-                :style="{ backgroundColor: 'var(--primary)' }"
-              >
-                {{ authStore.user.name?.charAt(0)?.toUpperCase() || 'U' }}
-              </NAvatar>
-              <span v-if="!collapsed" style="margin-left: 8px">
-                {{ authStore.user.name || authStore.user.email }}
-              </span>
-            </NButton>
-          </NDropdown>
-          <!-- 主题切换按钮 -->
-          <NButton
-            quaternary size="small"
-            @click="themeStore.toggleTheme()"
-            :title="themeStore.isDark ? '切换到浅色模式' : '切换到深色模式'"
-          >
-            <template #icon>
-              <NIcon :component="themeStore.isDark ? SunnyOutline : MoonOutline" />
-            </template>
+      <div class="sidebar-footer">
+        <Dropdown
+          v-if="authStore.user"
+          :menu="{ items: userMenuItems, onClick: handleUserMenuClick }"
+        >
+          <Button type="text" size="small" class="sidebar-user-btn">
+            <Avatar
+              :size="24"
+              :style="{ backgroundColor: 'var(--primary)', verticalAlign: 'middle' }"
+            >
+              {{ authStore.user.name?.charAt(0)?.toUpperCase() || 'U' }}
+            </Avatar>
             <span v-if="!collapsed" style="margin-left: 8px">
-              {{ themeStore.isDark ? '浅色模式' : '深色模式' }}
+              {{ authStore.user.name || authStore.user.email }}
             </span>
-          </NButton>
-        </div>
-      </template>
-    </NLayoutSider>
-    <!-- 移动端导航菜单按钮 -->
-    <button v-if="collapsed" class="nav-menu-btn" @click="collapsed = false" title="打开菜单">☰</button>
-    <!-- 移动端导航遮罩 -->
+          </Button>
+        </Dropdown>
+        <Button
+          type="text"
+          size="small"
+          class="sidebar-user-btn"
+          @click="themeStore.toggleTheme()"
+          :title="themeStore.isDark ? '切换到浅色模式' : '切换到深色模式'"
+        >
+          <template #icon>
+            <BulbOutlined />
+          </template>
+          <span v-if="!collapsed" style="margin-left: 8px">
+            {{ themeStore.isDark ? '浅色模式' : '深色模式' }}
+          </span>
+        </Button>
+      </div>
+    </LayoutSider>
+
+    <!-- 移动端菜单按钮 -->
+    <Button
+      v-if="collapsed"
+      class="nav-menu-btn"
+      type="text"
+      @click="collapsed = false"
+      title="打开菜单"
+    >
+      <template #icon><MenuOutlined /></template>
+    </Button>
+
+    <!-- 移动端遮罩 -->
     <div v-if="!collapsed" class="nav-overlay" @click="collapsed = true"></div>
-    <NLayoutContent>
+
+    <LayoutContent :style="{ margin: 0, overflow: 'auto' }">
       <router-view v-slot="{ Component }">
         <Transition name="fade" mode="out-in">
           <component :is="Component" />
         </Transition>
       </router-view>
-    </NLayoutContent>
-  </NLayout>
+    </LayoutContent>
+  </Layout>
 </template>
 
 <style scoped>
-/* ── 路由过渡动画 ── */
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.2s ease;
@@ -222,15 +193,8 @@ function handleUserMenu(key: string) {
   opacity: 0;
 }
 
-/* ── 侧边栏 ── */
 .nav-sider {
-  background: var(--bg-card) !important;
-  border-right: 1px solid var(--border) !important;
-}
-
-.nav-sider :deep(.n-layout-sider-scroll-container) {
-  display: flex;
-  flex-direction: column;
+  background: #111115 !important;
 }
 
 .sidebar-header {
@@ -238,6 +202,9 @@ function handleUserMenu(key: string) {
   text-align: center;
   background: linear-gradient(135deg, var(--primary), var(--primary-dark));
   margin: 0 0 8px 0;
+}
+.sidebar-header.collapsed {
+  padding: 12px 0;
 }
 
 .sidebar-title {
@@ -253,27 +220,15 @@ function handleUserMenu(key: string) {
   color: white;
 }
 
-.nav-sider :deep(.n-menu) {
-  flex: 1;
-}
-
-.nav-sider :deep(.n-menu-item) {
+.nav-sider :deep(.ant-menu-item) {
   margin: 2px 8px;
   border-radius: var(--radius-md) !important;
 }
 
-.nav-sider :deep(.n-menu-item-content) {
-  border-radius: var(--radius-md) !important;
-}
-
-.nav-sider :deep(.n-menu-item-content--selected) {
+.nav-sider :deep(.ant-menu-item-selected) {
   background: var(--primary-bg) !important;
   color: var(--primary) !important;
   font-weight: 600;
-}
-
-.nav-sider :deep(.n-menu-item-content:hover) {
-  background: var(--bg-secondary) !important;
 }
 
 .sidebar-footer {
@@ -282,13 +237,21 @@ function handleUserMenu(key: string) {
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
   margin-top: auto;
 }
 
-.sidebar-footer .n-button {
+.sidebar-user-btn {
   width: 100%;
+  display: flex;
   justify-content: flex-start;
+  align-items: center;
+  color: rgba(255, 255, 255, 0.75) !important;
+  height: 40px;
+}
+
+.sidebar-user-btn:hover {
+  color: #fff !important;
 }
 
 /* 移动端导航按钮 */
@@ -308,42 +271,24 @@ function handleUserMenu(key: string) {
     z-index: 200;
     width: 36px;
     height: 36px;
-    border: none;
-    background: var(--bg-card);
-    color: var(--text-primary);
-    font-size: 20px;
-    cursor: pointer;
-    border-radius: var(--radius-md);
     align-items: center;
     justify-content: center;
-    box-shadow: var(--shadow-md);
+    background: var(--bg-card, #111115);
+    box-shadow: var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.4));
+    border-radius: var(--radius-md);
   }
-  .nav-menu-btn:active {
-    background: var(--bg-secondary);
-  }
-  .nav-sider {
-    position: fixed !important;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    z-index: 300 !important;
+  .nav-sider-mobile {
     transition: transform 0.25s ease !important;
   }
-  .nav-sider.n-layout-sider--collapsed {
+  .nav-sider-mobile.ant-layout-sider-collapsed {
     transform: translateX(-100%);
-  }
-  .nav-sider:not(.n-layout-sider--collapsed) {
-    transform: translateX(0);
-  }
-  :deep([class*="toggle-button"]) {
-    display: none !important;
   }
   .nav-overlay {
     display: block;
     position: fixed;
     inset: 0;
     z-index: 250;
-    background: rgba(0,0,0,0.35);
+    background: rgba(0, 0, 0, 0.35);
   }
 }
 </style>

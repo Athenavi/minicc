@@ -2,11 +2,10 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  NCard, NButton, NModal, NForm, NFormItem, NInput, NSelect,
-  NRadioGroup, NRadioButton, NSpin, NEmpty, NIcon, NTag,
-  NSpace, NPopconfirm, useMessage
-} from 'naive-ui'
-import { BookOutline, AddOutline, TrashOutline } from '@vicons/ionicons5'
+  Card, Button, Modal, Form, FormItem, Input,
+  Radio, Spin, Empty, Tag, Space, Popconfirm, message,
+} from 'ant-design-vue'
+import { BookOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons-vue'
 import { api } from '../api'
 
 interface KnowledgeBase {
@@ -24,7 +23,6 @@ interface KnowledgeBase {
 }
 
 const router = useRouter()
-const message = useMessage()
 const loading = ref(true)
 const knowledgeBases = ref<KnowledgeBase[]>([])
 const showCreateModal = ref(false)
@@ -107,26 +105,22 @@ const privateKbs = computed(() => knowledgeBases.value.filter(kb => kb.visibilit
   <div class="kb-container">
     <div class="kb-header">
       <div class="header-left">
-        <NIcon size="24" color="#2080f0">
-          <BookOutline />
-        </NIcon>
+        <BookOutlined style="font-size: 24px; color: #2080f0" />
         <h1>知识库</h1>
       </div>
-      <NButton type="primary" @click="showCreateModal = true">
-        <template #icon>
-          <NIcon><AddOutline /></NIcon>
-        </template>
+      <Button type="primary" @click="showCreateModal = true">
+        <template #icon><PlusOutlined /></template>
         创建知识库
-      </NButton>
+      </Button>
     </div>
 
-    <NSpin :show="loading">
+    <Spin :spinning="loading">
       <div v-if="!loading && knowledgeBases.length === 0" class="empty-state">
-        <NEmpty description="暂无知识库">
+        <Empty description="暂无知识库">
           <template #extra>
-            <NButton type="primary" @click="showCreateModal = true">创建第一个知识库</NButton>
+            <Button type="primary" @click="showCreateModal = true">创建第一个知识库</Button>
           </template>
-        </NEmpty>
+        </Empty>
       </div>
 
       <div v-else class="kb-sections">
@@ -134,7 +128,7 @@ const privateKbs = computed(() => knowledgeBases.value.filter(kb => kb.visibilit
         <div v-if="privateKbs.length > 0" class="kb-section">
           <h2>📁 我的知识库</h2>
           <div class="kb-grid">
-            <NCard
+            <Card
               v-for="kb in privateKbs"
               :key="kb.id"
               class="kb-card"
@@ -143,9 +137,9 @@ const privateKbs = computed(() => knowledgeBases.value.filter(kb => kb.visibilit
             >
               <div class="kb-card-header">
                 <span class="kb-name">{{ kb.name }}</span>
-                <NTag :type="kb.type === 'rag' ? 'success' : 'info'" size="small">
+                <Tag :color="kb.type === 'rag' ? 'success' : 'blue'">
                   {{ kb.type.toUpperCase() }}
-                </NTag>
+                </Tag>
               </div>
               <p class="kb-desc">{{ kb.description || '暂无描述' }}</p>
               <div class="kb-stats">
@@ -155,16 +149,14 @@ const privateKbs = computed(() => knowledgeBases.value.filter(kb => kb.visibilit
               </div>
               <div class="kb-footer">
                 <span class="kb-time">{{ formatDate(kb.updated_at) }}</span>
-                <NPopconfirm @positive-click.stop="deleteKnowledgeBase(kb.id)">
-                  <template #trigger>
-                    <NButton size="tiny" type="error" quaternary @click.stop>
-                      <NIcon><TrashOutline /></NIcon>
-                    </NButton>
-                  </template>
-                  确认删除此知识库？
-                </NPopconfirm>
+                <Popconfirm title="确认删除此知识库？" @confirm="deleteKnowledgeBase(kb.id)">
+                  <template #icon></template>
+                  <Button type="text" danger size="small" @click.stop>
+                    <template #icon><DeleteOutlined /></template>
+                  </Button>
+                </Popconfirm>
               </div>
-            </NCard>
+            </Card>
           </div>
         </div>
 
@@ -172,7 +164,7 @@ const privateKbs = computed(() => knowledgeBases.value.filter(kb => kb.visibilit
         <div v-if="publicKbs.length > 0" class="kb-section">
           <h2>🌐 公共知识库</h2>
           <div class="kb-grid">
-            <NCard
+            <Card
               v-for="kb in publicKbs"
               :key="kb.id"
               class="kb-card public"
@@ -181,151 +173,65 @@ const privateKbs = computed(() => knowledgeBases.value.filter(kb => kb.visibilit
             >
               <div class="kb-card-header">
                 <span class="kb-name">{{ kb.name }}</span>
-                <NTag type="warning" size="small">公共</NTag>
+                <Tag color="warning">公共</Tag>
               </div>
               <p class="kb-desc">{{ kb.description || '暂无描述' }}</p>
               <div class="kb-stats">
                 <span>📄 {{ kb.document_count }} 文档</span>
                 <span>💾 {{ formatSize(kb.total_size_bytes) }}</span>
               </div>
-            </NCard>
+            </Card>
           </div>
         </div>
       </div>
-    </NSpin>
+    </Spin>
 
     <!-- 创建知识库弹窗 -->
-    <NModal v-model:show="showCreateModal" preset="card" title="创建知识库" style="max-width: 500px">
-      <NForm>
-        <NFormItem label="名称" required>
-          <NInput v-model:value="createForm.name" placeholder="输入知识库名称" />
-        </NFormItem>
-        <NFormItem label="描述">
-          <NInput v-model:value="createForm.description" type="textarea" placeholder="输入描述（可选）" />
-        </NFormItem>
-        <NFormItem label="索引方式">
-          <NRadioGroup v-model:value="createForm.type">
-            <NRadioButton value="wiki" label="Wiki（全文搜索）" />
-            <NRadioButton value="rag" label="RAG（语义检索）" />
-          </NRadioGroup>
-        </NFormItem>
-        <NFormItem label="可见性">
-          <NRadioGroup v-model:value="createForm.visibility">
-            <NRadioButton value="private" label="私人" />
-            <NRadioButton value="public" label="公共" />
-          </NRadioGroup>
-        </NFormItem>
-      </NForm>
-      <template #footer>
-        <NSpace justify="end">
-          <NButton @click="showCreateModal = false">取消</NButton>
-          <NButton type="primary" @click="createKnowledgeBase">创建</NButton>
-        </NSpace>
-      </template>
-    </NModal>
+    <Modal v-model:visible="showCreateModal" title="创建知识库" :footer="null" :style="{ maxWidth: '500px' }">
+      <Form :model="createForm" layout="vertical">
+        <FormItem label="名称" required>
+          <Input v-model:value="createForm.name" placeholder="输入知识库名称" />
+        </FormItem>
+        <FormItem label="描述">
+          <Input.TextArea v-model:value="createForm.description" placeholder="输入描述（可选）" />
+        </FormItem>
+        <FormItem label="索引方式">
+          <Radio.Group v-model:value="createForm.type">
+            <Radio.Button value="wiki">Wiki（全文搜索）</Radio.Button>
+            <Radio.Button value="rag">RAG（语义检索）</Radio.Button>
+          </Radio.Group>
+        </FormItem>
+        <FormItem label="可见性">
+          <Radio.Group v-model:value="createForm.visibility">
+            <Radio.Button value="private">私人</Radio.Button>
+            <Radio.Button value="public">公共</Radio.Button>
+          </Radio.Group>
+        </FormItem>
+      </Form>
+      <Space style="display: flex; justify-content: flex-end; margin-top: 16px">
+        <Button @click="showCreateModal = false">取消</Button>
+        <Button type="primary" @click="createKnowledgeBase">创建</Button>
+      </Space>
+    </Modal>
   </div>
 </template>
 
 <style scoped>
-.kb-container {
-  padding: 24px;
-  max-width: 1200px;
-  margin: 0 auto;
-}
-
-.kb-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.header-left h1 {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 600;
-}
-
-.empty-state {
-  display: flex;
-  justify-content: center;
-  padding: 80px 0;
-}
-
-.kb-section {
-  margin-bottom: 32px;
-}
-
-.kb-section h2 {
-  font-size: 18px;
-  font-weight: 600;
-  margin-bottom: 16px;
-  color: #333;
-}
-
-.kb-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 16px;
-}
-
-.kb-card {
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.kb-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
-.kb-card.public {
-  border-left: 3px solid #f59e0b;
-}
-
-.kb-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.kb-name {
-  font-weight: 600;
-  font-size: 16px;
-}
-
-.kb-desc {
-  color: #666;
-  font-size: 14px;
-  margin: 0 0 12px;
-  line-height: 1.5;
-}
-
-.kb-stats {
-  display: flex;
-  gap: 16px;
-  font-size: 13px;
-  color: #888;
-}
-
-.kb-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid #f0f0f0;
-}
-
-.kb-time {
-  font-size: 12px;
-  color: #999;
-}
+.kb-container { padding: 24px; max-width: 1200px; margin: 0 auto; }
+.kb-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+.header-left { display: flex; align-items: center; gap: 12px; }
+.header-left h1 { margin: 0; font-size: 24px; font-weight: 600; }
+.empty-state { display: flex; justify-content: center; padding: 80px 0; }
+.kb-section { margin-bottom: 32px; }
+.kb-section h2 { font-size: 18px; font-weight: 600; margin-bottom: 16px; }
+.kb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.kb-card { cursor: pointer; transition: all 0.2s; }
+.kb-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
+.kb-card.public { border-left: 3px solid #f59e0b; }
+.kb-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.kb-name { font-weight: 600; font-size: 16px; }
+.kb-desc { color: #666; font-size: 14px; margin: 0 0 12px; line-height: 1.5; }
+.kb-stats { display: flex; gap: 16px; font-size: 13px; color: #888; }
+.kb-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding-top: 12px; border-top: 1px solid #f0f0f0; }
+.kb-time { font-size: 12px; color: #999; }
 </style>

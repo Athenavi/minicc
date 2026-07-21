@@ -1,18 +1,20 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, h } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  NCard, NButton, NUpload, NDataTable, NSpin, NEmpty, NIcon,
-  NTag, NSpace, NProgress, useMessage, NModal, NInput, NCheckbox, NVirtualList
-} from 'naive-ui'
-import { BookOutline, ArrowBackOutline, CloudUploadOutline, PlayOutline, ImageOutline, SearchOutline } from '@vicons/ionicons5'
+  Card, Button, Upload, Table, Spin, Empty, Tag, Space,
+  Progress, message, Modal, Input, Checkbox,
+} from 'ant-design-vue'
+import {
+  ArrowLeftOutlined, CloudUploadOutlined,
+  PlayCircleOutlined, PictureOutlined, SearchOutlined,
+} from '@ant-design/icons-vue'
 import { api } from '../api'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080'
 
 const route = useRoute()
 const router = useRouter()
-const message = useMessage()
 const loading = ref(true)
 const building = ref(false)
 const kb = ref<any>(null)
@@ -24,33 +26,21 @@ const buildProgress = ref(0)
 
 // 文档列表列定义
 const docColumns = [
-  { title: '文件名', key: 'name', ellipsis: { tooltip: true } },
-  { title: '类型', key: 'file_type', width: 80 },
+  { title: '文件名', dataIndex: 'name', ellipsis: true },
+  { title: '类型', dataIndex: 'file_type', width: 80 },
   {
-    title: '大小', key: 'file_size_bytes', width: 100,
-    render(row: any) {
-      return formatSize(row.file_size_bytes)
-    },
+    title: '大小', dataIndex: 'file_size_bytes', width: 100,
+    customRender: ({ text }: { text: number }) => formatSize(text),
   },
   {
-    title: '状态', key: 'status', width: 100,
-    render(row: any) {
-      const statusMap: Record<string, { label: string; type: string }> = {
-        pending: { label: '待处理', type: 'default' },
-        processing: { label: '处理中', type: 'info' },
-        completed: { label: '已完成', type: 'success' },
-        error: { label: '失败', type: 'error' },
-      }
-      const s = statusMap[row.status] || { label: row.status, type: 'default' }
-      return h(NTag, { type: s.type as any, size: 'small' }, { default: () => s.label })
-    },
+    title: '状态', dataIndex: 'status', width: 100,
   },
-  { title: '分块数', key: 'chunk_count', width: 80 },
+  { title: '分块数', dataIndex: 'chunk_count', width: 80 },
   {
-    title: '上传时间', key: 'created_at', width: 160,
-    render(row: any) {
-      if (!row.created_at) return ''
-      const d = new Date(row.created_at)
+    title: '上传时间', dataIndex: 'created_at', width: 160,
+    customRender: ({ text }: { text: string }) => {
+      if (!text) return ''
+      const d = new Date(text)
       return isNaN(d.getTime()) ? '' : d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
     },
   },
@@ -102,9 +92,9 @@ const filteredMediaFiles = computed(() => {
   )
 })
 
-async function handleUpload({ file }: any) {
+async function handleUpload(info: any) {
   const formData = new FormData()
-  formData.append('file', file.file)
+  formData.append('file', info.file)
 
   try {
     await api.post(`/v1/kb/${kbId}/documents`, formData, {
@@ -218,7 +208,6 @@ async function buildKnowledgeBase() {
           return
         }
       }
-      // 最后一次刷新
       await loadKnowledgeBase()
       await loadDocuments()
     }
@@ -264,60 +253,53 @@ function formatSize(bytes: number): string {
 <template>
   <div class="kb-detail-container">
     <div class="kb-detail-header">
-      <NButton quaternary @click="router.push('/knowledge')">
-        <template #icon>
-          <NIcon><ArrowBackOutline /></NIcon>
-        </template>
+      <Button type="text" @click="router.push('/knowledge')">
+        <template #icon><ArrowLeftOutlined /></template>
         返回
-      </NButton>
+      </Button>
       <h1>{{ kb?.name || '知识库' }}</h1>
-      <NSpace>
-        <NButton @click="showQueryModal = true">
-          查询知识库
-        </NButton>
-        <NButton
+      <Space>
+        <Button @click="showQueryModal = true">查询知识库</Button>
+        <Button
           v-if="kb?.status !== 'building'"
           type="primary"
           :loading="building"
           :disabled="building"
           @click="buildKnowledgeBase"
         >
-          <template #icon>
-            <NIcon><PlayOutline /></NIcon>
-          </template>
+          <template #icon><PlayCircleOutlined /></template>
           构建索引
-        </NButton>
-        <NButton
+        </Button>
+        <Button
           v-else
-          type="info"
           disabled
         >
           构建中...
-        </NButton>
-      </NSpace>
+        </Button>
+      </Space>
     </div>
 
-    <NSpin :show="loading">
+    <Spin :spinning="loading">
       <div v-if="kb" class="kb-info">
-        <NCard>
+        <Card>
           <div class="info-grid">
             <div class="info-item">
               <span class="label">类型</span>
-              <NTag :type="kb.type === 'rag' ? 'success' : 'info'">
+              <Tag :color="kb.type === 'rag' ? 'success' : 'blue'">
                 {{ kb.type.toUpperCase() }}
-              </NTag>
+              </Tag>
             </div>
             <div class="info-item">
               <span class="label">可见性</span>
-              <NTag :type="kb.visibility === 'public' ? 'warning' : 'default'">
+              <Tag :color="kb.visibility === 'public' ? 'warning' : 'default'">
                 {{ kb.visibility === 'public' ? '公共' : '私人' }}
-              </NTag>
+              </Tag>
             </div>
             <div class="info-item">
               <span class="label">状态</span>
-              <NTag :type="kb.status === 'active' ? 'success' : kb.status === 'building' ? 'info' : 'error'">
+              <Tag :color="kb.status === 'active' ? 'success' : kb.status === 'building' ? 'processing' : 'error'">
                 {{ kb.status }}
-              </NTag>
+              </Tag>
             </div>
             <div class="info-item">
               <span class="label">文档数</span>
@@ -333,289 +315,161 @@ function formatSize(bytes: number): string {
             </div>
           </div>
           <p v-if="kb.description" class="kb-description">{{ kb.description }}</p>
-        </NCard>
+        </Card>
 
         <!-- 构建进度 -->
-        <NCard v-if="building" title="构建进度" style="margin-top: 16px">
-          <NProgress :percentage="buildProgress" :processing="building" />
-        </NCard>
+        <Card v-if="building" title="构建进度" style="margin-top: 16px">
+          <Progress :percent="buildProgress" status="active" />
+        </Card>
 
         <!-- 文档列表 -->
-        <NCard title="文档管理" style="margin-top: 16px">
-          <template #header-extra>
-            <NSpace>
-              <NButton size="small" @click="openMediaModal">
-                <template #icon>
-                  <NIcon><ImageOutline /></NIcon>
-                </template>
+        <Card title="文档管理" style="margin-top: 16px">
+          <template #extra>
+            <Space>
+              <Button size="small" @click="openMediaModal">
+                <template #icon><PictureOutlined /></template>
                 从媒体库选取
-              </NButton>
-              <NUpload
-                :show-file-list="false"
+              </Button>
+              <Upload
+                :show-upload-list="false"
                 :custom-request="handleUpload"
                 accept=".pdf,.md,.txt,.csv,.docx"
               >
-                <NButton type="primary" size="small">
-                  <template #icon>
-                    <NIcon><CloudUploadOutline /></NIcon>
-                  </template>
+                <Button type="primary" size="small">
+                  <template #icon><CloudUploadOutlined /></template>
                   上传文档
-                </NButton>
-              </NUpload>
-            </NSpace>
+                </Button>
+              </Upload>
+            </Space>
           </template>
 
-          <NEmpty v-if="documents.length === 0" description="暂无文档，请上传文档或从媒体库选取" />
-          <NDataTable v-else :columns="docColumns" :data="documents" :bordered="false" />
-        </NCard>
+          <Empty v-if="documents.length === 0" description="暂无文档，请上传文档或从媒体库选取" />
+          <Table v-else :columns="docColumns" :dataSource="documents" :pagination="false">
+            <template #bodyCell="{ column, text }">
+              <template v-if="column.dataIndex === 'file_size_bytes'">
+                {{ formatSize(text) }}
+              </template>
+              <template v-else-if="column.dataIndex === 'status'">
+                <Tag :color="text === 'completed' ? 'success' : text === 'processing' ? 'processing' : text === 'error' ? 'error' : 'default'">
+                  {{ text === 'pending' ? '待处理' : text === 'processing' ? '处理中' : text === 'completed' ? '已完成' : '失败' }}
+                </Tag>
+              </template>
+              <template v-else-if="column.dataIndex === 'created_at'">
+                {{ text ? new Date(text).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '' }}
+              </template>
+            </template>
+          </Table>
+        </Card>
       </div>
-    </NSpin>
+    </Spin>
 
     <!-- 查询弹窗 -->
-    <NModal v-model:show="showQueryModal" preset="card" title="查询知识库" style="max-width: 600px">
-      <NInput
+    <Modal v-model:visible="showQueryModal" title="查询知识库" :footer="null" :style="{ maxWidth: '600px' }">
+      <Input.TextArea
         v-model:value="queryText"
-        type="textarea"
         placeholder="输入查询内容..."
         :rows="3"
       />
-      <template #footer>
-        <NSpace justify="end">
-          <NButton @click="showQueryModal = false">关闭</NButton>
-          <NButton type="primary" @click="queryKnowledgeBase">查询</NButton>
-        </NSpace>
-      </template>
+      <div class="modal-footer">
+        <Button @click="showQueryModal = false">关闭</Button>
+        <Button type="primary" @click="queryKnowledgeBase">查询</Button>
+      </div>
 
       <!-- 查询结果 -->
       <div v-if="queryResults.length > 0" class="query-results">
         <h3>查询结果</h3>
         <div v-for="(result, index) in queryResults" :key="index" class="query-result-item">
           <div class="result-header">
-            <NTag size="small">相关度: {{ (result.score * 100).toFixed(1) }}%</NTag>
+            <Tag>相关度: {{ (result.score * 100).toFixed(1) }}%</Tag>
           </div>
           <p class="result-content">{{ result.content }}</p>
         </div>
       </div>
-    </NModal>
+    </Modal>
 
     <!-- 从媒体库选取弹窗 -->
-    <NModal v-model:show="showMediaModal" preset="card" title="从媒体库选取" style="max-width: 700px">
+    <Modal v-model:visible="showMediaModal" title="从媒体库选取" :footer="null" :style="{ maxWidth: '700px' }">
       <!-- 搜索栏 -->
       <div class="media-search-bar">
-        <NInput
+        <Input
           v-model:value="mediaSearchQuery"
           placeholder="搜索文件..."
-          clearable
+          allow-clear
         >
-          <template #prefix>
-            <NIcon><SearchOutline /></NIcon>
-          </template>
-        </NInput>
+          <template #prefix><SearchOutlined /></template>
+        </Input>
         <div class="media-actions">
           <span class="selected-count">已选择 {{ selectedMediaIds.length }} / {{ filteredMediaFiles.length }}</span>
-          <NButton size="tiny" @click="selectAllMedia">全选</NButton>
-          <NButton size="tiny" @click="deselectAllMedia">取消全选</NButton>
+          <Button size="small" @click="selectAllMedia">全选</Button>
+          <Button size="small" @click="deselectAllMedia">取消全选</Button>
         </div>
       </div>
 
-      <NSpin :show="loadingMedia">
+      <Spin :spinning="loadingMedia">
         <div v-if="filteredMediaFiles.length === 0 && !loadingMedia" class="media-empty">
-          <NEmpty :description="mediaSearchQuery ? '没有匹配的文件' : '媒体库暂无文件'" />
+          <Empty :description="mediaSearchQuery ? '没有匹配的文件' : '媒体库暂无文件'" />
         </div>
-        <div v-else class="media-virtual-list">
-          <NVirtualList
-            :items="filteredMediaFiles"
-            :item-size="56"
-            :height="400"
+        <div v-else class="media-list">
+          <div
+            v-for="item in filteredMediaFiles"
+            :key="item.id"
+            :class="['media-item', { selected: selectedMediaIds.includes(item.id) }]"
+            @click="toggleMediaSelection(item.id)"
           >
-            <template #default="{ item }">
-              <div
-                class="media-item"
-                :class="{ selected: selectedMediaIds.includes(item.id) }"
-                @click="toggleMediaSelection(item.id)"
-              >
-                <NCheckbox :checked="selectedMediaIds.includes(item.id)" />
-                <div class="media-info">
-                  <span class="media-name">{{ item.name }}</span>
-                  <span class="media-meta">
-                    <span class="media-type">{{ item.type }}</span>
-                    <span class="media-size">{{ formatSize(item.size) }}</span>
-                  </span>
-                </div>
-              </div>
-            </template>
-          </NVirtualList>
+            <Checkbox :checked="selectedMediaIds.includes(item.id)" />
+            <div class="media-info">
+              <span class="media-name">{{ item.name }}</span>
+              <span class="media-meta">
+                <span class="media-type">{{ item.type }}</span>
+                <span class="media-size">{{ formatSize(item.size) }}</span>
+              </span>
+            </div>
+          </div>
         </div>
-      </NSpin>
+      </Spin>
 
-      <template #footer>
-        <div style="display: flex; justify-content: flex-end; gap: 8px;">
-          <NButton @click="showMediaModal = false">取消</NButton>
-          <NButton
-            type="primary"
-            :loading="importingMedia"
-            :disabled="selectedMediaIds.length === 0"
-            @click="importFromMedia"
-          >
-            导入选中文件 ({{ selectedMediaIds.length }})
-          </NButton>
-        </div>
-      </template>
-    </NModal>
+      <div class="modal-footer">
+        <Button @click="showMediaModal = false">取消</Button>
+        <Button
+          type="primary"
+          :loading="importingMedia"
+          :disabled="selectedMediaIds.length === 0"
+          @click="importFromMedia"
+        >
+          导入选中文件 ({{ selectedMediaIds.length }})
+        </Button>
+      </div>
+    </Modal>
   </div>
 </template>
 
 <style scoped>
-.kb-detail-container {
-  padding: 24px;
-  max-width: 1200px;
-  margin: 0 auto;
-}
+.kb-detail-container { padding: 24px; max-width: 1200px; margin: 0 auto; }
+.kb-detail-header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
+.kb-detail-header h1 { flex: 1; margin: 0; font-size: 24px; font-weight: 600; }
+.info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; }
+.info-item { display: flex; flex-direction: column; gap: 4px; }
+.info-item .label { font-size: 13px; color: #888; }
+.kb-description { margin-top: 16px; padding-top: 16px; border-top: 1px solid #f0f0f0; color: #666; line-height: 1.6; }
+.modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 
-.kb-detail-header {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 24px;
-}
+.query-results { margin-top: 16px; padding-top: 16px; border-top: 1px solid #f0f0f0; }
+.query-results h3 { margin: 0 0 12px; font-size: 16px; }
+.query-result-item { padding: 12px; background: #f9f9f9; border-radius: 8px; margin-bottom: 8px; }
+.result-header { margin-bottom: 8px; }
+.result-content { margin: 0; font-size: 14px; line-height: 1.6; color: #333; }
 
-.kb-detail-header h1 {
-  flex: 1;
-  margin: 0;
-  font-size: 24px;
-  font-weight: 600;
-}
-
-.info-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 16px;
-}
-
-.info-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.info-item .label {
-  font-size: 13px;
-  color: #888;
-}
-
-.kb-description {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid #f0f0f0;
-  color: #666;
-  line-height: 1.6;
-}
-
-.query-results {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid #f0f0f0;
-}
-
-.query-results h3 {
-  margin: 0 0 12px;
-  font-size: 16px;
-}
-
-.query-result-item {
-  padding: 12px;
-  background: #f9f9f9;
-  border-radius: 8px;
-  margin-bottom: 8px;
-}
-
-.result-header {
-  margin-bottom: 8px;
-}
-
-.result-content {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.6;
-  color: #333;
-}
-
-/* 媒体库选取 */
-.media-search-bar {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.media-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  white-space: nowrap;
-}
-
-.selected-count {
-  font-size: 13px;
-  color: #666;
-}
-
-.media-empty {
-  padding: 40px 0;
-}
-
-.media-virtual-list {
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.media-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  border-bottom: 1px solid #f0f0f0;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.media-item:last-child {
-  border-bottom: none;
-}
-
-.media-item:hover {
-  background: #f5f5f5;
-}
-
-.media-item.selected {
-  background: #e6f7ff;
-}
-
-.media-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1;
-  min-width: 0;
-}
-
-.media-name {
-  font-weight: 500;
-  font-size: 14px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.media-meta {
-  display: flex;
-  gap: 12px;
-  font-size: 12px;
-  color: #888;
-}
-
-.media-type {
-  text-transform: uppercase;
-}
+.media-search-bar { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
+.media-actions { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.selected-count { font-size: 13px; color: #666; }
+.media-empty { padding: 40px 0; }
+.media-list { border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; max-height: 400px; overflow-y: auto; }
+.media-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #f0f0f0; cursor: pointer; transition: background 0.2s; }
+.media-item:last-child { border-bottom: none; }
+.media-item:hover { background: #f5f5f5; }
+.media-item.selected { background: #e6f7ff; }
+.media-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.media-name { font-weight: 500; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.media-meta { display: flex; gap: 12px; font-size: 12px; color: #888; }
+.media-type { text-transform: uppercase; }
 </style>

@@ -1,59 +1,15 @@
-<template>
-  <div class="queue-monitor">
-    <n-spin :show="loading">
-      <n-grid :cols="2" :x-gap="16" :y-gap="16">
-        <!-- 队列状态 -->
-        <n-grid-item>
-          <n-card title="队列状态">
-            <n-descriptions bordered :column="1">
-              <n-descriptions-item label="任务队列长度">{{ queueStats.taskQueueLength }}</n-descriptions-item>
-              <n-descriptions-item label="VIP 队列长度">{{ queueStats.vipQueueLength }}</n-descriptions-item>
-              <n-descriptions-item label="消费者数量">{{ queueStats.consumers }}</n-descriptions-item>
-              <n-descriptions-item label="吞吐量 (QPS)">{{ queueStats.throughput }}</n-descriptions-item>
-              <n-descriptions-item label="平均等待时间">{{ queueStats.avgWaitTime }}ms</n-descriptions-item>
-              <n-descriptions-item label="最大等待时间">{{ queueStats.maxWaitTime }}ms</n-descriptions-item>
-            </n-descriptions>
-          </n-card>
-        </n-grid-item>
-
-        <!-- 队列趋势 -->
-        <n-grid-item>
-          <n-card title="队列长度趋势">
-            <v-chart :option="queueChartOption" style="height: 300px" autoresize />
-          </n-card>
-        </n-grid-item>
-      </n-grid>
-
-      <!-- 等待队列 -->
-      <n-card title="等待队列" style="margin-top: 16px">
-        <template #header-extra>
-          <n-space>
-            <n-button type="primary" quaternary @click="handleFlushQueue" :loading="flushLoading">清空队列</n-button>
-            <n-button type="warning" quaternary @click="handlePauseQueue">
-              {{ isPaused ? '恢复消费' : '暂停消费' }}
-            </n-button>
-          </n-space>
-        </template>
-
-        <n-data-table :columns="columns" :data="waitingTasks" :bordered="false" />
-      </n-card>
-    </n-spin>
-  </div>
-</template>
-
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { Card, Row, Col, Descriptions, DescriptionsItem, Button, Table, Spin, message } from 'ant-design-vue'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { LineChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
 import VChart from 'vue-echarts'
 import { getQueueStats, flushQueue, pauseQueue } from '@/api/admin'
-import { useMessage } from 'naive-ui'
 
 use([CanvasRenderer, LineChart, GridComponent, TooltipComponent])
 
-const message = useMessage()
 const loading = ref(false)
 const flushLoading = ref(false)
 const isPaused = ref(false)
@@ -97,16 +53,14 @@ const queueChartOption = computed(() => ({
 const waitingTasks = ref<any[]>([])
 
 const columns = [
-  { title: '任务 ID', key: 'task_id', width: 120 },
-  { title: '用户 ID', key: 'user_id', width: 120 },
-  { title: '内容', key: 'content', ellipsis: { tooltip: true } },
-  { title: '入队时间', key: 'queued_at', width: 120 },
-  { title: '位置', key: 'position', width: 80 },
+  { title: '任务 ID', dataIndex: 'task_id', width: 120 },
+  { title: '用户 ID', dataIndex: 'user_id', width: 120 },
+  { title: '内容', dataIndex: 'content', ellipsis: true },
+  { title: '入队时间', dataIndex: 'queued_at', width: 120 },
+  { title: '位置', dataIndex: 'position', width: 80 },
   {
-    title: 'VIP',
-    key: 'is_vip',
-    width: 80,
-    render: (row: any) => row.is_vip ? '是' : '否',
+    title: 'VIP', dataIndex: 'is_vip', width: 80,
+    customRender: ({ text }: { text: boolean }) => text ? '是' : '否',
   },
 ]
 
@@ -124,7 +78,6 @@ async function fetchData() {
     }
     waitingTasks.value = data.waiting_tasks || []
 
-    // 维护历史数据（最近 20 个点）
     queueHistory.value.push({
       taskLength: data.task_queue_length || 0,
       vipLength: data.vip_queue_length || 0,
@@ -171,8 +124,42 @@ onMounted(() => {
 })
 </script>
 
+<template>
+  <div class="queue-monitor">
+    <Spin :spinning="loading">
+      <Row :gutter="16">
+        <Col :span="12">
+          <Card title="队列状态">
+            <Descriptions bordered :column="1">
+              <DescriptionsItem label="任务队列长度">{{ queueStats.taskQueueLength }}</DescriptionsItem>
+              <DescriptionsItem label="VIP 队列长度">{{ queueStats.vipQueueLength }}</DescriptionsItem>
+              <DescriptionsItem label="消费者数量">{{ queueStats.consumers }}</DescriptionsItem>
+              <DescriptionsItem label="吞吐量 (QPS)">{{ queueStats.throughput }}</DescriptionsItem>
+              <DescriptionsItem label="平均等待时间">{{ queueStats.avgWaitTime }}ms</DescriptionsItem>
+              <DescriptionsItem label="最大等待时间">{{ queueStats.maxWaitTime }}ms</DescriptionsItem>
+            </Descriptions>
+          </Card>
+        </Col>
+        <Col :span="12">
+          <Card title="队列长度趋势">
+            <VChart :option="queueChartOption" style="height: 300px" autoresize />
+          </Card>
+        </Col>
+      </Row>
+
+      <Card title="等待队列" style="margin-top: 16px">
+        <template #extra>
+          <Button type="primary" ghost @click="handleFlushQueue" :loading="flushLoading">清空队列</Button>
+          <Button @click="handlePauseQueue" style="margin-left: 8px">
+            {{ isPaused ? '恢复消费' : '暂停消费' }}
+          </Button>
+        </template>
+        <Table :columns="columns" :dataSource="waitingTasks" :pagination="false" />
+      </Card>
+    </Spin>
+  </div>
+</template>
+
 <style scoped>
-.queue-monitor {
-  padding: 0;
-}
+.queue-monitor { padding: 0; }
 </style>

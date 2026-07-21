@@ -1,15 +1,21 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { VueFlow, useVueFlow, Handle, Position } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import { MiniMap } from '@vue-flow/minimap'
-import { NButton, NInput, NSelect, NCard, NIcon, NDrawer, NDrawerContent, NForm, NFormItem, NEmpty, NPopconfirm, NTag, NDivider, NScrollbar, useMessage } from 'naive-ui'
-import { AddOutline, SaveOutline, PlayOutline, TrashOutline, CloseOutline, ListOutline, CreateOutline } from '@vicons/ionicons5'
+import {
+  Button, Input, Select, Card, Drawer, Form, FormItem,
+  Empty, Popconfirm, Tag, message,
+} from 'ant-design-vue'
+import {
+  SaveOutlined, PlayCircleOutlined, DeleteOutlined,
+  CloseOutlined, UnorderedListOutlined,
+} from '@ant-design/icons-vue'
 import { api } from '../api'
 import type { Node, Edge, Connection } from '@vue-flow/core'
 
- // 从 JWT token 中解析 user_id（不依赖 auth store 的异步加载）
+ // 从 JWT token 中解析 user_id
 function getUserIdFromToken(): string | null {
   const token = localStorage.getItem('token')
   if (!token) return null
@@ -90,7 +96,7 @@ const toolOptions = [
 ]
 
 // ── Vue Flow ──
-const { findNode, addNodes, addEdges, removeNodes, getNodes, getEdges, toObject, fromObject } = useVueFlow({
+const { findNode, addNodes, addEdges, removeNodes, getNodes, getEdges } = useVueFlow({
   defaultEdgeOptions: {
     type: 'smoothstep',
     animated: true,
@@ -98,7 +104,6 @@ const { findNode, addNodes, addEdges, removeNodes, getNodes, getEdges, toObject,
 })
 
 // ── State ──
-const message = useMessage()
 const nodes = ref<Node[]>([])
 const edges = ref<Edge[]>([])
 const workflowName = ref('新建工作流')
@@ -157,7 +162,6 @@ function onDrop(event: DragEvent) {
   const type = event.dataTransfer?.getData('application/vueflow')
   if (!type) return
 
-  // Get drop position relative to flow canvas
   const flowEl = document.querySelector('.vue-flow')
   if (!flowEl) return
   const rect = flowEl.getBoundingClientRect()
@@ -188,7 +192,6 @@ function onNodeClick(_event: any) {
   selectedNode.value = node
   showPanel.value = true
 
-  // Populate edit fields
   editLabel.value = node.data?.label || ''
   const cfg = node.data?.config || {}
   editSystemPrompt.value = cfg.system_prompt || ''
@@ -224,7 +227,6 @@ function applyNodeConfig() {
   }
 }
 
-// Watch config changes
 watch([editLabel, editSystemPrompt, editPrompt, editToolName, editCondition, editUserMessage, editInputVariable], () => {
   applyNodeConfig()
 })
@@ -258,7 +260,6 @@ function toBackendFormat(): { nodes: GraphNodeBackend[]; edges: GraphEdgeBackend
 
   const backendNodes: GraphNodeBackend[] = allNodes.map((n) => {
     const config: Record<string, any> = n.data?.config || {}
-    // Store position in config for round-tripping
     config.position = { x: Math.round(n.position.x), y: Math.round(n.position.y) }
     return {
       id: n.id,
@@ -275,7 +276,6 @@ function toBackendFormat(): { nodes: GraphNodeBackend[]; edges: GraphEdgeBackend
     label: typeof e.label === 'string' ? e.label : '',
   }))
 
-  // Entry point: first input node, or first node
   const inputNode = allNodes.find(n => n.data?.nodeType === 'input')
   const entryPoint = inputNode?.id || allNodes[0]?.id || ''
 
@@ -316,7 +316,6 @@ function fromBackendFormat(data: any) {
   edges.value = flowEdges
   workflowName.value = graphDef.name || '未命名工作流'
 
-  // Update counter to avoid ID collision
   nodeCounter = flowNodes.length + 10
 }
 
@@ -387,13 +386,11 @@ async function executeWorkflow() {
   executionLogs.value = ['⏳ 正在执行...']
 
   try {
-    // Execute fires SSE events; we listen on the broadcast channel
     await api.post(`/v1/graphs/${workflowId.value}/execute`, {
       initial_state: {},
     })
     message.info('工作流已提交执行')
 
-    // Listen for SSE events
     const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080'
     _eventSource = new EventSource(`${API_URL}/events?session_id=graph_${workflowId.value}`)
     const eventSource = _eventSource
@@ -465,34 +462,27 @@ onUnmounted(() => {
 
 <template>
   <div class="workflow-container">
-    <!-- Top Toolbar -->
+    <!-- Toolbar -->
     <div class="toolbar">
       <div class="toolbar-left">
-        <NInput
-          v-model:value="workflowName"
-          placeholder="工作流名称"
-          size="small"
-          style="width: 200px"
-        />
-        <NButton size="small" type="primary" @click="saveWorkflow" :loading="false">
-          <template #icon><NIcon><SaveOutline /></NIcon></template>
+        <Input v-model:value="workflowName" style="width: 200px" size="small" />
+        <Button size="small" type="primary" @click="saveWorkflow">
+          <template #icon><SaveOutlined /></template>
           保存
-        </NButton>
-        <NButton size="small" type="success" @click="executeWorkflow" :loading="isExecuting" :disabled="!workflowId">
-          <template #icon><NIcon><PlayOutline /></NIcon></template>
+        </Button>
+        <Button size="small" type="primary" ghost @click="executeWorkflow" :disabled="isExecuting">
+          <template #icon><PlayCircleOutlined /></template>
           执行
-        </NButton>
-        <NButton size="small" quaternary @click="resetCanvas">
-          新建
-        </NButton>
+        </Button>
+        <Button size="small" @click="resetCanvas">新建</Button>
       </div>
       <div class="toolbar-right">
-        <NButton size="small" quaternary @click="showDrawer = true">
-          <template #icon><NIcon><ListOutline /></NIcon></template>
+        <Button size="small" @click="showDrawer = true">
+          <template #icon><UnorderedListOutlined /></template>
           工作流列表
-        </NButton>
-        <NTag v-if="workflowId" type="success" size="small">已保存</NTag>
-        <NTag v-else type="warning" size="small">未保存</NTag>
+        </Button>
+        <Tag v-if="workflowId" color="success">已保存</Tag>
+        <Tag v-else color="warning">未保存</Tag>
       </div>
     </div>
 
@@ -513,11 +503,7 @@ onUnmounted(() => {
       </div>
 
       <!-- Center: Canvas -->
-      <div
-        class="canvas-wrapper"
-        @drop="onDrop"
-        @dragover="onDragOver"
-      >
+      <div class="canvas-wrapper" @drop="onDrop" @dragover="onDragOver">
         <VueFlow
           v-model:nodes="nodes"
           v-model:edges="edges"
@@ -533,15 +519,11 @@ onUnmounted(() => {
           <Controls />
           <MiniMap />
 
-          <!-- Custom node template -->
+          <!-- Custom node templates -->
           <template #node-input="nodeProps">
             <div class="custom-node" :style="{ borderColor: '#22c55e' }">
-              <div class="node-header" style="background: #22c55e20;">
-                <span>📥 {{ nodeProps.data?.label || '输入' }}</span>
-              </div>
-              <div class="node-body">
-                <span class="node-type-tag">input</span>
-              </div>
+              <div class="node-header" style="background: #22c55e20;"><span>📥 {{ nodeProps.data?.label || '输入' }}</span></div>
+              <div class="node-body"><span class="node-type-tag">input</span></div>
               <Handle type="source" :position="Position.Bottom" />
             </div>
           </template>
@@ -549,9 +531,7 @@ onUnmounted(() => {
           <template #node-llm="nodeProps">
             <div class="custom-node" :style="{ borderColor: '#8b5cf6' }">
               <Handle type="target" :position="Position.Top" />
-              <div class="node-header" style="background: #8b5cf620;">
-                <span>🧠 {{ nodeProps.data?.label || 'LLM' }}</span>
-              </div>
+              <div class="node-header" style="background: #8b5cf620;"><span>🧠 {{ nodeProps.data?.label || 'LLM' }}</span></div>
               <div class="node-body">
                 <span class="node-type-tag">llm</span>
               </div>
@@ -562,14 +542,10 @@ onUnmounted(() => {
           <template #node-tool="nodeProps">
             <div class="custom-node" :style="{ borderColor: '#3b82f6' }">
               <Handle type="target" :position="Position.Top" />
-              <div class="node-header" style="background: #3b82f620;">
-                <span>🔧 {{ nodeProps.data?.label || '工具' }}</span>
-              </div>
+              <div class="node-header" style="background: #3b82f620;"><span>🔧 {{ nodeProps.data?.label || '工具' }}</span></div>
               <div class="node-body">
                 <span class="node-type-tag">tool</span>
-                <span v-if="nodeProps.data?.config?.tool_name" class="node-detail">
-                  {{ nodeProps.data.config.tool_name }}
-                </span>
+                <span v-if="nodeProps.data?.config?.tool_name" class="node-detail">{{ nodeProps.data.config.tool_name }}</span>
               </div>
               <Handle type="source" :position="Position.Bottom" />
             </div>
@@ -578,12 +554,8 @@ onUnmounted(() => {
           <template #node-condition="nodeProps">
             <div class="custom-node" :style="{ borderColor: '#f59e0b' }">
               <Handle type="target" :position="Position.Top" />
-              <div class="node-header" style="background: #f59e0b20;">
-                <span>🔀 {{ nodeProps.data?.label || '条件' }}</span>
-              </div>
-              <div class="node-body">
-                <span class="node-type-tag">condition</span>
-              </div>
+              <div class="node-header" style="background: #f59e0b20;"><span>🔀 {{ nodeProps.data?.label || '条件' }}</span></div>
+              <div class="node-body"><span class="node-type-tag">condition</span></div>
               <Handle id="true" type="source" :position="Position.Bottom" style="left: 30%" />
               <Handle id="false" type="source" :position="Position.Bottom" style="left: 70%" />
             </div>
@@ -592,12 +564,8 @@ onUnmounted(() => {
           <template #node-output="nodeProps">
             <div class="custom-node" :style="{ borderColor: '#6b7280' }">
               <Handle type="target" :position="Position.Top" />
-              <div class="node-header" style="background: #6b728020;">
-                <span>📤 {{ nodeProps.data?.label || '输出' }}</span>
-              </div>
-              <div class="node-body">
-                <span class="node-type-tag">output</span>
-              </div>
+              <div class="node-header" style="background: #6b728020;"><span>📤 {{ nodeProps.data?.label || '输出' }}</span></div>
+              <div class="node-body"><span class="node-type-tag">output</span></div>
             </div>
           </template>
         </VueFlow>
@@ -607,84 +575,60 @@ onUnmounted(() => {
       <div v-if="showPanel && selectedNode" class="property-panel">
         <div class="panel-header">
           <span>节点属性</span>
-          <NButton text size="small" @click="showPanel = false">
-            <template #icon><NIcon><CloseOutline /></NIcon></template>
-          </NButton>
+          <Button type="text" size="small" @click="showPanel = false">
+            <template #icon><CloseOutlined /></template>
+          </Button>
         </div>
-        <NScrollbar style="max-height: calc(100vh - 180px)">
-          <NForm label-placement="top" size="small" style="padding: 12px">
-            <NFormItem label="节点 ID">
-              <NInput :value="selectedNode.id" disabled />
-            </NFormItem>
-            <NFormItem label="类型">
-              <NInput :value="selectedNode.data?.nodeType" disabled />
-            </NFormItem>
-            <NFormItem label="标签">
-              <NInput v-model:value="editLabel" placeholder="节点标签" />
-            </NFormItem>
+        <div class="panel-body">
+          <Form layout="vertical" size="small">
+            <FormItem label="节点 ID">
+              <Input :value="selectedNode.id" disabled />
+            </FormItem>
+            <FormItem label="类型">
+              <Input :value="selectedNode.data?.nodeType" disabled />
+            </FormItem>
+            <FormItem label="标签">
+              <Input v-model:value="editLabel" placeholder="节点标签" />
+            </FormItem>
 
-            <!-- LLM config -->
             <template v-if="selectedNode.data?.nodeType === 'llm'">
-              <NDivider />
-              <NFormItem label="System Prompt">
-                <NInput
-                  v-model:value="editSystemPrompt"
-                  type="textarea"
-                  :rows="4"
-                  placeholder="系统提示词"
-                />
-              </NFormItem>
-              <NFormItem label="用户消息模板">
-                <NInput
-                  v-model:value="editUserMessage"
-                  type="textarea"
-                  :rows="3"
-                  placeholder="使用 {{变量名}} 引用状态变量"
-                />
-              </NFormItem>
+              <div class="section-divider"></div>
+              <FormItem label="System Prompt">
+                <Input.TextArea v-model:value="editSystemPrompt" :rows="4" placeholder="系统提示词" />
+              </FormItem>
+              <FormItem label="用户消息模板">
+                <Input.TextArea v-model:value="editUserMessage" :rows="3" placeholder="使用 {{变量名}} 引用状态变量" />
+              </FormItem>
             </template>
 
-            <!-- Tool config -->
             <template v-if="selectedNode.data?.nodeType === 'tool'">
-              <NDivider />
-              <NFormItem label="工具名称">
-                <NSelect
-                  v-model:value="editToolName"
-                  :options="toolOptions"
-                  placeholder="选择工具"
-                  filterable
-                />
-              </NFormItem>
+              <div class="section-divider"></div>
+              <FormItem label="工具名称">
+                <Select v-model:value="editToolName" :options="toolOptions" placeholder="选择工具" style="width: 100%" />
+              </FormItem>
             </template>
 
-            <!-- Condition config -->
             <template v-if="selectedNode.data?.nodeType === 'condition'">
-              <NDivider />
-              <NFormItem label="条件表达式">
-                <NInput
-                  v-model:value="editCondition"
-                  type="textarea"
-                  :rows="3"
-                  placeholder="如: state.status == 'ok'"
-                />
-              </NFormItem>
+              <div class="section-divider"></div>
+              <FormItem label="条件表达式">
+                <Input.TextArea v-model:value="editCondition" :rows="3" placeholder="如: state.status == 'ok'" />
+              </FormItem>
             </template>
 
-            <!-- Input config -->
             <template v-if="selectedNode.data?.nodeType === 'input'">
-              <NDivider />
-              <NFormItem label="输入变量名">
-                <NInput v-model:value="editInputVariable" placeholder="user_input" />
-              </NFormItem>
+              <div class="section-divider"></div>
+              <FormItem label="输入变量名">
+                <Input v-model:value="editInputVariable" placeholder="user_input" />
+              </FormItem>
             </template>
 
-            <NDivider />
-            <NButton type="error" size="small" @click="deleteSelectedNode" block>
-              <template #icon><NIcon><TrashOutline /></NIcon></template>
+            <div class="section-divider"></div>
+            <Button danger @click="deleteSelectedNode" block>
+              <template #icon><DeleteOutlined /></template>
               删除节点
-            </NButton>
-          </NForm>
-        </NScrollbar>
+            </Button>
+          </Form>
+        </div>
       </div>
     </div>
 
@@ -692,47 +636,42 @@ onUnmounted(() => {
     <div v-if="executionLogs.length > 0" class="execution-bar">
       <div class="execution-header">
         <span>执行日志</span>
-        <NButton text size="tiny" @click="executionLogs = []">清除</NButton>
+        <Button type="text" size="small" @click="executionLogs = []" style="color: #9ca3af">清除</Button>
       </div>
-      <NScrollbar style="max-height: 150px">
+      <div class="execution-logs">
         <div v-for="(log, i) in executionLogs" :key="i" class="log-line">{{ log }}</div>
-      </NScrollbar>
+      </div>
     </div>
 
     <!-- Workflow List Drawer -->
-    <NDrawer v-model:show="showDrawer" :width="380" placement="right">
-      <NDrawerContent title="已保存的工作流">
-        <NEmpty v-if="savedWorkflows.length === 0" description="暂无工作流" />
-        <div v-else class="workflow-list">
-          <NCard
-            v-for="wf in savedWorkflows"
-            :key="wf.id"
-            size="small"
-            class="workflow-item"
-            hoverable
-          >
-            <div class="wf-item-row">
-              <div class="wf-item-info" @click="loadWorkflow(wf); showDrawer = false">
-                <div class="wf-item-name">{{ wf.name || '未命名工作流' }}</div>
-                <div class="wf-item-time">{{ formatDate(wf.updated_at) || formatDate(wf.created_at) }}</div>
-              </div>
-              <NPopconfirm @positive-click="deleteWorkflow(wf.id)">
-                <template #trigger>
-                  <NButton text size="small" type="error">
-                    <template #icon><NIcon><TrashOutline /></NIcon></template>
-                  </NButton>
-                </template>
-                确认删除 {{ wf.name }}？
-              </NPopconfirm>
+    <Drawer v-model:visible="showDrawer" title="已保存的工作流" placement="right" :width="380">
+      <Empty v-if="savedWorkflows.length === 0" description="暂无工作流" />
+      <div v-else class="workflow-list">
+        <Card
+          v-for="wf in savedWorkflows"
+          :key="wf.id"
+          size="small"
+          class="workflow-item"
+          hoverable
+        >
+          <div class="wf-item-row">
+            <div class="wf-item-info" @click="loadWorkflow(wf); showDrawer = false">
+              <div class="wf-item-name">{{ wf.name || '未命名工作流' }}</div>
+              <div class="wf-item-time">{{ formatDate(wf.updated_at) || formatDate(wf.created_at) }}</div>
             </div>
-          </NCard>
-        </div>
-      </NDrawerContent>
-    </NDrawer>
+            <Popconfirm :title="'确认删除 ' + wf.name + '？'" @confirm="deleteWorkflow(wf.id)">
+              <template #icon></template>
+              <Button type="text" danger size="small">
+                <template #icon><DeleteOutlined /></template>
+              </Button>
+            </Popconfirm>
+          </div>
+        </Card>
+      </div>
+    </Drawer>
   </div>
 </template>
 
-<!-- Import vue-flow styles -->
 <style>
 @import '@vue-flow/core/dist/style.css';
 @import '@vue-flow/core/dist/theme-default.css';
@@ -741,241 +680,41 @@ onUnmounted(() => {
 </style>
 
 <style scoped>
-.workflow-container {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  overflow: hidden;
-}
+.workflow-container { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.toolbar { display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; border-bottom: 1px solid #e0e0e0; background: #fff; gap: 8px; flex-shrink: 0; }
+.toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 8px; }
+.main-area { display: flex; flex: 1; overflow: hidden; }
+.node-palette { width: 160px; padding: 12px; border-right: 1px solid #e0e0e0; background: #fafafa; flex-shrink: 0; }
+.palette-title { font-weight: 600; font-size: 13px; color: #666; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
+.palette-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin-bottom: 6px; background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; cursor: grab; font-size: 13px; transition: box-shadow 0.15s; user-select: none; }
+.palette-item:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); }
+.palette-item:active { cursor: grabbing; }
+.palette-icon { font-size: 16px; }
+.palette-label { font-weight: 500; }
+.canvas-wrapper { flex: 1; position: relative; }
+.custom-node { background: #fff; border: 2px solid; border-radius: 8px; min-width: 140px; font-size: 12px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08); }
+.node-header { padding: 6px 10px; border-radius: 6px 6px 0 0; font-weight: 600; font-size: 13px; white-space: nowrap; }
+.node-body { padding: 6px 10px; display: flex; align-items: center; gap: 6px; }
+.node-type-tag { background: #f3f4f6; padding: 1px 6px; border-radius: 3px; font-size: 10px; color: #6b7280; }
+.node-detail { font-size: 10px; color: #9ca3af; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100px; }
+.property-panel { width: 300px; border-left: 1px solid #e0e0e0; background: #fff; flex-shrink: 0; overflow-y: auto; }
+.panel-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #e0e0e0; font-weight: 600; font-size: 14px; }
+.panel-body { padding: 12px; }
+.section-divider { height: 1px; background: #f0f0f0; margin: 12px 0; }
+.execution-bar { border-top: 1px solid #e0e0e0; background: #1e1e1e; color: #d4d4d4; font-family: monospace; font-size: 12px; padding: 8px 16px; flex-shrink: 0; max-height: 200px; overflow-y: auto; }
+.execution-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; color: #9ca3af; font-size: 11px; }
+.log-line { padding: 2px 0; white-space: pre-wrap; word-break: break-all; }
+.workflow-list { display: flex; flex-direction: column; gap: 8px; }
+.workflow-item { cursor: pointer; transition: box-shadow 0.15s; }
+.workflow-item:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); }
+.wf-item-row { display: flex; align-items: center; justify-content: space-between; }
+.wf-item-info { flex: 1; cursor: pointer; }
+.wf-item-name { font-weight: 600; font-size: 14px; }
+.wf-item-time { font-size: 12px; color: #9ca3af; margin-top: 2px; }
 
-.toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 16px;
-  border-bottom: 1px solid #e0e0e0;
-  background: #fff;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.toolbar-left,
-.toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.main-area {
-  display: flex;
-  flex: 1;
-  overflow: hidden;
-}
-
-/* Left Palette */
-.node-palette {
-  width: 160px;
-  padding: 12px;
-  border-right: 1px solid #e0e0e0;
-  background: #fafafa;
-  flex-shrink: 0;
-}
-
-.palette-title {
-  font-weight: 600;
-  font-size: 13px;
-  color: #666;
-  margin-bottom: 12px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
-
-.palette-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  margin-bottom: 6px;
-  background: #fff;
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
-  cursor: grab;
-  font-size: 13px;
-  transition: box-shadow 0.15s;
-  user-select: none;
-}
-
-.palette-item:hover {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.palette-item:active {
-  cursor: grabbing;
-}
-
-.palette-icon {
-  font-size: 16px;
-}
-
-.palette-label {
-  font-weight: 500;
-}
-
-/* Canvas */
-.canvas-wrapper {
-  flex: 1;
-  position: relative;
-}
-
-/* Custom Nodes */
-.custom-node {
-  background: #fff;
-  border: 2px solid;
-  border-radius: 8px;
-  min-width: 140px;
-  font-size: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-}
-
-.node-header {
-  padding: 6px 10px;
-  border-radius: 6px 6px 0 0;
-  font-weight: 600;
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.node-body {
-  padding: 6px 10px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.node-type-tag {
-  background: #f3f4f6;
-  padding: 1px 6px;
-  border-radius: 3px;
-  font-size: 10px;
-  color: #6b7280;
-}
-
-.node-detail {
-  font-size: 10px;
-  color: #9ca3af;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100px;
-}
-
-/* Property Panel */
-.property-panel {
-  width: 300px;
-  border-left: 1px solid #e0e0e0;
-  background: #fff;
-  flex-shrink: 0;
-  overflow: hidden;
-}
-
-.panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  border-bottom: 1px solid #e0e0e0;
-  font-weight: 600;
-  font-size: 14px;
-}
-
-/* Execution logs */
-.execution-bar {
-  border-top: 1px solid #e0e0e0;
-  background: #1e1e1e;
-  color: #d4d4d4;
-  font-family: monospace;
-  font-size: 12px;
-  padding: 8px 16px;
-  flex-shrink: 0;
-}
-
-.execution-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 4px;
-  color: #9ca3af;
-  font-size: 11px;
-}
-
-.log-line {
-  padding: 2px 0;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-
-/* Workflow list */
-.workflow-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.workflow-item {
-  cursor: pointer;
-  transition: box-shadow 0.15s;
-}
-
-.workflow-item:hover {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.wf-item-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.wf-item-info {
-  flex: 1;
-  cursor: pointer;
-}
-
-.wf-item-name {
-  font-weight: 600;
-  font-size: 14px;
-}
-
-.wf-item-time {
-  font-size: 12px;
-  color: #9ca3af;
-  margin-top: 2px;
-}
-
-/* Dark mode support */
-:root.dark .toolbar {
-  background: #1e1e1e;
-  border-color: #333;
-}
-
-:root.dark .node-palette {
-  background: #252525;
-  border-color: #333;
-}
-
-:root.dark .palette-item {
-  background: #2d2d2d;
-  border-color: #444;
-  color: #d4d4d4;
-}
-
-:root.dark .custom-node {
-  background: #2d2d2d;
-  color: #d4d4d4;
-}
-
-:root.dark .property-panel {
-  background: #1e1e1e;
-  border-color: #333;
-}
+:root.dark .toolbar { background: #1e1e1e; border-color: #333; }
+:root.dark .node-palette { background: #252525; border-color: #333; }
+:root.dark .palette-item { background: #2d2d2d; border-color: #444; color: #d4d4d4; }
+:root.dark .custom-node { background: #2d2d2d; color: #d4d4d4; }
+:root.dark .property-panel { background: #1e1e1e; border-color: #333; }
 </style>

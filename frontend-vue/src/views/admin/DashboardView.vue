@@ -1,89 +1,12 @@
-<template>
-  <div class="dashboard">
-    <n-spin :show="loading">
-      <!-- 快捷导航 -->
-      <n-grid :cols="5" :x-gap="12" :y-gap="12" style="margin-bottom: 16px">
-        <n-grid-item v-for="nav in navItems" :key="nav.path">
-          <n-card hoverable style="cursor: pointer; text-align: center" @click="$router.push(nav.path)">
-            <div style="font-size: 24px; margin-bottom: 8px;">{{ nav.emoji }}</div>
-            <div style="font-weight: bold">{{ nav.label }}</div>
-          </n-card>
-        </n-grid-item>
-      </n-grid>
-
-      <!-- 统计卡片 -->
-      <n-grid :cols="4" :x-gap="16" :y-gap="16">
-        <n-grid-item>
-          <n-card>
-            <n-statistic label="并发连接数" :value="stats.connections">
-              <template #suffix>
-                <n-tag :type="stats.connectionsTrend > 0 ? 'success' : 'error'" size="small">
-                  {{ stats.connectionsTrend > 0 ? '+' : '' }}{{ stats.connectionsTrend }}%
-                </n-tag>
-              </template>
-            </n-statistic>
-          </n-card>
-        </n-grid-item>
-        
-        <n-grid-item>
-          <n-card>
-            <n-statistic label="队列积压" :value="stats.queueBacklog">
-              <template #suffix>
-                <n-tag :type="stats.queueBacklog > 1000 ? 'error' : 'success'" size="small">
-                  {{ stats.queueBacklog > 1000 ? '警告' : '正常' }}
-                </n-tag>
-              </template>
-            </n-statistic>
-          </n-card>
-        </n-grid-item>
-        
-        <n-grid-item>
-          <n-card>
-            <n-statistic label="缓存命中率" :value="stats.cacheHitRate" suffix="%" />
-          </n-card>
-        </n-grid-item>
-        
-        <n-grid-item>
-          <n-card>
-            <n-statistic label="API 延迟 P99" :value="stats.latencyP99" suffix="ms" />
-          </n-card>
-        </n-grid-item>
-      </n-grid>
-      
-      <!-- 图表区域 -->
-      <n-grid :cols="2" :x-gap="16" :y-gap="16" style="margin-top: 16px">
-        <n-grid-item>
-          <n-card title="并发连接趋势">
-            <v-chart :option="connectionChartOption" style="height: 300px" autoresize />
-          </n-card>
-        </n-grid-item>
-        
-        <n-grid-item>
-          <n-card title="API Key 状态">
-            <v-chart :option="apiKeyChartOption" style="height: 300px" autoresize />
-          </n-card>
-        </n-grid-item>
-      </n-grid>
-      
-      <!-- 告警列表 -->
-      <n-card title="最近告警" style="margin-top: 16px">
-        <n-data-table :columns="alertColumns" :data="alerts" :bordered="false" />
-      </n-card>
-    </n-spin>
-  </div>
-</template>
-
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { Card, Row, Col, Statistic, Tag, Table, Spin } from 'ant-design-vue'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { LineChart, PieChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
 import VChart from 'vue-echarts'
-import { 
-  NGrid, NGridItem, NCard, NStatistic, NTag, NDataTable, NSpin 
-} from 'naive-ui'
 import { getMetrics, listApiKeys, getQueueStats } from '@/api/admin'
 
 use([CanvasRenderer, LineChart, PieChart, GridComponent, TooltipComponent, LegendComponent])
@@ -91,7 +14,6 @@ use([CanvasRenderer, LineChart, PieChart, GridComponent, TooltipComponent, Legen
 const router = useRouter()
 const loading = ref(false)
 
-// 快捷导航
 const navItems = [
   { label: 'API Keys', path: '/admin/api-keys', emoji: '🔑' },
   { label: '队列监控', path: '/admin/queue', emoji: '📊' },
@@ -120,10 +42,7 @@ const connectionHistory = ref<{ time: string; value: number }[]>([
 
 const connectionChartOption = computed(() => ({
   tooltip: { trigger: 'axis' },
-  xAxis: { 
-    type: 'category', 
-    data: connectionHistory.value.map(h => h.time)
-  },
+  xAxis: { type: 'category', data: connectionHistory.value.map(h => h.time) },
   yAxis: { type: 'value', name: '连接数' },
   series: [{
     name: '并发连接',
@@ -151,9 +70,9 @@ const apiKeyChartOption = computed(() => ({
 }))
 
 const alertColumns = [
-  { title: '时间', key: 'time', width: 180 },
-  { title: '级别', key: 'level', width: 100 },
-  { title: '消息', key: 'message' },
+  { title: '时间', dataIndex: 'time', width: 180 },
+  { title: '级别', dataIndex: 'level', width: 100 },
+  { title: '消息', dataIndex: 'message' },
 ]
 
 const alerts = ref<{ time: string; level: string; message: string }[]>([])
@@ -178,9 +97,9 @@ async function fetchDashboardData() {
     if (keysRes.status === 'fulfilled') {
       const keys = keysRes.value
       apiKeyStatus.value = {
-        active: keys.filter(k => k.status === 'active').length,
-        rate_limited: keys.filter(k => k.status === 'rate_limited').length,
-        circuit_open: keys.filter(k => k.status === 'circuit_open').length,
+        active: keys.filter((k: any) => k.status === 'active').length,
+        rate_limited: keys.filter((k: any) => k.status === 'rate_limited').length,
+        circuit_open: keys.filter((k: any) => k.status === 'circuit_open').length,
       }
     }
 
@@ -199,8 +118,77 @@ onMounted(() => {
 })
 </script>
 
+<template>
+  <div class="dashboard">
+    <Spin :spinning="loading">
+      <!-- 快捷导航 -->
+      <Row :gutter="[12, 12]" style="margin-bottom: 16px">
+        <Col v-for="nav in navItems" :key="nav.path" :span="Math.floor(24 / navItems.length)">
+          <Card hoverable style="cursor: pointer; text-align: center" @click="router.push(nav.path)">
+            <div style="font-size: 24px; margin-bottom: 8px;">{{ nav.emoji }}</div>
+            <div style="font-weight: bold">{{ nav.label }}</div>
+          </Card>
+        </Col>
+      </Row>
+
+      <!-- 统计卡片 -->
+      <Row :gutter="16">
+        <Col :span="6">
+          <Card>
+            <Statistic title="并发连接数" :value="stats.connections">
+              <template #suffix>
+                <Tag :color="stats.connectionsTrend > 0 ? 'success' : 'error'">
+                  {{ stats.connectionsTrend > 0 ? '+' : '' }}{{ stats.connectionsTrend }}%
+                </Tag>
+              </template>
+            </Statistic>
+          </Card>
+        </Col>
+        <Col :span="6">
+          <Card>
+            <Statistic title="队列积压" :value="stats.queueBacklog">
+              <template #suffix>
+                <Tag :color="stats.queueBacklog > 1000 ? 'error' : 'success'">
+                  {{ stats.queueBacklog > 1000 ? '警告' : '正常' }}
+                </Tag>
+              </template>
+            </Statistic>
+          </Card>
+        </Col>
+        <Col :span="6">
+          <Card>
+            <Statistic title="缓存命中率" :value="stats.cacheHitRate" suffix="%" />
+          </Card>
+        </Col>
+        <Col :span="6">
+          <Card>
+            <Statistic title="API 延迟 P99" :value="stats.latencyP99" suffix="ms" />
+          </Card>
+        </Col>
+      </Row>
+
+      <!-- 图表区域 -->
+      <Row :gutter="16" style="margin-top: 16px">
+        <Col :span="12">
+          <Card title="并发连接趋势">
+            <VChart :option="connectionChartOption" style="height: 300px" autoresize />
+          </Card>
+        </Col>
+        <Col :span="12">
+          <Card title="API Key 状态">
+            <VChart :option="apiKeyChartOption" style="height: 300px" autoresize />
+          </Card>
+        </Col>
+      </Row>
+
+      <!-- 告警列表 -->
+      <Card title="最近告警" style="margin-top: 16px">
+        <Table :columns="alertColumns" :dataSource="alerts" :pagination="false" />
+      </Card>
+    </Spin>
+  </div>
+</template>
+
 <style scoped>
-.dashboard {
-  padding: 0;
-}
+.dashboard { padding: 0; }
 </style>

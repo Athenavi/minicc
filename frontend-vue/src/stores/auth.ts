@@ -59,6 +59,7 @@ export const useAuthStore = defineStore('auth', () => {
         email: data.email,
         name: data.name || data.email,
         role: data.role,
+        tenant_id: data.tenant_id || '',
       }
     } catch (error) {
       // Token 无效，清除

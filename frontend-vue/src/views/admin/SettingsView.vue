@@ -1,127 +1,8 @@
-<template>
-  <div class="settings">
-    <n-grid :cols="2" :x-gap="16" :y-gap="16">
-      <!-- 限流配置 -->
-      <n-grid-item>
-        <n-card title="限流配置">
-          <n-form :model="rateLimitConfig" label-placement="left" label-width="120">
-            <n-form-item label="每秒请求数">
-              <n-input-number v-model:value="rateLimitConfig.rps" :min="100" :max="100000" />
-            </n-form-item>
-            <n-form-item label="每分钟请求数">
-              <n-input-number v-model:value="rateLimitConfig.rpm" :min="1000" :max="10000000" />
-            </n-form-item>
-            <n-form-item label="每分钟 Token 数">
-              <n-input-number v-model:value="rateLimitConfig.tpm" :min="10000" :max="1000000000" />
-            </n-form-item>
-            <n-form-item label="单用户并发">
-              <n-input-number v-model:value="rateLimitConfig.userConcurrent" :min="1" :max="100" />
-            </n-form-item>
-            <n-form-item label="单租户并发">
-              <n-input-number v-model:value="rateLimitConfig.tenantConcurrent" :min="10" :max="10000" />
-            </n-form-item>
-          </n-form>
-          <n-button type="primary" :loading="saving" @click="saveRateLimit">保存</n-button>
-        </n-card>
-      </n-grid-item>
-      
-      <!-- 降级配置 -->
-      <n-grid-item>
-        <n-card title="降级配置">
-          <n-form :model="degradationConfig" label-placement="left" label-width="120">
-            <n-form-item label="启用降级">
-              <n-switch v-model:value="degradationConfig.enabled" />
-            </n-form-item>
-            <n-form-item label="轻度过载阈值">
-              <n-input-number v-model:value="degradationConfig.lightThreshold" :min="10000" :max="1000000" />
-              <template #suffix>并发连接</template>
-            </n-form-item>
-            <n-form-item label="中度过载阈值">
-              <n-input-number v-model:value="degradationConfig.mediumThreshold" :min="50000" :max="1000000" />
-              <template #suffix>并发连接</template>
-            </n-form-item>
-            <n-form-item label="重度过载阈值">
-              <n-input-number v-model:value="degradationConfig.heavyThreshold" :min="100000" :max="1000000" />
-              <template #suffix>并发连接</template>
-            </n-form-item>
-            <n-form-item label="VIP 优先">
-              <n-switch v-model:value="degradationConfig.vipPriority" />
-            </n-form-item>
-          </n-form>
-          <n-button type="primary" :loading="saving" @click="saveDegradation">保存</n-button>
-        </n-card>
-      </n-grid-item>
-      
-      <!-- 缓存配置 -->
-      <n-grid-item>
-        <n-card title="缓存配置">
-          <n-form :model="cacheConfig" label-placement="left" label-width="120">
-            <n-form-item label="L1 容量">
-              <n-input-number v-model:value="cacheConfig.l1Capacity" :min="100" :max="10000" />
-            </n-form-item>
-            <n-form-item label="L2 TTL">
-              <n-input-number v-model:value="cacheConfig.l2Ttl" :min="60" :max="86400" />
-              <template #suffix>秒</template>
-            </n-form-item>
-            <n-form-item label="语义缓存阈值">
-              <n-slider v-model:value="cacheConfig.semanticThreshold" :min="0.5" :max="1" :step="0.01" />
-            </n-form-item>
-            <n-form-item label="启用预取">
-              <n-switch v-model:value="cacheConfig.prefetchEnabled" />
-            </n-form-item>
-          </n-form>
-          <n-button type="primary" :loading="saving" @click="saveCache">保存</n-button>
-        </n-card>
-      </n-grid-item>
-      
-      <!-- API Key 配置 -->
-      <n-grid-item>
-        <n-card title="API Key 配置">
-          <n-form :model="apiKeyConfig" label-placement="left" label-width="120">
-            <n-form-item label="熔断阈值">
-              <n-input-number v-model:value="apiKeyConfig.circuitBreakerThreshold" :min="1" :max="100" />
-              <template #suffix>次失败</template>
-            </n-form-item>
-            <n-form-item label="恢复超时">
-              <n-input-number v-model:value="apiKeyConfig.recoveryTimeout" :min="10" :max="3600" />
-              <template #suffix>秒</template>
-            </n-form-item>
-            <n-form-item label="权重衰减">
-              <n-slider v-model:value="apiKeyConfig.weightDecay" :min="0.1" :max="1" :step="0.1" />
-            </n-form-item>
-            <n-form-item label="自动恢复">
-              <n-switch v-model:value="apiKeyConfig.autoRecovery" />
-            </n-form-item>
-          </n-form>
-          <n-button type="primary" :loading="saving" @click="saveApiKey">保存</n-button>
-        </n-card>
-      </n-grid-item>
-    </n-grid>
-    
-    <!-- Nginx 配置 -->
-    <n-card title="Nginx 调优配置" style="margin-top: 16px">
-      <n-code :code="nginxConfig" language="nginx" />
-      <template #header-extra>
-        <n-button type="primary" quaternary @click="copyNginx">复制配置</n-button>
-      </template>
-    </n-card>
-    
-    <!-- 内核调优 -->
-    <n-card title="内核调优配置" style="margin-top: 16px">
-      <n-code :code="kernelConfig" language="bash" />
-      <template #header-extra>
-        <n-button type="primary" quaternary @click="copyKernel">复制配置</n-button>
-      </template>
-    </n-card>
-  </div>
-</template>
-
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useMessage } from 'naive-ui'
+import { Card, Row, Col, Form, FormItem, InputNumber, Button, Switch, Slider, message } from 'ant-design-vue'
 import { saveSettings } from '@/api/admin'
 
-const message = useMessage()
 const saving = ref(false)
 
 const rateLimitConfig = ref({
@@ -316,8 +197,136 @@ const copyKernel = () => {
 }
 </script>
 
+<template>
+  <div class="settings">
+    <Row :gutter="16">
+      <!-- 限流配置 -->
+      <Col :span="12">
+        <Card title="限流配置">
+          <Form :model="rateLimitConfig" layout="vertical">
+            <FormItem label="每秒请求数">
+              <InputNumber v-model:value="rateLimitConfig.rps" :min="100" :max="100000" style="width: 100%" />
+            </FormItem>
+            <FormItem label="每分钟请求数">
+              <InputNumber v-model:value="rateLimitConfig.rpm" :min="1000" :max="10000000" style="width: 100%" />
+            </FormItem>
+            <FormItem label="每分钟 Token 数">
+              <InputNumber v-model:value="rateLimitConfig.tpm" :min="10000" :max="1000000000" style="width: 100%" />
+            </FormItem>
+            <FormItem label="单用户并发">
+              <InputNumber v-model:value="rateLimitConfig.userConcurrent" :min="1" :max="100" style="width: 100%" />
+            </FormItem>
+            <FormItem label="单租户并发">
+              <InputNumber v-model:value="rateLimitConfig.tenantConcurrent" :min="10" :max="10000" style="width: 100%" />
+            </FormItem>
+          </Form>
+          <Button type="primary" :loading="saving" @click="saveRateLimit">保存</Button>
+        </Card>
+      </Col>
+
+      <!-- 降级配置 -->
+      <Col :span="12">
+        <Card title="降级配置">
+          <Form :model="degradationConfig" layout="vertical">
+            <FormItem label="启用降级">
+              <Switch v-model:checked="degradationConfig.enabled" />
+            </FormItem>
+            <FormItem label="轻度过载阈值">
+              <InputNumber v-model:value="degradationConfig.lightThreshold" :min="10000" :max="1000000" style="width: 100%" />
+            </FormItem>
+            <FormItem label="中度过载阈值">
+              <InputNumber v-model:value="degradationConfig.mediumThreshold" :min="50000" :max="1000000" style="width: 100%" />
+            </FormItem>
+            <FormItem label="重度过载阈值">
+              <InputNumber v-model:value="degradationConfig.heavyThreshold" :min="100000" :max="1000000" style="width: 100%" />
+            </FormItem>
+            <FormItem label="VIP 优先">
+              <Switch v-model:checked="degradationConfig.vipPriority" />
+            </FormItem>
+          </Form>
+          <Button type="primary" :loading="saving" @click="saveDegradation">保存</Button>
+        </Card>
+      </Col>
+
+      <!-- 缓存配置 -->
+      <Col :span="12">
+        <Card title="缓存配置">
+          <Form :model="cacheConfig" layout="vertical">
+            <FormItem label="L1 容量">
+              <InputNumber v-model:value="cacheConfig.l1Capacity" :min="100" :max="10000" style="width: 100%" />
+            </FormItem>
+            <FormItem label="L2 TTL">
+              <InputNumber v-model:value="cacheConfig.l2Ttl" :min="60" :max="86400" style="width: 100%" />
+            </FormItem>
+            <FormItem label="语义缓存阈值">
+              <Slider v-model:value="cacheConfig.semanticThreshold" :min="0.5" :max="1" :step="0.01" />
+            </FormItem>
+            <FormItem label="启用预取">
+              <Switch v-model:checked="cacheConfig.prefetchEnabled" />
+            </FormItem>
+          </Form>
+          <Button type="primary" :loading="saving" @click="saveCache">保存</Button>
+        </Card>
+      </Col>
+
+      <!-- API Key 配置 -->
+      <Col :span="12">
+        <Card title="API Key 配置">
+          <Form :model="apiKeyConfig" layout="vertical">
+            <FormItem label="熔断阈值">
+              <InputNumber v-model:value="apiKeyConfig.circuitBreakerThreshold" :min="1" :max="100" style="width: 100%" />
+            </FormItem>
+            <FormItem label="恢复超时">
+              <InputNumber v-model:value="apiKeyConfig.recoveryTimeout" :min="10" :max="3600" style="width: 100%" />
+            </FormItem>
+            <FormItem label="权重衰减">
+              <Slider v-model:value="apiKeyConfig.weightDecay" :min="0.1" :max="1" :step="0.1" />
+            </FormItem>
+            <FormItem label="自动恢复">
+              <Switch v-model:checked="apiKeyConfig.autoRecovery" />
+            </FormItem>
+          </Form>
+          <Button type="primary" :loading="saving" @click="saveApiKey">保存</Button>
+        </Card>
+      </Col>
+    </Row>
+
+    <!-- Nginx 配置 -->
+    <Card title="Nginx 调优配置" style="margin-top: 16px">
+      <template #extra>
+        <Button type="primary" ghost @click="copyNginx">复制配置</Button>
+      </template>
+      <pre class="code-block">{{ nginxConfig }}</pre>
+    </Card>
+
+    <!-- 内核调优 -->
+    <Card title="内核调优配置" style="margin-top: 16px">
+      <template #extra>
+        <Button type="primary" ghost @click="copyKernel">复制配置</Button>
+      </template>
+      <pre class="code-block">{{ kernelConfig }}</pre>
+    </Card>
+  </div>
+</template>
+
 <style scoped>
-.settings {
-  padding: 0;
+.settings { padding: 0; }
+
+.code-block {
+  background: #f5f5f5;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 16px;
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+:root.dark .code-block {
+  background: #1e1e1e;
+  border-color: #333;
+  color: #d4d4d4;
 }
 </style>

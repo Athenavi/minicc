@@ -1,20 +1,21 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { NCard, NForm, NFormItem, NInput, NButton, NSpace, NAlert } from 'naive-ui'
-import type { FormInst, FormRules } from 'naive-ui'
+import { Card, Form, FormItem, Input, Button, Alert, Space } from 'ant-design-vue'
+import { MailOutlined, LockOutlined } from '@ant-design/icons-vue'
 import { useAuthStore } from '../stores/auth'
+import type { Rule } from 'ant-design-vue/es/form'
 
 const router = useRouter()
 const authStore = useAuthStore()
 
-const formRef = ref<FormInst | null>(null)
+const formRef = ref()
 const form = ref({
   email: '',
   password: '',
 })
 
-const rules: FormRules = {
+const rules: Record<string, Rule[]> = {
   email: [
     { required: true, message: '请输入邮箱', trigger: 'blur' },
     { type: 'email', message: '邮箱格式不正确', trigger: 'blur' },
@@ -51,47 +52,51 @@ async function handleLogin() {
         <div class="login-title">MiniCC</div>
         <div class="login-subtitle">企业级 AI Agent 平台</div>
       </div>
-      <NCard :bordered="false">
-        <NAlert v-if="error" type="error" style="margin-bottom: 16px">
-          {{ error }}
-        </NAlert>
+      <Card :bordered="false" class="login-form-card">
+        <Alert v-if="error" type="error" :message="error" show-icon style="margin-bottom: 16px" />
 
-      <NForm ref="formRef" :model="form" :rules="rules" @submit.prevent="handleLogin">
-        <NFormItem label="邮箱">
-          <NInput
-            v-model:value="form.email"
-            placeholder="请输入邮箱"
-            type="text"
-          />
-        </NFormItem>
+        <Form
+          ref="formRef"
+          :model="form"
+          :rules="rules"
+          @finish="handleLogin"
+          layout="vertical"
+        >
+          <FormItem label="邮箱" name="email">
+            <Input
+              v-model:value="form.email"
+              placeholder="请输入邮箱"
+              size="large"
+            >
+              <template #prefix><MailOutlined /></template>
+            </Input>
+          </FormItem>
 
-        <NFormItem label="密码">
-          <NInput
-            v-model:value="form.password"
-            placeholder="请输入密码"
-            type="password"
-            show-password-on="click"
-          />
-        </NFormItem>
+          <FormItem label="密码" name="password">
+            <Input
+              v-model:value="form.password"
+              placeholder="请输入密码"
+              type="password"
+              size="large"
+            >
+              <template #prefix><LockOutlined /></template>
+            </Input>
+          </FormItem>
 
-        <NSpace vertical style="width: 100%">
-          <NButton
-            type="primary"
-            block
-            :loading="authStore.loading"
-            @click="handleLogin"
-          >
-            登录
-          </NButton>
-
-          <NButton text @click="router.push('/register')">
-            没有账号？注册
-          </NButton>
-        </NSpace>
-      </NForm>
-    </NCard>
-    </div> <!-- login-card -->
-  </div> <!-- login-container -->
+          <FormItem>
+            <Space direction="vertical" style="width: 100%">
+              <Button type="primary" html-type="submit" block :loading="authStore.loading" size="large">
+                登录
+              </Button>
+              <Button type="link" block @click="router.push('/register')">
+                没有账号？注册
+              </Button>
+            </Space>
+          </FormItem>
+        </Form>
+      </Card>
+    </div>
+  </div>
 </template>
 
 <style scoped>
@@ -134,9 +139,9 @@ async function handleLogin() {
   animation: loginFadeIn 0.5s ease;
 }
 
-.login-card :deep(.n-card) {
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+.login-form-card {
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.5));
 }
 
 .login-header {
@@ -160,7 +165,7 @@ async function handleLogin() {
 
 .login-subtitle {
   font-size: 14px;
-  color: var(--text-tertiary);
+  color: var(--text-tertiary, #808090);
   margin-top: 4px;
 }
 

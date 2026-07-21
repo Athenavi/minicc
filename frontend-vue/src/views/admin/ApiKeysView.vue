@@ -1,76 +1,9 @@
-<template>
-  <div class="api-keys">
-    <n-spin :show="loading">
-      <n-card title="API Key 管理">
-        <template #header-extra>
-          <n-button type="primary" @click="showAddModal = true">
-            <template #icon>
-              <n-icon><svg viewBox="0 0 24 24"><path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg></n-icon>
-            </template>
-            添加 Key
-          </n-button>
-        </template>
-        
-        <!-- 统计卡片 -->
-        <n-grid :cols="4" :x-gap="16" :y-gap="16" style="margin-bottom: 16px">
-          <n-grid-item>
-            <n-statistic label="总 Key 数" :value="stats.total" />
-          </n-grid-item>
-          <n-grid-item>
-            <n-statistic label="正常" :value="stats.active">
-              <template #prefix>
-                <n-icon color="#18a058"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg></n-icon>
-              </template>
-            </n-statistic>
-          </n-grid-item>
-          <n-grid-item>
-            <n-statistic label="限流中" :value="stats.rateLimited">
-              <template #prefix>
-                <n-icon color="#f0a020"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg></n-icon>
-              </template>
-            </n-statistic>
-          </n-grid-item>
-          <n-grid-item>
-            <n-statistic label="熔断" :value="stats.circuitOpen">
-              <template #prefix>
-                <n-icon color="#d03050"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg></n-icon>
-              </template>
-            </n-statistic>
-          </n-grid-item>
-        </n-grid>
-        
-        <!-- API Key 列表 -->
-        <n-data-table :columns="columns" :data="apiKeys" :bordered="false" />
-      </n-card>
-    </n-spin>
-    
-    <!-- 添加 Key 弹窗 -->
-    <n-modal v-model:show="showAddModal" preset="dialog" title="添加 API Key">
-      <n-form :model="formData" label-placement="left" label-width="100">
-        <n-form-item label="Provider" path="provider">
-          <n-select v-model:value="formData.provider" :options="providerOptions" />
-        </n-form-item>
-        <n-form-item label="API Key" path="key">
-          <n-input v-model:value="formData.key" placeholder="sk-..." />
-        </n-form-item>
-        <n-form-item label="备注" path="remark">
-          <n-input v-model:value="formData.remark" placeholder="可选" />
-        </n-form-item>
-      </n-form>
-      <template #action>
-        <n-button @click="showAddModal = false">取消</n-button>
-        <n-button type="primary" :loading="addLoading" @click="handleAdd">添加</n-button>
-      </template>
-    </n-modal>
-  </div>
-</template>
-
 <script setup lang="ts">
-import { ref, h, onMounted, computed } from 'vue'
-import { NTag, NButton, NIcon, NSpace, useMessage } from 'naive-ui'
+import { ref, onMounted, computed } from 'vue'
+import { Card, Row, Col, Statistic, Table, Modal, Form, FormItem, Input, Select, Tag, Button, Spin, message } from 'ant-design-vue'
+import { PlusOutlined, CheckCircleOutlined, WarningOutlined, CloseCircleOutlined } from '@ant-design/icons-vue'
 import { listApiKeys, addApiKey, updateApiKey, deleteApiKey } from '@/api/admin'
 
-const message = useMessage()
 const loading = ref(false)
 const addLoading = ref(false)
 const showAddModal = ref(false)
@@ -100,38 +33,15 @@ const stats = computed(() => {
 })
 
 const columns = [
-  { title: 'ID', key: 'id', width: 120 },
-  { title: 'Provider', key: 'provider', width: 120 },
-  { title: 'Key', key: 'key_preview', width: 180 },
-  {
-    title: '状态',
-    key: 'status',
-    width: 100,
-    render: (row: any) => {
-      const statusMap: Record<string, { label: string; type: string }> = {
-        active: { label: '正常', type: 'success' },
-        rate_limited: { label: '限流中', type: 'warning' },
-        circuit_open: { label: '熔断', type: 'error' },
-      }
-      const status = statusMap[row.status] || { label: row.status, type: 'default' }
-      return h(NTag, { type: status.type as any, size: 'small' }, { default: () => status.label })
-    },
-  },
-  { title: '权重', key: 'weight', width: 80 },
-  { title: '失败次数', key: 'failures', width: 100 },
-  { title: '最后使用', key: 'last_used', width: 180 },
-  { title: '备注', key: 'remark' },
-  {
-    title: '操作',
-    key: 'actions',
-    width: 150,
-    render: (row: any) => h(NSpace, null, {
-      default: () => [
-        h(NButton, { size: 'small', type: 'primary', quaternary: true, onClick: () => handleEdit(row) }, { default: () => '编辑' }),
-        h(NButton, { size: 'small', type: 'error', quaternary: true, onClick: () => handleDelete(row) }, { default: () => '删除' }),
-      ]
-    }),
-  },
+  { title: 'ID', dataIndex: 'id', width: 120 },
+  { title: 'Provider', dataIndex: 'provider', width: 120 },
+  { title: 'Key', dataIndex: 'key_preview', width: 180 },
+  { title: '状态', dataIndex: 'status', width: 100 },
+  { title: '权重', dataIndex: 'weight', width: 80 },
+  { title: '失败次数', dataIndex: 'failures', width: 100 },
+  { title: '最后使用', dataIndex: 'last_used', width: 180 },
+  { title: '备注', dataIndex: 'remark' },
+  { title: '操作', dataIndex: 'actions', width: 150 },
 ]
 
 async function fetchApiKeys() {
@@ -171,7 +81,6 @@ async function handleAdd() {
 }
 
 async function handleEdit(row: any) {
-  // 简单编辑：切换状态
   const newStatus = row.status === 'active' ? 'rate_limited' : 'active'
   try {
     await updateApiKey(row.id, { status: newStatus })
@@ -197,8 +106,76 @@ onMounted(() => {
 })
 </script>
 
+<template>
+  <div class="api-keys">
+    <Spin :spinning="loading">
+      <Card title="API Key 管理">
+        <template #extra>
+          <Button type="primary" @click="showAddModal = true">
+            <template #icon><PlusOutlined /></template>
+            添加 Key
+          </Button>
+        </template>
+
+        <!-- 统计卡片 -->
+        <Row :gutter="16" style="margin-bottom: 16px">
+          <Col :span="6">
+            <Statistic title="总 Key 数" :value="stats.total" />
+          </Col>
+          <Col :span="6">
+            <Statistic title="正常" :value="stats.active">
+              <template #prefix><CheckCircleOutlined style="color: #18a058" /></template>
+            </Statistic>
+          </Col>
+          <Col :span="6">
+            <Statistic title="限流中" :value="stats.rateLimited">
+              <template #prefix><WarningOutlined style="color: #f0a020" /></template>
+            </Statistic>
+          </Col>
+          <Col :span="6">
+            <Statistic title="熔断" :value="stats.circuitOpen">
+              <template #prefix><CloseCircleOutlined style="color: #d03050" /></template>
+            </Statistic>
+          </Col>
+        </Row>
+
+        <Table :columns="columns" :dataSource="apiKeys" :pagination="false">
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.dataIndex === 'status'">
+              <Tag :color="record.status === 'active' ? 'success' : record.status === 'rate_limited' ? 'warning' : 'error'">
+                {{ record.status === 'active' ? '正常' : record.status === 'rate_limited' ? '限流中' : '熔断' }}
+              </Tag>
+            </template>
+            <template v-else-if="column.dataIndex === 'actions'">
+              <Button type="link" size="small" @click="handleEdit(record)">编辑</Button>
+              <Button type="link" danger size="small" @click="handleDelete(record)">删除</Button>
+            </template>
+          </template>
+        </Table>
+      </Card>
+    </Spin>
+
+    <!-- 添加 Key 弹窗 -->
+    <Modal v-model:visible="showAddModal" title="添加 API Key" :footer="null" destroyOnClose>
+      <Form :model="formData" layout="vertical">
+        <FormItem label="Provider">
+          <Select v-model:value="formData.provider" :options="providerOptions" style="width: 100%" />
+        </FormItem>
+        <FormItem label="API Key">
+          <Input v-model:value="formData.key" placeholder="sk-..." />
+        </FormItem>
+        <FormItem label="备注">
+          <Input v-model:value="formData.remark" placeholder="可选" />
+        </FormItem>
+      </Form>
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px">
+        <Button @click="showAddModal = false">取消</Button>
+        <Button type="primary" :loading="addLoading" @click="handleAdd">添加</Button>
+      </div>
+    </Modal>
+  </div>
+</template>
+
 <style scoped>
-.api-keys {
-  padding: 0;
-}
+.api-keys { padding: 0; }
 </style>
