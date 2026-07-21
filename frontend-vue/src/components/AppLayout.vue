@@ -148,9 +148,9 @@ function handleUserMenu(key: string) {
       @collapse="collapsed = true"
       @expand="collapsed = false"
     >
-      <div style="padding: 16px; text-align: center">
-        <h2 v-if="!collapsed">MiniCC</h2>
-        <h2 v-else>MC</h2>
+      <div class="sidebar-header">
+        <div v-if="!collapsed" class="sidebar-title">MiniCC</div>
+        <div v-else class="sidebar-title-mini">MC</div>
       </div>
       <NMenu
         :collapsed="collapsed"
@@ -161,18 +161,18 @@ function handleUserMenu(key: string) {
         @update:value="handleMenuUpdate"
       />
       <template #footer>
-        <div style="padding: 16px; text-align: center">
+        <div class="sidebar-footer">
           <!-- 已登录用户菜单 -->
           <NDropdown
             v-if="authStore.user"
             :options="userMenuOptions"
             @select="handleUserMenu"
           >
-            <NButton quaternary>
+            <NButton quaternary size="small">
               <NAvatar
                 round
                 size="small"
-                :style="{ backgroundColor: '#18a058' }"
+                :style="{ backgroundColor: 'var(--primary)' }"
               >
                 {{ authStore.user.name?.charAt(0)?.toUpperCase() || 'U' }}
               </NAvatar>
@@ -181,12 +181,11 @@ function handleUserMenu(key: string) {
               </span>
             </NButton>
           </NDropdown>
-          <!-- 主题切换按钮（始终显示） -->
+          <!-- 主题切换按钮 -->
           <NButton
-            quaternary
+            quaternary size="small"
             @click="themeStore.toggleTheme()"
             :title="themeStore.isDark ? '切换到浅色模式' : '切换到深色模式'"
-            style="margin-top: 8px"
           >
             <template #icon>
               <NIcon :component="themeStore.isDark ? SunnyOutline : MoonOutline" />
@@ -223,6 +222,75 @@ function handleUserMenu(key: string) {
   opacity: 0;
 }
 
+/* ── 侧边栏 ── */
+.nav-sider {
+  background: var(--bg-card) !important;
+  border-right: 1px solid var(--border) !important;
+}
+
+.nav-sider :deep(.n-layout-sider-scroll-container) {
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-header {
+  padding: 20px 16px;
+  text-align: center;
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  margin: 0 0 8px 0;
+}
+
+.sidebar-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: white;
+  letter-spacing: 1px;
+}
+
+.sidebar-title-mini {
+  font-size: 16px;
+  font-weight: 700;
+  color: white;
+}
+
+.nav-sider :deep(.n-menu) {
+  flex: 1;
+}
+
+.nav-sider :deep(.n-menu-item) {
+  margin: 2px 8px;
+  border-radius: var(--radius-md) !important;
+}
+
+.nav-sider :deep(.n-menu-item-content) {
+  border-radius: var(--radius-md) !important;
+}
+
+.nav-sider :deep(.n-menu-item-content--selected) {
+  background: var(--primary-bg) !important;
+  color: var(--primary) !important;
+  font-weight: 600;
+}
+
+.nav-sider :deep(.n-menu-item-content:hover) {
+  background: var(--bg-secondary) !important;
+}
+
+.sidebar-footer {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  border-top: 1px solid var(--border);
+  margin-top: auto;
+}
+
+.sidebar-footer .n-button {
+  width: 100%;
+  justify-content: flex-start;
+}
+
 /* 移动端导航按钮 */
 .nav-menu-btn {
   display: none;
@@ -237,22 +305,21 @@ function handleUserMenu(key: string) {
     position: fixed;
     top: 12px;
     right: 12px;
-    left: auto;
     z-index: 200;
     width: 36px;
     height: 36px;
     border: none;
-    background: var(--chat-bg, #fff);
-    color: var(--text-color, #333);
+    background: var(--bg-card);
+    color: var(--text-primary);
     font-size: 20px;
     cursor: pointer;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     align-items: center;
     justify-content: center;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+    box-shadow: var(--shadow-md);
   }
   .nav-menu-btn:active {
-    background: var(--hover-color, #e8e8ec);
+    background: var(--bg-secondary);
   }
   .nav-sider {
     position: fixed !important;
@@ -260,6 +327,7 @@ function handleUserMenu(key: string) {
     left: 0;
     bottom: 0;
     z-index: 300 !important;
+    transition: transform 0.25s ease !important;
   }
   .nav-sider.n-layout-sider--collapsed {
     transform: translateX(-100%);

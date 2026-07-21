@@ -80,7 +80,7 @@ const router = useRouter()
 const route = useRoute()
 
 const collapsed = ref(false)
-const alerts = ref(3)
+const alerts = ref(0) // 暂无通知系统，后续接入真实数据
 
 const activeKey = computed(() => route.path)
 

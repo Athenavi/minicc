@@ -293,7 +293,18 @@ func TestIntegration_InstallStatus(t *testing.T) {
 func TestIntegration_ProtectedRoutes_Unauthorized(t *testing.T) {
 	router := testRouter(t)
 
-	protectedPaths := []string{}
+	protectedPaths := []string{
+		"GET /v1/conversations",
+		"POST /v1/conversations",
+		"GET /v1/conversations/test-id",
+		"DELETE /v1/conversations/test-id",
+		"GET /v1/billing/balance",
+		"GET /v1/billing/history",
+		"POST /v1/billing/recharge",
+		"GET /api/editor/files",
+		"GET /v1/admin/metrics",
+		"GET /v1/admin/users",
+	}
 
 	for _, path := range protectedPaths {
 		parts := strings.SplitN(path, " ", 2)

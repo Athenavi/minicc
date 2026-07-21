@@ -31,7 +31,11 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       // Token 过期，清除并跳转登录
       localStorage.removeItem('token')
-      window.location.href = '/login'
+      window.dispatchEvent(new CustomEvent('api:error', {
+        detail: { message: '登录已过期，请重新登录' }
+      }))
+      // 短延迟让 toast 显示后再跳转
+      setTimeout(() => { window.location.href = '/login' }, 500)
     } else if (error.response?.status >= 500) {
       console.error('Server error:', error.response.status, error.response.data)
       // 触发全局错误事件，App.vue 中的监听器会显示提示
