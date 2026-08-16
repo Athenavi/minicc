@@ -364,40 +364,62 @@ class TestContextContinuity:
 
 
 class TestToolGuardConfirmPath:
-    """回归：_guarded_execute_tool 的 confirm 分支曾因缺 `import asyncio` 抛
-    NameError，导致危险工具（DANGEROUS_TOOLS）的用户确认机制一触发即崩溃。"""
+    """回归：确认工具必须先 yield approval 事件（前端卡片）再等待用户决定。
+
+    曾经的实现把 ``await`` 放在 ``_guarded_execute_tool`` 内部——事件要等批准
+    后才返回，前端永远收不到确认卡片，任务挂起 300 秒超时。
+    """
+
+    @staticmethod
+    def _tc(cid: str):
+        return {"id": cid, "name": "run_code", "arguments": "{}"}
 
     @pytest.mark.asyncio
-    async def test_confirm_waits_for_approval_and_resumes(self):
+    async def test_confirm_emits_event_before_waiting(self):
         import asyncio as _asyncio
 
         runtime = AgentRuntime(gateway=None)
         task = AgentTask(id="t1", tenant_id="t", user_id="u", session_id="",
                          content="hi", max_turns=2)
-        # run_code 属于 DANGEROUS_TOOLS → ToolGuard 返回 confirm → approval 流程
-        fut = _asyncio.ensure_future(runtime._guarded_execute_tool(
-            {"id": "tc1", "name": "run_code", "arguments": "{}"}, task))
-        await _asyncio.sleep(0.05)
+        # run_code 属于 DANGEROUS_TOOLS → confirm：立即返回 (None, approval_evt)
+        tool_result, evt = await runtime._guarded_execute_tool(self._tc("tc1"), task)
+        assert tool_result is None, "confirm 分支不得阻塞等待，必须立即返回事件"
+        assert evt is not None and evt.type == "approval"
+        assert evt.tool_call_id == "tc1"
         assert "tc1" in runtime._pending_approvals, "approval future 未注册"
+
+    @pytest.mark.asyncio
+    async def test_approve_resumes_execution(self):
+        import asyncio as _asyncio
+
+        runtime = AgentRuntime(gateway=None)
+        task = AgentTask(id="t1", tenant_id="t", user_id="u", session_id="",
+                         content="hi", max_turns=2)
+        _tool_result, evt = await runtime._guarded_execute_tool(self._tc("tc1"), task)
+        assert evt is not None
+        # 前端收到事件后用户批准 → _await_approval 恢复并执行工具
+        fut = _asyncio.ensure_future(runtime._await_approval(self._tc("tc1"), task))
+        await _asyncio.sleep(0.05)
         solved = await runtime.submit_approval("tc1", True)
         assert solved is True
-        result, _evt = await _asyncio.wait_for(fut, timeout=5.0)
-        # 不再抛 NameError，且返回工具执行结果（dict）
-        assert isinstance(result, dict)
+        result = await _asyncio.wait_for(fut, timeout=5.0)
+        assert isinstance(result, dict), "批准后应返回工具执行结果（dict）"
 
     @pytest.mark.asyncio
-    async def test_confirm_denied_returns_error(self):
+    async def test_denied_returns_error(self):
         import asyncio as _asyncio
 
         runtime = AgentRuntime(gateway=None)
         task = AgentTask(id="t1", tenant_id="t", user_id="u", session_id="",
                          content="hi", max_turns=2)
-        fut = _asyncio.ensure_future(runtime._guarded_execute_tool(
-            {"id": "tc2", "name": "run_code", "arguments": "{}"}, task))
+        _tool_result, evt = await runtime._guarded_execute_tool(self._tc("tc2"), task)
+        assert evt is not None
+        fut = _asyncio.ensure_future(runtime._await_approval(self._tc("tc2"), task))
         await _asyncio.sleep(0.05)
         solved = await runtime.submit_approval("tc2", False)
         assert solved is True
-        result, evt = await _asyncio.wait_for(fut, timeout=5.0)
+        result = await _asyncio.wait_for(fut, timeout=5.0)
         assert "denied" in result.get("error", "")
-        assert evt is not None and evt.type == "approval"
+        assert "tc2" not in runtime._pending_approvals, "拒绝后应清理 pending 状态"
+
 

@@ -574,8 +574,10 @@ class AgentRuntime:
                         # 工具栅栏：三态裁决（S 安全修复）——block/confirm/allow
                         tool_result, approval_evt = await self._guarded_execute_tool(tc, task)
                         if approval_evt is not None:
-                            # 转发用户确认事件（前端展示确认卡片，回调 /v1/agent/approval）
+                            # 先转发用户确认事件（前端展示确认卡片，回调 /v1/agent/approval），
+                            # 再等待用户批准/拒绝——顺序不可颠倒，否则前端收不到事件、任务永久挂起
                             yield approval_evt
+                            tool_result = await self._await_approval(tc, task)
 
                         yield AgentEvent(
                             type="tool_result",
@@ -718,10 +720,14 @@ class AgentRuntime:
             })
         return converted
     
-    async def _guarded_execute_tool(self, tool_call: dict, task: AgentTask) -> tuple[dict, AgentEvent | None]:
-        """工具栅栏三态执行：block（拒绝）/ confirm（等待用户确认）/ allow（直接执行）。
+    async def _guarded_execute_tool(self, tool_call: dict, task: AgentTask) -> tuple[dict | None, AgentEvent | None]:
+        """工具栅栏三态裁决：block（拒绝）/ confirm（需要用户确认）/ allow（直接执行）。
 
-        返回 ``(tool_result, approval_event_or_None)``——调用方需 yield approval 事件（SSE）。
+        返回 ``(tool_result, approval_event_or_None)``：
+        - block/allow：``(tool_result, None)``
+        - confirm：``(None, approval_event)`` —— **不在此等待**，调用方必须先 yield
+          approval 事件给前端（否则前端收不到确认卡片、任务永久挂起），
+          再调用 ``_await_approval`` 等待用户批准/拒绝/超时。
         """
         tool_name = tool_call["name"]
         try:
@@ -733,7 +739,7 @@ class AgentRuntime:
             logger.warning("Tool guard blocked %s reason=%s", tool_name, verdict.reason)
             return {"error": f"Tool '{tool_name}' blocked by guard: {verdict.reason}"}, None
         if verdict.action == "confirm":
-            # 请求用户确认：返回确认事件并等待外部 submit_approval 解决
+            # 请求用户确认：注册 pending future，立即返回确认事件（不等待）
             tc_id = tool_call.get("id") or tool_name
             loop = asyncio.get_running_loop()
             future: asyncio.Future[bool] = loop.create_future()
@@ -745,17 +751,34 @@ class AgentRuntime:
                 tool_arguments=json.dumps(targs, ensure_ascii=False),
                 content=f"请求执行 {tool_name}",
             )
-            try:
-                approved = await asyncio.wait_for(future, timeout=300.0)
-            except asyncio.TimeoutError:
-                return {"error": f"Tool '{tool_name}' approval timed out"}, approval_evt
-            finally:
-                self._pending_approvals.pop(tc_id, None)
-            if not approved:
-                return {"error": f"Tool '{tool_name}' denied by user"}, approval_evt
-        # allow / 已确认：正常执行
+            logger.info("Tool %s requires approval (id=%s), awaiting user decision", tool_name, tc_id)
+            return None, approval_evt
+        # allow：正常执行
         logger.info("Executing tool %s (id=%s)", tool_name, tool_call.get("id"))
         return await self._execute_tool(tool_call, task), None
+
+    async def _await_approval(self, tool_call: dict, task: AgentTask, timeout: float = 300.0) -> dict:
+        """等待用户对确认工具调用的决定（前端经 /v1/agent/approval 解决 future）。
+
+        必须在 yield approval 事件**之后**调用；批准后执行工具，拒绝/超时返回错误。
+        """
+        tool_name = tool_call.get("name", "")
+        tc_id = tool_call.get("id") or tool_name
+        future = self._pending_approvals.get(tc_id)
+        if future is None:
+            return {"error": f"Tool '{tool_name}' approval state missing"}
+        try:
+            approved = await asyncio.wait_for(future, timeout=timeout)
+        except asyncio.TimeoutError:
+            logger.warning("Tool %s approval timed out (id=%s)", tool_name, tc_id)
+            return {"error": f"Tool '{tool_name}' approval timed out"}
+        finally:
+            self._pending_approvals.pop(tc_id, None)
+        if not approved:
+            logger.info("Tool %s denied by user (id=%s)", tool_name, tc_id)
+            return {"error": f"Tool '{tool_name}' denied by user"}
+        logger.info("Tool %s approved by user (id=%s)", tool_name, tc_id)
+        return await self._execute_tool(tool_call, task)
 
     async def submit_approval(self, tool_call_id: str, approved: bool, reason: str = "") -> bool:
         """外部（HTTP 端点）解决待确认的工具调用。返回是否已解决。"""
