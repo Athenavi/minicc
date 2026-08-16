@@ -3,7 +3,8 @@
 const routes = [
   {
     path: '/',
-    redirect: '/chat',
+    name: 'Home',
+    component: () => import('../views/HomeView.vue'),
   },
   {
     path: '/login',
@@ -20,6 +21,11 @@ const routes = [
     name: 'Chat',
     component: () => import('../views/ChatView.vue'),
     meta: { requiresAuth: true },
+  },
+  {
+    path: '/share/:id',
+    name: 'Share',
+    component: () => import('../views/ShareView.vue'),
   },
   {
     path: '/agents',

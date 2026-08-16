@@ -1,22 +1,19 @@
 <script setup lang="ts">
-import { ref, computed, h, onMounted, onUnmounted } from 'vue'
+import { computed, h, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useThemeStore } from '../stores/theme'
 import { useAuthStore } from '../stores/auth'
 
 // Ant Design Vue 组件
 import {
-  Layout,
-  LayoutSider,
-  LayoutContent,
-  Menu,
-  Button,
   Avatar,
   Dropdown,
+  Menu,
   message,
 } from 'ant-design-vue'
 // Ant Design 图标
 import {
+  HomeOutlined,
   MessageOutlined,
   UserOutlined,
   ApartmentOutlined,
@@ -29,14 +26,13 @@ import {
   LogoutOutlined,
   UserSwitchOutlined,
   BulbOutlined,
-  MenuOutlined,
+  DownOutlined,
 } from '@ant-design/icons-vue'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
-const collapsed = ref(window.innerWidth <= 768)
 
 // 监听 API 错误
 function handleApiError(e: Event) {
@@ -50,16 +46,16 @@ onUnmounted(() => {
   window.removeEventListener('api:error', handleApiError)
 })
 
-// 菜单配置
+// 导航菜单（品牌下拉）
 interface MenuItem {
   key: string
   label: string
   icon?: any
-  children?: MenuItem[]
 }
 
 const menuItems = computed<MenuItem[]>(() => {
   const items: MenuItem[] = [
+    { key: '/', label: '首页', icon: () => h(HomeOutlined) },
     { key: '/chat', label: '对话', icon: () => h(MessageOutlined) },
     { key: '/agents', label: 'Agent', icon: () => h(UserOutlined) },
     { key: '/workflow', label: '工作流', icon: () => h(ApartmentOutlined) },
@@ -71,24 +67,40 @@ const menuItems = computed<MenuItem[]>(() => {
     ...(authStore.isAdmin
       ? [{ key: '/admin', label: '管理', icon: () => h(SettingOutlined) }]
       : []),
+    // 主题切换并入品牌菜单（顶栏不再有独立按钮；未登录用户也可用）
+    { key: 'toggle-theme', label: themeStore.isDark ? '浅色模式' : '深色模式', icon: () => h(BulbOutlined) },
   ]
   return items
 })
 
-const selectedKeys = computed(() => [route.path])
+// 当前路由对应的菜单项文案（品牌胶囊 title 提示）
+const currentLabel = computed(() => {
+  const hit = menuItems.value.find(m => route.path === m.key || route.path.startsWith(m.key + '/'))
+  return hit?.label || ''
+})
 
-const userMenuItems = computed<any[]>(() => [
-  { key: 'profile', label: '个人资料', icon: () => h(UserSwitchOutlined) },
-  { key: 'toggle-theme', label: themeStore.isDark ? '浅色模式' : '深色模式', icon: () => h(BulbOutlined) },
-  { key: 'logout', label: '退出登录', icon: () => h(LogoutOutlined) },
-])
+// 首页（品牌页）强制深色：整个应用外壳（含顶栏及其后方背景）统一深色，
+// 避免深色内容 + 亮色顶栏后区的割裂（半透明白叠亮底 = 视觉不透明）
+const isHome = computed(() => route.path === '/')
+
+const selectedKeys = computed(() => {
+  const exact = menuItems.value.find(m => route.path === m.key)
+  return [exact?.key ?? route.path]
+})
 
 function handleMenuClick(info: any) {
-  router.push(info.key)
-  if (window.innerWidth <= 768) {
-    collapsed.value = true
+  if (info.key === 'toggle-theme') {
+    themeStore.toggleTheme()
+    return
   }
+  router.push(info.key)
 }
+
+// 用户下拉（主题切换已并入品牌菜单，单一入口）
+const userMenuItems = computed<any[]>(() => [
+  { key: 'profile', label: '个人资料', icon: () => h(UserSwitchOutlined) },
+  { key: 'logout', label: '退出登录', icon: () => h(LogoutOutlined) },
+])
 
 function handleUserMenuClick(info: any) {
   if (info.key === 'logout') {
@@ -96,94 +108,184 @@ function handleUserMenuClick(info: any) {
     router.push('/login')
   } else if (info.key === 'profile') {
     router.push('/profile')
-  } else if (info.key === 'toggle-theme') {
-    themeStore.toggleTheme()
   }
 }
 </script>
 
 <template>
-  <Layout style="height: 100vh">
-    <LayoutSider
-      v-model:collapsed="collapsed"
-      :trigger="null"
-      collapsible
-      :width="240"
-      :collapsed-width="0"
-      :class="['nav-sider', { 'nav-sider-mobile': collapsed }]"
-      :style="{ position: 'relative', zIndex: 300, height: '100vh', overflow: 'auto' }"
-    >
-      <div class="sidebar-header" :class="{ collapsed }">
-        <span class="sidebar-logo">MC</span>
-        <span v-if="!collapsed" class="sidebar-title">MiniCC</span>
-      </div>
-      <Menu
-        :theme="themeStore.isDark ? 'dark' : 'light'"
-        mode="inline"
-        :selectedKeys="selectedKeys"
-        :items="menuItems"
-        @click="handleMenuClick"
-        :style="{ borderRight: 0, flex: 1, background: 'transparent' }"
-      />
-      <div class="sidebar-footer">
-        <Dropdown
-          v-if="authStore.user"
-          :menu="{ items: userMenuItems, onClick: handleUserMenuClick }"
+  <div class="app-shell" :class="{ 'app-shell--dark': isHome }">
+    <!-- 左上角浮动品牌胶囊（导航入口；不占布局，悬浮于内容之上） -->
+    <header class="topbar" :title="currentLabel || '导航菜单'">
+      <Dropdown trigger="click" placement="bottomLeft">
+        <button type="button" class="brand-btn" title="导航菜单">
+          <span class="brand-logo">MC</span>
+          <span class="brand-name">MiniCC</span>
+          <DownOutlined class="brand-caret" />
+        </button>
+        <template #overlay>
+          <Menu
+            class="nav-menu"
+            :selectedKeys="selectedKeys"
+            :items="menuItems"
+            @click="handleMenuClick"
+          />
+        </template>
+      </Dropdown>
+    </header>
+
+    <!-- 右上角用户胶囊（登录时；不占布局） -->
+    <div v-if="authStore.user" class="user-fab">
+      <Dropdown :menu="{ items: userMenuItems, onClick: handleUserMenuClick }">
+        <Avatar
+          :size="30"
+          class="user-fab-avatar"
+          :style="{ backgroundColor: 'var(--primary)' }"
         >
-          <Button type="text" size="small" class="sidebar-user-btn">
-            <Avatar
-              :size="24"
-              :style="{ backgroundColor: 'var(--primary)', verticalAlign: 'middle' }"
-            >
-              {{ authStore.user.name?.charAt(0)?.toUpperCase() || 'U' }}
-            </Avatar>
-            <span v-if="!collapsed" style="margin-left: 8px">
-              {{ authStore.user.name || authStore.user.email }}
-            </span>
-          </Button>
-        </Dropdown>
-        <Button
-          type="text"
-          size="small"
-          class="sidebar-user-btn"
-          @click="themeStore.toggleTheme()"
-          :title="themeStore.isDark ? '切换到浅色模式' : '切换到深色模式'"
-        >
-          <template #icon>
-            <BulbOutlined />
-          </template>
-          <span v-if="!collapsed" style="margin-left: 8px">
-            {{ themeStore.isDark ? '浅色模式' : '深色模式' }}
-          </span>
-        </Button>
-      </div>
-    </LayoutSider>
+          {{ authStore.user.name?.charAt(0)?.toUpperCase() || 'U' }}
+        </Avatar>
+      </Dropdown>
+    </div>
 
-    <!-- 移动端菜单按钮 -->
-    <Button
-      v-if="collapsed"
-      class="nav-menu-btn"
-      type="text"
-      @click="collapsed = false"
-      title="打开菜单"
-    >
-      <template #icon><MenuOutlined /></template>
-    </Button>
-
-    <!-- 移动端遮罩 -->
-    <div v-if="!collapsed" class="nav-overlay" @click="collapsed = true"></div>
-
-    <LayoutContent :style="{ margin: 0, overflow: 'auto' }">
+    <!-- 全宽内容区（浮动胶囊悬浮其上，不占位） -->
+    <main class="app-content">
       <router-view v-slot="{ Component }">
         <Transition name="fade" mode="out-in">
           <component :is="Component" />
         </Transition>
       </router-view>
-    </LayoutContent>
-  </Layout>
+    </main>
+  </div>
 </template>
 
 <style scoped>
+.app-shell {
+  position: relative;
+  height: 100vh;
+  background: var(--bg-page);
+}
+
+/* 首页（品牌页）统一深色：顶栏及后方背景跟随深色变量（rgba 半透明才显现） */
+.app-shell--dark {
+  --bg-page: #151517;
+  --bg-card: #232324;
+  --bg-secondary: #2c2c2e;
+  --bg-hover: rgba(255, 255, 255, 0.08);
+  --border: rgba(255, 255, 255, 0.12);
+  --topbar-bg: rgba(35, 35, 36, 0.4);
+  --menu-bg: rgba(44, 44, 46, 0.72);
+  --text-primary: #f9fafb;
+  --text-secondary: #cfd3d6;
+  --text-tertiary: #adb2b8;
+  --primary: #5686fe;
+  --primary-bg: rgba(103, 158, 254, 0.14);
+}
+
+/* ── 左上角浮动品牌胶囊：不占布局、悬浮于内容上（沉浸导航） ── */
+.topbar {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 30;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  padding: 0 6px 0 4px;
+  border-radius: 999px;
+  background: var(--topbar-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+}
+.brand-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 8px 0 4px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.brand-btn:hover { background: var(--bg-hover); }
+.brand-logo {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  color: #fff;
+  font-weight: 700;
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-md);
+  flex-shrink: 0;
+}
+.brand-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.brand-caret { font-size: 10px; color: var(--text-tertiary); }
+@media (max-width: 480px) {
+  .brand-name { display: none; }
+}
+
+/* ── 右上角用户胶囊（登录时） ── */
+.user-fab {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 30;
+  padding: 2px;
+  border-radius: 50%;
+  background: var(--topbar-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+}
+.user-fab-avatar { cursor: pointer; display: block; }
+.user-fab-avatar:hover { opacity: 0.9; }
+
+/* 导航下拉菜单（半透明玻璃：var(--menu-bg)，透出滚动内容） */
+.nav-menu {
+  min-width: 200px;
+  border-radius: 10px;
+  padding: 4px;
+  box-shadow: var(--shadow-lg);
+  background: var(--menu-bg) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border);
+}
+.nav-menu :deep(.ant-dropdown-menu-item) {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  border-radius: 6px;
+  padding: 8px 12px !important;
+}
+.nav-menu :deep(.ant-dropdown-menu-item-selected) {
+  background: var(--primary-bg) !important;
+  color: var(--primary) !important;
+  font-weight: 600;
+}
+
+/* ── 全宽内容区（浮动胶囊悬浮其上，内容从顶部开始、无占位） ── */
+.app-content {
+  height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.2s ease;
@@ -191,137 +293,5 @@ function handleUserMenuClick(info: any) {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
-}
-
-/* ── 侧边栏：跟随主题，边框分隔（Linear/Vercel 式） ── */
-.nav-sider {
-  background: var(--bg-card) !important;
-  border-right: 1px solid var(--border);
-}
-
-/* ── 品牌区：accent 小色块 + 品牌名，去紫色渐变 ── */
-.sidebar-header {
-  padding: 18px 16px 14px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0 0 4px 0;
-}
-.sidebar-header.collapsed {
-  padding: 18px 0 14px;
-  justify-content: center;
-}
-
-.sidebar-logo {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-weight: 700;
-  font-size: 12px;
-  letter-spacing: 0.02em;
-  flex-shrink: 0;
-  box-shadow: var(--shadow-md);
-}
-
-.sidebar-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
-  letter-spacing: -0.01em;
-  white-space: nowrap;
-}
-
-/* ── 菜单：透明背景跟随侧边栏，选中态 accent-soft ── */
-.nav-sider :deep(.ant-menu) {
-  background: transparent !important;
-  border-inline-end: 0 !important;
-}
-.nav-sider :deep(.ant-menu-item) {
-  margin: 2px 8px;
-  border-radius: var(--radius-md) !important;
-  color: var(--text-secondary);
-}
-.nav-sider :deep(.ant-menu-item:hover) {
-  color: var(--text-primary) !important;
-  background: var(--bg-hover) !important;
-}
-.nav-sider :deep(.ant-menu-item-selected) {
-  background: var(--primary-bg) !important;
-  color: var(--primary) !important;
-  font-weight: 600;
-}
-.nav-sider :deep(.ant-menu-item .anticon) {
-  font-size: 15px;
-}
-
-/* ── 底部用户区 ── */
-.sidebar-footer {
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 4px;
-  border-top: 1px solid var(--border);
-  margin-top: auto;
-}
-
-.sidebar-user-btn {
-  width: 100%;
-  display: flex;
-  justify-content: flex-start;
-  align-items: center;
-  color: var(--text-secondary) !important;
-  height: 40px;
-  border-radius: var(--radius-md);
-}
-
-.sidebar-user-btn:hover {
-  color: var(--text-primary) !important;
-  background: var(--bg-hover) !important;
-}
-
-/* 移动端导航按钮 */
-.nav-menu-btn {
-  display: none;
-}
-.nav-overlay {
-  display: none;
-}
-
-@media (max-width: 768px) {
-  .nav-menu-btn {
-    display: flex;
-    position: fixed;
-    top: 12px;
-    right: 12px;
-    z-index: 200;
-    width: 36px;
-    height: 36px;
-    align-items: center;
-    justify-content: center;
-    background: var(--bg-card);
-    box-shadow: var(--shadow-md);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    color: var(--text-primary);
-  }
-  .nav-sider-mobile {
-    transition: transform 0.25s ease !important;
-  }
-  .nav-sider-mobile.ant-layout-sider-collapsed {
-    transform: translateX(-100%);
-  }
-  .nav-overlay {
-    display: block;
-    position: fixed;
-    inset: 0;
-    z-index: 250;
-    background: rgba(10, 10, 12, 0.45);
-  }
 }
 </style>

@@ -21,6 +21,54 @@ export async function submitApproval(params: {
   return !!(data?.data?.ok ?? data?.ok)
 }
 
+// ── 会话操作（重命名 / 置顶）──
+export async function updateConversation(id: string, patch: { title?: string; pinned?: boolean }) {
+  const { data } = await api.put(`/v1/conversations/${encodeURIComponent(id)}`, patch)
+  return data?.data
+}
+
+// ── 会话分享（chat.deepseek.com/share/{id} 风格）──
+export interface ShareInfo {
+  share_id: string
+  created_at?: string
+}
+
+/** 创建分享（body 为选中的消息 id；已有活跃分享时幂等返回） */
+export async function createShare(sessionId: string, messageIds: string[]): Promise<ShareInfo> {
+  const { data } = await api.post(`/v1/conversations/${encodeURIComponent(sessionId)}/share`, { message_ids: messageIds })
+  return data?.data
+}
+
+/** 查询会话的活跃分享（无则抛 404） */
+export async function getActiveShare(sessionId: string): Promise<ShareInfo> {
+  const { data } = await api.get(`/v1/conversations/${encodeURIComponent(sessionId)}/share`)
+  return data?.data
+}
+
+/** 撤销分享（公开链接随即失效） */
+export async function revokeShare(sessionId: string): Promise<void> {
+  await api.delete(`/v1/conversations/${encodeURIComponent(sessionId)}/share`)
+}
+
+export interface SharedMessage {
+  role: 'user' | 'assistant'
+  content: string
+  created_at: string
+}
+
+export interface PublicShare {
+  id: string
+  title: string
+  created_at: string
+  messages: SharedMessage[]
+}
+
+/** 公开分享读取（无鉴权；已撤销返回 410） */
+export async function getPublicShare(shareId: string): Promise<PublicShare> {
+  const { data } = await api.get(`/share/${encodeURIComponent(shareId)}`)
+  return data?.data
+}
+
 // 请求拦截器：添加 Token
 api.interceptors.request.use(
   (config) => {

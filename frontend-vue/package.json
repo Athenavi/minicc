@@ -35,6 +35,7 @@
   "devDependencies": {
     "@file-viewer/vite-plugin": "^2.1.23",
     "@types/node": "^24.13.2",
+    "@types/three": "^0.184.0",
     "@vitejs/plugin-vue": "^6.0.7",
     "@vue/tsconfig": "^0.9.1",
     "typescript": "~6.0.2",

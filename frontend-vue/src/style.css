@@ -13,6 +13,9 @@
    ══════════════════════════════════════════════════════════════ */
 
 :root {
+  /* 顶栏/下拉菜单半透明玻璃底色（亮色主题；用 rgba 而非 color-mix，兼容所有浏览器） */
+  --topbar-bg: rgba(255, 255, 255, 0.38);
+  --menu-bg: rgba(255, 255, 255, 0.62);
   /* ── 强调色 — DeepSeek 品牌蓝（像素级复刻 deepseek-harness design-platform） ── */
   --primary: #4176e6;            /* --dsw-static-deepseek-500 rgb(65,118,230) */
   --primary-light: #5686fe;      /* deepseek-450 */
@@ -69,6 +72,8 @@
 
 /* ── 暗色模式 — deepseek bluish 暗色板 ── */
 .dark {
+  --topbar-bg: rgba(35, 35, 36, 0.4);
+  --menu-bg: rgba(44, 44, 46, 0.72);
   --primary: #5686fe;            /* deepseek-450（暗色更亮） */
   --primary-light: #679efe;      /* deepseek-400 */
   --primary-dark: #4176e6;       /* deepseek-500 */

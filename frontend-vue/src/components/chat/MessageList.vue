@@ -119,7 +119,7 @@ const badgeText = computed(() => (unseenCount.value > 99 ? '99+' : String(unseen
           position: 'absolute',
           top: '0',
           left: '0',
-          width: '100%',
+          right: '0',
           transform: `translateY(${vi.start}px)`,
         }"
         :ref="(el: any) => el && virtualizer.measureElement(el.$el ?? el)"

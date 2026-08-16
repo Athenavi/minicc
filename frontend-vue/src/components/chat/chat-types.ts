@@ -3,6 +3,8 @@
 export interface ChatSession {
   id: string
   title: string
+  /** 置顶会话固定在列表顶部（登录用户存 DB，guest 随 localStorage 持久化） */
+  pinned?: boolean
   created_at: string
   updated_at: string
 }

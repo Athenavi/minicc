@@ -67,9 +67,9 @@ func (m *Manager) GetSession(ctx context.Context, id string) (*model.Session, er
 
 	var s model.Session
 	err := m.pool.QueryRow(ctx,
-		`SELECT id, COALESCE(user_id::text, ''), COALESCE(title, ''), created_at, updated_at
+		`SELECT id, COALESCE(user_id::text, ''), COALESCE(title, ''), COALESCE(pinned, false), created_at, updated_at
 		 FROM sessions WHERE id = $1`, id).
-		Scan(&s.ID, &s.UserID, &s.Title, &s.CreatedAt, &s.UpdatedAt)
+		Scan(&s.ID, &s.UserID, &s.Title, &s.Pinned, &s.CreatedAt, &s.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("%w: %s", ErrSessionNotFound, id)
 	} else if err != nil {
@@ -138,10 +138,10 @@ func (m *Manager) ListSessions(ctx context.Context, userID string) ([]model.Sess
 	}
 
 	rows, err := m.pool.Query(ctx,
-		`SELECT id, COALESCE(user_id::text, ''), COALESCE(title, ''), created_at, updated_at
+		`SELECT id, COALESCE(user_id::text, ''), COALESCE(title, ''), COALESCE(pinned, false), created_at, updated_at
 		 FROM sessions
 		 WHERE user_id = $1
-		 ORDER BY updated_at DESC
+		 ORDER BY pinned DESC, updated_at DESC
 		 LIMIT 100`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list sessions: %w", err)
@@ -151,7 +151,7 @@ func (m *Manager) ListSessions(ctx context.Context, userID string) ([]model.Sess
 	var sessions []model.Session
 	for rows.Next() {
 		var s model.Session
-		if err := rows.Scan(&s.ID, &s.UserID, &s.Title, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.UserID, &s.Title, &s.Pinned, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			slog.Warn("scan session row", "error", err)
 			continue
 		}
@@ -186,6 +186,44 @@ func (m *Manager) DeleteSession(ctx context.Context, id string) error {
 	}
 
 	return nil
+}
+
+// UpdateSession updates a session's title and/or pinned flag, then refreshes
+// the Redis cache. updated_at advances only when the title changes (pinning is
+// a list-order preference, not activity). At least one field must be non-nil.
+func (m *Manager) UpdateSession(ctx context.Context, id string, title *string, pinned *bool) (*model.Session, error) {
+	if id == "" {
+		return nil, fmt.Errorf("session id is required")
+	}
+	if title == nil && pinned == nil {
+		return nil, fmt.Errorf("nothing to update")
+	}
+
+	var sets []string
+	var args []interface{}
+	if title != nil {
+		sets = append(sets, fmt.Sprintf("title = $%d", len(args)+1))
+		args = append(args, *title)
+		sets = append(sets, fmt.Sprintf("updated_at = $%d", len(args)+1))
+		args = append(args, time.Now())
+	}
+	if pinned != nil {
+		sets = append(sets, fmt.Sprintf("pinned = $%d", len(args)+1))
+		args = append(args, *pinned)
+	}
+	args = append(args, id)
+
+	if m.pool != nil {
+		_, err := m.pool.Exec(ctx,
+			`UPDATE sessions SET `+strings.Join(sets, ", ")+` WHERE id = $`+strconv.Itoa(len(args)),
+			args...)
+		if err != nil {
+			return nil, fmt.Errorf("update session: %w", err)
+		}
+	}
+
+	m.evictCache(ctx, id)
+	return m.GetSession(ctx, id)
 }
 
 // ── Message helpers ───────────────────────────────────────────────────────

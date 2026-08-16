@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/db"
 	"github.com/athenavi/minicc/internal/id"
 	"github.com/athenavi/minicc/internal/session"
 )
@@ -27,6 +26,7 @@ func NewConversationHandler(a *auth.Authenticator, sm *session.Manager) *Convers
 type Conversation struct {
 	ID        string      `json:"id"`
 	Title     string      `json:"title"`
+	Pinned    bool        `json:"pinned"`
 	CreatedAt time.Time   `json:"created_at"`
 	UpdatedAt time.Time   `json:"updated_at"`
 	Messages  []Message   `json:"messages,omitempty"`
@@ -74,6 +74,7 @@ func (h *ConversationHandler) List(w http.ResponseWriter, r *http.Request) {
 		convs = append(convs, Conversation{
 			ID:        s.ID,
 			Title:     s.Title,
+			Pinned:    s.Pinned,
 			CreatedAt: s.CreatedAt,
 			UpdatedAt: s.UpdatedAt,
 		})
@@ -136,6 +137,7 @@ func (h *ConversationHandler) Get(w http.ResponseWriter, r *http.Request) {
 	conv := Conversation{
 		ID:        sess.ID,
 		Title:     sess.Title,
+		Pinned:    sess.Pinned,
 		CreatedAt: sess.CreatedAt,
 		UpdatedAt: sess.UpdatedAt,
 		Messages:  make([]Message, 0),
@@ -239,7 +241,7 @@ func (h *ConversationHandler) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 
-// Update updates a session title.
+// Update updates a session's title and/or pinned flag (session menu: 重命名/置顶).
 func (h *ConversationHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -248,10 +250,19 @@ func (h *ConversationHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Title string `json:"title"`
+		Title  *string `json:"title"`
+		Pinned *bool   `json:"pinned"`
 	}
 	if err := DecodeJSON(w, r, &body); err != nil {
 		BadRequest(w, "invalid request")
+		return
+	}
+	if body.Title == nil && body.Pinned == nil {
+		BadRequest(w, "title or pinned is required")
+		return
+	}
+	if body.Title != nil && strings.TrimSpace(*body.Title) == "" {
+		BadRequest(w, "title is required")
 		return
 	}
 
@@ -272,20 +283,19 @@ func (h *ConversationHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if db.Pool == nil {
-		OK(w, map[string]string{"status": "updated"})
-		return
-	}
-
-	_, err = db.Pool.Exec(r.Context(),
-		`UPDATE sessions SET title = $1, updated_at = NOW() WHERE id = $2`,
-		body.Title, id)
+	updated, err := h.sessionMgr.UpdateSession(r.Context(), id, body.Title, body.Pinned)
 	if err != nil {
 		InternalError(w, "update session: "+err.Error())
 		return
 	}
 
-	OK(w, map[string]string{"status": "updated"})
+	OK(w, Conversation{
+		ID:        updated.ID,
+		Title:     updated.Title,
+		Pinned:    updated.Pinned,
+		CreatedAt: updated.CreatedAt,
+		UpdatedAt: updated.UpdatedAt,
+	})
 }
 
 // getAuthClaims extracts JWT claims optionally — no error if missing.

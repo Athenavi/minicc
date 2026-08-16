@@ -140,6 +140,7 @@ func NewGatewayRouter(
 
 	// Conversation
 	conversationHandler := NewConversationHandler(authenticator, sessionMgr)
+	shareHandler := NewShareHandler(authenticator, sessionMgr)
 
 	// Tool (proxies to Python)
 	toolHandler := NewToolHandler(pythonClient, authenticator)
@@ -221,6 +222,9 @@ func NewGatewayRouter(
 	// ── Public endpoints ──
 
 	mux.HandleFunc("GET /search", searchHandler.Search)
+
+	// Public share view (no auth; revoked shares return 410 Gone)
+	mux.Handle("GET /share/{id}", rlMW(publicMW(http.HandlerFunc(shareHandler.PublicGet))))
 
 	mux.Handle("GET /health", rlMW(publicMW(http.HandlerFunc(handleHealth))))
 	mux.Handle("GET /ready", rlMW(publicMW(http.HandlerFunc(handleReadiness))))
@@ -313,7 +317,13 @@ func NewGatewayRouter(
 	mux.Handle("GET /v1/conversations", authMW(rlMW(http.HandlerFunc(conversationHandler.List))))
 	mux.Handle("POST /v1/conversations", authMW(rlMW(http.HandlerFunc(conversationHandler.Create))))
 	mux.Handle("GET /v1/conversations/{id}", authMW(rlMW(http.HandlerFunc(conversationHandler.Get))))
+	mux.Handle("PUT /v1/conversations/{id}", authMW(rlMW(http.HandlerFunc(conversationHandler.Update))))
 	mux.Handle("DELETE /v1/conversations/{id}", authMW(rlMW(http.HandlerFunc(conversationHandler.Delete))))
+
+	// Conversation shares (auth + rate limited; public GET below)
+	mux.Handle("POST /v1/conversations/{id}/share", authMW(rlMW(http.HandlerFunc(shareHandler.Create))))
+	mux.Handle("GET /v1/conversations/{id}/share", authMW(rlMW(http.HandlerFunc(shareHandler.GetActive))))
+	mux.Handle("DELETE /v1/conversations/{id}/share", authMW(rlMW(http.HandlerFunc(shareHandler.Revoke))))
 
 	// Tools (rate limited, proxies to Python)
 	mux.Handle("GET /v1/tools", rlMW(http.HandlerFunc(toolHandler.ListTools)))

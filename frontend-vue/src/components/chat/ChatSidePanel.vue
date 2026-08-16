@@ -1,0 +1,347 @@
+<script setup lang="ts">
+import { computed, ref } from 'vue'
+import { Button, Avatar, Dropdown, Menu, MenuItem, MenuDivider } from 'ant-design-vue'
+import {
+  SearchOutlined, CloseOutlined, LeftOutlined, DownOutlined,
+  PlusOutlined, EllipsisOutlined, EditOutlined, PushpinOutlined,
+  ShareAltOutlined, DeleteOutlined,
+} from '@ant-design/icons-vue'
+import { formatRelativeTime } from './chat-types'
+import type { ChatItem, ChatSession } from './chat-types'
+
+const props = defineProps<{
+  items: ChatItem[]
+  selectedIndex: number | null
+  open: boolean
+  /** 面板视图：trajectory（主，当前会话提问轨迹）/ sessions（从，会话历史列表） */
+  view: 'trajectory' | 'sessions'
+  sessions: ChatSession[]
+  activeSessionId: string
+  userName?: string
+}>()
+
+const emit = defineEmits<{
+  (e: 'focus', index: number): void
+  (e: 'close'): void
+  (e: 'update:view', view: 'trajectory' | 'sessions'): void
+  (e: 'create'): void
+  (e: 'switch', id: string): void
+  (e: 'delete', id: string): void
+  (e: 'rename', id: string, currentTitle: string): void
+  (e: 'pin', id: string, pinned: boolean): void
+  (e: 'share', id: string): void
+}>()
+
+const trajectoryQuery = ref('')
+const sessionQuery = ref('')
+const hoveredIndex = ref<number | null>(null)
+// 当前展开菜单的会话行 id：菜单打开时行保持 hover 态
+const menuSessionId = ref<string | null>(null)
+
+const activeSession = computed(() => props.sessions.find(s => s.id === props.activeSessionId) || null)
+
+// ── 主视图：当前会话轨迹（仅用户提问作为锚点） ──
+const userIndexes = computed(() =>
+  props.items
+    .map((it, i) => ({ it, i }))
+    .filter(x => x.it.kind === 'text' && x.it.role === 'user')
+    .map(x => x.i),
+)
+
+const filteredIndexes = computed(() => {
+  const q = trajectoryQuery.value.trim().toLowerCase()
+  if (!q) return userIndexes.value
+  return userIndexes.value.filter(i => {
+    const it = props.items[i]
+    return it.kind === 'text' && it.content.toLowerCase().includes(q)
+  })
+})
+
+function summary(index: number): string {
+  const it = props.items[index]
+  if (it.kind !== 'text') return ''
+  const s = it.content.replace(/\s+/g, ' ').trim()
+  return s.length > 40 ? s.slice(0, 40) + '…' : s
+}
+
+// ── 从视图：会话历史列表 ──
+const filteredSessions = computed(() => {
+  const q = sessionQuery.value.trim().toLowerCase()
+  const all = props.sessions || []
+  if (!q) return all
+  return all.filter(s => (s.title || '').toLowerCase().includes(q))
+})
+
+function onMenuOpenChange(open: boolean, id: string) {
+  menuSessionId.value = open ? id : null
+}
+
+// 选中会话：切到该会话轨迹（父级 switchSession 加载消息）
+function pickSession(id: string) {
+  emit('switch', id)
+  emit('update:view', 'trajectory')
+}
+</script>
+
+<template>
+  <div class="side-panel" :class="{ open }" role="complementary" :aria-hidden="!open">
+    <!-- 顶部：会话选择器（主从钻取入口）+ 关闭 -->
+    <div class="panel-toolbar">
+      <button
+        v-if="view === 'trajectory'"
+        type="button"
+        class="session-picker"
+        :title="'切换会话：' + (activeSession?.title || '新对话')"
+        @click="emit('update:view', 'sessions')"
+      >
+        <span class="session-picker-name">{{ activeSession?.title || '新对话' }}</span>
+        <DownOutlined class="session-picker-arrow" />
+      </button>
+      <button v-else type="button" class="session-back" @click="emit('update:view', 'trajectory')">
+        <LeftOutlined />
+        <span class="session-picker-name">{{ activeSession?.title || '新对话' }}</span>
+      </button>
+      <CloseOutlined class="toolbar-close" title="收起面板" @click="emit('close')" />
+    </div>
+
+    <!-- 主视图：当前会话轨迹（搜索 + 时间线 + 提问锚点） -->
+    <template v-if="view === 'trajectory'">
+      <div class="panel-search">
+        <SearchOutlined class="search-icon" />
+        <input v-model="trajectoryQuery" class="search-input" placeholder="搜索提问" />
+        <CloseOutlined v-if="trajectoryQuery" class="search-clear" @click="trajectoryQuery = ''" />
+      </div>
+
+      <div class="timeline">
+        <div class="timeline-labels">
+          <span>0</span><span>50</span><span>100</span>
+        </div>
+        <div class="timeline-track">
+          <div
+            v-for="i in filteredIndexes"
+            :key="i"
+            class="timeline-span"
+            :class="{ selected: i === selectedIndex }"
+            :data-selected="i === selectedIndex ? undefined : (selectedIndex === null ? undefined : 'false')"
+            :data-hovered="i === hoveredIndex"
+            :data-current="i === selectedIndex"
+            :style="{
+              left: `calc(${((userIndexes.indexOf(i)) / Math.max(userIndexes.length, 1)) * 100}% + 4px)`,
+              width: `calc(${100 / Math.max(userIndexes.length, 1)}% - 8px)`,
+            }"
+            :title="summary(i)"
+            @click.stop="emit('focus', i)"
+            @mouseenter="hoveredIndex = i"
+            @mouseleave="hoveredIndex = null"
+          />
+          <div v-if="filteredIndexes.length === 0" class="timeline-empty">无提问</div>
+        </div>
+      </div>
+
+      <div class="anchor-list">
+        <div
+          v-for="i in filteredIndexes"
+          :key="i"
+          class="anchor-row"
+          :class="{ active: i === selectedIndex }"
+          @click="emit('focus', i)"
+        >
+          <span class="row-dot" aria-hidden />
+          <span class="row-text">{{ summary(i) }}</span>
+        </div>
+        <div v-if="filteredIndexes.length === 0" class="list-empty">当前会话暂无提问</div>
+      </div>
+    </template>
+
+    <!-- 从视图：会话历史列表（新对话 + 搜索 + 行操作菜单 + 用户） -->
+    <template v-else>
+      <div class="sessions-head">
+        <Button block type="primary" size="small" @click="emit('create')">
+          <template #icon><PlusOutlined /></template>
+          新对话
+        </Button>
+        <div class="panel-search">
+          <SearchOutlined class="search-icon" />
+          <input v-model="sessionQuery" class="search-input" placeholder="搜索会话" />
+          <CloseOutlined v-if="sessionQuery" class="search-clear" @click="sessionQuery = ''" />
+        </div>
+      </div>
+
+      <div class="session-list">
+        <div v-if="filteredSessions.length === 0" class="list-empty">暂无对话</div>
+        <div
+          v-for="s in filteredSessions"
+          :key="s.id"
+          class="session-row"
+          :class="{ active: s.id === activeSessionId, pinned: s.pinned, 'menu-open': menuSessionId === s.id }"
+          @click="pickSession(s.id)"
+        >
+          <div class="session-info">
+            <div class="session-title-line">
+              <PushpinOutlined v-if="s.pinned" class="pin-icon" />
+              <span class="session-title">{{ s.title || '新对话' }}</span>
+            </div>
+            <span class="session-time">{{ formatRelativeTime(s.updated_at || s.created_at) }}</span>
+          </div>
+          <Dropdown
+            trigger="click"
+            placement="bottomRight"
+            @open-change="(v: boolean) => onMenuOpenChange(v, s.id)"
+          >
+            <Button
+              type="text" size="small" class="session-more-btn"
+              :aria-label="`会话操作：${s.title || '新对话'}`"
+              @click.stop
+            >
+              <template #icon><EllipsisOutlined /></template>
+            </Button>
+            <template #overlay>
+              <Menu class="session-menu">
+                <MenuItem key="rename" @click="emit('rename', s.id, s.title || '')">
+                  <EditOutlined class="menu-icon" />重命名
+                </MenuItem>
+                <MenuItem key="pin" @click="emit('pin', s.id, !s.pinned)">
+                  <PushpinOutlined class="menu-icon" />{{ s.pinned ? '取消置顶' : '置顶' }}
+                </MenuItem>
+                <MenuItem key="share" @click="emit('share', s.id)">
+                  <ShareAltOutlined class="menu-icon" />分享
+                </MenuItem>
+                <MenuDivider />
+                <MenuItem key="delete" danger @click="emit('delete', s.id)">
+                  <DeleteOutlined class="menu-icon" />删除
+                </MenuItem>
+              </Menu>
+            </template>
+          </Dropdown>
+        </div>
+      </div>
+
+      <div class="panel-foot">
+        <Avatar :size="22" :style="{ backgroundColor: 'var(--primary)' }">
+          {{ (userName || 'U').charAt(0).toUpperCase() }}
+        </Avatar>
+        <span class="foot-name">{{ userName || '用户' }}</span>
+      </div>
+    </template>
+  </div>
+</template>
+
+<style scoped>
+/* 自由浮动侧面板：悬浮于整页右侧，覆盖聊天区，不参与文档流；
+   隐藏时 translateX 移出 + visibility 延迟隐藏，避免溢出视口产生横向滚动条 */
+.side-panel {
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: 320px;
+  z-index: 120;
+  display: flex; flex-direction: column;
+  background: var(--bg-card);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  transform: translateX(100%);
+  visibility: hidden;
+  transition: transform 0.25s ease, visibility 0.25s;
+}
+.side-panel.open { transform: translateX(0); visibility: visible; }
+@media (max-width: 768px) { .side-panel { width: 100%; } }
+
+/* 顶部工具栏：会话选择器（主从钻取）+ 关闭 */
+.panel-toolbar {
+  flex: none; display: flex; align-items: center; gap: 8px;
+  height: 44px; padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+.session-picker, .session-back {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px;
+  height: 28px; padding: 0 8px; border: none; border-radius: 6px;
+  background: transparent; color: var(--text-primary);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: background 0.15s ease;
+}
+.session-picker:hover, .session-back:hover { background: var(--bg-hover); }
+.session-picker-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+.session-picker-arrow { flex: none; font-size: 10px; color: var(--text-tertiary); }
+.toolbar-close { flex: none; font-size: 13px; color: var(--text-tertiary); cursor: pointer; padding: 4px; border-radius: 4px; transition: color 0.15s ease, background 0.15s ease; }
+.toolbar-close:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+/* 搜索框（轨迹 / 会话通用） */
+.panel-search { flex: none; display: flex; align-items: center; gap: 4px; margin: 8px 12px 0; padding: 0 8px; height: 28px; background: var(--bg-secondary); border-radius: 6px; }
+.search-icon { font-size: 11px; color: var(--text-tertiary); }
+.search-input { flex: 1; border: none; outline: none; background: none; font-size: 12px; color: var(--text-primary); }
+.search-clear { font-size: 10px; color: var(--text-tertiary); cursor: pointer; }
+
+/* ── 主视图：时间线 ── */
+.timeline {
+  flex: none; display: grid; grid-template-columns: 44px minmax(0, 1fr);
+  height: 50px; margin-top: 8px; overflow: hidden;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+  user-select: none;
+}
+.timeline-labels { position: relative; border-right: 1px solid var(--border); color: var(--text-tertiary); font-size: 10px; line-height: 1; }
+.timeline-labels span { position: absolute; right: 3px; height: 8px; display: flex; align-items: center; }
+.timeline-labels span:nth-child(1) { top: 7px; }
+.timeline-labels span:nth-child(2) { top: 21px; }
+.timeline-labels span:nth-child(3) { top: 35px; }
+.timeline-track { position: relative; overflow: hidden; cursor: crosshair; }
+.timeline-span {
+  position: absolute; top: 21px; height: 8px; min-width: 2px;
+  border-radius: 1px;
+  background: var(--primary);
+  opacity: 0.78;
+  transition: opacity 0.15s ease;
+}
+.timeline-span[data-hovered='true']:not([data-current='true']) {
+  opacity: 1;
+  box-shadow: 0 0 0 1px var(--bg-secondary), 0 0 0 2px color-mix(in srgb, var(--primary) 80%, transparent);
+}
+.timeline-span[data-selected='false'] { opacity: 0.2; }
+.timeline-span[data-current='true'] { opacity: 1; }
+.timeline-empty { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: var(--text-tertiary); font-size: 12px; }
+
+/* ── 主视图：提问锚点列表 ── */
+.anchor-list { flex: 1; overflow-y: auto; padding: 6px; scrollbar-width: thin; scrollbar-color: var(--text-disabled) transparent; }
+.anchor-row { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 6px; cursor: pointer; transition: background 0.15s ease; }
+.anchor-row:hover { background: var(--bg-hover); }
+.anchor-row.active { background: var(--primary-bg); }
+.row-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--primary); }
+.row-text { flex: 1; min-width: 0; font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.anchor-row.active .row-text { color: var(--primary); font-weight: 600; }
+.list-empty { padding: 20px 8px; text-align: center; color: var(--text-muted); font-size: 12px; }
+
+/* ── 从视图：会话历史列表 ── */
+.sessions-head { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 0; }
+.session-list { flex: 1; overflow-y: auto; padding: 6px; scrollbar-width: thin; scrollbar-color: var(--text-disabled) transparent; }
+.session-row {
+  display: flex; align-items: center; gap: 4px;
+  padding: 0 10px; height: 40px; border-radius: 8px;
+  cursor: pointer; margin-bottom: 1px;
+  transition: background 0.15s ease;
+  position: relative;
+}
+.session-row:hover, .session-row.menu-open { background: var(--bg-hover); }
+.session-row.active { background: var(--primary-bg); }
+.session-row.active::before {
+  content: ''; position: absolute; left: 0; top: 8px; bottom: 8px;
+  width: 2px; border-radius: 1px; background: var(--primary);
+}
+.session-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.session-title-line { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.pin-icon { flex: none; font-size: 11px; color: var(--primary); }
+.session-title { font-size: 13px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 18px; }
+.session-row.active .session-title { color: var(--primary); font-weight: 600; }
+.session-time { font-size: 11px; color: var(--text-muted); line-height: 14px; }
+.session-more-btn { opacity: 0; flex-shrink: 0; width: 22px; height: 22px; color: var(--text-muted); }
+.session-row:hover .session-more-btn, .session-row.menu-open .session-more-btn { opacity: 1; }
+.session-more-btn:hover { color: var(--text-primary); }
+.session-menu { min-width: 148px; border-radius: 10px; padding: 4px; box-shadow: var(--shadow-lg); }
+.session-menu :deep(.ant-dropdown-menu-item) { display: flex; align-items: center; gap: 8px; font-size: 13px; border-radius: 6px; }
+.menu-icon { font-size: 14px; }
+
+/* 底部用户信息 */
+.panel-foot {
+  flex: none; display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; border-top: 1px solid var(--border);
+}
+.foot-name { font-size: 13px; color: var(--text-secondary); }
+</style>

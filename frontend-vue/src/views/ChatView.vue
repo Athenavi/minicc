@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
-import { Button, message } from 'ant-design-vue'
-import { MenuOutlined } from '@ant-design/icons-vue'
-import { api, createSSEConnection } from '../api'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { Button, Input, Modal, Checkbox, Alert, message } from 'ant-design-vue'
+import { MenuOutlined, CopyOutlined, LinkOutlined } from '@ant-design/icons-vue'
+import {
+  api, createSSEConnection, submitApproval,
+  updateConversation, createShare, getActiveShare, revokeShare,
+} from '../api'
+import type { ShareInfo } from '../api'
 import { useAuthStore } from '../stores/auth'
-import ChatSidebar from '../components/chat/ChatSidebar.vue'
+import ChatSidePanel from '../components/chat/ChatSidePanel.vue'
 import MessageList from '../components/chat/MessageList.vue'
 import ChatEmptyHero from '../components/chat/ChatEmptyHero.vue'
 import ChatInput from '../components/chat/ChatInput.vue'
-import { submitApproval } from '../api'
-import ChatTrajectory from '../components/chat/ChatTrajectory.vue'
 import { HistoryOutlined } from '@ant-design/icons-vue'
 import { splitThinking, stripUserInputTag, throttleRaf, formatClock } from '../components/chat/chat-types'
 import type { ChatItem, ChatSession } from '../components/chat/chat-types'
@@ -19,9 +21,8 @@ const authStore = useAuthStore()
 // ── 会话状态 ──
 const sessions = ref<ChatSession[]>([])
 const activeSessionId = ref('')
+const activeSession = computed(() => sessions.value.find(s => s.id === activeSessionId.value) || null)
 const loading = ref(false)
-const sidebarCollapsed = ref(false)
-const mobileSidebarOpen = ref(false)
 const items = ref<ChatItem[]>([])
 let activeSSE: EventSource | null = null
 
@@ -56,14 +57,25 @@ const modeOptions = [
 ]
 const mode = ref('normal')
 
-// 轨迹面板（右侧历史跳转）
-const trajectoryOpen = ref(false)
+// 侧面板（主从时间线：轨迹 / 会话历史）
+const panelOpen = ref(false)
+const panelView = ref<'trajectory' | 'sessions'>('trajectory')
 const trajectoryFocus = ref<number | null>(null)
 const trajectoryToken = ref(0)
 
 function onTrajectoryFocus(index: number) {
   trajectoryFocus.value = index
   trajectoryToken.value += 1
+}
+
+// 打开面板并直达指定视图；点击已激活的入口则收起
+function openPanel(view: 'trajectory' | 'sessions') {
+  if (panelOpen.value && panelView.value === view) {
+    panelOpen.value = false
+    return
+  }
+  panelView.value = view
+  panelOpen.value = true
 }
 
 // turn 计时（deepseek turnStatusClock）
@@ -106,6 +118,7 @@ async function loadSessions() {
     const raw = localStorage.getItem('chat_sessions')
     if (raw) sessions.value = JSON.parse(raw)
   }
+  sortSessions()
 }
 
 async function createSession() {
@@ -120,6 +133,7 @@ async function createSession() {
     session = { id, title: '新对话', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }
   }
   sessions.value.unshift(session); persistSessions()
+  panelView.value = 'trajectory' // 新建会话后回到轨迹视图
   try { await switchSession(session.id) } catch { /* ignore */ }
 }
 
@@ -263,9 +277,156 @@ async function deleteSession(id: string) {
   }
 }
 
-function toggleSidebar() {
-  if (window.innerWidth <= 768) mobileSidebarOpen.value = !mobileSidebarOpen.value
-  else sidebarCollapsed.value = !sidebarCollapsed.value
+// 删除前确认（菜单 danger 项 → Modal.confirm）
+function requestDelete(id: string) {
+  const s = sessions.value.find(x => x.id === id)
+  Modal.confirm({
+    title: '删除对话',
+    content: `确定删除「${s?.title || '新对话'}」？此操作不可恢复。`,
+    okText: '删除',
+    okButtonProps: { danger: true },
+    cancelText: '取消',
+    onOk: () => deleteSession(id),
+  })
+}
+
+// ── 重命名（deepseek session rename dialog：Modal + 行内输入） ──
+const renameTarget = ref<ChatSession | null>(null)
+const renameDraft = ref('')
+const renaming = ref(false)
+
+function openRename(id: string, currentTitle: string) {
+  const s = sessions.value.find(x => x.id === id)
+  if (!s) return
+  renameTarget.value = s
+  renameDraft.value = currentTitle
+}
+
+async function confirmRename() {
+  const target = renameTarget.value
+  const title = renameDraft.value.trim()
+  if (!title || !target) return
+  renaming.value = true
+  try {
+    await updateConversation(target.id, { title })
+    const s = sessions.value.find(x => x.id === target.id)
+    if (s) s.title = title
+    persistSessions()
+    message.success('已重命名')
+    renameTarget.value = null
+  } catch (e: any) {
+    message.error('重命名失败: ' + (e?.response?.data?.error || e?.message || '网络错误'))
+  } finally {
+    renaming.value = false
+  }
+}
+
+// ── 置顶（列表排序：pinned DESC → updated_at DESC） ──
+function sortSessions() {
+  sessions.value = [...sessions.value].sort((a, b) => {
+    if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1
+    return new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime()
+  })
+}
+
+async function togglePin(id: string, pinned: boolean) {
+  const s = sessions.value.find(x => x.id === id)
+  if (!s) return
+  const prev = s.pinned
+  s.pinned = pinned
+  sortSessions(); persistSessions()
+  try {
+    await updateConversation(id, { pinned })
+  } catch {
+    s.pinned = prev // 失败回滚
+    sortSessions(); persistSessions()
+    message.error('置顶操作失败')
+  }
+}
+
+// ── 分享（chat.deepseek.com/share/{id} 风格：选消息 → 生成链接 → 可取消） ──
+const shareOpen = ref(false)
+const shareTarget = ref<ChatSession | null>(null)
+const shareInfo = ref<ShareInfo | null>(null)
+const shareLoading = ref(false)
+const shareRevoking = ref(false)
+const shareError = ref('')
+const shareMessageIds = ref<string[]>([])
+
+const isGuest = computed(() => !localStorage.getItem('token'))
+
+// 分享候选：会话中所有文本消息（用户可勾选；工具调用/思考块不分享）
+const shareCandidates = computed(() => items.value
+  .filter((it): it is Extract<ChatItem, { kind: 'text' }> =>
+    it.kind === 'text' && (it.role === 'user' || it.role === 'assistant') && !!it.id)
+  .map(it => ({
+    id: it.id as string,
+    role: it.role,
+    preview: (it.content || '').replace(/\s+/g, ' ').trim().slice(0, 56),
+  })))
+
+async function openShare(id: string) {
+  const s = sessions.value.find(x => x.id === id)
+  if (!s) return
+  // 分享的可能不是当前会话：先切换加载其消息，保证消息选择列表正确
+  if (id !== activeSessionId.value) {
+    await switchSession(id)
+  }
+  shareTarget.value = s
+  shareInfo.value = null
+  shareError.value = ''
+  shareMessageIds.value = shareCandidates.value.map(c => c.id) // 默认全选
+  if (!isGuest.value) {
+    try { shareInfo.value = await getActiveShare(s.id) } catch { /* 无活跃分享 */ }
+  }
+  shareOpen.value = true
+}
+
+function toggleShareMessage(id: string) {
+  const i = shareMessageIds.value.indexOf(id)
+  if (i >= 0) shareMessageIds.value.splice(i, 1)
+  else shareMessageIds.value.push(id)
+}
+
+async function generateShare() {
+  if (!shareTarget.value) return
+  if (shareMessageIds.value.length === 0) { message.warning('请至少选择一条要分享的消息'); return }
+  shareLoading.value = true
+  shareError.value = ''
+  try {
+    shareInfo.value = await createShare(shareTarget.value.id, shareMessageIds.value)
+  } catch (e: any) {
+    shareError.value = e?.response?.data?.error || '生成分享链接失败'
+  } finally {
+    shareLoading.value = false
+  }
+}
+
+async function revokeCurrentShare() {
+  if (!shareTarget.value || !shareInfo.value) return
+  shareRevoking.value = true
+  try {
+    await revokeShare(shareTarget.value.id)
+    shareInfo.value = null
+    message.success('分享已取消，链接已失效')
+  } catch {
+    message.error('取消分享失败')
+  } finally {
+    shareRevoking.value = false
+  }
+}
+
+function shareUrl(): string {
+  return `${window.location.origin}/share/${shareInfo.value?.share_id || ''}`
+}
+
+async function copyShareLink() {
+  try {
+    await navigator.clipboard.writeText(shareUrl())
+    message.success('链接已复制')
+  } catch {
+    message.error('复制失败')
+  }
 }
 
 // ── SSE 编排：事件 → ChatItem ──
@@ -428,38 +589,38 @@ function stopGeneration() {
 
 <template>
   <div class="chat-layout">
-    <ChatSidebar
-      :class="{ collapsed: sidebarCollapsed || !mobileSidebarOpen }"
-      :sessions="sessions"
-      :active-session-id="activeSessionId"
-      :collapsed="false"
-      :user-name="authStore.user?.name"
-      @create="createSession"
-      @switch="switchSession"
-      @delete="deleteSession"
-      @close="mobileSidebarOpen = false"
-    />
-    <div v-if="mobileSidebarOpen" class="sidebar-overlay" @click="mobileSidebarOpen = false"></div>
-
     <div class="chat-main">
-      <div class="chat-header">
-        <Button type="text" size="small" @click="toggleSidebar">
-          <template #icon><MenuOutlined /></template>
-        </Button>
-        <span class="header-title">MiniCC</span>
-        <span class="header-sub">{{ modeOptions.find(o => o.value === mode)?.label || '常规' }}</span>
-        <Button
-          type="text" size="small" class="trajectory-toggle"
-          :class="{ active: trajectoryOpen }"
-          :title="trajectoryOpen ? '收起轨迹' : '查看历史提问'"
-          @click="trajectoryOpen = !trajectoryOpen"
-        >
-          <template #icon><HistoryOutlined /></template>
-        </Button>
-      </div>
-
       <div v-if="connectionLost" class="connection-banner">连接已断开，请重试发送消息</div>
       <div class="chat-body">
+        <!-- 内容区工具条：对话名称居中（避开左上角品牌胶囊），右侧会话/轨迹入口 -->
+        <div class="chat-toolbar">
+          <div class="toolbar-side" aria-hidden="true" />
+          <div class="toolbar-center">
+            <span class="toolbar-title">{{ activeSession?.title || 'MiniCC' }}</span>
+            <span class="toolbar-mode">{{ modeOptions.find(o => o.value === mode)?.label || '常规' }}</span>
+          </div>
+          <div class="toolbar-side toolbar-actions">
+            <Button
+              type="text" size="small" class="toolbar-btn"
+              :class="{ active: panelOpen && panelView === 'sessions' }"
+              :title="panelOpen && panelView === 'sessions' ? '收起会话列表' : '会话历史'"
+              @click="openPanel('sessions')"
+            >
+              <template #icon><MenuOutlined /></template>
+              会话
+            </Button>
+            <Button
+              type="text" size="small" class="toolbar-btn"
+              :class="{ active: panelOpen && panelView === 'trajectory' }"
+              :title="panelOpen && panelView === 'trajectory' ? '收起轨迹' : '查看历史提问'"
+              @click="openPanel('trajectory')"
+            >
+              <template #icon><HistoryOutlined /></template>
+              轨迹
+            </Button>
+          </div>
+        </div>
+
         <ChatEmptyHero v-if="items.length === 0 && !loading" @suggest="sendMessage" />
         <template v-else>
           <div v-if="loading" class="turn-status">思考中<template v-if="turnElapsed >= 2">&nbsp;·&nbsp;{{ turnElapsed }}s</template></div>
@@ -473,14 +634,6 @@ function stopGeneration() {
             @load-earlier="loadEarlier"
           />
         </template>
-
-        <ChatTrajectory
-          :items="items"
-          :selected-index="trajectoryFocus"
-          :open="trajectoryOpen"
-          @focus="onTrajectoryFocus"
-          @close="trajectoryOpen = false"
-        />
       </div>
 
       <div v-if="pendingApprovals.length" class="approval-zone">
@@ -506,15 +659,143 @@ function stopGeneration() {
         @update:mode="(m: string) => (mode = m)"
       />
     </div>
+
+    <!-- 侧面板自由浮动抽屉（轨迹 ⇄ 会话历史主从导航）+ 点击遮罩关闭 -->
+    <Transition name="overlay-fade">
+      <div v-if="panelOpen" class="panel-overlay" @click="panelOpen = false"></div>
+    </Transition>
+    <ChatSidePanel
+      :open="panelOpen"
+      :view="panelView"
+      :items="items"
+      :selected-index="trajectoryFocus"
+      :sessions="sessions"
+      :active-session-id="activeSessionId"
+      :user-name="authStore.user?.name"
+      @update:view="(v: 'trajectory' | 'sessions') => (panelView = v)"
+      @focus="onTrajectoryFocus"
+      @close="panelOpen = false"
+      @create="createSession"
+      @switch="switchSession"
+      @delete="requestDelete"
+      @rename="openRename"
+      @pin="togglePin"
+      @share="openShare"
+    />
+
+    <!-- 重命名对话框 -->
+    <Modal
+      :open="!!renameTarget"
+      title="重命名对话"
+      :confirm-loading="renaming"
+      ok-text="保存"
+      cancel-text="取消"
+      @ok="confirmRename"
+      @cancel="renameTarget = null"
+    >
+      <Input
+        v-model:value="renameDraft"
+        placeholder="输入新的对话名称"
+        :maxlength="120"
+        @press-enter="confirmRename"
+      />
+    </Modal>
+
+    <!-- 分享对话框（选消息 → 生成链接 → 可随时取消） -->
+    <Modal
+      :open="shareOpen"
+      :title="`分享「${shareTarget?.title || '新对话'}」`"
+      :footer="null"
+      width="560px"
+      @cancel="shareOpen = false"
+    >
+      <Alert
+        type="warning"
+        show-icon
+        class="share-risk"
+        message="分享链接对任何获得链接的人可见"
+        description="请勿分享包含敏感或隐私信息的内容。你可以随时取消分享，取消后链接立即失效。"
+      />
+
+      <template v-if="isGuest">
+        <div class="share-guest-tip">登录后即可生成分享链接。</div>
+      </template>
+
+      <template v-else-if="shareInfo">
+        <div class="share-link-row">
+          <Input :model-value="shareUrl()" readonly class="share-link-input">
+            <template #prefix><LinkOutlined /></template>
+          </Input>
+          <Button type="primary" @click="copyShareLink">
+            <template #icon><CopyOutlined /></template>
+            复制链接
+          </Button>
+        </div>
+        <div class="share-manage">
+          <span class="share-manage-hint">链接已公开，任何获得链接的人均可查看。</span>
+          <Button danger :loading="shareRevoking" @click="revokeCurrentShare">取消分享</Button>
+        </div>
+      </template>
+
+      <template v-else>
+        <div class="share-select-title">选择要分享的消息（{{ shareMessageIds.length }}/{{ shareCandidates.length }}）</div>
+        <div class="share-select-list">
+          <label
+            v-for="c in shareCandidates"
+            :key="c.id"
+            class="share-select-item"
+            @click.prevent="toggleShareMessage(c.id)"
+          >
+            <Checkbox :checked="shareMessageIds.includes(c.id)" @click.stop />
+            <span class="share-select-role" :class="c.role">{{ c.role === 'user' ? '我' : 'AI' }}</span>
+            <span class="share-select-preview">{{ c.preview || '（空消息）' }}</span>
+          </label>
+        </div>
+        <div v-if="shareError" class="share-error">{{ shareError }}</div>
+        <div class="share-actions">
+          <Button type="primary" :loading="shareLoading" @click="generateShare">生成分享链接</Button>
+        </div>
+      </template>
+    </Modal>
   </div>
 </template>
 
 <style scoped>
-.chat-layout { display: flex; height: 100%; background: var(--bg-page); }
-.chat-sidebar { display: flex; }
+.chat-layout { position: relative; display: flex; height: 100%; background: var(--bg-page); overflow: hidden; }
 .chat-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .chat-body { position: relative; flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.trajectory-toggle.active { color: var(--primary); background: var(--primary-bg); }
+/* 内容区工具条：三列网格，对话名称绝对居中（避开左上角品牌胶囊） */
+.chat-toolbar {
+  flex: none;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  height: 40px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+}
+.toolbar-side { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.toolbar-center {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  justify-content: center;
+}
+.toolbar-title {
+  max-width: 40vw;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.toolbar-mode { flex: none; font-size: 11px; color: var(--text-tertiary); background: var(--bg-secondary); padding: 2px 8px; border-radius: var(--radius-full); }
+.toolbar-actions { justify-content: flex-end; gap: 2px; }
+.toolbar-btn { color: var(--text-secondary); border-radius: var(--radius-md); }
+.toolbar-btn:hover { color: var(--text-primary) !important; background: var(--bg-hover) !important; }
+.toolbar-btn.active { color: var(--primary); background: var(--primary-bg); }
 /* S 安全修复：工具确认卡片 */
 .approval-zone { padding: 0 20px 8px; display: flex; flex-direction: column; gap: 8px; }
 .approval-card { background: var(--bg-card); border: 1px solid var(--border); border-left: 3px solid var(--primary); border-radius: 10px; padding: 10px 14px; }
@@ -535,9 +816,27 @@ function stopGeneration() {
   font-size: 12px; line-height: 18px;
   background: var(--error); color: #fff;
 }
-.chat-header { height: 44px; display: flex; align-items: center; gap: 10px; padding: 0 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
-.header-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
-.header-sub { font-size: 12px; color: var(--text-muted); background: var(--bg-secondary); padding: 2px 8px; border-radius: var(--radius-full); }
+/* 分享对话框 */
+.share-risk { margin-bottom: 14px; }
+.share-guest-tip { padding: 20px 0; text-align: center; color: var(--text-secondary); font-size: 14px; }
+.share-link-row { display: flex; gap: 10px; margin-top: 14px; }
+.share-link-input { flex: 1; }
+.share-manage { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; }
+.share-manage-hint { font-size: 12px; color: var(--text-tertiary); }
+.share-select-title { font-size: 13px; font-weight: 600; color: var(--text-primary); margin: 14px 0 8px; }
+.share-select-list { display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow-y: auto; width: 100%; }
+.share-select-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 8px; border-radius: 8px; cursor: pointer;
+  transition: background 0.15s ease;
+}
+.share-select-item:hover { background: var(--bg-hover); }
+.share-select-role { flex: none; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 10px; }
+.share-select-role.user { color: var(--primary); background: var(--primary-bg); }
+.share-select-role.assistant { color: var(--text-secondary); background: var(--bg-secondary); }
+.share-select-preview { flex: 1; min-width: 0; font-size: 13px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.share-error { margin-top: 10px; font-size: 12px; color: var(--error); }
+.share-actions { display: flex; justify-content: flex-end; margin-top: 14px; }
 /* turn 状态条：品牌蓝文字流光（deepseek turnStatus） */
 .turn-status {
   align-self: flex-start; margin: 10px auto 0; max-width: 748px; padding: 0 24px;
@@ -553,11 +852,11 @@ function stopGeneration() {
 @media (prefers-reduced-motion: reduce) {
   .turn-status { background-position: 0 0; background-size: 100% 100%; animation: none; }
 }
-.sidebar-overlay { display: none; }
-@media (max-width: 768px) {
-  .chat-sidebar { position: fixed; top: 0; left: 0; bottom: 0; z-index: 100; transform: translateX(-100%); transition: transform 0.25s ease; }
-  .chat-sidebar.collapsed { transform: translateX(-100%); }
-  .chat-sidebar:not(.collapsed) { transform: translateX(0); }
-  .sidebar-overlay { display: block; position: fixed; inset: 0; z-index: 99; background: rgba(10, 10, 12, 0.45); }
+/* 侧面板遮罩：点击关闭（z 低于面板 120） */
+.panel-overlay {
+  position: fixed; inset: 0; z-index: 110;
+  background: rgba(10, 10, 12, 0.35);
 }
+.overlay-fade-enter-active, .overlay-fade-leave-active { transition: opacity 0.2s ease; }
+.overlay-fade-enter-from, .overlay-fade-leave-to { opacity: 0; }
 </style>

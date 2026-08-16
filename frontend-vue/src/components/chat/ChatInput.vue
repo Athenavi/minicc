@@ -64,6 +64,7 @@ function submit() {
         <div class="input-left">
           <span class="input-hint">Enter 发送 · Shift+Enter 换行</span>
           <Button
+            class="send-btn"
             :type="loading ? 'default' : 'primary'"
             shape="circle"
             :disabled="(!input.trim() && !loading) || disabled"
@@ -91,11 +92,21 @@ function submit() {
   border: 1px solid var(--border); border-radius: 22px;
   background: var(--bg-input); box-shadow: var(--shadow-md);
   font-size: 16px; line-height: 24px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+/* 聚焦态：主色描边 + 主色光晕（deepseek InputBar focus ring） */
+.input-card:focus-within {
+  border-color: var(--primary);
+  box-shadow: var(--shadow-md), 0 0 0 3px var(--primary-bg);
 }
 .input-field { background: transparent !important; }
 .input-field :deep(textarea) { color: var(--text-primary) !important; font-size: 16px !important; line-height: 24px !important; }
 .input-actions { display: flex; align-items: center; justify-content: space-between; }
 .input-left { display: flex; align-items: center; gap: 8px; }
 .input-hint { font-size: 12px; color: var(--text-tertiary); }
+/* 发送按钮：可发送时主色、hover 微放大 + 加深 */
+.send-btn { transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease; }
+.send-btn:not(:disabled):hover { transform: scale(1.06); box-shadow: 0 4px 12px var(--primary-bg); }
+.send-btn:disabled { opacity: 0.45; }
 @media (max-width: 768px) { .input-area { padding: 0 12px 8px; } }
 </style>

@@ -130,8 +130,10 @@ function handleMsgClick(e: MouseEvent) {
 </template>
 
 <style scoped>
-/* 消息列：748px 内容宽（deepseek --dsh-chat-content-width），16px 节奏 */
-.msg-row { padding: 6px 0; max-width: 748px; margin: 0 auto; width: 100%; }
+/* 消息列：748px 内容宽（deepseek --dsh-chat-content-width），16px 节奏。
+   注意：虚拟列表 item 为 absolute（left:0 right:0），此处不能设 width:100%，
+   否则 left+width+right 超约束会让 right 失效、margin auto 退化为 0（消息列贴左） */
+.msg-row { padding: 6px 0; max-width: 748px; margin: 0 auto; }
 .msg-row.user { display: flex; justify-content: flex-end; }
 /* 轨迹跳转高亮闪烁（deepseek data-current 聚焦反馈） */
 .msg-row.highlighted { background: var(--primary-bg); border-radius: 12px; animation: trajectoryFlash 2s ease-out; }
@@ -168,7 +170,9 @@ function handleMsgClick(e: MouseEvent) {
   background: var(--bubble-user); color: var(--bubble-user-text);
   border-radius: 22px; border-bottom-right-radius: 6px; max-width: min(525px, 100%);
   line-height: 24px;
+  transition: box-shadow 0.2s ease;
 }
+.msg-row.user .msg-text:hover { box-shadow: var(--shadow-md); }
 .turn-stats { max-width: 748px; margin: 0 auto; padding: 4px 0 10px; font-size: 11px; color: var(--text-muted); text-align: right; }
 /* markdown 正文（deepseek MarkdownText：16/28、标题层级、块 gap 16） */
 .msg-text :deep(p) { margin: 16px 0; }

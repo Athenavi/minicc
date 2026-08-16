@@ -24,8 +24,21 @@ type Session struct {
 	ID        string    `json:"id"`
 	UserID    string    `json:"user_id"`
 	Title     string    `json:"title"`
+	Pinned    bool      `json:"pinned"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// ConversationShare is a public snapshot of selected conversation messages
+// (rendered at /share/{id} without authentication).
+type ConversationShare struct {
+	ID         string     `json:"id"`
+	SessionID  string     `json:"session_id"`
+	UserID     string     `json:"user_id"`
+	Title      string     `json:"title"`
+	MessageIDs []string   `json:"message_ids"`
+	CreatedAt  time.Time  `json:"created_at"`
+	RevokedAt  *time.Time `json:"revoked_at,omitempty"`
 }
 
 type Message struct {
