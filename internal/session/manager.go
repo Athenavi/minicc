@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -311,7 +312,7 @@ func (m *Manager) GetToolCallsPage(ctx context.Context, sessionID string, limit 
 			}
 		}
 	}
-	query += ` ORDER BY created_at DESC, id DESC LIMIT $4`
+	query += ` ORDER BY created_at DESC, id DESC LIMIT $` + strconv.Itoa(len(args)+1)
 	args = append(args, limit+1)
 
 	rows, err := m.pool.Query(ctx, query, args...)
@@ -453,7 +454,7 @@ func (m *Manager) GetMessagesPage(ctx context.Context, sessionID string, limit i
 		}
 	}
 
-	query += ` ORDER BY created_at DESC, id DESC LIMIT $4`
+	query += ` ORDER BY created_at DESC, id DESC LIMIT $` + strconv.Itoa(len(args)+1)
 	args = append(args, limit+1)
 
 	rows, err := m.pool.Query(ctx, query, args...)
