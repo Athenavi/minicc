@@ -1,0 +1,147 @@
+/* ══════════════════════════════════════════════════════════════
+   MiniCC 设计系统 v2 — taste-skill 驱动重设计
+   --------------------------------------------------------------
+   Design Read: 企业级 AI Agent 控制台 for 技术用户
+                 Linear/Vercel 式克制专业语言
+   Dials:       DESIGN_VARIANCE 4 / MOTION_INTENSITY 3 / VISUAL_DENSITY 6
+   原则:
+     - 单一强调色（电光蓝），中性底色统一冷暖（zinc 冷灰系）
+     - 亮/暗双套语义令牌，禁纯黑/纯白
+     - 阴影 tinted（带底色相），非纯黑低透明度
+     - 圆角分层规则: 控件 6px / 卡片 10px / 面板 14px
+     - 数字用 tabular-nums（等宽数字，对齐数据列）
+   ══════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── 强调色 — DeepSeek 品牌蓝（像素级复刻 deepseek-harness design-platform） ── */
+  --primary: #4176e6;            /* --dsw-static-deepseek-500 rgb(65,118,230) */
+  --primary-light: #5686fe;      /* deepseek-450 */
+  --primary-dark: #4868b2;       /* deepseek-600 */
+  --primary-bg: rgba(65, 118, 230, 0.08);
+  --accent: #679efe;             /* deepseek-400 */
+
+  /* ── 语义色（deepseek static 色板） ── */
+  --success: #22c55e;            /* green-500 */
+  --warning: #f59e0b;            /* amber-500 */
+  --error: #ef4444;              /* red-500 */
+
+  /* ── 中性底色 — deepseek neutral-bluish 系 ── */
+  --bg-page: #f9fafb;            /* bluish-50 */
+  --bg-card: #ffffff;            /* bluish-00 */
+  --bg-secondary: #f1f3f5;       /* bluish-75 */
+  --bg-input: #ffffff;
+  --bg-hover: rgba(38, 49, 72, 0.06);   /* --dsw-alias-interactive-bg-hover */
+  --bg-code: #f9fafb;            /* markdown-code-block bluish-50 */
+
+  /* ── 文本层级（bluish 系） ── */
+  --text-primary: #0f1115;       /* bluish-1000 */
+  --text-secondary: #61666b;     /* bluish-700 */
+  --text-tertiary: #81858c;      /* bluish-600 */
+  --text-muted: #adb2b8;         /* bluish-400 */
+  --text-disabled: #dde2ee;      /* bluish-200 */
+  --text-code: #1f2430;
+
+  /* ── 边框（black/0.04 → 0.16 层级） ── */
+  --border: rgba(0, 0, 0, 0.1);       /* l2 */
+  --border-card: rgba(0, 0, 0, 0.04); /* l1 */
+
+  /* ── 用户气泡（deepseek specific-bubble） ── */
+  --bubble-user: #edf3fe;             /* deepseek-50 */
+  --bubble-user-text: #0f1115;
+
+  /* ── 阴影（deepseek --dsw-shadow-lv1/lv2） ── */
+  --shadow-md: 0 4px 12px 0 rgba(0, 0, 0, 0.02), 0 2px 8px 0 rgba(0, 0, 0, 0.04); /* lv2 */
+  --shadow-lg: 0 2px 4px 0 rgba(0, 0, 0, 0.05), 0 12px 32px 0 rgba(0, 0, 0, 0.1);
+
+  /* ── 圆角 — 复刻 deepseek：输入胶囊 22 / 卡片 8-12 / 控件 6 ── */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 22px;
+  --radius-full: 9999px;
+
+  /* ── 字体 — deepseek 字体栈 ── */
+  --font-sans: 'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-mono: 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, 'Liberation Mono', Menlo, Courier,
+    'PingFang SC', 'Microsoft YaHei';
+}
+
+/* ── 暗色模式 — deepseek bluish 暗色板 ── */
+.dark {
+  --primary: #5686fe;            /* deepseek-450（暗色更亮） */
+  --primary-light: #679efe;      /* deepseek-400 */
+  --primary-dark: #4176e6;       /* deepseek-500 */
+  --primary-bg: rgba(103, 158, 254, 0.14);
+  --accent: #679efe;
+
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --error: #ef4444;
+
+  --bg-page: #151517;            /* bluish-950 */
+  --bg-card: #232324;            /* bluish-875 */
+  --bg-secondary: #2c2c2e;       /* bluish-850 */
+  --bg-input: #232324;
+  --bg-hover: rgba(255, 255, 255, 0.08);
+  --bg-code: #2c2c2e;
+
+  --text-primary: #f9fafb;       /* bluish-50 */
+  --text-secondary: #cfd3d6;     /* bluish-300 */
+  --text-tertiary: #adb2b8;      /* bluish-400 */
+  --text-muted: #81858c;         /* bluish-600 */
+  --text-disabled: #3f3f40;
+  --text-code: #dde2ee;
+
+  --border: rgba(255, 255, 255, 0.12);  /* l2 dark */
+  --border-card: rgba(255, 255, 255, 0.06); /* l1 dark */
+
+  --bubble-user: rgba(86, 134, 254, 0.18);  /* deepseek-450 18% */
+  --bubble-user-text: #f9fafb;
+
+  --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 2px 4px rgba(0, 0, 0, 0.45), 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.6;
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--bg-page);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* 数字等宽对齐（数据列、价格、token 计数） */
+.nums,
+.numeric,
+.ant-statistic-content,
+.ant-table-cell,
+.ant-typography code {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 自定义滚动条 — deepseek 8px 细滚动条（scrollbar.css 语义） */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb, var(--text-disabled)); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover, var(--text-tertiary)); }
+body, body * { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb, var(--text-disabled)) transparent; }
+
+#app {
+  width: 100%;
+  height: 100dvh;
+}
+
+::selection {
+  background: var(--primary);
+  color: #fff;
+}
