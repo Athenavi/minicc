@@ -67,8 +67,14 @@ func (h *SubmitHandler) HandleSubmit(ctx context.Context, userID, sessionID, con
 		defer sessionCancels.Delete(sessionID)
 	}
 
+	// 落库专用 ctx：不继承主 ctx 的取消/超时。
+	// 流可能被 180s 超时、前端断开、会话取消等截断，但已产生的消息
+	// （user/assistant/tool_call）必须写入，否则刷新后对话丢失。
+	storeCtx, storeCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer storeCancel()
+
 	// S 修复：上下文丢失 — 提交时立即持久化用户消息（SSE 中断/停止也不丢历史）
-	h.sessionMgr.SaveUserMessage(ctx, sessionID, userID, content)
+	h.sessionMgr.SaveUserMessage(storeCtx, sessionID, userID, content)
 
 	histMsgs := make([]map[string]string, 0)
 	if hist, err := h.sessionMgr.GetMessages(ctx, sessionID, 50); err == nil && len(hist) > 0 {
@@ -150,15 +156,15 @@ func (h *SubmitHandler) HandleSubmit(ctx context.Context, userID, sessionID, con
 		// S 修复：工具调用过程落库（tool_call 记录 + tool_result 回填），刷新后显示一致
 		switch evt.Type {
 		case "tool_call":
-			h.sessionMgr.SaveToolCall(ctx, sessionID, evt.ID, evt.Name, evt.Arguments)
+			h.sessionMgr.SaveToolCall(storeCtx, sessionID, evt.ID, evt.Name, evt.Arguments)
 			if evt.ID != "" {
 				turnToolCallIDs = append(turnToolCallIDs, evt.ID)
 			}
 		case "tool_result":
-			h.sessionMgr.UpdateToolCall(ctx, evt.ID, evt.Content, strings.Contains(evt.Content, `"error"`))
+			h.sessionMgr.UpdateToolCall(storeCtx, evt.ID, evt.Content, strings.Contains(evt.Content, `"error"`))
 		case "guardrail_blocked":
 			// SaaS 合规：栅栏拒绝留痕（输入注入/输出泄露/工具 block 审计）
-			h.sessionMgr.SaveToolCall(ctx, sessionID,
+			h.sessionMgr.SaveToolCall(storeCtx, sessionID,
 				"guard_"+evt.ID, "guardrail",
 				fmt.Sprintf(`{"reason":%q}`, evt.Content))
 		}
@@ -175,7 +181,7 @@ func (h *SubmitHandler) HandleSubmit(ctx context.Context, userID, sessionID, con
 		// S 修复：纯工具调用轮（无文本）也保存 assistant 消息；
 		// messages.tool_calls 列只存 id 集合（内容在 tool_calls 表，避免重复存储）
 		toolCallsJSON, _ := json.Marshal(turnToolCallIDs)
-		h.sessionMgr.SaveAssistantMessage(ctx, sessionID, finalContent, string(toolCallsJSON))
+		h.sessionMgr.SaveAssistantMessage(storeCtx, sessionID, finalContent, string(toolCallsJSON))
 	} else {
 		// 无文本无工具：仅用户消息已由 SaveUserMessage 持久化
 	}
@@ -183,10 +189,10 @@ func (h *SubmitHandler) HandleSubmit(ctx context.Context, userID, sessionID, con
 	if inputTokens > 0 || outputTokens > 0 {
 		if h.biller != nil {
 			// 检查是否仍在免费额度内
-			freeCount, fcErr := h.biller.DailyFreeCount(ctx, userID)
+			freeCount, fcErr := h.biller.DailyFreeCount(storeCtx, userID)
 			if fcErr == nil && freeCount < billing.DailyFreeLimit {
 				// 免费对话：记录使用，不扣费
-				if markErr := h.biller.MarkFreeUsage(ctx, userID); markErr != nil {
+				if markErr := h.biller.MarkFreeUsage(storeCtx, userID); markErr != nil {
 					slog.Error("billing: MarkFreeUsage failed", "user", userID, "error", markErr)
 				}
 			} else {
