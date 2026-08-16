@@ -3,6 +3,7 @@ package api
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"time"
 
@@ -87,7 +88,15 @@ func SSEHandler(hub *broadcast.Hub, sessionMgr *session.Manager) http.HandlerFun
 			}
 			if sessionMgr != nil {
 				s, err := sessionMgr.GetSession(r.Context(), sessionID)
-				if err != nil || s == nil || s.UserID != claims.UserID {
+				if err != nil {
+					// 新会话：前端先建立 SSE 连接，/submit 才会创建 session。
+					// 此时会话尚不存在、无历史事件可泄露，放行连接等待创建；
+					// 其他错误（DB 故障等）拒绝。
+					if !errors.Is(err, session.ErrSessionNotFound) {
+						InternalError(w, "session check failed")
+						return
+					}
+				} else if s == nil || s.UserID != claims.UserID {
 					Forbidden(w, "session does not belong to the current user")
 					return
 				}

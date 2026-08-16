@@ -90,6 +90,12 @@ func runUp(ctx context.Context, dsn string) {
 		exitCode = 1
 		return
 	}
+	// 幂等 seed 默认租户（覆盖已应用旧版初始迁移、无种子的库）
+	if err := db.EnsureDefaultTenant(ctx, db.Pool); err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: ensure default tenant: %v\n", err)
+		exitCode = 1
+		return
+	}
 	slog.Info("migrations applied successfully")
 }
 

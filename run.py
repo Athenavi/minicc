@@ -220,13 +220,17 @@ class ServiceManager:
         """编译 Go 服务"""
         print(bold("编译 Go Gateway..."))
 
-        result = subprocess.run(
-            ["go", "build", "-o",
-             "minicc.exe" if is_windows() else "minicc",
-             "./cmd/minicc/"],
-            cwd=str(BASE_DIR),
-            capture_output=True, text=True
-        )
+        try:
+            result = subprocess.run(
+                ["go", "build", "-o",
+                 "minicc.exe" if is_windows() else "minicc",
+                 "./cmd/minicc/"],
+                cwd=str(BASE_DIR),
+                capture_output=True, text=True
+            )
+        except FileNotFoundError:
+            print(red("未找到 go 命令，请先安装 Go (https://go.dev/dl/)"))
+            return False
 
         if result.returncode != 0:
             print(red(f"编译失败:\n{result.stderr}"))
@@ -404,6 +408,11 @@ class ServiceManager:
 
         targets = services or list(SERVICES.keys())
 
+        # gateway 依赖编译产物 minicc.exe；缺失时先自动构建（README: start 自动构建 Go）
+        if "gateway" in targets and not os.path.exists(SERVICES["gateway"]["cmd"][0]):
+            print(yellow("Go Gateway 二进制不存在，先编译..."))
+            if not self.build():
+                return False
 
         results = {}
         for key in targets:

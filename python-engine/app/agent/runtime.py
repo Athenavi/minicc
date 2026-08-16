@@ -4,6 +4,7 @@ Agent Runtime — 完整的 ReAct / Plan-and-Execute 推理循环
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time

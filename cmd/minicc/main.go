@@ -59,6 +59,10 @@ func main() {
 			if err := db.RunAtlasMigrations(ctx, router.Write(), "migrations"); err != nil {
 				slog.Warn("migrations failed", "error", err)
 			}
+			// 幂等 seed 默认租户（不依赖迁移状态；缺失时注册会违反外键 23503）
+			if err := db.EnsureDefaultTenant(ctx, router.Write()); err != nil {
+				slog.Warn("ensure default tenant failed", "error", err)
+			}
 			slog.Info("database router enabled", "read_replicas", len(cfg.PostgresReadDSNs))
 		}
 	}
@@ -72,6 +76,10 @@ func main() {
 			defer db.ClosePostgres()
 			if err := db.RunAtlasMigrations(ctx, db.Pool, "migrations"); err != nil {
 				slog.Warn("migrations failed", "error", err)
+			}
+			// 幂等 seed 默认租户（不依赖迁移状态；缺失时注册会违反外键 23503）
+			if err := db.EnsureDefaultTenant(ctx, db.Pool); err != nil {
+				slog.Warn("ensure default tenant failed", "error", err)
 			}
 		}
 	}

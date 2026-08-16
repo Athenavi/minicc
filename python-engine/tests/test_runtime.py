@@ -361,3 +361,43 @@ class TestContextContinuity:
         msgs = captured_messages[0]
         texts = [m.content for m in msgs if m.role == "user"]
         assert any("写一段排序代码" in t for t in texts), f"第一轮用户消息丢失: {texts}"
+
+
+class TestToolGuardConfirmPath:
+    """回归：_guarded_execute_tool 的 confirm 分支曾因缺 `import asyncio` 抛
+    NameError，导致危险工具（DANGEROUS_TOOLS）的用户确认机制一触发即崩溃。"""
+
+    @pytest.mark.asyncio
+    async def test_confirm_waits_for_approval_and_resumes(self):
+        import asyncio as _asyncio
+
+        runtime = AgentRuntime(gateway=None)
+        task = AgentTask(id="t1", tenant_id="t", user_id="u", session_id="",
+                         content="hi", max_turns=2)
+        # run_code 属于 DANGEROUS_TOOLS → ToolGuard 返回 confirm → approval 流程
+        fut = _asyncio.ensure_future(runtime._guarded_execute_tool(
+            {"id": "tc1", "name": "run_code", "arguments": "{}"}, task))
+        await _asyncio.sleep(0.05)
+        assert "tc1" in runtime._pending_approvals, "approval future 未注册"
+        solved = await runtime.submit_approval("tc1", True)
+        assert solved is True
+        result, _evt = await _asyncio.wait_for(fut, timeout=5.0)
+        # 不再抛 NameError，且返回工具执行结果（dict）
+        assert isinstance(result, dict)
+
+    @pytest.mark.asyncio
+    async def test_confirm_denied_returns_error(self):
+        import asyncio as _asyncio
+
+        runtime = AgentRuntime(gateway=None)
+        task = AgentTask(id="t1", tenant_id="t", user_id="u", session_id="",
+                         content="hi", max_turns=2)
+        fut = _asyncio.ensure_future(runtime._guarded_execute_tool(
+            {"id": "tc2", "name": "run_code", "arguments": "{}"}, task))
+        await _asyncio.sleep(0.05)
+        solved = await runtime.submit_approval("tc2", False)
+        assert solved is True
+        result, evt = await _asyncio.wait_for(fut, timeout=5.0)
+        assert "denied" in result.get("error", "")
+        assert evt is not None and evt.type == "approval"
+

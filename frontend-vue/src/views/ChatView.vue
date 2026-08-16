@@ -394,11 +394,11 @@ async function sendMessage(text: string) {
   resetStreamState()
   connectionLost.value = false
   appendUserText(text)
-  const sessionId = activeSessionId.value || ''
+  const sessionId = activeSessionId.value || `session_${Date.now()}_${Math.random().toString(36).slice(2)}`
   try {
     if (activeSSE) { activeSSE.close(); activeSSE = null }
     activeSSE = await createSSEConnection(
-      sessionId || `session_${Date.now()}`,
+      sessionId,
       onSSEMessage,
       () => {
         loading.value = false
@@ -409,7 +409,7 @@ async function sendMessage(text: string) {
     )
     const body: any = { content: text, session_id: sessionId, llm_config: { mode: mode.value } }
     await api.post('/submit', body)
-    if (!sessionId) { activeSessionId.value = activeSSE.url?.split('session_id=')[1]?.split('&')[0] || '' }
+    activeSessionId.value = sessionId
   } catch (e: any) {
     loading.value = false
     stopTurnTimer()

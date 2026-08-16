@@ -16,8 +16,8 @@ import (
 
 const tokenCookieName = "minicc_token"
 
-// DefaultTenantID 是默认租户 ID（用于单租户模式）
-const DefaultTenantID = "00000000-0000-0000-0000-000000000001"
+// DefaultTenantID 是默认租户 ID（用于单租户模式），单一来源见 internal/db/seed.go。
+const DefaultTenantID = db.DefaultTenantID
 
 type AuthHandler struct {
 	auth *auth.Authenticator

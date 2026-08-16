@@ -319,6 +319,12 @@ name character varying(255) NOT NULL,
 created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
+-- 默认租户种子：注册/会话代码硬编码 DefaultTenantID
+-- ('00000000-0000-0000-0000-000000000001')，且 users/sessions 等表均有
+-- *_tenant_id_fkey → tenants(id) 外键；若无此行，从零建库后注册必然违反
+-- users_tenant_id_fkey（SQLSTATE 23503）。
+INSERT INTO tenants (id, name) VALUES ('00000000-0000-0000-0000-000000000001', 'default');
+
 CREATE TABLE tool_calls (
 id uuid DEFAULT gen_random_uuid() NOT NULL,
 session_id uuid NOT NULL,

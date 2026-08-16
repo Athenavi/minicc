@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -21,6 +22,9 @@ const (
 	redisKeyPrefix = "session:"
 	redisTTL       = 2 * time.Hour
 )
+
+// ErrSessionNotFound 表示会话不存在（SSE 端点据此放行尚未创建的新会话连接）。
+var ErrSessionNotFound = errors.New("session not found")
 
 // Manager provides session CRUD with Redis hot cache + PostgreSQL persistence.
 // All methods degrade gracefully when Redis or PG is unavailable.
@@ -65,7 +69,7 @@ func (m *Manager) GetSession(ctx context.Context, id string) (*model.Session, er
 		 FROM sessions WHERE id = $1`, id).
 		Scan(&s.ID, &s.UserID, &s.Title, &s.CreatedAt, &s.UpdatedAt)
 	if err == pgx.ErrNoRows {
-		return nil, fmt.Errorf("session not found: %s", id)
+		return nil, fmt.Errorf("%w: %s", ErrSessionNotFound, id)
 	} else if err != nil {
 		return nil, fmt.Errorf("query session: %w", err)
 	}
@@ -76,7 +80,8 @@ func (m *Manager) GetSession(ctx context.Context, id string) (*model.Session, er
 }
 
 // DefaultTenantID is the default tenant for single-tenant deployments.
-const DefaultTenantID = "00000000-0000-0000-0000-000000000001"
+// 单一来源见 internal/db/seed.go。
+const DefaultTenantID = db.DefaultTenantID
 
 // CreateSession inserts a new session into PG and caches in Redis.
 // If id is empty, returns an error.
