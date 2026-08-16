@@ -116,7 +116,7 @@ async function createSession() {
     if (data?.id) session = { id: data.id, title: data.title || '新对话', created_at: data.created_at, updated_at: data.updated_at }
   } catch { /* fallback */ }
   if (!session) {
-    const id = `session_${Date.now()}_${Math.random().toString(36).slice(2)}`
+    const id = crypto.randomUUID()
     session = { id, title: '新对话', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }
   }
   sessions.value.unshift(session); persistSessions()
@@ -394,7 +394,7 @@ async function sendMessage(text: string) {
   resetStreamState()
   connectionLost.value = false
   appendUserText(text)
-  const sessionId = activeSessionId.value || `session_${Date.now()}_${Math.random().toString(36).slice(2)}`
+  const sessionId = activeSessionId.value || crypto.randomUUID()
   try {
     if (activeSSE) { activeSSE.close(); activeSSE = null }
     activeSSE = await createSSEConnection(

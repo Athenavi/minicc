@@ -16,6 +16,7 @@ import (
 	"github.com/athenavi/minicc/internal/model"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -72,6 +73,12 @@ func (m *Manager) GetSession(ctx context.Context, id string) (*model.Session, er
 	if err == pgx.ErrNoRows {
 		return nil, fmt.Errorf("%w: %s", ErrSessionNotFound, id)
 	} else if err != nil {
+		// 非法 uuid 格式（如前端旧版 fallback id "session_xxx"）：会话必然不存在，
+		// 按 not found 处理（否则 SSE 端点会 500、前端触发"连接已断开"）
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "22P02" {
+			return nil, fmt.Errorf("%w: %s", ErrSessionNotFound, id)
+		}
 		return nil, fmt.Errorf("query session: %w", err)
 	}
 
