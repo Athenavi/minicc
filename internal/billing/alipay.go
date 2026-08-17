@@ -1,0 +1,276 @@
+package billing
+
+import (
+	"context"
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
+	"encoding/pem"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"sort"
+	"strings"
+	"time"
+)
+
+// AlipayClient 对接支付宝开放平台（当面付 trade.precreate + 异步通知验签）。
+// 自研 RSA2 签名，不依赖第三方 SDK。
+type AlipayClient struct {
+	appID       string
+	privateKey  *rsa.PrivateKey
+	publicKey   *rsa.PublicKey // 支付宝公钥（用于响应/回调验签）
+	gateway     string
+	notifyURL   string
+	httpClient  *http.Client
+}
+
+// NewAlipayClient 用 PEM 私钥/公钥构造客户端。gateway 为空时使用生产网关。
+func NewAlipayClient(appID, privateKeyPEM, alipayPublicKeyPEM, gateway, notifyURL string) (*AlipayClient, error) {
+	priv, err := parseRSAPrivateKey(privateKeyPEM)
+	if err != nil {
+		return nil, fmt.Errorf("parse alipay private key: %w", err)
+	}
+	pub, err := parseRSAPublicKey(alipayPublicKeyPEM)
+	if err != nil {
+		return nil, fmt.Errorf("parse alipay public key: %w", err)
+	}
+	if gateway == "" {
+		gateway = "https://openapi.alipay.com/gateway.do"
+	}
+	return &AlipayClient{
+		appID:      appID,
+		privateKey: priv,
+		publicKey:  pub,
+		gateway:    gateway,
+		notifyURL:  notifyURL,
+		httpClient: &http.Client{Timeout: 15 * time.Second},
+	}, nil
+}
+
+func parseRSAPrivateKey(pemStr string) (*rsa.PrivateKey, error) {
+	block, _ := pem.Decode([]byte(pemStr))
+	if block == nil {
+		// 兼容无 PEM 头的裸 base64 私钥
+		der, err := base64.StdEncoding.DecodeString(strings.TrimSpace(pemStr))
+		if err != nil {
+			return nil, fmt.Errorf("decode private key: %w", err)
+		}
+		block = &pem.Block{Type: "PRIVATE KEY", Bytes: der}
+	}
+	if k, err := x509.ParsePKCS8PrivateKey(block.Bytes); err == nil {
+		if rk, ok := k.(*rsa.PrivateKey); ok {
+			return rk, nil
+		}
+	}
+	if rk, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
+		return rk, nil
+	}
+	return nil, fmt.Errorf("unsupported private key format")
+}
+
+func parseRSAPublicKey(pemStr string) (*rsa.PublicKey, error) {
+	block, _ := pem.Decode([]byte(pemStr))
+	if block == nil {
+		der, err := base64.StdEncoding.DecodeString(strings.TrimSpace(pemStr))
+		if err != nil {
+			return nil, fmt.Errorf("decode public key: %w", err)
+		}
+		block = &pem.Block{Type: "PUBLIC KEY", Bytes: der}
+	}
+	if k, err := x509.ParsePKIXPublicKey(block.Bytes); err == nil {
+		if rk, ok := k.(*rsa.PublicKey); ok {
+			return rk, nil
+		}
+	}
+	if k, err := x509.ParsePKCS1PublicKey(block.Bytes); err == nil {
+		return k, nil
+	}
+	return nil, fmt.Errorf("unsupported public key format")
+}
+
+// buildSignContent 拼接待签名串：非空参数按 key 字典序，key=value 用 & 连接。
+func buildSignContent(params map[string]string) string {
+	keys := make([]string, 0, len(params))
+	for k, v := range params {
+		if k == "sign" || k == "sign_type" || v == "" {
+			continue
+		}
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, k+"="+params[k])
+	}
+	return strings.Join(parts, "&")
+}
+
+// sign 对参数做 RSA2（SHA256withRSA）签名，返回 base64。
+func (c *AlipayClient) sign(params map[string]string) (string, error) {
+	content := buildSignContent(params)
+	digest := sha256.Sum256([]byte(content))
+	sig, err := rsa.SignPKCS1v15(rand.Reader, c.privateKey, crypto.SHA256, digest[:])
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(sig), nil
+}
+
+// verify 用支付宝公钥验签。
+func (c *AlipayClient) verify(params map[string]string, signature string) error {
+	content := buildSignContent(params)
+	digest := sha256.Sum256([]byte(content))
+	sig, err := base64.StdEncoding.DecodeString(signature)
+	if err != nil {
+		return fmt.Errorf("decode signature: %w", err)
+	}
+	return rsa.VerifyPKCS1v15(c.publicKey, crypto.SHA256, digest[:], sig)
+}
+
+// Precreate 支付宝当面付预下单，返回二维码内容与渠道订单号。
+func (c *AlipayClient) Precreate(ctx context.Context, outTradeNo string, amountCents int64, subject string) (qrCode string, err error) {
+	biz := map[string]any{
+		"out_trade_no": outTradeNo,
+		"total_amount": fmt.Sprintf("%.2f", float64(amountCents)/100),
+		"subject":      subject,
+	}
+	bizJSON, err := json.Marshal(biz)
+	if err != nil {
+		return "", err
+	}
+
+	params := map[string]string{
+		"app_id":      c.appID,
+		"method":      "alipay.trade.precreate",
+		"format":      "JSON",
+		"charset":     "utf-8",
+		"sign_type":   "RSA2",
+		"timestamp":   time.Now().Format("2006-01-02 15:04:05"),
+		"version":     "1.0",
+		"biz_content": string(bizJSON),
+	}
+	if c.notifyURL != "" {
+		params["notify_url"] = c.notifyURL
+	}
+	sign, err := c.sign(params)
+	if err != nil {
+		return "", fmt.Errorf("sign precreate: %w", err)
+	}
+	params["sign"] = sign
+
+	form := url.Values{}
+	for k, v := range params {
+		form.Set(k, v)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.gateway, strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("alipay precreate request: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", err
+	}
+
+	var r struct {
+		Response struct {
+			Code       string `json:"code"`
+			Msg        string `json:"msg"`
+			SubMsg     string `json:"sub_msg"`
+			OutTradeNo string `json:"out_trade_no"`
+			QRCode     string `json:"qr_code"`
+		} `json:"alipay_trade_precreate_response"`
+		Sign string `json:"sign"`
+	}
+	if err := json.Unmarshal(body, &r); err != nil {
+		return "", fmt.Errorf("alipay precreate decode: %w", err)
+	}
+	if r.Response.Code != "10000" {
+		return "", fmt.Errorf("alipay precreate failed: %s %s", r.Response.Msg, r.Response.SubMsg)
+	}
+	if r.Response.QRCode == "" {
+		return "", fmt.Errorf("alipay precreate returned empty qr_code")
+	}
+	return r.Response.QRCode, nil
+}
+
+// Query 查询订单支付状态。返回 (tradeNo, paid, err)。
+func (c *AlipayClient) Query(ctx context.Context, outTradeNo string) (string, bool, error) {
+	biz, _ := json.Marshal(map[string]any{"out_trade_no": outTradeNo})
+	params := map[string]string{
+		"app_id":      c.appID,
+		"method":      "alipay.trade.query",
+		"format":      "JSON",
+		"charset":     "utf-8",
+		"sign_type":   "RSA2",
+		"timestamp":   time.Now().Format("2006-01-02 15:04:05"),
+		"version":     "1.0",
+		"biz_content": string(biz),
+	}
+	sign, err := c.sign(params)
+	if err != nil {
+		return "", false, err
+	}
+	params["sign"] = sign
+
+	form := url.Values{}
+	for k, v := range params {
+		form.Set(k, v)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.gateway, strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", false, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", false, fmt.Errorf("alipay query request: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", false, err
+	}
+	var r struct {
+		Response struct {
+			Code       string `json:"code"`
+			Msg        string `json:"msg"`
+			SubMsg     string `json:"sub_msg"`
+			TradeNo    string `json:"trade_no"`
+			TradeState string `json:"trade_status"`
+		} `json:"alipay_trade_query_response"`
+	}
+	if err := json.Unmarshal(body, &r); err != nil {
+		return "", false, fmt.Errorf("alipay query decode: %w", err)
+	}
+	paid := r.Response.TradeState == "TRADE_SUCCESS" || r.Response.TradeState == "TRADE_FINISHED"
+	return r.Response.TradeNo, paid, nil
+}
+
+// VerifyCallback 校验支付宝异步通知参数（验签 + 交易成功状态）。
+// 返回 (outTradeNo, tradeNo, ok)。
+func (c *AlipayClient) VerifyCallback(params map[string]string) (string, string, bool) {
+	sign := params["sign"]
+	if sign == "" || params["app_id"] != c.appID {
+		return "", "", false
+	}
+	if params["trade_status"] != "TRADE_SUCCESS" && params["trade_status"] != "TRADE_FINISHED" {
+		return "", "", false
+	}
+	if err := c.verify(params, sign); err != nil {
+		return "", "", false
+	}
+	return params["out_trade_no"], params["trade_no"], true
+}
