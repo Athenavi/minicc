@@ -61,6 +61,7 @@ func (h *MediaHandler) List(w http.ResponseWriter, r *http.Request) {
 	category := r.URL.Query().Get("category")
 	mediaType := r.URL.Query().Get("type")
 	search := r.URL.Query().Get("search")
+	tagsParam := r.URL.Query().Get("tags")
 	page, pageSize := parsePagination(r.URL.Query())
 
 	where := " WHERE tenant_id = $1 AND user_id = $2 AND parent_id = $3"
@@ -81,6 +82,21 @@ func (h *MediaHandler) List(w http.ResponseWriter, r *http.Request) {
 		where += fmt.Sprintf(" AND name ILIKE $%d", argIdx)
 		args = append(args, "%"+search+"%")
 		argIdx++
+	}
+	if tagsParam != "" {
+		// 逗号分隔标签：匹配全部（tags @>）
+		tagList := strings.Split(tagsParam, ",")
+		clean := make([]string, 0, len(tagList))
+		for _, t := range tagList {
+			if t = strings.TrimSpace(t); t != "" {
+				clean = append(clean, t)
+			}
+		}
+		if len(clean) > 0 {
+			where += fmt.Sprintf(" AND tags @> $%d::text[]", argIdx)
+			args = append(args, clean)
+			argIdx++
+		}
 	}
 
 	var total int64
@@ -238,9 +254,10 @@ func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, 50<<20)
+	r.Body = http.MaxBytesReader(w, r.Body, 200<<20) // 200MB 上传上限
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
-		BadRequest(w, "file too large or invalid form")
+		// 暴露真实原因（请求体超限 / boundary 缺失 / 格式损坏），便于定位
+		BadRequest(w, "file too large or invalid form: "+err.Error())
 		return
 	}
 
@@ -261,6 +278,7 @@ func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	mimeType := truncateMIME(header.Header.Get("Content-Type"))
 	assetType := detectType(mimeType)
 	category := r.FormValue("category")
+	parentID := r.FormValue("parent_id") // 当前目录；空 = 根目录
 
 	dir := h.resolveDir(r)
 	name := r.FormValue("name")
@@ -268,13 +286,13 @@ func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		name = header.Filename
 	}
 
-	// 先插入数据库获取 UUID
+	// 先插入数据库获取 UUID（含 parent_id，子文件夹上传不落到根目录）
 	var assetID string
 	err = db.Pool.QueryRow(r.Context(),
-		`INSERT INTO media_assets (id, tenant_id, user_id, type, name, file_url, mime_type, category, size, created_at, updated_at)
-		 VALUES (gen_random_uuid(), $1, $2, $3, $4, '', $5, $6, $7, NOW(), NOW())
+		`INSERT INTO media_assets (id, tenant_id, user_id, type, name, file_url, mime_type, category, size, parent_id, created_at, updated_at)
+		 VALUES (gen_random_uuid(), $1, $2, $3, $4, '', $5, $6, $7, $8, NOW(), NOW())
 		 RETURNING id`,
-		DefaultTenantID, claims.UserID, assetType, name, mimeType, nullableStr(category), fileSize,
+		DefaultTenantID, claims.UserID, assetType, name, mimeType, nullableStr(category), fileSize, parentID,
 	).Scan(&assetID)
 	if err != nil {
 		InternalError(w, "create asset: "+err.Error())
@@ -414,6 +432,45 @@ func (h *MediaHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
 // ── CreateFolder (virtual folder) ──
 
 // CreateFolder creates a virtual folder (type='folder', no storage object).
+// ListFolders 返回用户全部文件夹（含 parent_id），供移动层级树构建。
+func (h *MediaHandler) ListFolders(w http.ResponseWriter, r *http.Request) {
+	claims := getAuthClaims(r, h.authenticator)
+	if claims == nil {
+		Unauthorized(w, "authentication required")
+		return
+	}
+	if db.Pool == nil {
+		OK(w, []map[string]string{})
+		return
+	}
+
+	rows, err := db.Pool.Query(r.Context(),
+		`SELECT id, name, COALESCE(parent_id::text, '') FROM media_assets
+		 WHERE tenant_id = $1 AND user_id = $2 AND type = 'folder'
+		 ORDER BY name`, DefaultTenantID, claims.UserID)
+	if err != nil {
+		InternalError(w, "list folders: "+err.Error())
+		return
+	}
+	defer rows.Close()
+
+	type folderNode struct {
+		ID       string `json:"id"`
+		Name     string `json:"name"`
+		ParentID string `json:"parent_id"`
+	}
+	folders := make([]folderNode, 0, 16)
+	for rows.Next() {
+		var f folderNode
+		if err := rows.Scan(&f.ID, &f.Name, &f.ParentID); err != nil {
+			continue
+		}
+		folders = append(folders, f)
+	}
+	OK(w, folders)
+}
+
+// CreateFolder creates a folder asset.
 func (h *MediaHandler) CreateFolder(w http.ResponseWriter, r *http.Request) {
 	claims := getAuthClaims(r, h.authenticator)
 	if claims == nil {
@@ -484,14 +541,15 @@ func (h *MediaHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Name     *string `json:"name"`
-		ParentID *string `json:"parent_id"`
+		Name     *string   `json:"name"`
+		ParentID *string   `json:"parent_id"`
+		Tags     *[]string `json:"tags"`
 	}
 	if err := DecodeJSON(w, r, &body); err != nil {
 		BadRequest(w, "invalid request")
 		return
 	}
-	if body.Name == nil && body.ParentID == nil {
+	if body.Name == nil && body.ParentID == nil && body.Tags == nil {
 		BadRequest(w, "nothing to update")
 		return
 	}
@@ -560,6 +618,15 @@ func (h *MediaHandler) Update(w http.ResponseWriter, r *http.Request) {
 		newName, newParent, id, DefaultTenantID, claims.UserID); err != nil {
 		InternalError(w, "update media asset: "+err.Error())
 		return
+	}
+	// 标签独立更新（不影响名称/父目录检查）
+	if body.Tags != nil {
+		if _, err := db.Pool.Exec(r.Context(),
+			`UPDATE media_assets SET tags=$1, updated_at=NOW() WHERE id=$2 AND tenant_id=$3 AND user_id=$4`,
+			*body.Tags, id, DefaultTenantID, claims.UserID); err != nil {
+			InternalError(w, "update media tags: "+err.Error())
+			return
+		}
 	}
 	OK(w, map[string]string{"id": id, "name": newName, "parent_id": newParent})
 }

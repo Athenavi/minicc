@@ -22,6 +22,7 @@ class SkillDef:
     source: str = ""
     parameters: list[dict[str, Any]] = field(default_factory=list)
     installed_at: float = field(default_factory=time.time)
+    enabled: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -33,6 +34,7 @@ class SkillDef:
             "exec": {"type": self.exec_type, "source": self.source},
             "parameters": self.parameters,
             "installed_at": self.installed_at,
+            "enabled": self.enabled,
         }
 
 
@@ -86,4 +88,5 @@ class SkillStore:
             source=exec_cfg.get("source", ""),
             parameters=data.get("parameters", []),
             installed_at=data.get("installed_at", 0),
+            enabled=data.get("enabled", True),
         )

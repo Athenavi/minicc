@@ -27,6 +27,8 @@ async def build_skill_catalog() -> str:
         logger.debug("skill catalog build failed: %s", e)
         return ""
     skills = result.get("skills") or []
+    # 停用技能不进 agent 目录
+    skills = [s for s in skills if s.get("enabled", True)]
     if not skills:
         return ""
     lines = ["<available_skills>", "You have these skills installed. Load one only when needed; do not re-load already-inlined content."]

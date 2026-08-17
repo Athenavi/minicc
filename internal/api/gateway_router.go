@@ -151,6 +151,10 @@ func NewGatewayRouter(
 	// Media
 	mediaHandler := NewMediaHandler(fileStore, authenticator)
 
+	// 通用分片上传（断点续传）
+	uploadHandler := NewUploadHandler(authenticator, cfg.StorageRoot)
+	uploadHandler.RegisterRoutes(mux, authMW, rlMW)
+
 	// Billing handler (uses the same billingMgr as /submit to avoid split-brain cache)
 	billingHandler := NewBillingHandler(billingMgr, authenticator, cfg)
 
@@ -339,6 +343,7 @@ func NewGatewayRouter(
 	mux.Handle("GET /v1/media", rlMW(http.HandlerFunc(mediaHandler.List)))
 	mux.Handle("POST /v1/media", rlMW(http.HandlerFunc(mediaHandler.Create)))
 	mux.Handle("POST /v1/media/folders", rlMW(http.HandlerFunc(mediaHandler.CreateFolder)))
+	mux.Handle("GET /v1/media/folders", rlMW(http.HandlerFunc(mediaHandler.ListFolders)))
 	mux.Handle("POST /v1/media/upload", rlMW(http.HandlerFunc(mediaHandler.Upload)))
 	mux.Handle("POST /v1/media/presign", rlMW(http.HandlerFunc(mediaHandler.PresignUpload)))
 	mux.Handle("POST /v1/media/complete", rlMW(http.HandlerFunc(mediaHandler.CompleteUpload)))
@@ -351,6 +356,8 @@ func NewGatewayRouter(
 	// Plugins (auth + rate limited)
 	mux.Handle("GET /v1/plugins", authMW(rlMW(http.HandlerFunc(pluginHandler.List))))
 	mux.Handle("POST /v1/plugins/{name}/install", authMW(rlMW(http.HandlerFunc(pluginHandler.Install))))
+	mux.Handle("PUT /v1/plugins/{name}", authMW(rlMW(http.HandlerFunc(pluginHandler.Update))))
+	mux.Handle("POST /v1/plugins/{name}/test", authMW(rlMW(http.HandlerFunc(pluginHandler.Test))))
 	mux.Handle("DELETE /v1/plugins/{name}", authMW(rlMW(http.HandlerFunc(pluginHandler.Uninstall))))
 
 	// Billing (auth + rate limited)
@@ -422,17 +429,25 @@ func NewGatewayRouter(
 		graphProxy("POST", "/v1/graphs/"+r.PathValue("id")+"/execute", nil)(w, r)
 	}))))
 
-	// Agents (rate limited, proxies to Python)
-	mux.Handle("GET /v1/agents", rlMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if pythonClient != nil && pythonClient.IsConnected() {
-			var resp interface{}
-			if err := pythonClient.GetJSON(r.Context(), "/v1/agents", &resp); err == nil {
-				OK(w, resp)
-				return
-			}
-		}
-		OK(w, []interface{}{})
-	})))
+	// Workflow 执行状态与历史（代理 Python；status 支持内存实例 + DB 回退）
+	mux.Handle("GET /v1/workflows/instances", authMW(rlMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		graphProxy("GET", "/v1/workflows/instances", nil)(w, r)
+	}))))
+	mux.Handle("GET /v1/workflows/{id}/status", authMW(rlMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		graphProxy("GET", "/v1/workflows/"+r.PathValue("id")+"/status", nil)(w, r)
+	}))))
+
+	// Agents (auth + rate limited; DB 驱动 CRUD + 运行会话)
+	agentHandler := NewAgentHandler(authenticator, pythonClient)
+	mux.Handle("GET /v1/agents", authMW(rlMW(http.HandlerFunc(agentHandler.List))))
+	mux.Handle("POST /v1/agents", authMW(rlMW(http.HandlerFunc(agentHandler.Create))))
+	mux.Handle("GET /v1/agents/{id}", authMW(rlMW(http.HandlerFunc(agentHandler.Get))))
+	mux.Handle("PUT /v1/agents/{id}", authMW(rlMW(http.HandlerFunc(agentHandler.Update))))
+	mux.Handle("DELETE /v1/agents/{id}", authMW(rlMW(http.HandlerFunc(agentHandler.Delete))))
+	mux.Handle("POST /v1/agents/{id}/run", authMW(rlMW(http.HandlerFunc(agentHandler.Run))))
+	mux.Handle("GET /v1/agents/sessions", authMW(rlMW(http.HandlerFunc(agentHandler.ListSessions))))
+	mux.Handle("GET /v1/agents/sessions/{id}", authMW(rlMW(http.HandlerFunc(agentHandler.GetSession))))
+	// dispatch 保留 Python 代理（agent 工具链内部调用，非页面主链路）
 	mux.Handle("POST /v1/agents/dispatch", rlMW(sanitizeMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if pythonClient == nil || !pythonClient.IsConnected() {
 			InternalError(w, "python engine not available")

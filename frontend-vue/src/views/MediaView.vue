@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
 import {
   Button, Input, Select, Segmented, Pagination, Empty, Spin, Table, message,
-  Drawer, Modal, Popconfirm, Upload, Checkbox,
+  Drawer, Modal, Popconfirm, Upload, Checkbox, Tree, Tag,
 } from 'ant-design-vue'
 import {
   SearchOutlined, CloudUploadOutlined, FolderOutlined, FileOutlined,
+  FolderAddOutlined, LeftOutlined, RightOutlined, TagOutlined,
 } from '@ant-design/icons-vue'
 import { api } from '../api'
+import { createChunkUpload } from '../utils/uploader'
 import { FileViewer } from '@file-viewer/vue3'
 import allPreset from '@file-viewer/preset-all'
 
@@ -20,6 +22,7 @@ interface MediaItem {
   size: number
   file_url: string
   mime_type?: string
+  tags?: string[]
   created_at: string
 }
 
@@ -85,6 +88,7 @@ async function fetchItems() {
     }
     if (searchQuery.value.trim()) params.search = searchQuery.value.trim()
     if (typeFilter.value) params.type = typeFilter.value
+    if (tagFilter.value.length > 0) params.tags = tagFilter.value.join(',')
     const res = await api.get('/v1/media', { params })
     const data = res.data?.data || { items: [], total: 0 }
     items.value = data.items || []
@@ -131,7 +135,6 @@ const showRename = ref(false)
 const renameName = ref('')
 const showMove = ref(false)
 const moveParentId = ref('')
-const folderTree = ref<MediaItem[]>([])
 const showShare = ref(false)
 const shareUrl = ref('')
 const shareExpires = ref('')
@@ -189,12 +192,115 @@ async function submitRename() {
 async function openMove() {
   moveParentId.value = currentParentId.value
   try {
-    const res = await api.get('/v1/media', { params: { page: 1, page_size: 200 } })
-    folderTree.value = (res.data?.data?.items || []).filter((i: MediaItem) => i.type === 'folder')
+    const res = await api.get('/v1/media/folders')
+    const folders: { id: string; name: string; parent_id: string }[] = res.data?.data || []
+    moveTreeData.value = buildMoveTree(folders)
   } catch {
-    folderTree.value = []
+    moveTreeData.value = []
   }
   showMove.value = true
+}
+
+// 文件夹层级树（移动对话框）
+const moveTreeData = ref<any[]>([])
+
+function buildMoveTree(folders: { id: string; name: string; parent_id: string }[]): any[] {
+  const map = new Map<string, any>()
+  for (const f of folders) map.set(f.id, { key: f.id, title: f.name, children: [] as any[] })
+  const roots: any[] = []
+  for (const f of folders) {
+    const node = map.get(f.id)
+    if (f.parent_id && map.has(f.parent_id)) map.get(f.parent_id).children.push(node)
+    else roots.push(node)
+  }
+  return roots
+}
+
+// ── 新建文件夹 ──
+const newFolderOpen = ref(false)
+const newFolderName = ref('')
+const folderCreating = ref(false)
+
+async function createFolder() {
+  const name = newFolderName.value.trim()
+  if (!name) { message.warning('请输入文件夹名称'); return }
+  folderCreating.value = true
+  try {
+    await api.post('/v1/media/folders', { name, parent_id: currentParentId.value })
+    message.success('文件夹已创建')
+    newFolderOpen.value = false
+    newFolderName.value = ''
+    fetchItems()
+  } catch (e: any) {
+    message.error(e.response?.data?.error || '创建失败')
+  } finally {
+    folderCreating.value = false
+  }
+}
+
+// ── 图片灯箱 ──
+const lightboxOpen = ref(false)
+const lightboxList = ref<MediaItem[]>([])
+const lightboxIndex = ref(0)
+const lightboxItem = computed(() => lightboxList.value[lightboxIndex.value])
+
+function openLightbox(item: MediaItem) {
+  lightboxList.value = items.value.filter(i => !isFolder(i) && isImage(i))
+  const idx = lightboxList.value.findIndex(i => i.id === item.id)
+  lightboxIndex.value = Math.max(0, idx)
+  lightboxOpen.value = true
+}
+
+function lbPrev() {
+  if (lightboxList.value.length) lightboxIndex.value = (lightboxIndex.value - 1 + lightboxList.value.length) % lightboxList.value.length
+}
+
+function lbNext() {
+  if (lightboxList.value.length) lightboxIndex.value = (lightboxIndex.value + 1) % lightboxList.value.length
+}
+
+function onLightboxKey(e: KeyboardEvent) {
+  if (!lightboxOpen.value) return
+  if (e.key === 'Escape') lightboxOpen.value = false
+  else if (e.key === 'ArrowLeft') lbPrev()
+  else if (e.key === 'ArrowRight') lbNext()
+}
+
+// ── 标签 ──
+const tagFilter = ref<string[]>([])
+const tagInput = ref('')
+
+const allTags = computed(() => {
+  const set = new Set<string>()
+  for (const i of items.value) for (const t of i.tags || []) set.add(t)
+  return Array.from(set)
+})
+
+async function addTag() {
+  if (!detailItem.value) return
+  const t = tagInput.value.trim()
+  if (!t) return
+  const next = Array.from(new Set([...(detailItem.value.tags || []), t]))
+  try {
+    await api.put(`/v1/media/${detailItem.value.id}`, { tags: next })
+    detailItem.value = { ...detailItem.value, tags: next }
+    tagInput.value = ''
+    fetchItems()
+  } catch (e: any) {
+    message.error(e.response?.data?.error || '添加标签失败')
+  }
+}
+
+async function removeTag(t: string) {
+  if (!detailItem.value) return
+  const next = (detailItem.value.tags || []).filter(x => x !== t)
+  try {
+    await api.put(`/v1/media/${detailItem.value.id}`, { tags: next })
+    detailItem.value = { ...detailItem.value, tags: next }
+    fetchItems()
+  } catch {
+    message.error('移除标签失败')
+  }
 }
 
 async function submitMove() {
@@ -235,18 +341,19 @@ const uploadFileList = ref<any[]>([])
 
 function handleUploadRequest(options: any) {
   const { file, onProgress, onSuccess, onError } = options
-  const formData = new FormData()
-  formData.append('file', file)
-  formData.append('parent_id', currentParentId.value)
-  api.post('/v1/media/upload', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    onUploadProgress: (e: any) => {
-      if (onProgress && e.total) onProgress({ percent: Math.round((e.loaded / e.total) * 100) })
-    },
-  })
-    .then(() => { onSuccess?.(null); message.success(`上传成功: ${file.name}`) })
-    .catch((err: any) => { onError?.(err); message.error(`上传失败: ${file.name}`) })
-    .finally(() => { fetchItems() })
+  // 全局分片上传（断点续传）
+  createChunkUpload(file, { purpose: 'media', parentId: currentParentId.value })
+    .then((handle) => {
+      handle.onProgress((p) => onProgress?.({ percent: p }))
+      handle.done
+        .then(() => { onSuccess?.(null); message.success(`上传成功: ${file.name}`) })
+        .catch((err: any) => {
+          onError?.(err)
+          message.error(`上传失败: ${file.name} — ${err?.message || '未知错误'}`)
+        })
+        .finally(() => { fetchItems() })
+    })
+    .catch(() => { message.error(`上传失败: ${file.name} — 初始化失败`) })
 }
 
 // ── 批量选择 ──
@@ -304,9 +411,10 @@ async function uploadToKnowledgeBase() {
     try {
       const resp = await fetch(absUrl(file.file_url))
       const blob = await resp.blob()
-      const formData = new FormData()
-      formData.append('file', blob, file.name)
-      await api.post(`/v1/kb/${selectedKbId.value}/documents`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+      const mediaFile = new File([blob], file.name, { type: file.mime_type || '' })
+      // 全局分片上传到知识库（kb_doc purpose → complete 落 knowledge_documents）
+      const handle = await createChunkUpload(mediaFile, { purpose: 'kb_doc', parentId: selectedKbId.value })
+      await handle.done
       ok++
     } catch {
       fail++
@@ -318,9 +426,16 @@ async function uploadToKnowledgeBase() {
   if (fail > 0) message.error(`${fail} 个文件上传失败`)
 }
 
-watch([searchQuery, typeFilter, page, pageSize], () => { fetchItems() })
+watch([searchQuery, typeFilter, tagFilter, page, pageSize], () => { fetchItems() })
 
-onMounted(fetchItems)
+onMounted(() => {
+  fetchItems()
+  window.addEventListener('keydown', onLightboxKey)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onLightboxKey)
+})
 </script>
 
 <template>
@@ -340,16 +455,30 @@ onMounted(fetchItems)
           <template #prefix><SearchOutlined /></template>
         </Input>
         <Select v-model:value="typeFilter" :options="typeOptions" size="small" style="width: 110px" />
+        <Select
+          v-if="allTags.length > 0 || tagFilter.length > 0"
+          v-model:value="tagFilter"
+          :options="allTags.map(t => ({ value: t, label: t }))"
+          size="small"
+          mode="multiple"
+          allow-clear
+          placeholder="标签"
+          style="min-width: 120px"
+        />
         <Segmented
           :value="viewMode"
           :options="[{ label: '网格', value: 'grid' }, { label: '列表', value: 'list' }]"
           size="small"
           @change="toggleView(($event as any) as 'grid' | 'list')"
         />
+        <Button size="small" @click="newFolderOpen = true">
+          <template #icon><FolderAddOutlined /></template>新建文件夹
+        </Button>
         <Button type="primary" size="small" @click="showUpload = true">
           <template #icon><CloudUploadOutlined /></template>上传
         </Button>
       </div>
+      <div v-if="total > 0" class="media-total">共 {{ total }} 项</div>
     </div>
 
     <div v-if="selectedIds.size > 0" class="batch-bar">
@@ -432,8 +561,32 @@ onMounted(fetchItems)
           <div class="detail-row"><span class="label">MIME</span><span>{{ detailItem.mime_type || '—' }}</span></div>
           <div class="detail-row"><span class="label">上传时间</span><span>{{ detailItem.created_at }}</span></div>
           <div class="detail-row"><span class="label">URL</span><span class="url-text">{{ absUrl(detailItem.file_url) }}</span></div>
+          <!-- 标签编辑 -->
+          <div class="detail-row">
+            <span class="label"><TagOutlined /> 标签</span>
+            <div class="tag-list">
+              <Tag v-for="t in detailItem.tags || []" :key="t" closable @close="removeTag(t)">{{ t }}</Tag>
+              <span v-if="!(detailItem.tags || []).length" class="no-tags">暂无标签</span>
+            </div>
+            <div class="tag-add">
+              <Input
+                v-model:value="tagInput"
+                size="small"
+                placeholder="添加标签，回车确认"
+                style="width: 100%"
+                @press-enter="addTag"
+              />
+            </div>
+          </div>
+          <!-- 分享展示 -->
+          <div v-if="shareUrl" class="detail-row">
+            <span class="label">分享链接</span>
+            <span class="url-text">{{ shareUrl }}</span>
+            <div v-if="shareExpires" class="share-expires">有效期至 {{ shareExpires }}</div>
+          </div>
         </div>
         <div class="detail-actions">
+          <Button v-if="!isFolder(detailItem) && isImage(detailItem)" block @click="openLightbox(detailItem)">大图查看</Button>
           <Button v-if="!isFolder(detailItem)" block @click="openPreview(detailItem)">预览</Button>
           <Button v-if="!isFolder(detailItem)" block @click="downloadItem(detailItem)">下载</Button>
           <Button v-if="!isFolder(detailItem)" block @click="copyUrl(detailItem)">复制 URL</Button>
@@ -454,10 +607,40 @@ onMounted(fetchItems)
 
     <!-- 移动 -->
     <Modal v-model:open="showMove" title="移动到" :width="400" @ok="submitMove">
-      <Select v-model:value="moveParentId" style="width: 100%">
-        <Select.Option value="">根目录</Select.Option>
-        <Select.Option v-for="f in folderTree" :key="f.id" :value="f.id">{{ f.name }}</Select.Option>
-      </Select>
+      <div class="move-tree">
+        <Tree
+          :tree-data="[{ key: '', title: '根目录', children: moveTreeData }]"
+          :default-expand-all="false"
+          :selected-keys="moveParentId ? [moveParentId] : ['']"
+          @select="(keys: any[]) => { if (keys.length) moveParentId = String(keys[0]) }"
+        />
+      </div>
+    </Modal>
+
+    <!-- 新建文件夹 -->
+    <Modal v-model:open="newFolderOpen" title="新建文件夹" :width="360" :confirm-loading="folderCreating" @ok="createFolder">
+      <Input v-model:value="newFolderName" placeholder="文件夹名称" @press-enter="createFolder" />
+      <div class="folder-hint">将创建在当前目录：{{ breadcrumbs[breadcrumbs.length - 1]?.name || '根目录' }}</div>
+    </Modal>
+
+    <!-- 图片灯箱 -->
+    <Modal
+      v-model:open="lightboxOpen"
+      :footer="null"
+      :closable="false"
+      :width="'90vw'"
+      wrap-class-name="lightbox-modal"
+    >
+      <div v-if="lightboxItem" class="lightbox">
+        <button type="button" class="lb-btn lb-prev" @click="lbPrev"><LeftOutlined /></button>
+        <img :src="absUrl(lightboxItem.file_url)" :alt="lightboxItem.name" class="lb-img" />
+        <button type="button" class="lb-btn lb-next" @click="lbNext"><RightOutlined /></button>
+        <div class="lb-meta">
+          <span class="lb-name">{{ lightboxItem.name }}</span>
+          <span class="lb-count">{{ lightboxIndex + 1 }} / {{ lightboxList.length }}</span>
+        </div>
+        <button type="button" class="lb-close" @click="lightboxOpen = false">✕</button>
+      </div>
     </Modal>
 
     <!-- 分享 -->
@@ -489,7 +672,6 @@ onMounted(fetchItems)
     <Modal v-model:open="showUpload" title="上传文件" :width="520" :footer="null" destroy-on-close>
       <Upload
         :file-list="uploadFileList"
-        :before-upload="() => false"
         :multiple="true"
         :custom-request="handleUploadRequest"
         drag
@@ -556,6 +738,23 @@ onMounted(fetchItems)
 .share-row { display: flex; gap: 8px; }
 .share-expires { margin-top: 8px; font-size: 12px; color: var(--text-muted); }
 .preview-shell { height: 75vh; min-height: 400px; border-radius: 4px; overflow: hidden; }
+/* 新功能样式：总数/标签/移动树/灯箱/新建文件夹 */
+.media-total { margin-left: auto; font-size: 12px; color: var(--text-tertiary); white-space: nowrap; }
+.tag-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.no-tags { font-size: 12px; color: var(--text-muted); }
+.tag-add { margin-top: 6px; }
+.move-tree { max-height: 320px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
+.folder-hint { margin-top: 8px; font-size: 12px; color: var(--text-tertiary); }
+.lightbox { position: relative; display: flex; align-items: center; justify-content: center; min-height: 60vh; }
+.lb-img { max-width: 82%; max-height: 72vh; object-fit: contain; border-radius: 8px; box-shadow: var(--shadow-lg); }
+.lb-btn { position: absolute; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; border: 1px solid var(--border); border-radius: 50%; background: var(--bg-card); color: var(--text-primary); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; box-shadow: var(--shadow-md); }
+.lb-prev { left: 8px; }
+.lb-next { right: 8px; }
+.lb-btn:hover { color: var(--primary); border-color: var(--primary); }
+.lb-meta { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 4px 12px; border-radius: 999px; background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 12px; }
+.lb-name { max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-count { color: rgba(255, 255, 255, 0.7); }
+.lb-close { position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; border: none; border-radius: 50%; background: rgba(0, 0, 0, 0.5); color: #fff; cursor: pointer; }
 @media (max-width: 768px) {
   .media-page { padding: 12px; }
   .file-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }

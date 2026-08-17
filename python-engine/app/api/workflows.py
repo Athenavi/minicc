@@ -1,10 +1,12 @@
 """Graph/Workflow API endpoints — CRUD + execution with PostgreSQL persistence."""
 from __future__ import annotations
 
+import asyncio
 import datetime
 import json
 import logging
 import time
+import uuid
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -150,11 +152,16 @@ async def delete_graph(graph_id: str):
 
 
 @router.post("/v1/graphs/{graph_id}/execute")
-async def execute_graph(graph_id: str, body: GraphExecuteRequest, gateway=Depends(get_gateway)):
-    """Execute a graph workflow."""
+async def execute_graph(
+    graph_id: str,
+    body: GraphExecuteRequest,
+    gateway=Depends(get_gateway),
+    user_id: str = Query("", alias="user_id"),
+):
+    """提交图执行：落库 pending 后后台任务执行，立即返回 instance_id（前端轮询状态）。"""
     graph_json = None
 
-    # Try to load from PostgreSQL
+    # 尝试从 PostgreSQL 加载
     try:
         pool = get_pool()
         row = await pool.fetchrow(
@@ -171,23 +178,127 @@ async def execute_graph(graph_id: str, body: GraphExecuteRequest, gateway=Depend
     if not graph_json:
         graph_json = {"name": body.name or graph_id, "nodes": body.nodes, "edges": body.edges}
 
-    instance = await run_workflow(graph_json, gateway, body.initial_state)
-    return {
-        "instance_id": instance.instance_id,
-        "status": instance.status,
-        "workflow": instance.graph_name,
-    }
+    graph_name = graph_json.get("name") or graph_id
+    instance_id = f"wf_{uuid.uuid4().hex[:10]}"
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    # 落库 running（后台任务完成后更新）
+    try:
+        pool = get_pool()
+        await pool.execute(
+            """INSERT INTO workflow_instances (id, user_id, workflow_id, workflow_name, status, results, created_at, updated_at)
+               VALUES ($1, $2, $3, $4, 'running', '{}', $5, $5)""",
+            instance_id, user_id, graph_id, graph_name, now,
+        )
+    except Exception as e:
+        logger.warning("workflow instance insert failed: %s", e)
+
+    asyncio.create_task(_run_and_store(instance_id, graph_json, gateway, body.initial_state))
+
+    return {"instance_id": instance_id, "status": "running", "workflow": graph_name}
+
+
+async def _run_and_store(
+    instance_id: str,
+    graph_json: dict,
+    gateway: Any,
+    initial_state: dict[str, Any],
+) -> None:
+    """后台执行工作流并把最终结果写回 workflow_instances。"""
+    status = "error"
+    results_json = "{}"
+    error_text = ""
+    try:
+        instance = await run_workflow(graph_json, gateway, initial_state, instance_id=instance_id)
+        if instance.status == "completed":
+            status = "completed"
+        else:
+            error_text = "workflow execution failed"
+        results_json = json.dumps({
+            nid: {"status": nr.status, "output": nr.output}
+            for nid, nr in instance.results.items()
+        })
+    except Exception as e:  # noqa: BLE001
+        logger.error("workflow background execution failed: %s", e)
+        error_text = str(e)
+
+    try:
+        pool = get_pool()
+        await pool.execute(
+            """UPDATE workflow_instances SET status = $1, results = $2, error = $3, updated_at = NOW()
+               WHERE id = $4""",
+            status, results_json, error_text or None, instance_id,
+        )
+    except Exception as e:
+        logger.warning("workflow instance update failed: %s", e)
+
+
+@router.get("/v1/workflows/instances")
+async def list_instances(user_id: str = Query("", alias="user_id")):
+    """持久化的工作流执行历史（按用户）。"""
+    try:
+        pool = get_pool()
+        if user_id:
+            rows = await pool.fetch(
+                """SELECT id, workflow_id, workflow_name, status, results, COALESCE(error,'') as error, created_at, updated_at
+                   FROM workflow_instances WHERE user_id = $1
+                   ORDER BY created_at DESC LIMIT 100""",
+                user_id,
+            )
+        else:
+            rows = await pool.fetch(
+                """SELECT id, workflow_id, workflow_name, status, results, COALESCE(error,'') as error, created_at, updated_at
+                   FROM workflow_instances ORDER BY created_at DESC LIMIT 100"""
+            )
+        out = []
+        for r in rows:
+            d = dict(r)
+            if isinstance(d.get("results"), str):
+                try:
+                    d["results"] = json.loads(d["results"])
+                except json.JSONDecodeError:
+                    d["results"] = {}
+            d["created_at"] = d["created_at"].isoformat() if d.get("created_at") else ""
+            d["updated_at"] = d["updated_at"].isoformat() if d.get("updated_at") else ""
+            out.append(d)
+        return {"success": True, "data": out}
+    except Exception as e:
+        logger.warning("workflow instances list failed: %s", e)
+        return {"success": False, "error": str(e), "data": []}
 
 
 @router.get("/v1/workflows/{instance_id}/status")
 async def workflow_status(instance_id: str):
-    """Get workflow execution status."""
+    """获取工作流执行状态（内存实例优先，落库记录回退）。"""
     inst = get_instance(instance_id)
-    if not inst:
-        raise HTTPException(status_code=404, detail="workflow instance not found")
-    return {
-        "instance_id": inst.instance_id,
-        "workflow": inst.graph_name,
-        "status": inst.status,
-        "results": {nid: {"status": nr.status, "output": nr.output} for nid, nr in inst.results.items()},
-    }
+    if inst:
+        return {
+            "instance_id": inst.instance_id,
+            "workflow": inst.graph_name,
+            "status": inst.status,
+            "results": {nid: {"status": nr.status, "output": nr.output} for nid, nr in inst.results.items()},
+        }
+    try:
+        pool = get_pool()
+        row = await pool.fetchrow(
+            """SELECT id, workflow_name, status, results, COALESCE(error,'') as error
+               FROM workflow_instances WHERE id = $1""",
+            instance_id,
+        )
+        if row:
+            results = row["results"]
+            if isinstance(results, str):
+                try:
+                    results = json.loads(results)
+                except json.JSONDecodeError:
+                    results = {}
+            return {
+                "instance_id": row["id"],
+                "workflow": row["workflow_name"],
+                "status": row["status"],
+                "results": results,
+                "error": row["error"] or "",
+            }
+    except Exception as e:
+        logger.warning("workflow status db fallback failed: %s", e)
+    raise HTTPException(status_code=404, detail="workflow instance not found")

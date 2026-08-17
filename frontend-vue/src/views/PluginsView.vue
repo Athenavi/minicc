@@ -1,119 +1,365 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { Card, Button, Spin, Empty, Tag, message } from 'ant-design-vue'
-import { ThunderboltOutlined, DownloadOutlined, DeleteOutlined } from '@ant-design/icons-vue'
+import { ref, computed, onMounted } from 'vue'
+import {
+  Button, Input, Modal, Switch, Tag, Empty, Spin, Popconfirm, message,
+} from 'ant-design-vue'
+import {
+  ThunderboltOutlined, PlusOutlined, DeleteOutlined, SearchOutlined,
+  EditOutlined, ExperimentOutlined, DownOutlined, UpOutlined,
+} from '@ant-design/icons-vue'
 import { api } from '../api'
 
 interface Plugin {
   name: string
-  description: string
-  version: string
+  command: string
+  args?: string[]
+  env?: Record<string, string>
+  description?: string
+  version?: string
   status: string
 }
 
 const loading = ref(true)
 const plugins = ref<Plugin[]>([])
+const searchQuery = ref('')
+const expanded = ref<Set<string>>(new Set())
 
-onMounted(async () => {
-  await loadPlugins()
+// 新建/编辑
+const editorOpen = ref(false)
+const editingName = ref('')
+const form = ref({
+  name: '', command: '', argsText: '', envText: '', description: '', version: '1.0.0',
+})
+const saving = ref(false)
+
+// 测试
+const testingName = ref('')
+const testResults = ref<Record<string, { ok: boolean; message: string }>>({})
+
+onMounted(loadPlugins)
+
+const filtered = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) return plugins.value
+  return plugins.value.filter(p =>
+    (p.name || '').toLowerCase().includes(q) || (p.description || '').toLowerCase().includes(q))
 })
 
 async function loadPlugins() {
+  loading.value = true
   try {
-    loading.value = true
-    const response = await api.get('/v1/plugins')
-    plugins.value = response.data?.data || []
-  } catch (error) {
-    message.error('获取插件列表失败，请检查网络连接')
+    const res = await api.get('/v1/plugins')
+    plugins.value = res.data?.data || []
+  } catch {
+    message.error('获取插件列表失败')
   } finally {
     loading.value = false
   }
 }
 
-async function handleInstall(name: string) {
+function toggleExpanded(name: string) {
+  const next = new Set(expanded.value)
+  if (next.has(name)) next.delete(name)
+  else next.add(name)
+  expanded.value = next
+}
+
+// ── 新建/编辑 ──
+function openCreate() {
+  editingName.value = ''
+  form.value = { name: '', command: '', argsText: '', envText: '', description: '', version: '1.0.0' }
+  editorOpen.value = true
+}
+
+function openEdit(p: Plugin) {
+  editingName.value = p.name
+  form.value = {
+    name: p.name,
+    command: p.command || '',
+    argsText: (p.args || []).join('\n'),
+    envText: Object.entries(p.env || {}).map(([k, v]) => `${k}=${v}`).join('\n'),
+    description: p.description || '',
+    version: p.version || '1.0.0',
+  }
+  editorOpen.value = true
+}
+
+function parseLines(text: string): string[] {
+  return text.split('\n').map(s => s.trim()).filter(Boolean)
+}
+
+function parseEnv(text: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const line of parseLines(text)) {
+    const i = line.indexOf('=')
+    if (i > 0) out[line.slice(0, i).trim()] = line.slice(i + 1).trim()
+  }
+  return out
+}
+
+async function savePlugin() {
+  if (!form.value.name.trim()) { message.warning('请输入名称'); return }
+  if (!form.value.command.trim()) { message.warning('请输入 command'); return }
+  const body = {
+    name: form.value.name.trim(),
+    command: form.value.command.trim(),
+    args: parseLines(form.value.argsText),
+    env: parseEnv(form.value.envText),
+    description: form.value.description,
+    version: form.value.version || '1.0.0',
+  }
+  saving.value = true
   try {
-    await api.post(`/v1/plugins/${name}/install`)
-    message.success(`${name} 已安装`)
+    if (editingName.value) {
+      // 编辑：更新配置（PUT）；名称不可改
+      await api.put(`/v1/plugins/${encodeURIComponent(editingName.value)}`, {
+        command: body.command, args: body.args, env: body.env,
+        description: body.description, version: body.version,
+      })
+      message.success('已保存')
+    } else {
+      // 新建：install（POST）
+      await api.post(`/v1/plugins/${encodeURIComponent(body.name)}/install`, body)
+      message.success('插件已创建')
+    }
+    editorOpen.value = false
     await loadPlugins()
-  } catch (error: any) {
-    message.error(error.message || '安装失败')
+  } catch (e: any) {
+    message.error(e.response?.data?.error || e.response?.data?.detail || e.message || '保存失败')
+  } finally {
+    saving.value = false
   }
 }
 
-async function handleUninstall(name: string) {
+// ── 启停 ──
+async function toggleStatus(p: Plugin, v: boolean) {
   try {
-    await api.delete(`/v1/plugins/${name}`)
-    message.success(`${name} 已卸载`)
-    await loadPlugins()
-  } catch (error: any) {
-    message.error(error.message || '卸载失败')
+    await api.put(`/v1/plugins/${encodeURIComponent(p.name)}`, { status: v ? 'active' : 'inactive' })
+    p.status = v ? 'active' : 'inactive'
+    message.success(`已${v ? '启用' : '停用'} ${p.name}`)
+  } catch (e: any) {
+    message.error(e.response?.data?.error || '操作失败')
+  }
+}
+
+// ── 卸载 ──
+function requestUninstall(p: Plugin) {
+  Modal.confirm({
+    title: '卸载插件',
+    content: `确定卸载「${p.name}」？其 MCP 配置将被删除。`,
+    okText: '卸载',
+    okButtonProps: { danger: true },
+    cancelText: '取消',
+    onOk: async () => {
+      try {
+        await api.delete(`/v1/plugins/${encodeURIComponent(p.name)}`)
+        message.success('已卸载')
+        await loadPlugins()
+      } catch {
+        message.error('卸载失败')
+      }
+    },
+  })
+}
+
+// ── 连接测试 ──
+async function testPlugin(p: Plugin) {
+  testingName.value = p.name
+  testResults.value = { ...testResults.value, [p.name]: { ok: false, message: '测试中…' } }
+  try {
+    const res = await api.post(`/v1/plugins/${encodeURIComponent(p.name)}/test`)
+    const data = res.data?.data || {}
+    testResults.value = { ...testResults.value, [p.name]: { ok: !!data.ok, message: data.message || '' } }
+    if (data.ok) message.success(`${p.name} 连接正常`)
+    else message.error(`${p.name} 连接失败`)
+  } catch (e: any) {
+    testResults.value = { ...testResults.value, [p.name]: { ok: false, message: e.response?.data?.error || e.message || '测试失败' } }
+  } finally {
+    testingName.value = ''
   }
 }
 </script>
 
 <template>
-  <div class="plugins-container">
-    <div class="plugins-header">
-      <ThunderboltOutlined style="font-size: 24px; color: #8b5cf6" />
-      <h1>插件管理</h1>
+  <div class="plugins-page">
+    <div class="page-head">
+      <div class="page-head-text">
+        <h1 class="page-title">插件</h1>
+        <p class="page-sub">管理 MCP 服务器配置，扩展 Agent 工具能力</p>
+      </div>
+      <Button type="primary" @click="openCreate">
+        <template #icon><PlusOutlined /></template>
+        新建插件
+      </Button>
+    </div>
+
+    <div class="list-toolbar">
+      <Input v-model:value="searchQuery" placeholder="搜索插件（名称 / 描述）" allow-clear class="search-input">
+        <template #prefix><SearchOutlined /></template>
+      </Input>
     </div>
 
     <Spin :spinning="loading">
-      <Empty v-if="plugins.length === 0 && !loading" description="暂无插件">
-        <template #image>
-          <ThunderboltOutlined style="font-size: 48px; color: #8b5cf6" />
-        </template>
+      <Empty v-if="!loading && filtered.length === 0" description="暂无插件，点击右上角新建" class="page-empty">
+        <template #image><ThunderboltOutlined style="font-size: 44px; color: var(--primary)" /></template>
       </Empty>
 
-      <div v-else class="plugins-grid">
-        <Card v-for="plugin in plugins" :key="plugin.name" class="plugin-card">
-          <div class="plugin-header">
-            <span class="plugin-name">{{ plugin.name }}</span>
-            <Tag :color="plugin.status === 'active' ? 'success' : 'default'">
-              {{ plugin.status }}
-            </Tag>
+      <div v-else class="plugin-grid">
+        <div v-for="p in filtered" :key="p.name" class="plugin-card" :class="{ inactive: p.status !== 'active' }">
+          <div class="card-top">
+            <span class="card-icon"><ThunderboltOutlined /></span>
+            <div class="card-titles">
+              <span class="plugin-name">{{ p.name }}</span>
+              <span class="plugin-desc">{{ p.description || '暂无描述' }}</span>
+            </div>
+            <Switch
+              :checked="p.status === 'active'"
+              size="small"
+              :checked-children="'开'"
+              :un-checked-children="'关'"
+              @change="(v: any) => toggleStatus(p, Boolean(v))"
+            />
           </div>
-          <p class="plugin-description">{{ plugin.description }}</p>
-          <div class="plugin-footer">
-            <span class="plugin-version">v{{ plugin.version }}</span>
-            <div class="plugin-actions">
-              <Button
-                v-if="plugin.status !== 'active'"
-                type="primary"
-                size="small"
-                @click="handleInstall(plugin.name)"
-              >
-                <template #icon><DownloadOutlined /></template>
-                安装
+          <div class="card-meta">
+            <Tag :color="p.status === 'active' ? 'green' : 'default'">{{ p.status === 'active' ? '启用' : '已停用' }}</Tag>
+            <Tag>v{{ p.version || '1.0.0' }}</Tag>
+            <span class="card-command">{{ p.command }}</span>
+          </div>
+          <div class="card-actions">
+            <Button size="small" :loading="testingName === p.name" @click="testPlugin(p)">
+              <template #icon><ExperimentOutlined /></template>
+              测试连接
+            </Button>
+            <Button size="small" type="text" @click="toggleExpanded(p.name)">
+              {{ expanded.has(p.name) ? '收起配置' : '查看配置' }}
+              <UpOutlined v-if="expanded.has(p.name)" class="mini-icon" />
+              <DownOutlined v-else class="mini-icon" />
+            </Button>
+            <div class="action-right">
+              <Button type="text" size="small" @click="openEdit(p)">
+                <template #icon><EditOutlined /></template>
               </Button>
-              <Button
-                v-else
-                danger
-                size="small"
-                @click="handleUninstall(plugin.name)"
-              >
-                <template #icon><DeleteOutlined /></template>
-                卸载
-              </Button>
+              <Popconfirm title="确认卸载？" @confirm="requestUninstall(p)">
+                <Button type="text" danger size="small">
+                  <template #icon><DeleteOutlined /></template>
+                </Button>
+              </Popconfirm>
             </div>
           </div>
-        </Card>
+
+          <!-- 测试结果 -->
+          <div v-if="testResults[p.name]" class="test-result" :class="{ ok: testResults[p.name].ok }">
+            {{ testResults[p.name].ok ? '✅' : '❌' }} {{ testResults[p.name].message }}
+          </div>
+
+          <!-- 配置详情 -->
+          <div v-if="expanded.has(p.name)" class="plugin-detail">
+            <div class="detail-row">
+              <span class="detail-label">Command</span>
+              <code class="detail-code">{{ p.command }}</code>
+            </div>
+            <div v-if="p.args?.length" class="detail-row">
+              <span class="detail-label">Args</span>
+              <div class="detail-code-block">
+                <div v-for="a in p.args" :key="a" class="detail-line">{{ a }}</div>
+              </div>
+            </div>
+            <div v-if="p.env && Object.keys(p.env).length" class="detail-row">
+              <span class="detail-label">Env</span>
+              <div class="detail-code-block">
+                <div v-for="(v, k) in p.env" :key="k" class="detail-line">{{ k }}={{ v }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </Spin>
+
+    <!-- 新建/编辑 Modal -->
+    <Modal
+      :open="editorOpen"
+      :title="editingName ? `编辑「${editingName}」` : '新建 MCP 插件'"
+      :confirm-loading="saving"
+      width="560px"
+      ok-text="保存"
+      cancel-text="取消"
+      @ok="savePlugin"
+      @cancel="editorOpen = false"
+    >
+      <div class="editor-form">
+        <div class="form-row">
+          <label class="form-label">名称 *</label>
+          <Input v-model:value="form.name" placeholder="如：github-mcp" :disabled="!!editingName" :maxlength="60" />
+        </div>
+        <div class="form-row">
+          <label class="form-label">Command *</label>
+          <Input v-model:value="form.command" placeholder="MCP server 启动命令，如：npx、python、/path/to/server" />
+        </div>
+        <div class="form-row">
+          <label class="form-label">Args（每行一个）</label>
+          <Input.TextArea v-model:value="form.argsText" :rows="3" placeholder="-y&#10;@modelcontextprotocol/server-github" class="mono-input" />
+        </div>
+        <div class="form-row">
+          <label class="form-label">Env（每行 KEY=VALUE）</label>
+          <Input.TextArea v-model:value="form.envText" :rows="3" placeholder="GITHUB_TOKEN=ghp_xxx" class="mono-input" />
+        </div>
+        <div class="form-row">
+          <label class="form-label">描述</label>
+          <Input v-model:value="form.description" :maxlength="200" />
+        </div>
+        <div class="form-row">
+          <label class="form-label">版本</label>
+          <Input v-model:value="form.version" placeholder="1.0.0" />
+        </div>
+      </div>
+    </Modal>
   </div>
 </template>
 
 <style scoped>
-.plugins-container { padding: 24px; }
-.plugins-header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
-.plugins-header h1 { margin: 0; font-size: 24px; font-weight: 600; }
-.plugins-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
-.plugin-card { transition: box-shadow 0.2s; }
-.plugin-card:hover { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
-.plugin-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.plugin-name { font-weight: 600; font-size: 16px; }
-.plugin-description { color: #6b7280; font-size: 14px; margin: 0 0 12px; line-height: 1.5; }
-.plugin-footer { display: flex; align-items: center; justify-content: space-between; }
-.plugin-version { color: #9ca3af; font-size: 12px; }
-.plugin-actions { display: flex; gap: 8px; }
+.plugins-page { max-width: 1080px; margin: 0 auto; padding: 28px 24px 60px; }
+.page-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.page-title { font-size: 24px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+.page-sub { margin: 4px 0 0; color: var(--text-tertiary); font-size: 13px; }
+.list-toolbar { margin-bottom: 16px; }
+.search-input { max-width: 320px; }
+.page-empty { padding: 60px 0; }
+.plugin-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+.plugin-card {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-md);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.plugin-card:hover { transform: translateY(-2px); border-color: var(--primary); box-shadow: var(--shadow-lg); }
+.plugin-card.inactive { opacity: 0.65; }
+.card-top { display: flex; align-items: flex-start; gap: 10px; }
+.card-icon { flex: none; width: 36px; height: 36px; border-radius: 10px; background: var(--primary-bg); color: var(--primary); display: inline-flex; align-items: center; justify-content: center; font-size: 17px; }
+.card-titles { flex: 1; min-width: 0; }
+.plugin-name { display: block; font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.plugin-desc { display: block; margin-top: 3px; font-size: 12px; color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
+.card-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.card-command { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-actions { display: flex; align-items: center; gap: 6px; }
+.mini-icon { font-size: 10px; }
+.action-right { margin-left: auto; display: flex; gap: 2px; }
+.test-result { font-size: 12px; padding: 6px 10px; border-radius: 8px; background: rgba(239, 68, 68, 0.1); color: var(--error); }
+.test-result.ok { background: rgba(34, 197, 94, 0.12); color: #22c55e; }
+.plugin-detail { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border-card); padding-top: 10px; }
+.detail-row { display: flex; flex-direction: column; gap: 4px; }
+.detail-label { font-size: 11px; color: var(--text-tertiary); font-weight: 500; }
+.detail-code { font-family: var(--font-mono); font-size: 12px; color: var(--text-primary); word-break: break-all; }
+.detail-code-block { background: var(--bg-secondary); border-radius: 8px; padding: 8px; }
+.detail-line { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); word-break: break-all; }
+.editor-form { display: flex; flex-direction: column; gap: 12px; }
+.form-row { display: flex; flex-direction: column; gap: 6px; }
+.form-label { font-size: 12px; color: var(--text-secondary); font-weight: 500; }
+.mono-input :deep(textarea) { font-family: var(--font-mono); font-size: 12px; }
+@media (max-width: 640px) {
+  .plugins-page { padding: 20px 16px 48px; }
+  .plugin-grid { grid-template-columns: 1fr; }
+}
 </style>

@@ -2,12 +2,13 @@ import axios from 'axios'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080'
 
+// 注意：不要在这里设置默认 Content-Type！
+// - 对 JSON 对象 axios 的 transformRequest 会自动设置 application/json
+// - 对 FormData，显式 Content-Type 会阻止浏览器自动附加 multipart boundary，
+//   导致后端 ParseMultipartForm 报 "invalid form"（上传 400）
 export const api = axios.create({
   baseURL: API_URL,
   timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
 })
 
 // 工具确认（S 安全修复：三态栅栏“确认”态 — 前端确认卡片回调）
@@ -24,6 +25,66 @@ export async function submitApproval(params: {
 // ── 会话操作（重命名 / 置顶）──
 export async function updateConversation(id: string, patch: { title?: string; pinned?: boolean }) {
   const { data } = await api.put(`/v1/conversations/${encodeURIComponent(id)}`, patch)
+  return data?.data
+}
+
+// ── Agents（DB 驱动：CRUD + 运行会话） ──
+export interface Agent {
+  id: string
+  name: string
+  description?: string
+  system_prompt?: string
+  tools?: any[]
+  llm_config?: Record<string, any>
+  max_turns: number
+  timeout_seconds: number
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface AgentSession {
+  id: string
+  agent_id?: string
+  agent_name?: string
+  task: string
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  result?: string
+  created_at: string
+  updated_at: string
+}
+
+export async function listAgents(): Promise<Agent[]> {
+  const { data } = await api.get('/v1/agents')
+  return data?.data ?? []
+}
+
+export async function createAgent(body: Partial<Agent>): Promise<Agent> {
+  const { data } = await api.post('/v1/agents', body)
+  return data?.data
+}
+
+export async function updateAgent(id: string, body: Partial<Agent>): Promise<Agent> {
+  const { data } = await api.put(`/v1/agents/${encodeURIComponent(id)}`, body)
+  return data?.data
+}
+
+export async function deleteAgent(id: string): Promise<void> {
+  await api.delete(`/v1/agents/${encodeURIComponent(id)}`)
+}
+
+export async function runAgent(id: string, task: string): Promise<AgentSession> {
+  const { data } = await api.post(`/v1/agents/${encodeURIComponent(id)}/run`, { task })
+  return data?.data
+}
+
+export async function listAgentSessions(): Promise<AgentSession[]> {
+  const { data } = await api.get('/v1/agents/sessions')
+  return data?.data ?? []
+}
+
+export async function getAgentSession(id: string): Promise<AgentSession> {
+  const { data } = await api.get(`/v1/agents/sessions/${encodeURIComponent(id)}`)
   return data?.data
 }
 

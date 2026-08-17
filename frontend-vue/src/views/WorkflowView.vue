@@ -5,12 +5,13 @@ import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import { MiniMap } from '@vue-flow/minimap'
 import {
-  Button, Input, Select, Card, Drawer, Form, FormItem,
-  Empty, Popconfirm, Tag, message,
+  Button, Input, Select, Drawer, Form, FormItem,
+  Empty, Popconfirm, Tag, InputNumber, message,
 } from 'ant-design-vue'
 import {
   SaveOutlined, PlayCircleOutlined, DeleteOutlined,
-  CloseOutlined, UnorderedListOutlined,
+  CloseOutlined, UnorderedListOutlined, CopyOutlined,
+  AlignCenterOutlined, HistoryOutlined,
 } from '@ant-design/icons-vue'
 import { api } from '../api'
 import type { Node, Edge, Connection } from '@vue-flow/core'
@@ -54,20 +55,15 @@ interface GraphRecord {
   updated_at: string
 }
 
-interface ExecutionEvent {
-  graph_id: string
-  event?: {
-    type: string
-    node_id: string
-    status?: string
-    output?: any
-    error?: string
-    duration_ms?: number
-  }
-  status?: string
+interface InstanceRecord {
+  id: string
+  workflow_id: string
+  workflow_name: string
+  status: string
+  results: Record<string, { status: string; output: any }>
   error?: string
-  summary?: string
-  results?: Record<string, any>
+  created_at: string
+  updated_at: string
 }
 
 // ── Node type definitions ──
@@ -95,12 +91,18 @@ const toolOptions = [
   { value: 'shell_exec', label: '执行命令' },
 ]
 
+const modelOptions = [
+  { value: 'deepseek-chat', label: 'DeepSeek Chat' },
+  { value: 'deepseek-reasoner', label: 'DeepSeek Reasoner' },
+  { value: 'gpt-4o-mini', label: 'GPT-4o mini' },
+  { value: 'gpt-4o', label: 'GPT-4o' },
+  { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
+]
+
 // ── Vue Flow ──
-const { findNode, addNodes, addEdges, removeNodes, getNodes, getEdges } = useVueFlow({
-  defaultEdgeOptions: {
-    type: 'smoothstep',
-    animated: true,
-  },
+const { findNode, addNodes, addEdges, removeNodes, getNodes, getEdges, getSelectedNodes } = useVueFlow({
+  defaultEdgeOptions: { type: 'smoothstep', animated: true },
+  multiSelectionKeyCode: ['Shift', 'Meta', 'Control'],
 })
 
 // ── State ──
@@ -109,22 +111,26 @@ const edges = ref<Edge[]>([])
 const workflowName = ref('新建工作流')
 const workflowId = ref<string | null>(null)
 const savedWorkflows = ref<GraphRecord[]>([])
+const instances = ref<InstanceRecord[]>([])
 const showPanel = ref(false)
 const selectedNode = ref<Node | null>(null)
 const isExecuting = ref(false)
 const executionLogs = ref<string[]>([])
-let _eventSource: EventSource | null = null
+const executionResults = ref<Record<string, { status: string; output: any }>>({})
 const showDrawer = ref(false)
+const showHistory = ref(false)
 const dragNodeType = ref<string | null>(null)
 
 // ── Node config form fields ──
 const editLabel = ref('')
 const editSystemPrompt = ref('')
 const editPrompt = ref('')
-const editToolName = ref('')
-const editCondition = ref('')
 const editUserMessage = ref('')
-const editInputVariable = ref('user_input')
+const editToolName = ref('')
+const editModel = ref('deepseek-chat')
+const editRetries = ref(0)
+const editCondition = ref('')
+const editVariable = ref('')
 
 // ── Helper ──
 let nodeCounter = 0
@@ -153,37 +159,23 @@ function onDragStart(event: DragEvent, type: string) {
 
 function onDragOver(event: DragEvent) {
   event.preventDefault()
-  if (event.dataTransfer) {
-    event.dataTransfer.dropEffect = 'move'
-  }
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
 }
 
 function onDrop(event: DragEvent) {
   const type = event.dataTransfer?.getData('application/vueflow')
   if (!type) return
-
   const flowEl = document.querySelector('.vue-flow')
   if (!flowEl) return
   const rect = flowEl.getBoundingClientRect()
-  const position = {
-    x: event.clientX - rect.left - 80,
-    y: event.clientY - rect.top - 30,
-  }
-
+  const position = { x: event.clientX - rect.left - 80, y: event.clientY - rect.top - 30 }
   const nodeDef = nodeTypes.find(n => n.type === type)
-  const newNode: Node = {
+  addNodes([{
     id: genNodeId(type),
-    type: type,
+    type,
     position,
-    data: {
-      label: nodeDef?.label || type,
-      nodeType: type,
-      color: nodeDef?.color || '#6b7280',
-      icon: nodeDef?.icon || '📦',
-    },
-  }
-
-  addNodes([newNode])
+    data: { label: nodeDef?.label || type, nodeType: type, color: nodeDef?.color || '#6b7280', icon: nodeDef?.icon || '📦' },
+  }])
 }
 
 // ── Node selection ──
@@ -191,15 +183,16 @@ function onNodeClick(_event: any) {
   const node = _event.node
   selectedNode.value = node
   showPanel.value = true
-
   editLabel.value = node.data?.label || ''
   const cfg = node.data?.config || {}
   editSystemPrompt.value = cfg.system_prompt || ''
   editPrompt.value = cfg.prompt || ''
-  editToolName.value = cfg.tool_name || ''
-  editCondition.value = cfg.condition || ''
   editUserMessage.value = cfg.user_message || ''
-  editInputVariable.value = cfg.variable || 'user_input'
+  editToolName.value = cfg.tool_name || ''
+  editModel.value = cfg.model || 'deepseek-chat'
+  editRetries.value = cfg.retries || 0
+  editCondition.value = cfg.condition || ''
+  editVariable.value = cfg.variable || '$'
 }
 
 function onPaneClick() {
@@ -207,31 +200,31 @@ function onPaneClick() {
   showPanel.value = false
 }
 
-// ── Save node config from panel ──
 function applyNodeConfig() {
   if (!selectedNode.value) return
   const node = findNode(selectedNode.value.id)
   if (!node) return
-
   node.data = {
     ...node.data,
     label: editLabel.value,
     config: {
       system_prompt: editSystemPrompt.value || undefined,
       prompt: editPrompt.value || undefined,
-      tool_name: editToolName.value || undefined,
-      condition: editCondition.value || undefined,
       user_message: editUserMessage.value || undefined,
-      variable: editInputVariable.value || undefined,
+      tool_name: editToolName.value || undefined,
+      model: editModel.value || undefined,
+      retries: editRetries.value > 0 ? editRetries.value : undefined,
+      condition: editCondition.value || undefined,
+      variable: editVariable.value || undefined,
     },
   }
 }
 
-watch([editLabel, editSystemPrompt, editPrompt, editToolName, editCondition, editUserMessage, editInputVariable], () => {
+watch([editLabel, editSystemPrompt, editPrompt, editUserMessage, editToolName, editModel, editRetries, editCondition, editVariable], () => {
   applyNodeConfig()
 })
 
-// ── Delete selected node ──
+// ── Delete / duplicate ──
 function deleteSelectedNode() {
   if (!selectedNode.value) return
   removeNodes([selectedNode.value.id])
@@ -239,84 +232,133 @@ function deleteSelectedNode() {
   showPanel.value = false
 }
 
-// ── Edge connection ──
+function deleteSelectedNodes() {
+  const selected = getSelectedNodes.value
+  if (selected.length > 0) {
+    removeNodes(selected.map(n => n.id))
+    selectedNode.value = null
+    showPanel.value = false
+  }
+}
+
+function duplicateSelectedNode() {
+  if (!selectedNode.value) return
+  const src = findNode(selectedNode.value.id)
+  if (!src) return
+  const copy: Node = {
+    id: genNodeId(src.data?.nodeType || src.type || 'node'),
+    type: src.type,
+    position: { x: src.position.x + 40, y: src.position.y + 40 },
+    data: JSON.parse(JSON.stringify(src.data || {})),
+  }
+  addNodes([copy])
+  message.success('已复制节点')
+}
+
+// 快捷键：Delete 删除选中；Ctrl+D 复制
+function onKeydown(e: KeyboardEvent) {
+  const tag = (e.target as HTMLElement)?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+  if ((e.key === 'Delete' || e.key === 'Backspace')) {
+    const selected = getSelectedNodes.value
+    if (selected.length > 0) { e.preventDefault(); deleteSelectedNodes() }
+  } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+    e.preventDefault()
+    if (selectedNode.value) duplicateSelectedNode()
+  }
+}
+
+// ── Auto layout（BFS 按层排列） ──
+function autoLayout() {
+  const allNodes = getNodes.value
+  const allEdges = getEdges.value
+  if (allNodes.length === 0) return
+  const indegree: Record<string, number> = {}
+  const adj: Record<string, string[]> = {}
+  for (const n of allNodes) indegree[n.id] = 0
+  for (const e of allEdges) {
+    indegree[e.target] = (indegree[e.target] || 0) + 1
+    ;(adj[e.source] = adj[e.source] || []).push(e.target)
+  }
+  const layer: Record<string, number> = {}
+  const queue: string[] = []
+  for (const n of allNodes) if (indegree[n.id] === 0) { layer[n.id] = 0; queue.push(n.id) }
+  while (queue.length > 0) {
+    const id = queue.shift()!
+    for (const t of adj[id] || []) {
+      layer[t] = Math.max(layer[t] || 0, (layer[id] || 0) + 1)
+      if (--indegree[t] === 0) queue.push(t)
+    }
+  }
+  const colCount: Record<number, number> = {}
+  for (const n of allNodes) {
+    const l = layer[n.id] || 0
+    const col = colCount[l] || 0
+    colCount[l] = col + 1
+    n.position = { x: 40 + l * 220, y: 40 + col * 110 }
+  }
+  message.success('已自动布局')
+}
+
+// ── Edge connection（条件节点 handle → 边 label） ──
 function onConnect(params: Connection) {
-  const newEdge: Edge = {
-    id: `e-${params.source}-${params.target}`,
+  const handle = params.sourceHandle === 'false' ? 'false' : params.sourceHandle === 'true' ? 'true' : undefined
+  addEdges([{
+    id: `e-${params.source}-${params.target}-${Date.now()}`,
     source: params.source as string,
     target: params.target as string,
     sourceHandle: params.sourceHandle || undefined,
     targetHandle: params.targetHandle || undefined,
+    label: handle,
+    data: { condition: handle },
     type: 'smoothstep',
     animated: true,
-  }
-  addEdges([newEdge])
+  }])
 }
 
 // ── Convert between VueFlow ↔ Backend format ──
 function toBackendFormat(): { nodes: GraphNodeBackend[]; edges: GraphEdgeBackend[]; entry_point: string } {
   const allNodes = getNodes.value
   const allEdges = getEdges.value
-
   const backendNodes: GraphNodeBackend[] = allNodes.map((n) => {
-    const config: Record<string, any> = n.data?.config || {}
+    const config: Record<string, any> = { ...(n.data?.config || {}) }
     config.position = { x: Math.round(n.position.x), y: Math.round(n.position.y) }
-    return {
-      id: n.id,
-      label: n.data?.label || n.id,
-      node_type: n.data?.nodeType || n.type || 'tool',
-      config,
-    }
+    return { id: n.id, label: n.data?.label || n.id, node_type: n.data?.nodeType || n.type || 'tool', config }
   })
-
   const backendEdges: GraphEdgeBackend[] = allEdges.map((e) => ({
     source_id: e.source,
     target_id: e.target,
     condition: e.data?.condition || '',
     label: typeof e.label === 'string' ? e.label : '',
   }))
-
   const inputNode = allNodes.find(n => n.data?.nodeType === 'input')
-  const entryPoint = inputNode?.id || allNodes[0]?.id || ''
-
-  return { nodes: backendNodes, edges: backendEdges, entry_point: entryPoint }
+  return { nodes: backendNodes, edges: backendEdges, entry_point: inputNode?.id || allNodes[0]?.id || '' }
 }
 
 function fromBackendFormat(data: any) {
   if (!data) return
   const graphDef = typeof data === 'string' ? JSON.parse(data) : data
-
-  const flowNodes: Node[] = (graphDef.nodes || []).map((n: GraphNodeBackend) => {
+  nodes.value = (graphDef.nodes || []).map((n: GraphNodeBackend) => {
     const cfg = n.config || {}
     const pos = cfg.position || { x: 0, y: 0 }
     return {
       id: n.id,
       type: n.node_type,
       position: { x: pos.x || 0, y: pos.y || 0 },
-      data: {
-        label: n.label,
-        nodeType: n.node_type,
-        color: getNodeColor(n.node_type),
-        icon: getNodeIcon(n.node_type),
-        config: cfg,
-      },
+      data: { label: n.label, nodeType: n.node_type, color: getNodeColor(n.node_type), icon: getNodeIcon(n.node_type), config: cfg },
     }
   })
-
-  const flowEdges: Edge[] = (graphDef.edges || []).map((e: GraphEdgeBackend, i: number) => ({
+  edges.value = (graphDef.edges || []).map((e: GraphEdgeBackend, i: number) => ({
     id: `e-${e.source_id}-${e.target_id}-${i}`,
     source: e.source_id,
     target: e.target_id,
-    label: e.label || '',
+    label: e.label || undefined,
+    data: { condition: e.condition || e.label || undefined },
     type: 'smoothstep',
     animated: true,
   }))
-
-  nodes.value = flowNodes
-  edges.value = flowEdges
   workflowName.value = graphDef.name || '未命名工作流'
-
-  nodeCounter = flowNodes.length + 10
+  nodeCounter = nodes.value.length + 10
 }
 
 // ── API: Save ──
@@ -325,13 +367,9 @@ async function saveWorkflow() {
   const payload: Record<string, any> = {
     id: workflowId.value || undefined,
     name: workflowName.value,
-    graph_json: JSON.stringify({
-      name: workflowName.value,
-      ...graphData,
-    }),
+    graph_json: JSON.stringify({ name: workflowName.value, ...graphData }),
     user_id: getUserIdFromToken() || undefined,
   }
-
   try {
     const resp = await api.post('/v1/graphs', payload)
     workflowId.value = resp.data?.data?.id || resp.data?.id
@@ -352,20 +390,17 @@ async function loadWorkflows() {
   }
 }
 
-// ── API: Load one ──
 function loadWorkflow(record: GraphRecord) {
   workflowId.value = record.id
   workflowName.value = record.name
   fromBackendFormat(record.graph_json)
+  executionResults.value = {}
+  executionLogs.value = []
   message.success(`已加载: ${record.name}`)
 }
 
 // ── API: Delete ──
 async function deleteWorkflow(id: string) {
-  if (!id) {
-    message.warning('无法删除：工作流 ID 为空')
-    return
-  }
   try {
     await api.delete(`/v1/graphs/${id}`)
     message.success('已删除')
@@ -379,63 +414,83 @@ async function deleteWorkflow(id: string) {
   }
 }
 
-// ── API: Execute ──
+// ── API: Execute（提交后轮询状态） ──
+let statusTimer: number | undefined
+const loggedNodes = new Set<string>()
+
+function stopStatusPolling() {
+  if (statusTimer !== undefined) { window.clearInterval(statusTimer); statusTimer = undefined }
+}
+
 async function executeWorkflow() {
-  if (!workflowId.value) {
-    message.warning('请先保存工作流')
-    return
-  }
-
+  if (!workflowId.value) { message.warning('请先保存工作流'); return }
   isExecuting.value = true
-  executionLogs.value = ['⏳ 正在执行...']
-
+  executionLogs.value = ['⏳ 正在提交...']
+  executionResults.value = {}
+  loggedNodes.clear()
+  for (const n of getNodes.value) n.data = { ...n.data, execStatus: 'idle' }
   try {
-    await api.post(`/v1/graphs/${workflowId.value}/execute`, {
-      initial_state: {},
-    })
-    message.info('工作流已提交执行')
-
-    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080'
-    _eventSource = new EventSource(`${API_URL}/events?session_id=graph_${workflowId.value}`)
-    const eventSource = _eventSource
-
-    eventSource.onmessage = (event) => {
-      try {
-        const data: ExecutionEvent = JSON.parse(event.data)
-
-        if (data.event) {
-          const evt = data.event
-          const icon = evt.status === 'completed' ? '✅' : evt.status === 'error' ? '❌' : '⏳'
-          executionLogs.value.push(`${icon} [${evt.type}] ${evt.node_id} ${evt.error || ''}`)
-        }
-
-        if (data.status === 'completed' || data.event?.type === 'done') {
-          executionLogs.value.push('✅ 执行完成')
-          if (data.summary) {
-            executionLogs.value.push(data.summary)
-          }
-          isExecuting.value = false
-          eventSource.close()
-        }
-
-        if (data.error) {
-          executionLogs.value.push(`❌ 错误: ${data.error}`)
-          isExecuting.value = false
-          eventSource.close()
-        }
-      } catch {
-        // ignore parse errors
-      }
-    }
-
-    eventSource.onerror = () => {
-      executionLogs.value.push('⚠️ SSE 连接已断开')
-      isExecuting.value = false
-      eventSource.close()
-    }
+    const resp = await api.post(`/v1/graphs/${workflowId.value}/execute`, { initial_state: {} })
+    const instanceId = resp.data?.data?.instance_id || resp.data?.instance_id
+    if (!instanceId) throw new Error('无 instance_id')
+    message.info('工作流已提交，正在执行…')
+    startStatusPolling(instanceId)
   } catch (err: any) {
-    executionLogs.value.push(`❌ 启动失败: ${err.response?.data?.error || err.message}`)
     isExecuting.value = false
+    executionLogs.value.push(`❌ 提交失败: ${err.response?.data?.error || err.message}`)
+  }
+}
+
+function startStatusPolling(instanceId: string) {
+  stopStatusPolling()
+  statusTimer = window.setInterval(async () => {
+    try {
+      const resp = await api.get(`/v1/workflows/${instanceId}/status`)
+      const data = resp.data?.data || resp.data
+      applyExecutionStatus(data)
+      if (data.status === 'completed') {
+        executionLogs.value.push('✅ 执行完成')
+        isExecuting.value = false
+        stopStatusPolling()
+        await loadInstances()
+      } else if (data.status === 'error') {
+        executionLogs.value.push(`❌ 执行失败: ${data.error || ''}`)
+        isExecuting.value = false
+        stopStatusPolling()
+        await loadInstances()
+      }
+    } catch {
+      stopStatusPolling()
+      isExecuting.value = false
+      executionLogs.value.push('⚠️ 状态查询失败')
+    }
+  }, 2000)
+}
+
+function applyExecutionStatus(data: any) {
+  const results = data.results || {}
+  executionResults.value = results
+  for (const n of getNodes.value) {
+    const r = results[n.id]
+    n.data = { ...n.data, execStatus: r ? (r.status === 'completed' ? 'completed' : 'error') : 'idle' }
+  }
+  for (const [nid, r] of Object.entries(results) as [string, any][]) {
+    if (loggedNodes.has(nid)) continue
+    loggedNodes.add(nid)
+    const n = getNodes.value.find(x => x.id === nid)
+    const label = n?.data?.label || nid
+    if (r.status === 'completed') executionLogs.value.push(`✅ ${label}`)
+    else if (r.status === 'error') executionLogs.value.push(`❌ ${label}`)
+  }
+}
+
+// ── API: 执行历史 ──
+async function loadInstances() {
+  try {
+    const resp = await api.get('/v1/workflows/instances')
+    instances.value = resp.data?.data || []
+  } catch {
+    instances.value = []
   }
 }
 
@@ -447,21 +502,25 @@ function resetCanvas() {
   workflowId.value = null
   selectedNode.value = null
   showPanel.value = false
+  executionResults.value = {}
+  executionLogs.value = []
   nodeCounter = 0
 }
 
 // ── Mount ──
 onMounted(() => {
   loadWorkflows()
+  loadInstances()
+  window.addEventListener('keydown', onKeydown)
+})
+onUnmounted(() => {
+  stopStatusPolling()
+  window.removeEventListener('keydown', onKeydown)
 })
 
-// ── Unmount — cleanup SSE connection ──
-onUnmounted(() => {
-  if (_eventSource) {
-    _eventSource.close()
-    _eventSource = null
-  }
-})
+function statusClass(nodeProps: any): string {
+  return `status-${nodeProps.data?.execStatus || 'idle'}`
+}
 </script>
 
 <template>
@@ -476,7 +535,13 @@ onUnmounted(() => {
         </Button>
         <Button size="small" type="primary" ghost @click="executeWorkflow" :disabled="isExecuting">
           <template #icon><PlayCircleOutlined /></template>
-          执行
+          {{ isExecuting ? '执行中…' : '执行' }}
+        </Button>
+        <Button size="small" title="自动布局 (按层排列)" @click="autoLayout">
+          <template #icon><AlignCenterOutlined /></template>
+        </Button>
+        <Button size="small" title="复制选中节点 (Ctrl+D)" :disabled="!selectedNode" @click="duplicateSelectedNode">
+          <template #icon><CopyOutlined /></template>
         </Button>
         <Button size="small" @click="resetCanvas">新建</Button>
       </div>
@@ -484,6 +549,10 @@ onUnmounted(() => {
         <Button size="small" @click="showDrawer = true">
           <template #icon><UnorderedListOutlined /></template>
           工作流列表
+        </Button>
+        <Button size="small" @click="showHistory = !showHistory">
+          <template #icon><HistoryOutlined /></template>
+          执行历史
         </Button>
         <Tag v-if="workflowId" color="success">已保存</Tag>
         <Tag v-else color="warning">未保存</Tag>
@@ -504,6 +573,7 @@ onUnmounted(() => {
           <span class="palette-icon">{{ nt.icon }}</span>
           <span class="palette-label">{{ nt.label }}</span>
         </div>
+        <div class="palette-hint">拖拽到画布<br />Shift/⌘ 多选<br />Delete 删除</div>
       </div>
 
       <!-- Center: Canvas -->
@@ -523,9 +593,8 @@ onUnmounted(() => {
           <Controls />
           <MiniMap />
 
-          <!-- Custom node templates -->
           <template #node-input="nodeProps">
-            <div class="custom-node" :style="{ borderColor: '#22c55e' }">
+            <div class="custom-node" :class="statusClass(nodeProps)" :style="{ borderColor: '#22c55e' }">
               <div class="node-header" style="background: #22c55e20;"><span>📥 {{ nodeProps.data?.label || '输入' }}</span></div>
               <div class="node-body"><span class="node-type-tag">input</span></div>
               <Handle type="source" :position="Position.Bottom" />
@@ -533,18 +602,19 @@ onUnmounted(() => {
           </template>
 
           <template #node-llm="nodeProps">
-            <div class="custom-node" :style="{ borderColor: '#8b5cf6' }">
+            <div class="custom-node" :class="statusClass(nodeProps)" :style="{ borderColor: '#8b5cf6' }">
               <Handle type="target" :position="Position.Top" />
               <div class="node-header" style="background: #8b5cf620;"><span>🧠 {{ nodeProps.data?.label || 'LLM' }}</span></div>
               <div class="node-body">
                 <span class="node-type-tag">llm</span>
+                <span v-if="nodeProps.data?.config?.model" class="node-detail">{{ nodeProps.data.config.model }}</span>
               </div>
               <Handle type="source" :position="Position.Bottom" />
             </div>
           </template>
 
           <template #node-tool="nodeProps">
-            <div class="custom-node" :style="{ borderColor: '#3b82f6' }">
+            <div class="custom-node" :class="statusClass(nodeProps)" :style="{ borderColor: '#3b82f6' }">
               <Handle type="target" :position="Position.Top" />
               <div class="node-header" style="background: #3b82f620;"><span>🔧 {{ nodeProps.data?.label || '工具' }}</span></div>
               <div class="node-body">
@@ -556,7 +626,7 @@ onUnmounted(() => {
           </template>
 
           <template #node-condition="nodeProps">
-            <div class="custom-node" :style="{ borderColor: '#f59e0b' }">
+            <div class="custom-node" :class="statusClass(nodeProps)" :style="{ borderColor: '#f59e0b' }">
               <Handle type="target" :position="Position.Top" />
               <div class="node-header" style="background: #f59e0b20;"><span>🔀 {{ nodeProps.data?.label || '条件' }}</span></div>
               <div class="node-body"><span class="node-type-tag">condition</span></div>
@@ -566,7 +636,7 @@ onUnmounted(() => {
           </template>
 
           <template #node-output="nodeProps">
-            <div class="custom-node" :style="{ borderColor: '#6b7280' }">
+            <div class="custom-node" :class="statusClass(nodeProps)" :style="{ borderColor: '#6b7280' }">
               <Handle type="target" :position="Position.Top" />
               <div class="node-header" style="background: #6b728020;"><span>📤 {{ nodeProps.data?.label || '输出' }}</span></div>
               <div class="node-body"><span class="node-type-tag">output</span></div>
@@ -585,23 +655,20 @@ onUnmounted(() => {
         </div>
         <div class="panel-body">
           <Form layout="vertical" size="small">
-            <FormItem label="节点 ID">
-              <Input :value="selectedNode.id" disabled />
-            </FormItem>
-            <FormItem label="类型">
-              <Input :value="selectedNode.data?.nodeType" disabled />
-            </FormItem>
             <FormItem label="标签">
               <Input v-model:value="editLabel" placeholder="节点标签" />
             </FormItem>
 
             <template v-if="selectedNode.data?.nodeType === 'llm'">
               <div class="section-divider"></div>
+              <FormItem label="模型">
+                <Select v-model:value="editModel" :options="modelOptions" style="width: 100%" allow-clear />
+              </FormItem>
               <FormItem label="System Prompt">
                 <Input.TextArea v-model:value="editSystemPrompt" :rows="4" placeholder="系统提示词" />
               </FormItem>
               <FormItem label="用户消息模板">
-                <Input.TextArea v-model:value="editUserMessage" :rows="3" placeholder="使用 {{变量名}} 引用状态变量" />
+                <Input.TextArea v-model:value="editUserMessage" :rows="3" placeholder="使用 {{变量名}} 引用上游输出或状态变量" />
               </FormItem>
             </template>
 
@@ -610,19 +677,18 @@ onUnmounted(() => {
               <FormItem label="工具名称">
                 <Select v-model:value="editToolName" :options="toolOptions" placeholder="选择工具" style="width: 100%" />
               </FormItem>
+              <FormItem label="失败重试次数">
+                <InputNumber v-model:value="editRetries" :min="0" :max="5" style="width: 100%" />
+              </FormItem>
             </template>
 
             <template v-if="selectedNode.data?.nodeType === 'condition'">
               <div class="section-divider"></div>
               <FormItem label="条件表达式">
-                <Input.TextArea v-model:value="editCondition" :rows="3" placeholder="如: state.status == 'ok'" />
+                <Input.TextArea v-model:value="editCondition" :rows="3" placeholder="如: state.status == 'ok'（对上游输出求值）" />
               </FormItem>
-            </template>
-
-            <template v-if="selectedNode.data?.nodeType === 'input'">
-              <div class="section-divider"></div>
-              <FormItem label="输入变量名">
-                <Input v-model:value="editInputVariable" placeholder="user_input" />
+              <FormItem label="输入变量引用">
+                <Input v-model:value="editVariable" placeholder="$变量名（空 = 上游输出）" />
               </FormItem>
             </template>
 
@@ -636,41 +702,67 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Execution logs bar -->
-    <div v-if="executionLogs.length > 0" class="execution-bar">
+    <!-- Execution logs + results bar -->
+    <div v-if="executionLogs.length > 0 || Object.keys(executionResults).length > 0" class="execution-bar">
       <div class="execution-header">
         <span>执行日志</span>
-        <Button type="text" size="small" @click="executionLogs = []" style="color: #9ca3af">清除</Button>
+        <Button type="text" size="small" @click="executionLogs = []; executionResults = {}" class="exec-clear">清除</Button>
       </div>
       <div class="execution-logs">
         <div v-for="(log, i) in executionLogs" :key="i" class="log-line">{{ log }}</div>
       </div>
+      <div v-if="Object.keys(executionResults).length" class="execution-results">
+        <div v-for="(r, nid) in executionResults" :key="nid" class="result-item">
+          <div class="result-item-head">
+            <span class="result-node">{{ nid }}</span>
+            <Tag :color="r.status === 'completed' ? 'success' : 'error'" class="result-status">{{ r.status }}</Tag>
+          </div>
+          <pre class="result-output">{{ typeof r.output === 'string' ? r.output : JSON.stringify(r.output, null, 2) }}</pre>
+        </div>
+      </div>
     </div>
 
+    <!-- History drawer -->
+    <Drawer v-if="showHistory" :open="showHistory" title="执行历史" placement="right" :width="420" @update:open="showHistory = $event">
+      <Empty v-if="instances.length === 0" description="暂无执行记录" />
+      <div v-else class="history-list">
+        <div v-for="inst in instances" :key="inst.id" class="history-item">
+          <div class="history-head">
+            <Tag :color="inst.status === 'completed' ? 'success' : inst.status === 'error' ? 'error' : 'processing'">{{ inst.status }}</Tag>
+            <span class="history-name">{{ inst.workflow_name }}</span>
+            <span class="history-time">{{ formatDate(inst.created_at) }}</span>
+          </div>
+          <div v-if="inst.error" class="history-error">{{ inst.error }}</div>
+          <div class="history-results">
+            <div v-for="(r, nid) in inst.results" :key="nid" class="history-result">
+              <span class="history-node">{{ nid }}</span>
+              <pre class="history-output">{{ typeof r.output === 'string' ? r.output.slice(0, 200) : JSON.stringify(r.output).slice(0, 200) }}</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Drawer>
+
     <!-- Workflow List Drawer -->
-    <Drawer v-model:visible="showDrawer" title="已保存的工作流" placement="right" :width="380">
+    <Drawer v-if="showDrawer" :open="showDrawer" title="已保存的工作流" placement="right" :width="380" @update:open="showDrawer = $event">
       <Empty v-if="savedWorkflows.length === 0" description="暂无工作流" />
       <div v-else class="workflow-list">
-        <Card
+        <div
           v-for="wf in savedWorkflows"
           :key="wf.id"
-          size="small"
           class="workflow-item"
-          hoverable
+          @click="loadWorkflow(wf); showDrawer = false"
         >
-          <div class="wf-item-row">
-            <div class="wf-item-info" @click="loadWorkflow(wf); showDrawer = false">
-              <div class="wf-item-name">{{ wf.name || '未命名工作流' }}</div>
-              <div class="wf-item-time">{{ formatDate(wf.updated_at) || formatDate(wf.created_at) }}</div>
-            </div>
-            <Popconfirm :title="'确认删除 ' + wf.name + '？'" @confirm="deleteWorkflow(wf.id)">
-              <template #icon></template>
-              <Button type="text" danger size="small">
-                <template #icon><DeleteOutlined /></template>
-              </Button>
-            </Popconfirm>
+          <div class="wf-item-info">
+            <div class="wf-item-name">{{ wf.name || '未命名工作流' }}</div>
+            <div class="wf-item-time">{{ formatDate(wf.updated_at) || formatDate(wf.created_at) }}</div>
           </div>
-        </Card>
+          <Popconfirm title="确认删除？" @confirm="deleteWorkflow(wf.id)">
+            <Button type="text" danger size="small" @click.stop>
+              <template #icon><DeleteOutlined /></template>
+            </Button>
+          </Popconfirm>
+        </div>
       </div>
     </Drawer>
   </div>
@@ -685,40 +777,59 @@ onUnmounted(() => {
 
 <style scoped>
 .workflow-container { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
-.toolbar { display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; border-bottom: 1px solid #e0e0e0; background: #fff; gap: 8px; flex-shrink: 0; }
+.toolbar { display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--bg-card); gap: 8px; flex-shrink: 0; }
 .toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 8px; }
 .main-area { display: flex; flex: 1; overflow: hidden; }
-.node-palette { width: 160px; padding: 12px; border-right: 1px solid #e0e0e0; background: #fafafa; flex-shrink: 0; }
-.palette-title { font-weight: 600; font-size: 13px; color: #666; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
-.palette-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin-bottom: 6px; background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; cursor: grab; font-size: 13px; transition: box-shadow 0.15s; user-select: none; }
-.palette-item:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); }
+.node-palette { width: 168px; padding: 12px; border-right: 1px solid var(--border); background: var(--bg-secondary); flex-shrink: 0; }
+.palette-title { font-weight: 600; font-size: 12px; color: var(--text-tertiary); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
+.palette-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin-bottom: 6px; background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 8px; cursor: grab; font-size: 13px; transition: box-shadow 0.15s, border-color 0.15s; user-select: none; }
+.palette-item:hover { box-shadow: var(--shadow-md); border-color: var(--primary); }
 .palette-item:active { cursor: grabbing; }
 .palette-icon { font-size: 16px; }
-.palette-label { font-weight: 500; }
+.palette-label { font-weight: 500; color: var(--text-primary); }
+.palette-hint { margin-top: 14px; font-size: 11px; line-height: 1.7; color: var(--text-tertiary); }
 .canvas-wrapper { flex: 1; position: relative; }
-.custom-node { background: #fff; border: 2px solid; border-radius: 8px; min-width: 140px; font-size: 12px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08); }
-.node-header { padding: 6px 10px; border-radius: 6px 6px 0 0; font-weight: 600; font-size: 13px; white-space: nowrap; }
+/* 自定义节点：主题变量 + 执行状态 */
+.custom-node { background: var(--bg-card); border: 2px solid; border-radius: 8px; min-width: 150px; font-size: 12px; box-shadow: var(--shadow-md); color: var(--text-primary); transition: box-shadow 0.2s; }
+.custom-node.status-completed { box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.4), var(--shadow-lg); }
+.custom-node.status-error { box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.5), var(--shadow-lg); }
+.custom-node.status-running { animation: nodePulse 1.2s ease-in-out infinite; }
+@keyframes nodePulse { 0%, 100% { box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25); } 50% { box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.45); } }
+.node-header { padding: 6px 10px; border-radius: 6px 6px 0 0; font-weight: 600; font-size: 13px; white-space: nowrap; color: var(--text-primary); }
 .node-body { padding: 6px 10px; display: flex; align-items: center; gap: 6px; }
-.node-type-tag { background: #f3f4f6; padding: 1px 6px; border-radius: 3px; font-size: 10px; color: #6b7280; }
-.node-detail { font-size: 10px; color: #9ca3af; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100px; }
-.property-panel { width: 300px; border-left: 1px solid #e0e0e0; background: #fff; flex-shrink: 0; overflow-y: auto; }
-.panel-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #e0e0e0; font-weight: 600; font-size: 14px; }
+.node-type-tag { background: var(--bg-secondary); padding: 1px 6px; border-radius: 4px; font-size: 10px; color: var(--text-tertiary); }
+.node-detail { font-size: 10px; color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100px; }
+.property-panel { width: 300px; border-left: 1px solid var(--border); background: var(--bg-card); flex-shrink: 0; overflow-y: auto; }
+.panel-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 14px; color: var(--text-primary); }
 .panel-body { padding: 12px; }
-.section-divider { height: 1px; background: #f0f0f0; margin: 12px 0; }
-.execution-bar { border-top: 1px solid #e0e0e0; background: #1e1e1e; color: #d4d4d4; font-family: monospace; font-size: 12px; padding: 8px 16px; flex-shrink: 0; max-height: 200px; overflow-y: auto; }
-.execution-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; color: #9ca3af; font-size: 11px; }
+.section-divider { height: 1px; background: var(--border); margin: 12px 0; }
+/* 执行日志 + 结果 */
+.execution-bar { border-top: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); font-family: var(--font-mono); font-size: 12px; padding: 8px 16px; flex-shrink: 0; max-height: 220px; overflow-y: auto; }
+.execution-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; color: var(--text-tertiary); font-size: 11px; }
+.exec-clear { color: var(--text-tertiary) !important; }
 .log-line { padding: 2px 0; white-space: pre-wrap; word-break: break-all; }
+.execution-results { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.result-item { border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); overflow: hidden; }
+.result-item-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+.result-node { font-weight: 600; color: var(--text-primary); }
+.result-status { margin-left: auto; }
+.result-output { margin: 0; padding: 8px 10px; white-space: pre-wrap; word-break: break-word; color: var(--text-secondary); max-height: 140px; overflow-y: auto; }
+/* 列表 */
 .workflow-list { display: flex; flex-direction: column; gap: 8px; }
-.workflow-item { cursor: pointer; transition: box-shadow 0.15s; }
-.workflow-item:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); }
-.wf-item-row { display: flex; align-items: center; justify-content: space-between; }
-.wf-item-info { flex: 1; cursor: pointer; }
-.wf-item-name { font-weight: 600; font-size: 14px; }
-.wf-item-time { font-size: 12px; color: #9ca3af; margin-top: 2px; }
-
-:root.dark .toolbar { background: #1e1e1e; border-color: #333; }
-:root.dark .node-palette { background: #252525; border-color: #333; }
-:root.dark .palette-item { background: #2d2d2d; border-color: #444; color: #d4d4d4; }
-:root.dark .custom-node { background: #2d2d2d; color: #d4d4d4; }
-:root.dark .property-panel { background: #1e1e1e; border-color: #333; }
+.workflow-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border: 1px solid var(--border-card); border-radius: 8px; background: var(--bg-card); cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s; }
+.workflow-item:hover { border-color: var(--primary); box-shadow: var(--shadow-md); }
+.wf-item-info { flex: 1; min-width: 0; }
+.wf-item-name { font-weight: 600; font-size: 14px; color: var(--text-primary); }
+.wf-item-time { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
+/* 执行历史 */
+.history-list { display: flex; flex-direction: column; gap: 10px; }
+.history-item { border: 1px solid var(--border-card); border-radius: 8px; background: var(--bg-card); padding: 10px 12px; }
+.history-head { display: flex; align-items: center; gap: 8px; }
+.history-name { font-weight: 600; font-size: 13px; color: var(--text-primary); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-time { font-size: 11px; color: var(--text-tertiary); }
+.history-error { margin-top: 6px; font-size: 12px; color: var(--error); }
+.history-results { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.history-result { border-top: 1px dashed var(--border); padding-top: 6px; }
+.history-node { font-size: 11px; font-weight: 600; color: var(--primary); }
+.history-output { margin: 4px 0 0; font-size: 11px; color: var(--text-secondary); white-space: pre-wrap; word-break: break-all; }
 </style>

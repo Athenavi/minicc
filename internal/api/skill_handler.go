@@ -29,6 +29,9 @@ func (h *SkillHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/skills/generate", h.proxy)
 	mux.HandleFunc("DELETE /v1/skills/{name}", h.proxyDelete)
 	mux.HandleFunc("GET /v1/skills/discover", h.proxy)
+	// 启停（PUT）与运行（POST run）——技能工作台主链路
+	mux.HandleFunc("PUT /v1/skills/{name}", h.proxy)
+	mux.HandleFunc("POST /v1/skills/{name}/run", h.proxy)
 }
 
 // proxy forwards the request to the Python engine.
@@ -46,13 +49,17 @@ func (h *SkillHandler) proxy(w http.ResponseWriter, r *http.Request) {
 		// 规范化转发路径：Python 端注册的是 /v1/skills（无尾斜杠）
 		path := strings.TrimSuffix(r.URL.Path, "/")
 		err = h.python.GetJSON(r.Context(), path, &result)
-	case "POST":
+	case "POST", "PUT":
 		var body map[string]interface{}
 		if err := DecodeJSON(w, r, &body); err != nil {
 			BadRequest(w, "invalid request body")
 			return
 		}
-		err = h.python.PostJSON(r.Context(), r.URL.Path, body, &result)
+		if r.Method == "PUT" {
+			err = h.python.PutJSON(r.Context(), r.URL.Path, body, &result)
+		} else {
+			err = h.python.PostJSON(r.Context(), r.URL.Path, body, &result)
+		}
 	default:
 		BadRequest(w, "unsupported method")
 		return

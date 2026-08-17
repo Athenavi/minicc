@@ -2,10 +2,9 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  Card, Button, Modal, Form, FormItem, Input,
-  Radio, Spin, Empty, Tag, Space, Popconfirm, message,
+  Button, Modal, Input, Radio, Spin, Empty, Tag, Popconfirm, message,
 } from 'ant-design-vue'
-import { BookOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons-vue'
+import { BookOutlined, PlusOutlined, DeleteOutlined, SearchOutlined, EditOutlined } from '@ant-design/icons-vue'
 import { api } from '../api'
 
 interface KnowledgeBase {
@@ -25,46 +24,79 @@ interface KnowledgeBase {
 const router = useRouter()
 const loading = ref(true)
 const knowledgeBases = ref<KnowledgeBase[]>([])
-const showCreateModal = ref(false)
+const searchQuery = ref('')
 
 // 创建表单
+const showCreateModal = ref(false)
 const createForm = ref({
-  name: '',
-  description: '',
-  type: 'wiki' as 'wiki' | 'rag',
-  visibility: 'private' as 'public' | 'private',
+  name: '', description: '', type: 'wiki' as 'wiki' | 'rag', visibility: 'private' as 'public' | 'private',
+})
+const creating = ref(false)
+
+// 编辑表单
+const showEditModal = ref(false)
+const editingKb = ref<KnowledgeBase | null>(null)
+const editForm = ref({ name: '', description: '', type: 'wiki' as 'wiki' | 'rag', visibility: 'private' as 'public' | 'private' })
+const saving = ref(false)
+
+onMounted(loadKnowledgeBases)
+
+const filtered = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) return knowledgeBases.value
+  return knowledgeBases.value.filter(kb =>
+    (kb.name || '').toLowerCase().includes(q) || (kb.description || '').toLowerCase().includes(q))
 })
 
-onMounted(() => {
-  loadKnowledgeBases()
-})
+const privateKbs = computed(() => filtered.value.filter(kb => kb.visibility === 'private'))
+const publicKbs = computed(() => filtered.value.filter(kb => kb.visibility === 'public'))
 
 async function loadKnowledgeBases() {
+  loading.value = true
   try {
-    loading.value = true
     const res = await api.get('/v1/kb')
     knowledgeBases.value = res.data?.data?.knowledge_bases || []
-  } catch (error) {
-    console.error('加载知识库失败:', error)
+  } catch {
+    message.error('加载知识库失败')
   } finally {
     loading.value = false
   }
 }
 
 async function createKnowledgeBase() {
-  if (!createForm.value.name.trim()) {
-    message.warning('请输入知识库名称')
-    return
-  }
-
+  if (!createForm.value.name.trim()) { message.warning('请输入知识库名称'); return }
+  creating.value = true
   try {
     await api.post('/v1/kb', createForm.value)
     message.success('知识库创建成功')
     showCreateModal.value = false
     createForm.value = { name: '', description: '', type: 'wiki', visibility: 'private' }
     await loadKnowledgeBases()
-  } catch (error: any) {
-    message.error(error.response?.data?.error || '创建失败')
+  } catch (e: any) {
+    message.error(e.response?.data?.detail || e.response?.data?.error || '创建失败')
+  } finally {
+    creating.value = false
+  }
+}
+
+function openEdit(kb: KnowledgeBase) {
+  editingKb.value = kb
+  editForm.value = { name: kb.name, description: kb.description, type: kb.type, visibility: kb.visibility }
+  showEditModal.value = true
+}
+
+async function saveEdit() {
+  if (!editingKb.value || !editForm.value.name.trim()) { message.warning('请输入名称'); return }
+  saving.value = true
+  try {
+    await api.put(`/v1/kb/${editingKb.value.id}`, editForm.value)
+    message.success('已保存')
+    showEditModal.value = false
+    await loadKnowledgeBases()
+  } catch (e: any) {
+    message.error(e.response?.data?.detail || e.response?.data?.error || '保存失败')
+  } finally {
+    saving.value = false
   }
 }
 
@@ -73,8 +105,8 @@ async function deleteKnowledgeBase(id: string) {
     await api.delete(`/v1/kb/${id}`)
     message.success('已删除')
     await loadKnowledgeBases()
-  } catch (error: any) {
-    message.error(error.response?.data?.error || '删除失败')
+  } catch (e: any) {
+    message.error(e.response?.data?.detail || e.response?.data?.error || '删除失败')
   }
 }
 
@@ -83,7 +115,7 @@ function openKnowledgeBase(kb: KnowledgeBase) {
 }
 
 function formatSize(bytes: number): string {
-  if (bytes === 0) return '0 B'
+  if (!bytes) return '0 B'
   const k = 1024
   const sizes = ['B', 'KB', 'MB', 'GB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
@@ -96,17 +128,14 @@ function formatDate(iso: string): string {
   if (isNaN(d.getTime())) return ''
   return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
-
-const publicKbs = computed(() => knowledgeBases.value.filter(kb => kb.visibility === 'public'))
-const privateKbs = computed(() => knowledgeBases.value.filter(kb => kb.visibility === 'private'))
 </script>
 
 <template>
-  <div class="kb-container">
-    <div class="kb-header">
-      <div class="header-left">
-        <BookOutlined style="font-size: 24px; color: #2080f0" />
-        <h1>知识库</h1>
+  <div class="kb-page">
+    <div class="page-head">
+      <div class="page-head-text">
+        <h1 class="page-title">知识库</h1>
+        <p class="page-sub">集中管理文档，支持全文检索与 RAG 问答</p>
       </div>
       <Button type="primary" @click="showCreateModal = true">
         <template #icon><PlusOutlined /></template>
@@ -114,124 +143,214 @@ const privateKbs = computed(() => knowledgeBases.value.filter(kb => kb.visibilit
       </Button>
     </div>
 
+    <div class="list-toolbar">
+      <Input v-model:value="searchQuery" placeholder="搜索知识库（名称 / 描述）" allow-clear class="search-input">
+        <template #prefix><SearchOutlined /></template>
+      </Input>
+    </div>
+
     <Spin :spinning="loading">
-      <div v-if="!loading && knowledgeBases.length === 0" class="empty-state">
-        <Empty description="暂无知识库">
-          <template #extra>
-            <Button type="primary" @click="showCreateModal = true">创建第一个知识库</Button>
-          </template>
-        </Empty>
-      </div>
+      <Empty v-if="!loading && knowledgeBases.length === 0" description="暂无知识库" class="page-empty">
+        <template #image><BookOutlined style="font-size: 44px; color: var(--primary)" /></template>
+      </Empty>
 
       <div v-else class="kb-sections">
-        <!-- 私人知识库 -->
         <div v-if="privateKbs.length > 0" class="kb-section">
-          <h2>📁 我的知识库</h2>
+          <h2 class="section-title">我的知识库</h2>
           <div class="kb-grid">
-            <Card
+            <div
               v-for="kb in privateKbs"
               :key="kb.id"
               class="kb-card"
-              hoverable
               @click="openKnowledgeBase(kb)"
             >
-              <div class="kb-card-header">
-                <span class="kb-name">{{ kb.name }}</span>
-                <Tag :color="kb.type === 'rag' ? 'success' : 'blue'">
-                  {{ kb.type.toUpperCase() }}
-                </Tag>
+              <div class="card-top">
+                <span class="card-icon"><BookOutlined /></span>
+                <div class="card-titles">
+                  <span class="kb-name">{{ kb.name }}</span>
+                  <span class="kb-desc">{{ kb.description || '暂无描述' }}</span>
+                </div>
+                <Tag :color="kb.type === 'rag' ? 'success' : 'blue'" class="type-tag">{{ kb.type.toUpperCase() }}</Tag>
               </div>
-              <p class="kb-desc">{{ kb.description || '暂无描述' }}</p>
               <div class="kb-stats">
-                <span>📄 {{ kb.document_count }} 文档</span>
-                <span>💾 {{ formatSize(kb.total_size_bytes) }}</span>
-                <span>💰 {{ kb.credits_consumed }} credits</span>
+                <span class="stat">📄 {{ kb.document_count }} 文档</span>
+                <span class="stat">💾 {{ formatSize(kb.total_size_bytes) }}</span>
+                <Tag :color="kb.status === 'active' ? 'green' : kb.status === 'building' ? 'processing' : 'default'">{{ kb.status }}</Tag>
               </div>
               <div class="kb-footer">
-                <span class="kb-time">{{ formatDate(kb.updated_at) }}</span>
-                <Popconfirm title="确认删除此知识库？" @confirm="deleteKnowledgeBase(kb.id)">
-                  <template #icon></template>
-                  <Button type="text" danger size="small" @click.stop>
-                    <template #icon><DeleteOutlined /></template>
+                <span class="kb-time">更新于 {{ formatDate(kb.updated_at) }}</span>
+                <div class="footer-actions">
+                  <Button type="text" size="small" @click.stop="openEdit(kb)">
+                    <template #icon><EditOutlined /></template>
                   </Button>
-                </Popconfirm>
+                  <Popconfirm title="确认删除此知识库？" @confirm="deleteKnowledgeBase(kb.id)">
+                    <Button type="text" danger size="small" @click.stop>
+                      <template #icon><DeleteOutlined /></template>
+                    </Button>
+                  </Popconfirm>
+                </div>
               </div>
-            </Card>
+            </div>
           </div>
         </div>
 
-        <!-- 公共知识库 -->
         <div v-if="publicKbs.length > 0" class="kb-section">
-          <h2>🌐 公共知识库</h2>
+          <h2 class="section-title">公共知识库</h2>
           <div class="kb-grid">
-            <Card
+            <div
               v-for="kb in publicKbs"
               :key="kb.id"
               class="kb-card public"
-              hoverable
               @click="openKnowledgeBase(kb)"
             >
-              <div class="kb-card-header">
-                <span class="kb-name">{{ kb.name }}</span>
+              <div class="card-top">
+                <span class="card-icon"><BookOutlined /></span>
+                <div class="card-titles">
+                  <span class="kb-name">{{ kb.name }}</span>
+                  <span class="kb-desc">{{ kb.description || '暂无描述' }}</span>
+                </div>
                 <Tag color="warning">公共</Tag>
               </div>
-              <p class="kb-desc">{{ kb.description || '暂无描述' }}</p>
               <div class="kb-stats">
-                <span>📄 {{ kb.document_count }} 文档</span>
-                <span>💾 {{ formatSize(kb.total_size_bytes) }}</span>
+                <span class="stat">📄 {{ kb.document_count }} 文档</span>
+                <span class="stat">💾 {{ formatSize(kb.total_size_bytes) }}</span>
               </div>
-            </Card>
+              <div class="kb-footer">
+                <span class="kb-time">更新于 {{ formatDate(kb.updated_at) }}</span>
+                <div class="footer-actions">
+                  <Button type="text" size="small" @click.stop="openEdit(kb)">
+                    <template #icon><EditOutlined /></template>
+                  </Button>
+                  <Popconfirm title="确认删除此知识库？" @confirm="deleteKnowledgeBase(kb.id)">
+                    <Button type="text" danger size="small" @click.stop>
+                      <template #icon><DeleteOutlined /></template>
+                    </Button>
+                  </Popconfirm>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
     </Spin>
 
-    <!-- 创建知识库弹窗 -->
-    <Modal v-model:visible="showCreateModal" title="创建知识库" :footer="null" :style="{ maxWidth: '500px' }">
-      <Form :model="createForm" layout="vertical">
-        <FormItem label="名称" required>
-          <Input v-model:value="createForm.name" placeholder="输入知识库名称" />
-        </FormItem>
-        <FormItem label="描述">
-          <Input.TextArea v-model:value="createForm.description" placeholder="输入描述（可选）" />
-        </FormItem>
-        <FormItem label="索引方式">
+    <!-- 创建 Modal -->
+    <Modal
+      :open="showCreateModal"
+      title="创建知识库"
+      :confirm-loading="creating"
+      ok-text="创建"
+      cancel-text="取消"
+      @ok="createKnowledgeBase"
+      @cancel="showCreateModal = false"
+    >
+      <div class="editor-form">
+        <div class="form-row">
+          <label class="form-label">名称 *</label>
+          <Input v-model:value="createForm.name" placeholder="知识库名称" :maxlength="60" />
+        </div>
+        <div class="form-row">
+          <label class="form-label">描述</label>
+          <Input.TextArea v-model:value="createForm.description" :rows="2" placeholder="一句话描述内容范围" />
+        </div>
+        <div class="form-row">
+          <label class="form-label">类型</label>
           <Radio.Group v-model:value="createForm.type">
-            <Radio.Button value="wiki">Wiki（全文搜索）</Radio.Button>
-            <Radio.Button value="rag">RAG（语义检索）</Radio.Button>
+            <Radio value="wiki">Wiki（全文检索）</Radio>
+            <Radio value="rag">RAG（向量问答）</Radio>
           </Radio.Group>
-        </FormItem>
-        <FormItem label="可见性">
+        </div>
+        <div class="form-row">
+          <label class="form-label">可见性</label>
           <Radio.Group v-model:value="createForm.visibility">
-            <Radio.Button value="private">私人</Radio.Button>
-            <Radio.Button value="public">公共</Radio.Button>
+            <Radio value="private">私有</Radio>
+            <Radio value="public">公开</Radio>
           </Radio.Group>
-        </FormItem>
-      </Form>
-      <Space style="display: flex; justify-content: flex-end; margin-top: 16px">
-        <Button @click="showCreateModal = false">取消</Button>
-        <Button type="primary" @click="createKnowledgeBase">创建</Button>
-      </Space>
+        </div>
+      </div>
+    </Modal>
+
+    <!-- 编辑 Modal -->
+    <Modal
+      :open="showEditModal"
+      :title="`编辑「${editingKb?.name || ''}」`"
+      :confirm-loading="saving"
+      ok-text="保存"
+      cancel-text="取消"
+      @ok="saveEdit"
+      @cancel="showEditModal = false"
+    >
+      <div class="editor-form">
+        <div class="form-row">
+          <label class="form-label">名称 *</label>
+          <Input v-model:value="editForm.name" :maxlength="60" />
+        </div>
+        <div class="form-row">
+          <label class="form-label">描述</label>
+          <Input.TextArea v-model:value="editForm.description" :rows="2" />
+        </div>
+        <div class="form-row">
+          <label class="form-label">类型</label>
+          <Radio.Group v-model:value="editForm.type">
+            <Radio value="wiki">Wiki</Radio>
+            <Radio value="rag">RAG</Radio>
+          </Radio.Group>
+        </div>
+        <div class="form-row">
+          <label class="form-label">可见性</label>
+          <Radio.Group v-model:value="editForm.visibility">
+            <Radio value="private">私有</Radio>
+            <Radio value="public">公开</Radio>
+          </Radio.Group>
+        </div>
+      </div>
     </Modal>
   </div>
 </template>
 
 <style scoped>
-.kb-container { padding: 24px; max-width: 1200px; margin: 0 auto; }
-.kb-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
-.header-left { display: flex; align-items: center; gap: 12px; }
-.header-left h1 { margin: 0; font-size: 24px; font-weight: 600; }
-.empty-state { display: flex; justify-content: center; padding: 80px 0; }
-.kb-section { margin-bottom: 32px; }
-.kb-section h2 { font-size: 18px; font-weight: 600; margin-bottom: 16px; }
-.kb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
-.kb-card { cursor: pointer; transition: all 0.2s; }
-.kb-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
-.kb-card.public { border-left: 3px solid #f59e0b; }
-.kb-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.kb-name { font-weight: 600; font-size: 16px; }
-.kb-desc { color: #666; font-size: 14px; margin: 0 0 12px; line-height: 1.5; }
-.kb-stats { display: flex; gap: 16px; font-size: 13px; color: #888; }
-.kb-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding-top: 12px; border-top: 1px solid #f0f0f0; }
-.kb-time { font-size: 12px; color: #999; }
+.kb-page { max-width: 1080px; margin: 0 auto; padding: 28px 24px 60px; }
+.page-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.page-title { font-size: 24px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+.page-sub { margin: 4px 0 0; color: var(--text-tertiary); font-size: 13px; }
+.list-toolbar { margin-bottom: 16px; }
+.search-input { max-width: 320px; }
+.page-empty { padding: 60px 0; }
+.kb-sections { display: flex; flex-direction: column; gap: 24px; }
+.section-title { font-size: 15px; font-weight: 600; color: var(--text-secondary); margin: 0 0 10px; }
+.kb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+.kb-card {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.kb-card:hover { transform: translateY(-2px); border-color: var(--primary); box-shadow: var(--shadow-lg); }
+.kb-card.public { border-left: 3px solid var(--warning); }
+.card-top { display: flex; align-items: flex-start; gap: 10px; }
+.card-icon { flex: none; width: 36px; height: 36px; border-radius: 10px; background: var(--primary-bg); color: var(--primary); display: inline-flex; align-items: center; justify-content: center; font-size: 17px; }
+.card-titles { flex: 1; min-width: 0; }
+.kb-name { display: block; font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.kb-desc {
+  display: block; margin-top: 3px; font-size: 12px; color: var(--text-tertiary);
+  line-height: 1.5; overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
+  -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.type-tag { flex: none; }
+.kb-stats { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.stat { font-size: 12px; color: var(--text-secondary); }
+.kb-footer { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-card); padding-top: 10px; }
+.kb-time { font-size: 11px; color: var(--text-tertiary); }
+.footer-actions { display: flex; gap: 2px; }
+.editor-form { display: flex; flex-direction: column; gap: 12px; }
+.form-row { display: flex; flex-direction: column; gap: 6px; }
+.form-label { font-size: 12px; color: var(--text-secondary); font-weight: 500; }
+@media (max-width: 640px) {
+  .kb-page { padding: 20px 16px 48px; }
+  .kb-grid { grid-template-columns: 1fr; }
+}
 </style>

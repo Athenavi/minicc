@@ -3,13 +3,14 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Card, Button, Upload, Table, Spin, Empty, Tag, Space,
-  Progress, message, Modal, Input, Checkbox,
+  Progress, message, Modal, Input, Checkbox, Popconfirm,
 } from 'ant-design-vue'
 import {
   ArrowLeftOutlined, CloudUploadOutlined,
   PlayCircleOutlined, PictureOutlined, SearchOutlined,
 } from '@ant-design/icons-vue'
 import { api } from '../api'
+import { createChunkUpload } from '../utils/uploader'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080'
 
@@ -44,7 +45,51 @@ const docColumns = [
       return isNaN(d.getTime()) ? '' : d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
     },
   },
+  {
+    title: '操作', key: 'action', width: 90,
+  },
 ]
+
+// 文档搜索 + 批量删除
+const docSearch = ref('')
+const selectedDocIds = ref<string[]>([])
+const deletingDocs = ref(false)
+
+const filteredDocs = computed(() => {
+  const q = docSearch.value.trim().toLowerCase()
+  if (!q) return documents.value
+  return documents.value.filter(d => (d.name || '').toLowerCase().includes(q) || (d.file_type || '').toLowerCase().includes(q))
+})
+
+async function deleteDoc(id: string) {
+  try {
+    await api.delete(`/v1/kb/${kbId}/documents`, { params: { doc_id: id } })
+    message.success('已删除')
+    await loadDocuments()
+    await loadKnowledgeBase()
+  } catch (e: any) {
+    message.error(e.response?.data?.detail || e.response?.data?.error || '删除失败')
+  }
+}
+
+async function batchDeleteDocs() {
+  const ids = [...selectedDocIds.value]
+  if (!ids.length) { message.warning('请先选择文档'); return }
+  deletingDocs.value = true
+  try {
+    for (const id of ids) {
+      await api.delete(`/v1/kb/${kbId}/documents`, { params: { doc_id: id } })
+    }
+    message.success(`已删除 ${ids.length} 个文档`)
+    selectedDocIds.value = []
+    await loadDocuments()
+    await loadKnowledgeBase()
+  } catch (e: any) {
+    message.error(e.response?.data?.detail || e.response?.data?.error || '删除失败')
+  } finally {
+    deletingDocs.value = false
+  }
+}
 
 // 媒体库相关
 const showMediaModal = ref(false)
@@ -92,19 +137,16 @@ const filteredMediaFiles = computed(() => {
   )
 })
 
+// 上传文档：全局分片（purpose kb_doc → complete 落 knowledge_documents）
 async function handleUpload(info: any) {
-  const formData = new FormData()
-  formData.append('file', info.file)
-
   try {
-    await api.post(`/v1/kb/${kbId}/documents`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
+    const handle = await createChunkUpload(info.file, { purpose: 'kb_doc', parentId: kbId })
+    await handle.done
     message.success('文档上传成功')
     await loadKnowledgeBase()
     await loadDocuments()
   } catch (error: any) {
-    message.error(error.response?.data?.error || '上传失败')
+    message.error(error.response?.data?.detail || error.response?.data?.error || error.message || '上传失败')
   }
 }
 
@@ -141,12 +183,9 @@ async function importFromMedia() {
     try {
       const response = await fetch(`${API_URL}${file.file_url}`)
       const blob = await response.blob()
-      const formData = new FormData()
-      formData.append('file', blob, file.name)
-
-      await api.post(`/v1/kb/${kbId}/documents`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
+      const mediaFile = new File([blob], file.name, { type: file.mime_type || '' })
+      const handle = await createChunkUpload(mediaFile, { purpose: 'kb_doc', parentId: kbId })
+      await handle.done
       successCount++
     } catch (error) {
       failCount++
@@ -326,6 +365,25 @@ function formatSize(bytes: number): string {
         <Card title="文档管理" style="margin-top: 16px">
           <template #extra>
             <Space>
+              <Input
+                v-model:value="docSearch"
+                placeholder="搜索文档"
+                allow-clear
+                size="small"
+                style="width: 180px"
+              >
+                <template #prefix><SearchOutlined /></template>
+              </Input>
+              <Button
+                v-if="selectedDocIds.length > 0"
+                size="small"
+                danger
+                :loading="deletingDocs"
+                @click="batchDeleteDocs"
+              >
+                <template #icon><DeleteOutlined /></template>
+                批量删除（{{ selectedDocIds.length }}）
+              </Button>
               <Button size="small" @click="openMediaModal">
                 <template #icon><PictureOutlined /></template>
                 从媒体库选取
@@ -343,9 +401,16 @@ function formatSize(bytes: number): string {
             </Space>
           </template>
 
-          <Empty v-if="documents.length === 0" description="暂无文档，请上传文档或从媒体库选取" />
-          <Table v-else :columns="docColumns" :dataSource="documents" :pagination="false">
-            <template #bodyCell="{ column, text }">
+          <Empty v-if="filteredDocs.length === 0" description="暂无文档，请上传文档或从媒体库选取" />
+          <Table
+            v-else
+            :columns="docColumns"
+            :dataSource="filteredDocs"
+            :pagination="false"
+            :row-selection="{ selectedRowKeys: selectedDocIds, onChange: (keys: any[]) => (selectedDocIds = keys) }"
+            row-key="id"
+          >
+            <template #bodyCell="{ column, text, record }">
               <template v-if="column.dataIndex === 'file_size_bytes'">
                 {{ formatSize(text) }}
               </template>
@@ -356,6 +421,13 @@ function formatSize(bytes: number): string {
               </template>
               <template v-else-if="column.dataIndex === 'created_at'">
                 {{ text ? new Date(text).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '' }}
+              </template>
+              <template v-else-if="column.key === 'action'">
+                <Popconfirm title="确认删除此文档？" @confirm="deleteDoc(record.id)">
+                  <Button type="text" danger size="small">
+                    <template #icon><DeleteOutlined /></template>
+                  </Button>
+                </Popconfirm>
               </template>
             </template>
           </Table>
@@ -381,6 +453,7 @@ function formatSize(bytes: number): string {
         <div v-for="(result, index) in queryResults" :key="index" class="query-result-item">
           <div class="result-header">
             <Tag>相关度: {{ (result.score * 100).toFixed(1) }}%</Tag>
+            <span v-if="result.name || result.document_name" class="result-source">📄 {{ result.name || result.document_name }}</span>
           </div>
           <p class="result-content">{{ result.content }}</p>
         </div>
@@ -456,6 +529,7 @@ function formatSize(bytes: number): string {
 .query-results { margin-top: 16px; padding-top: 16px; border-top: 1px solid #f0f0f0; }
 .query-results h3 { margin: 0 0 12px; font-size: 16px; }
 .query-result-item { padding: 12px; background: #f9f9f9; border-radius: 8px; margin-bottom: 8px; }
+.result-source { font-size: 12px; color: var(--text-tertiary); }
 .result-header { margin-bottom: 8px; }
 .result-content { margin: 0; font-size: 14px; line-height: 1.6; color: #333; }
 

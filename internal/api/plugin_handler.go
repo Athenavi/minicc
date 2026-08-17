@@ -1,12 +1,17 @@
 package api
 
 import (
+	"bufio"
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/athenavi/minicc/config"
 )
@@ -209,4 +214,185 @@ func (h *PluginHandler) writePlugins(plugins []MCPPlugin) error {
 		return err
 	}
 	return os.WriteFile(h.configPath, data, 0644)
+}
+
+// Update 更新插件配置或启停状态（PUT /v1/plugins/{name}）。
+// 字段为空/未提供则不修改；Status 仅接受 active / inactive。
+func (h *PluginHandler) Update(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" {
+		BadRequest(w, "plugin name is required")
+		return
+	}
+	var body struct {
+		Command     *string           `json:"command"`
+		Args        *[]string         `json:"args,omitempty"`
+		Env         *map[string]string `json:"env,omitempty"`
+		Description *string           `json:"description,omitempty"`
+		Version     *string           `json:"version,omitempty"`
+		Status      *string           `json:"status,omitempty"`
+	}
+	if err := DecodeJSON(w, r, &body); err != nil {
+		BadRequest(w, "invalid request body")
+		return
+	}
+	if body.Status != nil && *body.Status != "active" && *body.Status != "inactive" {
+		BadRequest(w, "status must be active or inactive")
+		return
+	}
+	if body.Command == nil && body.Args == nil && body.Env == nil &&
+		body.Description == nil && body.Version == nil && body.Status == nil {
+		BadRequest(w, "nothing to update")
+		return
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	plugins, err := h.readPlugins()
+	if err != nil {
+		InternalError(w, "failed to read plugins config")
+		return
+	}
+	updated := false
+	for i := range plugins {
+		if plugins[i].Name != name {
+			continue
+		}
+		if body.Command != nil {
+			if strings.TrimSpace(*body.Command) == "" {
+				BadRequest(w, "command must not be empty")
+				return
+			}
+			plugins[i].Command = *body.Command
+		}
+		if body.Args != nil {
+			plugins[i].Args = *body.Args
+		}
+		if body.Env != nil {
+			plugins[i].Env = *body.Env
+		}
+		if body.Description != nil {
+			plugins[i].Description = *body.Description
+		}
+		if body.Version != nil {
+			plugins[i].Version = *body.Version
+		}
+		if body.Status != nil {
+			plugins[i].Status = *body.Status
+		}
+		updated = true
+		break
+	}
+	if !updated {
+		NotFound(w, "plugin not found: "+name)
+		return
+	}
+	if err := h.writePlugins(plugins); err != nil {
+		InternalError(w, "failed to save plugins config")
+		return
+	}
+	for _, p := range plugins {
+		if p.Name == name {
+			OK(w, p)
+			return
+		}
+	}
+	OK(w, map[string]string{"name": name, "updated": "true"})
+}
+
+// Test 探测 MCP 服务器可连接性（POST /v1/plugins/{name}/test）。
+// stdio MCP：启动 command 并发送 JSON-RPC initialize 握手，收到响应即通。
+func (h *PluginHandler) Test(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" {
+		BadRequest(w, "plugin name is required")
+		return
+	}
+
+	plugins, err := h.readPlugins()
+	if err != nil {
+		InternalError(w, "failed to read plugins config")
+		return
+	}
+	var plugin *MCPPlugin
+	for i := range plugins {
+		if plugins[i].Name == name {
+			plugin = &plugins[i]
+			break
+		}
+	}
+	if plugin == nil {
+		NotFound(w, "plugin not found: "+name)
+		return
+	}
+
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, plugin.Command, plugin.Args...)
+	cmd.Env = os.Environ()
+	for k, v := range plugin.Env {
+		cmd.Env = append(cmd.Env, k+"="+v)
+	}
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		InternalError(w, "stdin pipe: "+err.Error())
+		return
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		InternalError(w, "stdout pipe: "+err.Error())
+		return
+	}
+	if err := cmd.Start(); err != nil {
+		OK(w, map[string]interface{}{
+			"ok": false, "message": "无法启动进程: " + err.Error(),
+			"duration_ms": time.Since(start).Milliseconds(),
+		})
+		return
+	}
+	defer func() { _ = cmd.Process.Kill() }()
+
+	// MCP initialize（JSON-RPC 2.0 over stdio）
+	req := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"minicc","version":"1.0"}}}`
+	if _, err := stdin.Write([]byte(req + "\n")); err != nil {
+		OK(w, map[string]interface{}{
+			"ok": false, "message": "写入握手请求失败: " + err.Error(),
+			"duration_ms": time.Since(start).Milliseconds(),
+		})
+		return
+	}
+
+	type respLine struct {
+		line string
+		err  error
+	}
+	ch := make(chan respLine, 1)
+	go func() {
+		line, err := bufio.NewReader(stdout).ReadString('\n')
+		ch <- respLine{line: line, err: err}
+	}()
+
+	select {
+	case resp := <-ch:
+		ok := resp.err == nil && strings.Contains(resp.line, "jsonrpc")
+		msg := "MCP 握手成功"
+		if !ok {
+			msg = "无有效 MCP initialize 响应" + strings.TrimSpace(resp.line)
+			if resp.err != nil {
+				msg = "读取响应失败: " + resp.err.Error()
+			}
+		}
+		OK(w, map[string]interface{}{
+			"ok": ok, "message": msg,
+			"duration_ms": time.Since(start).Milliseconds(),
+		})
+	case <-ctx.Done():
+		OK(w, map[string]interface{}{
+			"ok": false, "message": "连接超时（无 MCP initialize 响应）",
+			"duration_ms": time.Since(start).Milliseconds(),
+		})
+	}
 }

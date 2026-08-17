@@ -110,6 +110,47 @@ async def delete_skill(name: str) -> dict[str, str]:
     return {"message": f"Skill '{name}' deleted"}
 
 
+class SkillToggleRequest(BaseModel):
+    enabled: bool = True
+
+
+@router.put("/v1/skills/{name}")
+async def toggle_skill(name: str, body: SkillToggleRequest) -> dict[str, Any]:
+    """启用/停用技能（停用后不进 agent 目录、不可运行）。"""
+    if not re.match(r"^[a-zA-Z0-9_.-]+$", name):
+        raise HTTPException(status_code=400, detail="invalid skill name")
+    skill = store.get(name)
+    if not skill:
+        raise HTTPException(status_code=404, detail=f"Skill '{name}' not found")
+    skill.enabled = body.enabled
+    store.save(skill)
+    return {
+        "skill": skill.to_dict(),
+        "message": f"Skill '{name}' {'已启用' if body.enabled else '已停用'}",
+    }
+
+
+class SkillRunRequest(BaseModel):
+    params: dict[str, Any] = {}
+
+
+@router.post("/v1/skills/{name}/run")
+async def run_skill(name: str, body: SkillRunRequest) -> dict[str, Any]:
+    """运行技能（校验启用状态后调 skill_run）。"""
+    if not re.match(r"^[a-zA-Z0-9_.-]+$", name):
+        raise HTTPException(status_code=400, detail="invalid skill name")
+    skill = store.get(name)
+    if not skill:
+        raise HTTPException(status_code=404, detail=f"Skill '{name}' not found")
+    if not skill.enabled:
+        raise HTTPException(status_code=400, detail=f"Skill '{name}' 已停用")
+
+    import json as _json
+    from app.tools.skill import skill_run
+
+    return await skill_run(name, _json.dumps(body.params))
+
+
 @router.get("/v1/skills/discover")
 async def discover_skills(url: str = "") -> dict[str, Any]:
     results: list[dict[str, Any]] = []

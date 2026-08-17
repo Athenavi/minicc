@@ -17,6 +17,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/kb", tags=["knowledge"])
 
+# 单租户默认租户 ID（与 Go internal/db/seed.go 保持一致；两表 tenant_id 为 NOT NULL）
+DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000001"
+
 
 # ── Models ──
 
@@ -31,6 +34,7 @@ class KnowledgeBaseUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     type: Optional[str] = None
+    visibility: Optional[str] = None
 
 
 class DocumentUpload(BaseModel):
@@ -134,9 +138,9 @@ async def create_knowledge_base(
     kb_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
     await pool.execute(
-        """INSERT INTO knowledge_bases (id, user_id, name, description, type, visibility, status, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, $7)""",
-        kb_id, user_id, name.strip(), description, kb_type, visibility, now,
+        """INSERT INTO knowledge_bases (id, tenant_id, user_id, name, description, type, visibility, status, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', $8, $8)""",
+        kb_id, DEFAULT_TENANT_ID, user_id, name.strip(), description, kb_type, visibility, now,
     )
     return {"id": kb_id, "name": name.strip(), "type": kb_type, "visibility": visibility}
 
@@ -162,6 +166,7 @@ async def update_knowledge_base(
     name: Optional[str] = None,
     description: Optional[str] = None,
     kb_type: Optional[str] = None,
+    visibility: Optional[str] = None,
 ) -> dict:
     """Update a knowledge base (owner only). Public KBs cannot change type."""
     pool = get_pool()
@@ -200,6 +205,12 @@ async def update_knowledge_base(
     if kb_type is not None:
         updates.append(f"type = ${idx}")
         params.append(kb_type)
+        idx += 1
+    if visibility is not None:
+        if visibility not in ("public", "private"):
+            raise HTTPException(status_code=400, detail="visibility must be 'public' or 'private'")
+        updates.append(f"visibility = ${idx}")
+        params.append(visibility)
         idx += 1
 
     if not updates:
@@ -275,9 +286,9 @@ async def upload_document(
     # Insert the document
     await pool.execute(
         """INSERT INTO knowledge_documents
-               (id, knowledge_base_id, user_id, name, file_type, file_size_bytes, status, content, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8)""",
-        doc_id, kb_id, user_id, name.strip(), file_type, file_size_bytes, content, now,
+               (id, tenant_id, knowledge_base_id, user_id, name, file_type, file_size_bytes, status, content, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9)""",
+        doc_id, DEFAULT_TENANT_ID, kb_id, user_id, name.strip(), file_type, file_size_bytes, content, now,
     )
 
     # Update KB aggregate stats
@@ -325,6 +336,39 @@ async def list_documents(kb_id: str, user_id: str) -> dict:
     )
     docs = [_serialize_doc(dict(row)) for row in rows]
     return {"documents": docs, "count": len(docs)}
+
+
+@router.delete("/{kb_id}/documents")
+async def delete_doc(
+    kb_id: str,
+    request: Request,
+    user_id: str = Query("", alias="user_id"),
+    doc_id: str = Query("", alias="doc_id"),
+) -> dict:
+    """删除单个文档（前端批量删除循环调用；删除后重算 KB 统计）。"""
+    if not doc_id:
+        raise HTTPException(status_code=400, detail="doc_id is required")
+    pool = get_pool()
+
+    kb_row = await pool.fetchrow("SELECT id, user_id FROM knowledge_bases WHERE id = $1", kb_id)
+    if kb_row is None:
+        raise HTTPException(status_code=404, detail="knowledge base not found")
+    if kb_row["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="not authorized to delete documents")
+
+    await pool.execute(
+        "DELETE FROM knowledge_documents WHERE id = $1 AND knowledge_base_id = $2",
+        doc_id, kb_id,
+    )
+    await pool.execute(
+        """UPDATE knowledge_bases
+           SET document_count = (SELECT COUNT(*) FROM knowledge_documents WHERE knowledge_base_id = $1),
+               total_size_bytes = COALESCE((SELECT SUM(file_size_bytes) FROM knowledge_documents WHERE knowledge_base_id = $1), 0),
+               updated_at = NOW()
+           WHERE id = $1""",
+        kb_id,
+    )
+    return {"deleted": doc_id, "knowledge_base_id": kb_id}
 
 
 # ── Core Functions — Build & Query ──
@@ -599,6 +643,7 @@ async def update_kb(
         name=body.name,
         description=body.description,
         kb_type=body.type,
+        visibility=body.visibility,
     )
 
 

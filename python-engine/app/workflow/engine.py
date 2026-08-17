@@ -106,10 +106,16 @@ def _build_langgraph(graph_json: dict, gateway: GatewayRouter) -> Any:
         node_id = state["__current_node__"]
         node = node_map[node_id]
         config = node.get("config", {})
-        prompt = config.get("prompt", state.get("__output__", ""))
+        # 字段对齐（前端表单）：system_prompt + user_message；兼容旧 prompt
+        system = config.get("system_prompt", "")
+        user_msg = config.get("user_message", "")
+        prompt = user_msg or config.get("prompt") or state.get("__output__", "")
         model = config.get("model", "")
 
-        messages = [{"role": "user", "content": prompt}]
+        messages: list[dict] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
         text = ""
         async for chunk in gateway.chat_stream(messages=messages, model=model or "gpt-4o-mini"):
             if chunk.content:
@@ -123,16 +129,34 @@ def _build_langgraph(graph_json: dict, gateway: GatewayRouter) -> Any:
         config = node.get("config", {})
         name = config.get("tool_name", node.get("label", ""))
         params = config.get("params", {})
-        result = await tool_registry.execute(name, params)
-        state["__output__"] = str(result)
+        # 节点级重试：失败（error 结果或异常）时按 config.retries 重试
+        retries = int(config.get("retries", 0) or 0)
+        last_output: Any = ""
+        for attempt in range(retries + 1):
+            try:
+                result = await tool_registry.execute(name, params)
+            except Exception as e:  # noqa: BLE001 — 工具异常按失败处理重试
+                last_output = f"error: {e}"
+                if attempt < retries:
+                    continue
+                break
+            if isinstance(result, dict) and result.get("error"):
+                last_output = str(result)
+                if attempt < retries:
+                    continue
+                break
+            last_output = str(result)
+            break
+        state["__output__"] = last_output
         return state
 
     async def _condition_node(state: dict) -> dict:
         node_id = state["__current_node__"]
         node = node_map[node_id]
         config = node.get("config", {})
-        expr = config.get("expression", "")
-        ref = config.get("input", "")
+        # 字段对齐（前端表单）：condition + variable；兼容旧 expression/input
+        expr = config.get("condition") or config.get("expression", "")
+        ref = config.get("variable") or config.get("input", "")
         text = state.get("__output__", "")
         if isinstance(ref, str) and ref.startswith("$"):
             key = ref[1:]
@@ -164,9 +188,14 @@ def _build_langgraph(graph_json: dict, gateway: GatewayRouter) -> Any:
     return sg.compile()
 
 
-async def run_workflow(graph_json: dict, gateway: GatewayRouter, initial_state: dict[str, Any] | None = None) -> WorkflowInstance:
+async def run_workflow(
+    graph_json: dict,
+    gateway: GatewayRouter,
+    initial_state: dict[str, Any] | None = None,
+    instance_id: str | None = None,
+) -> WorkflowInstance:
     instance = WorkflowInstance(
-        instance_id=f"wf_{uuid.uuid4().hex[:10]}",
+        instance_id=instance_id or f"wf_{uuid.uuid4().hex[:10]}",
         graph_name=graph_json.get("name", "workflow"),
         state=dict(initial_state or {}),
     )
