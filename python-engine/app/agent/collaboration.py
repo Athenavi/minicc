@@ -1,0 +1,387 @@
+"""Agent 协同工作台: 多 Agent 并行执行 + 共享上下文
+
+架构设计:
+- AgentHub 作为中枢,管理多个 Agent 实例
+- 每个 Agent 独立运行 ReAct 循环
+- 通过共享 context store (Redis/PG) 交换状态
+- Go 网关统一鉴权 + 限流 + trace 追踪
+
+SaaS 安全:
+- 租户隔离: 所有 context 携带 tenant_id
+- 资源配额: 每租户最多启动 N 个并发 Agent
+- 链路追踪: 跨 Agent 请求传递 trace_id
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import time
+from typing import AsyncIterator, Optional
+from dataclasses import dataclass, field
+from enum import Enum
+
+from app.agent.runtime import AgentRuntime, AgentEvent, CompactionConfig
+from app.config import settings
+from app.gateway.router import GatewayRouter
+from app.trace import record_span
+
+logger = logging.getLogger(__name__)
+
+
+class AgentRole(str, Enum):
+    """Agent 角色定义"""
+    RESEARCHER = "researcher"      # 信息收集与研究
+    CODER = "coder"                # 代码生成与实现
+    REVIEWER = "reviewer"          # 代码审查与测试
+    PLANNER = "planner"            # 任务规划与拆解
+    ORCHESTRATOR = "orchestrator"  # 编排协调(主 Agent)
+
+
+@dataclass
+class AgentSpec:
+    """Agent 规格定义"""
+    role: AgentRole
+    description: str
+    system_prompt: str
+    max_turns: int = 10
+    model: str = "gpt-4o-mini"
+    compaction_config: Optional[CompactionConfig] = None
+
+
+@dataclass
+class CollaborativeTask:
+    """协同任务定义"""
+    task_id: str
+    original_query: str
+    tenant_id: str  # SaaS 安全: 租户隔离
+    trace_id: str  # 链路追踪
+    subtasks: list[dict]  # [{agent_role, description, dependencies}]
+    shared_context: dict = field(default_factory=dict)  # 共享上下文
+    status: str = "pending"  # pending/running/completed/failed
+
+
+class AgentContextStore:
+    """共享上下文存储 (SaaS 租户隔离)
+    
+    实现方式:
+    - Redis (分布式场景): key = "minicc:context:{tenant_id}:{context_id}"
+    - 内存 (单实例降级): dict[tenant_id][context_id] = data
+    """
+    
+    def __init__(self, tenant_id: str):
+        self.tenant_id = tenant_id
+        self._local_store: dict[str, dict] = {}
+        self._redis_client = None  # Lazy load
+    
+    async def set(self, context_id: str, data: dict, ttl: int = 3600) -> None:
+        """设置上下文 (带 TTL 自动过期)"""
+        data["_ttl"] = time.time() + ttl
+        data["_tenant_id"] = self.tenant_id  # SaaS 安全: 元数据标记
+        
+        if self._redis_client:
+            import redis.asyncio as aioredis
+            await self._redis_client.setex(
+                f"minicc:context:{self.tenant_id}:{context_id}",
+                ttl,
+                json.dumps(data, ensure_ascii=False)
+            )
+        else:
+            self._local_store[context_id] = data
+    
+    async def get(self, context_id: str) -> Optional[dict]:
+        """获取上下文"""
+        if self._redis_client:
+            import redis.asyncio as aioredis
+            data = await self._redis_client.get(
+                f"minicc:context:{self.tenant_id}:{context_id}"
+            )
+            return json.loads(data) if data else None
+        else:
+            return self._local_store.get(context_id)
+    
+    async def delete(self, context_id: str) -> None:
+        """删除上下文"""
+        if self._redis_client:
+            import redis.asyncio as aioredis
+            await self._redis_client.delete(
+                f"minicc:context:{self.tenant_id}:{context_id}"
+            )
+        else:
+            self._local_store.pop(context_id, None)
+    
+    async def list_keys(self) -> list[str]:
+        """列出该租户下的所有 context_id"""
+        if self._redis_client:
+            import redis.asyncio as aioredis
+            keys = await self._redis_client.keys(
+                f"minicc:context:{self.tenant_id}:*"
+            )
+            return [k.split(":")[-1] for k in keys]
+        else:
+            return list(self._local_store.keys())
+
+
+class AgentHub:
+    """Agent 协同中枢
+    
+    功能:
+    1. 接收复杂任务,拆解为子任务分配给专业 Agent
+    2. 管理 Agent 生命周期与并发度
+    3. 聚合各 Agent 输出到共享上下文
+    4. 统一 trace 记录
+    
+    SaaS 安全:
+    - 每租户并发 Agent 数限制 (默认 3)
+    - 所有 Agent 共享同一 trace_id
+    - Context Store 按租户隔离
+    """
+    
+    # 预定义 Agent 角色配置
+    AGENT_ROLES: dict[AgentRole, AgentSpec] = {
+        AgentRole.RESEARCHER: AgentSpec(
+            role=AgentRole.RESEARCHER,
+            description="负责信息搜索、文档分析、知识库检索",
+            system_prompt="""你是一个专业的研究助手。请：
+1. 仔细分析用户问题,提取关键实体和概念
+2. 使用搜索工具获取相关信息
+3. 整理并总结发现,注明来源
+4. 保留未解决的不确定性""",
+            max_turns=15,
+        ),
+        AgentRole.CODER: AgentSpec(
+            role=AgentRole.CODER,
+            description="负责代码生成、脚本编写、沙箱执行",
+            system_prompt="""你是一个资深程序员。请：
+1. 根据需求设计清晰的代码结构
+2. 编写可执行、有注释的代码
+3. 在沙箱中测试验证
+4. 报告执行结果和潜在问题""",
+            max_turns=20,
+        ),
+        AgentRole.REVIEWER: AgentSpec(
+            role=AgentRole.REVIEWER,
+            description="负责代码审查、测试用例、质量保障",
+            system_prompt="""你是一个严格的代码审查员。请：
+1. 检查代码的逻辑正确性
+2. 识别边界情况和异常处理
+3. 建议性能优化
+4. 生成测试用例并执行""",
+            max_turns=10,
+        ),
+        AgentRole.PLANNER: AgentSpec(
+            role=AgentRole.PLANNER,
+            description="负责任务拆解、依赖分析、进度跟踪",
+            system_prompt="""你是一个项目规划专家。请：
+1. 将复杂任务拆解为可并行的子任务
+2. 识别子任务间的依赖关系
+3. 制定执行顺序和资源分配
+4. 监控进度并动态调整计划""",
+            max_turns=5,
+        ),
+        AgentRole.ORCHESTRATOR: AgentSpec(
+            role=AgentRole.ORCHESTRATOR,
+            description="负责整体协调、冲突解决、最终汇总",
+            system_prompt="""你是协同系统的总编排者。请：
+1. 理解用户原始需求,制定高层策略
+2. 协调各专业 Agent 的工作
+3. 解决子任务间的冲突
+4. 聚合输出,生成最终回答
+5. 确保质量与一致性""",
+            max_turns=10,
+        ),
+    }
+    
+    def __init__(self, gateway: GatewayRouter):
+        self.gateway = gateway
+        self._runtime_pool: dict[AgentRole, AgentRuntime] = {}
+        self._max_concurrent_per_tenant = 3  # SaaS 配额
+        self._tenant_running_agents: dict[str, int] = {}  # tenant_id -> count
+    
+    async def run_collaborative_task(
+        self,
+        task: CollaborativeTask,
+    ) -> AsyncIterator[AgentEvent]:
+        """执行协同任务
+        
+        流程:
+        1. Planner 拆解任务 (如果尚未拆解)
+        2. 并行执行无依赖的子任务
+        3. 等待依赖完成
+        4. Orchestrator 聚合输出
+        """
+        import uuid as uuid_mod
+        
+        # ── 生成 trace_id (如果不存在) ───────────────────────────────
+        trace_id = task.trace_id or uuid_mod.uuid4().hex[:12]
+        
+        # ── SaaS 安全: 检查租户并发配额 ─────────────────────────────
+        tenant_id = task.tenant_id
+        current_count = self._tenant_running_agents.get(tenant_id, 0)
+        if current_count >= self._max_concurrent_per_tenant:
+            yield AgentEvent(
+                type="error",
+                content=f"租户并发 Agent 数已达上限 ({self._max_concurrent_per_tenant})",
+                trace_id=trace_id,
+            )
+            return
+        
+        self._tenant_running_agents[tenant_id] = current_count + 1
+        
+        try:
+            # ── 阶段 1: 任务规划 (如果需要) ─────────────────────────────
+            if not task.subtasks:
+                planner_spec = self.AGENT_ROLES[AgentRole.PLANNER]
+                planner_runtime = self._get_or_create_runtime(planner_spec)
+                
+                planning_query = f"""请为以下需求拆解任务:
+{task.original_query}
+
+请以 JSON 格式返回子任务列表:
+[
+  {{
+    "role": "<role>",
+    "description": "<描述>",
+    "dependencies": ["<依赖的子任务id>"]
+  }}
+]"""
+                
+                async for event in planner_runtime.run_single_turn(
+                    task=type('obj', (object,), {
+                        'id': f"planning_{trace_id}",
+                        'content': planning_query,
+                        'tenant_id': tenant_id,
+                    })(),
+                ):
+                    event.trace_id = trace_id
+                    yield event
+                    
+                    # 解析 Planner 输出,提取 subtasks
+                    if event.type == "text":
+                        task.subtasks = self._parse_planner_output(event.content)
+            
+            # ── 阶段 2: 并行执行子任务 ────────────────────────────────
+            task.status = "running"
+            
+            # TODO: 实现 DAG 调度器 (基于 dependencies 拓扑排序)
+            # 简化版: 串行执行 (实际应使用 asyncio.Semaphore 并发)
+            for i, subtask in enumerate(task.subtasks):
+                role_str = subtask.get("role", "researcher")
+                role = AgentRole(role_str)
+                
+                # 创建子任务 Agent
+                spec = self.AGENT_ROLES[role]
+                runtime = self._get_or_create_runtime(spec)
+                
+                # 注入共享上下文
+                context_injection = f"""
+【共享上下文】
+{json.dumps(task.shared_context.get(role_str, {}), ensure_ascii=False)}
+
+请直接回答问题,不要重复已确认的事实。"""
+                
+                sub_query = f"""【子任务 {i+1}/{len(task.subtasks)}】
+{subtask['description']}
+
+{context_injection}
+
+原始用户需求: {task.original_query}"""
+                
+                async for event in runtime.run_single_turn(
+                    task=type('obj', (object,), {
+                        'id': f"subtask_{i}_{trace_id}",
+                        'content': sub_query,
+                        'tenant_id': tenant_id,
+                    })(),
+                ):
+                    event.trace_id = trace_id
+                    yield event
+                    
+                    # 将输出写入共享上下文
+                    if event.type == "text" and event.content:
+                        task.shared_context.setdefault(role_str, {})[f"subtask_{i}"] = event.content
+                
+                # 记录 span
+                await record_span(
+                    trace_id=trace_id,
+                    span_name=f"agent:{role_str}",
+                    duration_ms=0,  # TODO: 计算实际耗时
+                    metadata={
+                        "subtask_index": i,
+                        "dependencies": subtask.get("dependencies", []),
+                        "tenant_id": tenant_id,
+                    },
+                    tenant_id=tenant_id,
+                )
+            
+            # ── 阶段 3: Orchestrator 聚合 ──────────────────────────────
+            orchestrator_spec = self.AGENT_ROLES[AgentRole.ORCHESTRATOR]
+            orchestrator_runtime = self._get_or_create_runtime(orchestrator_spec)
+            
+            aggregation_query = f"""请根据以下各专业 Agent 的输出,生成最终回答:
+
+【原始需求】
+{task.original_query}
+
+【各 Agent 输出】
+{json.dumps(task.shared_context, ensure_ascii=False, indent=2)}
+
+请综合整理,提供清晰、准确、完整的回答。"""
+            
+            final_event = AgentEvent(
+                type="done",
+                content="协同任务完成",
+                trace_id=trace_id,
+            )
+            
+            async for event in orchestrator_runtime.run_single_turn(
+                task=type('obj', (object,), {
+                    'id': f"aggregation_{trace_id}",
+                    'content': aggregation_query,
+                    'tenant_id': tenant_id,
+                })(),
+            ):
+                event.trace_id = trace_id
+                yield event
+            
+            task.status = "completed"
+            final_event.trace_id = trace_id
+            yield final_event
+            
+            logger.info(
+                "Collaborative task done (task=%s, trace_id=%s, subtasks=%d)",
+                task.task_id, trace_id, len(task.subtasks),
+            )
+            
+        finally:
+            # 释放配额
+            self._tenant_running_agents[tenant_id] = max(
+                0, self._tenant_running_agents.get(tenant_id, 1) - 1
+            )
+    
+    def _get_or_create_runtime(self, spec: AgentSpec) -> AgentRuntime:
+        """获取或创建指定角色的 Agent Runtime"""
+        if spec.role not in self._runtime_pool:
+            from app.agent.runtime import AgentRuntime
+            self._runtime_pool[spec.role] = AgentRuntime(
+                gateway=self.gateway,
+                mode_config=None,  # TODO: 从配置加载
+                compaction_config=spec.compaction_config,
+            )
+        return self._runtime_pool[spec.role]
+    
+    def _parse_planner_output(self, output: str) -> list[dict]:
+        """解析 Planner 的 JSON 输出"""
+        import re
+        
+        # 尝试提取 JSON 数组
+        match = re.search(r'\[.*\]', output, re.DOTALL)
+        if match:
+            try:
+                subtasks = json.loads(match.group())
+                return subtasks
+            except json.JSONDecodeError:
+                logger.warning("Failed to parse planner output as JSON")
+        
+        # 降级: 返回单任务
+        return [{"role": "researcher", "description": output, "dependencies": []}]

@@ -1,4 +1,4 @@
-﻿package api
+package api
 
 import (
 	"sync"
@@ -166,7 +166,17 @@ func NewGatewayRouter(
 	permMgr := NewPermissionManager()
 	modeHandler := NewModeHandler(modeStore, permMgr, eventHub)
 
+	// Trace handler (Redis-backed, tenant-isolated)
+	var traceHandler *TraceHandler
+	if atomicRedis != nil {
+		traceHandler = NewTraceHandler(atomicRedis.LoadRaw())
+	}
+
 	// Knowledge base — proxied to Python engine
+	// SaaS 安全: 知识库独立限流 (每租户 QPS=50, Burst=100)
+	kbRateLimiter := NewTenantRateLimiter(atomicRedis.LoadRaw(), 50, 100)
+	kbRateMW := kbRateLimiter.Middleware
+	
 	kbProxy := func(method, path string, body any) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			if pythonClient == nil || !pythonClient.IsConnected() {
@@ -339,6 +349,12 @@ func NewGatewayRouter(
 	mux.Handle("GET /v1/system/traces", authMW(rlMW(RequirePermission(auth.PermAdminRead)(http.HandlerFunc(systemHandler.Traces)))))
 	mux.Handle("GET /v1/metrics", rlMW(http.HandlerFunc(systemHandler.Metrics)))
 
+	// Trace (user-level call chain tracing, tenant-isolated)
+	if traceHandler != nil {
+		mux.Handle("GET /v1/traces", authMW(rlMW(http.HandlerFunc(traceHandler.ListTraces))))
+		mux.Handle("GET /v1/traces/{trace_id}", authMW(rlMW(http.HandlerFunc(traceHandler.GetTrace))))
+	}
+
 	// Media (rate limited)
 	mux.Handle("GET /v1/media", rlMW(http.HandlerFunc(mediaHandler.List)))
 	mux.Handle("POST /v1/media", rlMW(http.HandlerFunc(mediaHandler.Create)))
@@ -478,19 +494,19 @@ func NewGatewayRouter(
 	mux.Handle("POST /v1/permission/approve", authMW(rlMW(http.HandlerFunc(modeHandler.ApprovePermission))))
 	mux.Handle("POST /v1/permission/reject", authMW(rlMW(http.HandlerFunc(modeHandler.RejectPermission))))
 
-	// Knowledge Base (auth + rate limited, proxies to Python)
-	mux.Handle("GET /v1/kb", authMW(rlMW(http.HandlerFunc(kbProxy("GET", "/v1/kb", nil)))))
-	mux.Handle("POST /v1/kb", authMW(rlMW(http.HandlerFunc(kbProxy("POST", "/v1/kb", nil)))))
-	mux.Handle("GET /v1/kb/{id}", authMW(rlMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Knowledge Base (auth + rate limited + tenant QPS limit, proxies to Python)
+	mux.Handle("GET /v1/kb", authMW(kbRateMW(http.HandlerFunc(kbProxy("GET", "/v1/kb", nil)))))
+	mux.Handle("POST /v1/kb", authMW(kbRateMW(http.HandlerFunc(kbProxy("POST", "/v1/kb", nil)))))
+	mux.Handle("GET /v1/kb/{id}", authMW(kbRateMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		kbProxy("GET", "/v1/kb/"+r.PathValue("id"), nil)(w, r)
 	}))))
-	mux.Handle("PUT /v1/kb/{id}", authMW(rlMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("PUT /v1/kb/{id}", authMW(kbRateMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		kbProxy("PUT", "/v1/kb/"+r.PathValue("id"), nil)(w, r)
 	}))))
-	mux.Handle("DELETE /v1/kb/{id}", authMW(rlMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("DELETE /v1/kb/{id}", authMW(kbRateMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		kbProxy("DELETE", "/v1/kb/"+r.PathValue("id"), nil)(w, r)
 	}))))
-	mux.Handle("POST /v1/kb/{id}/documents", authMW(rlMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("POST /v1/kb/{id}/documents", authMW(kbRateMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if pythonClient == nil || !pythonClient.IsConnected() {
 			InternalError(w, "python engine not available")
 			return
@@ -502,13 +518,13 @@ func NewGatewayRouter(
 		}
 		pythonClient.ForwardRequest(w, r, "/v1/kb/"+r.PathValue("id")+"/documents?user_id="+claims.UserID)
 	}))))
-	mux.Handle("GET /v1/kb/{id}/documents", authMW(rlMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("GET /v1/kb/{id}/documents", authMW(kbRateMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		kbProxy("GET", "/v1/kb/"+r.PathValue("id")+"/documents", nil)(w, r)
 	}))))
-	mux.Handle("POST /v1/kb/{id}/build", authMW(rlMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("POST /v1/kb/{id}/build", authMW(kbRateMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		kbProxy("POST", "/v1/kb/"+r.PathValue("id")+"/build", nil)(w, r)
 	}))))
-	mux.Handle("POST /v1/kb/{id}/query", authMW(rlMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("POST /v1/kb/{id}/query", authMW(kbRateMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		kbProxy("POST", "/v1/kb/"+r.PathValue("id")+"/query", nil)(w, r)
 	}))))
 

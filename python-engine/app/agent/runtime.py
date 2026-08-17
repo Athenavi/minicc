@@ -321,7 +321,7 @@ class AgentTask:
 
 @dataclass
 class AgentEvent:
-    """Agent 事件"""
+    """Agent 事件 - 支持链路追踪 (SaaS: 跨实例无状态扩展)"""
     type: str
     content: str = ""
     tool_call_id: str = ""
@@ -331,6 +331,10 @@ class AgentEvent:
     output_tokens: int = 0
     error: str = ""
     timestamp: float = field(default_factory=time.time)
+    # ── Trace ID (新增: 支持分布式链路追踪) ──
+    trace_id: str = ""  # 单次用户请求的唯一标识
+    span_name: str = ""  # 当前 span 名称 (llm_call / tool_execution / workflow_node)
+    duration_ms: int = 0  # span 耗时 (毫秒)
 
 
 class AgentRuntime:
@@ -363,6 +367,8 @@ class AgentRuntime:
         self._output_guard = OutputGuard(max_hits=3)
         # 待确认工具调用 future（外部经 submit_approval 解决）
         self._pending_approvals: dict[str, asyncio.Future] = {}
+        # Trace writer 引用 (延迟初始化)
+        self._trace_writer = None
     
     async def run(self, task: AgentTask) -> AsyncIterator[AgentEvent]:
         """
@@ -371,15 +377,19 @@ class AgentRuntime:
         Yields:
             AgentEvent: 推理事件（文本、工具调用、完成等）
         """
+        import uuid as uuid_mod
         start_time = time.time()
         total_input_tokens = 0
         total_output_tokens = 0
-
+        
+        # ── 0.5 生成 trace_id (跨实例链路追踪) ───────────────────────────
+        trace_id = uuid_mod.uuid4().hex[:12]
+        
         # ── 0. 输入栅栏：注入检测（S 安全修复）────────────────────────────
         injection = self._input_guard.check(task.content)
         if injection:
             logger.warning("Input guard blocked (task=%s) pattern=%s", task.id, injection)
-            yield AgentEvent(type="guardrail_blocked", content="输入包含不允许的指令，已拒绝本次请求")
+            yield AgentEvent(type="guardrail_blocked", content="输入包含不允许的指令，已拒绝本次请求", trace_id=trace_id)
             return
         
         try:
@@ -472,11 +482,12 @@ class AgentRuntime:
                         last_tc = bool(m.get("tool_calls"))
                 messages = clean
 
-                # 调用 LLM
+                # 调用 LLM (带 trace span 记录)
                 response_content = ""
                 reasoning_content = ""
                 tool_calls = []
                 has_reasoned = False  # 是否已收到 native reasoning_content（DeepSeek 模式）
+                llm_start = time.time()
 
                 async for chunk in self._gateway.chat_stream(
                     # 中立格式 → gateway ChatMessage（provider 边界适配）
@@ -553,8 +564,40 @@ class AgentRuntime:
                         yield AgentEvent(
                             type="error",
                             error=chunk.message or "LLM provider unavailable or not configured",
+                            trace_id=trace_id,
                         )
                         break
+                
+                # 记录 LLM span (毫秒级耗时)
+                llm_duration = int((time.time() - llm_start) * 1000)
+                yield AgentEvent(
+                    type="trace_span",
+                    content=json.dumps({
+                        "span_name": "llm_call",
+                        "duration_ms": llm_duration,
+                        "input_tokens": total_input_tokens,
+                        "output_tokens": total_output_tokens,
+                        "model": model,
+                    }),
+                    trace_id=trace_id,
+                    span_name="llm_call",
+                    duration_ms=llm_duration,
+                )
+                
+                # ── 写入 Redis Stream (跨实例链路追踪 + SaaS 租户隔离) ────────────────
+                from app.trace import record_span
+                await record_span(
+                    trace_id=trace_id,
+                    span_name="llm_call",
+                    duration_ms=llm_duration,
+                    metadata={
+                        "model": model,
+                        "input_tokens": total_input_tokens,
+                        "output_tokens": total_output_tokens,
+                        "turn": turn + 1,
+                    },
+                    tenant_id=task.tenant_id,  # SaaS 安全: 租户隔离
+                )
                 
                 # 如果有工具调用，执行工具
                 if tool_calls:
@@ -579,11 +622,27 @@ class AgentRuntime:
                             yield approval_evt
                             tool_result = await self._await_approval(tc, task)
 
+                        # 记录工具执行结果 (带 trace span)
+                        tool_start = time.time()
                         yield AgentEvent(
                             type="tool_result",
                             tool_call_id=tc["id"],
                             tool_name=tc["name"],
                             content=json.dumps(tool_result, ensure_ascii=False),
+                            trace_id=trace_id,
+                        )
+                        
+                        # 记录工具 span (带租户隔离)
+                        tool_duration = int((time.time() - tool_start) * 1000)
+                        await record_span(
+                            trace_id=trace_id,
+                            span_name=f"tool:{tc['name']}",
+                            duration_ms=tool_duration,
+                            metadata={
+                                "tool_name": tc["name"],
+                                "success": tool_result.get("error") is None,
+                            },
+                            tenant_id=task.tenant_id,  # SaaS 安全: 租户隔离
                         )
 
                         # tool 结果消息
@@ -634,12 +693,16 @@ class AgentRuntime:
                 _cache_saved = True
                 logger.info("Session cache saved: %s (%d messages)", task.session_id, len(messages))
             
-            # 发送完成事件
+            # 发送完成事件 (含完整链路 trace_id)
+            total_duration = int((time.time() - start_time) * 1000)
             yield AgentEvent(
                 type="done",
                 input_tokens=total_input_tokens,
                 output_tokens=total_output_tokens,
+                trace_id=trace_id,
             )
+            logger.info("Agent done (task=%s, trace_id=%s, duration=%dms, turns=%d)", 
+                       task.id, trace_id, total_duration, turn + 1)
             
         except Exception as e:
             logger.error("Agent runtime error (task=%s): %s", task.id, e)

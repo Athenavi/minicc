@@ -6,6 +6,7 @@
     "ofd",
     "cad",
     "typst",
+    "office-presentation-binary",
     "office-presentation",
     "office-word-openxml",
     "office-word-binary",
@@ -27,30 +28,44 @@
     "data-asset",
     "eda"
   ],
-  "copiedAt": "2026-08-10T11:32:42.519Z",
+  "copiedAt": "2026-08-17T04:27:16.547Z",
   "assets": [
     {
       "rendererId": "pdf",
       "id": "pdf-worker",
       "to": "X:\\project\\minicc\\frontend-vue\\public\\vendor\\pdf\\pdf.worker.mjs",
-      "copied": true
+      "copied": true,
+      "sourcePackage": "pdfjs-dist",
+      "sourceVersion": "5.4.624"
     },
     {
       "rendererId": "pdf",
       "id": "pdf-cmaps",
       "to": "X:\\project\\minicc\\frontend-vue\\public\\vendor\\pdf\\cmaps",
-      "copied": true
+      "copied": true,
+      "sourcePackage": "pdfjs-dist",
+      "sourceVersion": "5.4.624"
     },
     {
       "rendererId": "pdf",
       "id": "pdf-wasm",
       "to": "X:\\project\\minicc\\frontend-vue\\public\\vendor\\pdf\\wasm",
-      "copied": true
+      "copied": true,
+      "sourcePackage": "pdfjs-dist",
+      "sourceVersion": "5.4.624"
     },
     {
       "rendererId": "pdf",
       "id": "pdf-standard-fonts",
       "to": "X:\\project\\minicc\\frontend-vue\\public\\vendor\\pdf\\standard_fonts",
+      "copied": true,
+      "sourcePackage": "pdfjs-dist",
+      "sourceVersion": "5.4.624"
+    },
+    {
+      "rendererId": "pdf",
+      "id": "pdf-cjk-font-fallback",
+      "to": "X:\\project\\minicc\\frontend-vue\\public\\vendor\\pdf\\fonts",
       "copied": true
     },
     {
@@ -58,6 +73,78 @@
       "id": "pptx-worker",
       "to": "X:\\project\\minicc\\frontend-vue\\public\\vendor\\pptx\\pptx.worker.js",
       "copied": true
+    },
+    {
+      "rendererId": "office-presentation-binary",
+      "id": "ppt-module",
+      "to": "X:\\project\\minicc\\frontend-vue\\public\\vendor\\ppt\\index.mjs",
+      "copied": true,
+      "sourcePackage": "@file-viewer/ppt",
+      "sourceVersion": "0.3.3"
+    },
+    {
+      "rendererId": "office-presentation-binary",
+      "id": "ppt-worker",
+      "to": "X:\\project\\minicc\\frontend-vue\\public\\vendor\\ppt\\worker.mjs",
+      "copied": true,
+      "sourcePackage": "@file-viewer/ppt",
+      "sourceVersion": "0.3.3"
+    },
+    {
+      "rendererId": "office-presentation-binary",
+      "id": "ppt-frame-cache",
+      "to": "X:\\project\\minicc\\frontend-vue\\public\\vendor\\ppt\\frame-cache.mjs",
+      "copied": true,
+      "sourcePackage": "@file-viewer/ppt",
+      "sourceVersion": "0.3.3"
+    },
+    {
+      "rendererId": "office-presentation-binary",
+      "id": "ppt-wasm",
+      "to": "X:\\project\\minicc\\frontend-vue\\public\\vendor\\ppt\\ppt-native.wasm",
+      "copied": true,
+      "sourcePackage": "@file-viewer/ppt",
+      "sourceVersion": "0.3.3"
+    },
+    {
+      "rendererId": "office-presentation-binary",
+      "id": "ppt-cjk-font",
+      "to": "X:\\project\\minicc\\frontend-vue\\public\\vendor\\ppt\\ppt-font-cjk.otf",
+      "copied": true,
+      "sourcePackage": "@file-viewer/ppt",
+      "sourceVersion": "0.3.3"
+    },
+    {
+      "rendererId": "office-presentation-binary",
+      "id": "ppt-manifest",
+      "to": "X:\\project\\minicc\\frontend-vue\\public\\vendor\\ppt\\manifest.json",
+      "copied": true,
+      "sourcePackage": "@file-viewer/ppt",
+      "sourceVersion": "0.3.3"
+    },
+    {
+      "rendererId": "office-presentation-binary",
+      "id": "ppt-package",
+      "to": "X:\\project\\minicc\\frontend-vue\\public\\vendor\\ppt\\package.json",
+      "copied": true,
+      "sourcePackage": "@file-viewer/ppt",
+      "sourceVersion": "0.3.3"
+    },
+    {
+      "rendererId": "office-presentation-binary",
+      "id": "ppt-license",
+      "to": "X:\\project\\minicc\\frontend-vue\\public\\vendor\\ppt\\LICENSE",
+      "copied": true,
+      "sourcePackage": "@file-viewer/ppt",
+      "sourceVersion": "0.3.3"
+    },
+    {
+      "rendererId": "office-presentation-binary",
+      "id": "ppt-notice",
+      "to": "X:\\project\\minicc\\frontend-vue\\public\\vendor\\ppt\\NOTICE",
+      "copied": true,
+      "sourcePackage": "@file-viewer/ppt",
+      "sourceVersion": "0.3.3"
     },
     {
       "rendererId": "office-word-openxml",
@@ -72,10 +159,56 @@
       "copied": true
     },
     {
+      "rendererId": "spreadsheet-openxml",
+      "id": "spreadsheet-worker",
+      "to": "X:\\project\\minicc\\frontend-vue\\public\\vendor\\xlsx\\sheet.worker.js",
+      "copied": true,
+      "sourcePackage": "@file-viewer/renderer-spreadsheet",
+      "sourceVersion": "2.2.9"
+    },
+    {
       "rendererId": "cad",
       "id": "cad-wasm-directory",
       "to": "X:\\project\\minicc\\frontend-vue\\public\\wasm\\cad",
       "copied": true
+    },
+    {
+      "rendererId": "model",
+      "id": "model-occt-worker",
+      "to": "X:\\project\\minicc\\frontend-vue\\public\\wasm\\model\\occt-worker.js",
+      "copied": true
+    },
+    {
+      "rendererId": "model",
+      "id": "model-occt-runtime",
+      "to": "X:\\project\\minicc\\frontend-vue\\public\\wasm\\model\\occt-import-js.js",
+      "copied": true,
+      "sourcePackage": "occt-import-js",
+      "sourceVersion": "0.0.23"
+    },
+    {
+      "rendererId": "model",
+      "id": "model-occt-wasm",
+      "to": "X:\\project\\minicc\\frontend-vue\\public\\wasm\\model\\occt-import-js.wasm",
+      "copied": true,
+      "sourcePackage": "occt-import-js",
+      "sourceVersion": "0.0.23"
+    },
+    {
+      "rendererId": "model",
+      "id": "model-occt-license",
+      "to": "X:\\project\\minicc\\frontend-vue\\public\\wasm\\model\\LICENSE.occt.txt",
+      "copied": true,
+      "sourcePackage": "occt-import-js",
+      "sourceVersion": "0.0.23"
+    },
+    {
+      "rendererId": "model",
+      "id": "model-occt-import-license",
+      "to": "X:\\project\\minicc\\frontend-vue\\public\\wasm\\model\\LICENSE.occt-import-js.txt",
+      "copied": true,
+      "sourcePackage": "occt-import-js",
+      "sourceVersion": "0.0.23"
     },
     {
       "rendererId": "typst",

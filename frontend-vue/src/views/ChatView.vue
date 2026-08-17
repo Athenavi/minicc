@@ -12,6 +12,7 @@ import ChatSidePanel from '../components/chat/ChatSidePanel.vue'
 import MessageList from '../components/chat/MessageList.vue'
 import ChatEmptyHero from '../components/chat/ChatEmptyHero.vue'
 import ChatInput from '../components/chat/ChatInput.vue'
+import CallChainTimeline from '../components/CallChainTimeline.vue'
 import { HistoryOutlined } from '@ant-design/icons-vue'
 import { splitThinking, stripUserInputTag, throttleRaf, formatClock } from '../components/chat/chat-types'
 import type { ChatItem, ChatSession } from '../components/chat/chat-types'
@@ -25,6 +26,9 @@ const activeSession = computed(() => sessions.value.find(s => s.id === activeSes
 const loading = ref(false)
 const items = ref<ChatItem[]>([])
 let activeSSE: EventSource | null = null
+
+// ── Trace ID (当前会话的链路追踪标识) ──────────────────────────────
+const currentTraceId = ref('')  // SSE done 事件回传的 trace_id
 
 // S 安全修复：待确认工具调用（三态栅栏“确认”态）
 interface PendingApproval {
@@ -517,6 +521,8 @@ function onSSEMessage(raw: any) {
     loading.value = false
     stopTurnTimer()
     activeSSE?.close(); activeSSE = null
+    // ── 捕获 trace_id (用于 Timeline 查询) ────────────────────
+    currentTraceId.value = d?.trace_id || ''
     const it = d?.input_tokens ?? 0
     const ot = d?.output_tokens ?? 0
     if (it || ot) {
@@ -556,6 +562,7 @@ async function sendMessage(text: string) {
   connectionLost.value = false
   appendUserText(text)
   const sessionId = activeSessionId.value || crypto.randomUUID()
+  currentTraceId.value = ''  // 清空上一次 trace_id
   try {
     if (activeSSE) { activeSSE.close(); activeSSE = null }
     activeSSE = await createSSEConnection(
@@ -632,6 +639,12 @@ function stopGeneration() {
             :has-more="hasMore"
             :loading-earlier="loadingEarlier"
             @load-earlier="loadEarlier"
+          />
+          <!-- ── Trace 调用链时间线 (仅在有 trace_id 且非 loading 时显示) ── -->
+          <CallChainTimeline
+            v-if="currentTraceId && !loading"
+            :trace-id="currentTraceId"
+            :tenant-id="authStore.user?.tenant_id || ''"
           />
         </template>
       </div>
