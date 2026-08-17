@@ -99,7 +99,7 @@ func (s *PGStore) GetHistory(ctx context.Context, userID string, limit int) ([]C
 
 	rows, err := db.ReadPool().Query(ctx,
 		`SELECT id, user_id, amount, balance, reason, created_at
-		 FROM credit_transactions WHERE user_id = $1
+		 FROM credit_transactions WHERE user_id = $1 AND reason <> 'free_chat'
 		 ORDER BY created_at DESC LIMIT $2`, userID, limit)
 	if err != nil {
 		return nil, err

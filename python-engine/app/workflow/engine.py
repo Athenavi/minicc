@@ -1,24 +1,29 @@
-"""Workflow engine（Python 端）：基于 LangGraph 的 DAG 执行引擎。
+"""Workflow engine（Python 端）：DAG 执行引擎。
 
 目标：
 - 实现 Go 侧 `internal/graph/executor.go` 的等价 Python 执行能力
 - 支持从 StateGraph JSON 编译并运行 workflow
 - 节点类型：input / llm / tool / condition / output
+
+执行方式：按拓扑序顺序调用各节点函数（手工维护 state），
+不依赖 LangGraph 的图执行（其 StateGraph(dict) 为整 state 替换语义，
+并行分支会产生 update 冲突）。
 """
 from __future__ import annotations
 
 import time
 import uuid
 import logging
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from typing import Any
-
-from langgraph.graph import StateGraph
+from typing import Any, Awaitable, Callable
 
 from app.gateway.router import GatewayRouter
 from app.tools.registry import registry as tool_registry
 
 logger = logging.getLogger(__name__)
+
+NodeFn = Callable[[dict[str, Any], str], Awaitable[dict[str, Any]]]
 
 
 @dataclass
@@ -48,8 +53,6 @@ _instance_order: list[str] = []  # FIFO 顺序
 
 def _topological_sort(nodes: list[dict], edges: list[dict]) -> list[dict]:
     """按 DAG 拓扑顺序排序节点"""
-    from collections import defaultdict, deque
-
     in_degree: dict[str, int] = {n["id"]: 0 for n in nodes}
     adj: dict[str, list[str]] = defaultdict(list)
     for e in edges:
@@ -72,8 +75,6 @@ def _topological_sort(nodes: list[dict], edges: list[dict]) -> list[dict]:
         if n["id"] not in seen:
             result.append(n)
     return result
-_MAX_INSTANCES = 500  # 最大实例数，防止内存泄漏
-_instance_order: list[str] = []  # FIFO 顺序
 
 
 def _eval_condition(expression: str, text: str) -> bool:
@@ -82,34 +83,47 @@ def _eval_condition(expression: str, text: str) -> bool:
     return expression.lower() in text.lower()
 
 
-def _build_langgraph(graph_json: dict, gateway: GatewayRouter) -> Any:
+def _build_node_fns(graph_json: dict, gateway: GatewayRouter) -> dict[str, NodeFn]:
+    """构建 node_id → 节点执行函数 的映射（不依赖 LangGraph）。
+
+    每个节点函数签名 (state, node_id) -> 增量 dict（只含自身输出 key
+    ``__out_<node_id>__``），由 run_workflow 按拓扑序调用并合并进 state。
+    """
     nodes = graph_json.get("nodes", [])
     edges = graph_json.get("edges", [])
-    entry_point = graph_json.get("entry_point", "")
-
-    sg = StateGraph(dict)
-
     node_map = {n["id"]: n for n in nodes}
 
-    async def _input_node(state: dict) -> dict:
-        node_id = state["__current_node__"]
+    # 入边前驱映射（节点输入从前驱输出解析，而非共享的 __output__）
+    preds: dict[str, list[str]] = {}
+    for e in edges:
+        preds.setdefault(e["target_id"], []).append(e["source_id"])
+
+    def _prev_output(state: dict, node_id: str) -> str:
+        """取入边前驱节点的输出（最后一个前驱优先），无前驱时返回空串。"""
+        for pid in reversed(preds.get(node_id, [])):
+            v = state.get(f"__out_{pid}__")
+            if v is not None:
+                return str(v)
+        return ""
+
+    async def _input_node(state: dict, node_id: str) -> dict:
         node = node_map[node_id]
         if node_id in state:
-            state["__output__"] = str(state[node_id])
+            out = str(state[node_id])
         elif "input" in state:
-            state["__output__"] = str(state["input"])
+            out = str(state["input"])
         else:
-            state["__output__"] = f"[input] {node.get('label', node_id)}"
-        return state
+            out = f"[input] {node.get('label', node_id)}"
+        # 只返回自身增量 key，由 run_workflow 合并进共享 state
+        return {f"__out_{node_id}__": out}
 
-    async def _llm_node(state: dict) -> dict:
-        node_id = state["__current_node__"]
+    async def _llm_node(state: dict, node_id: str) -> dict:
         node = node_map[node_id]
         config = node.get("config", {})
         # 字段对齐（前端表单）：system_prompt + user_message；兼容旧 prompt
         system = config.get("system_prompt", "")
         user_msg = config.get("user_message", "")
-        prompt = user_msg or config.get("prompt") or state.get("__output__", "")
+        prompt = user_msg or config.get("prompt") or _prev_output(state, node_id)
         model = config.get("model", "")
 
         messages: list[dict] = []
@@ -120,11 +134,9 @@ def _build_langgraph(graph_json: dict, gateway: GatewayRouter) -> Any:
         async for chunk in gateway.chat_stream(messages=messages, model=model or "gpt-4o-mini"):
             if chunk.content:
                 text += chunk.content
-        state["__output__"] = text
-        return state
+        return {f"__out_{node_id}__": text}
 
-    async def _tool_node(state: dict) -> dict:
-        node_id = state["__current_node__"]
+    async def _tool_node(state: dict, node_id: str) -> dict:
         node = node_map[node_id]
         config = node.get("config", {})
         name = config.get("tool_name", node.get("label", ""))
@@ -147,26 +159,24 @@ def _build_langgraph(graph_json: dict, gateway: GatewayRouter) -> Any:
                 break
             last_output = str(result)
             break
-        state["__output__"] = last_output
-        return state
+        return {f"__out_{node_id}__": last_output}
 
-    async def _condition_node(state: dict) -> dict:
-        node_id = state["__current_node__"]
+    async def _condition_node(state: dict, node_id: str) -> dict:
         node = node_map[node_id]
         config = node.get("config", {})
         # 字段对齐（前端表单）：condition + variable；兼容旧 expression/input
         expr = config.get("condition") or config.get("expression", "")
         ref = config.get("variable") or config.get("input", "")
-        text = state.get("__output__", "")
+        text = _prev_output(state, node_id)
         if isinstance(ref, str) and ref.startswith("$"):
             key = ref[1:]
-            text = str(state.get(key, text))
+            # 兼容节点输出（__out_<id>__）与 state 同名 key 两种引用
+            text = str(state.get(f"__out_{key}__", state.get(key, text)))
         matched = _eval_condition(expr, text)
-        state["__output__"] = "true" if matched else "false"
-        return state
+        return {f"__out_{node_id}__": "true" if matched else "false"}
 
-    async def _output_node(state: dict) -> dict:
-        return state
+    async def _output_node(state: dict, node_id: str) -> dict:
+        return {f"__out_{node_id}__": _prev_output(state, node_id)}
 
     node_fn = {
         "input": _input_node,
@@ -176,16 +186,17 @@ def _build_langgraph(graph_json: dict, gateway: GatewayRouter) -> Any:
         "output": _output_node,
     }
 
+    node_fns: dict[str, NodeFn] = {}
     for node in nodes:
-        sg.add_node(node["id"], node_fn.get(node["node_type"], _input_node))
+        node_id = node["id"]
+        base_fn = node_fn.get(node["node_type"], _input_node)
 
-    for edge in edges:
-        sg.add_edge(edge["source_id"], edge["target_id"])
+        async def _wrapped(state: dict, _node_id: str, _base_fn=base_fn) -> dict:
+            return await _base_fn(state, _node_id)
 
-    if entry_point:
-        sg.set_entry_point(entry_point)
+        node_fns[node_id] = _wrapped
 
-    return sg.compile()
+    return node_fns
 
 
 async def run_workflow(
@@ -207,18 +218,20 @@ async def run_workflow(
         _instances.pop(oldest, None)
 
     try:
-        app = _build_langgraph(graph_json, gateway)
+        node_fns = _build_node_fns(graph_json, gateway)
         state = dict(instance.state)
-        # 按 DAG 拓扑顺序执行节点（而非 nodes 列表顺序）
+        # 按 DAG 拓扑顺序执行节点：依赖先于依赖者，每节点恰好执行一次，
+        # 增量结果合并进 state（各节点输出保留在 __out_<id>__ 下）
         for node in _topological_sort(graph_json.get("nodes", []), graph_json.get("edges", [])):
-            state["__current_node__"] = node["id"]
-            state = await app.ainvoke(state)
-            instance.results[node["id"]] = NodeResult(
-                node_id=node["id"],
+            node_id = node["id"]
+            update = await node_fns[node_id](state, node_id)
+            state.update(update)
+            instance.results[node_id] = NodeResult(
+                node_id=node_id,
                 status="completed",
-                output=str(state.get("__output__", "")),
+                output=str(state.get(f"__out_{node_id}__", "")),
             )
-            instance.state.update(state)
+        instance.state.update(state)
         instance.status = "completed"
     except Exception as e:
         logger.error("workflow execution failed: %s", e)

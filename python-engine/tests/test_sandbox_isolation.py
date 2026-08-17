@@ -43,9 +43,15 @@ class TestShellEscapeBlock:
     def test_absolute_path_detected(self):
         assert _has_escape("Get-ChildItem 'X:\\project\\minicc'") is not None
         assert _has_escape("dir C:\\Windows") is not None
-        assert _has_escape("cat /etc/passwd") is None  # posix 绝对路径（Windows 场景非逃逸）
+        # 生产部署为 Linux/alpine：Unix 绝对路径/家目录/环境变量均为逃逸
+        assert _has_escape("cat /etc/passwd") is not None
+        assert _has_escape("cat $HOME/.env") is not None
+        assert _has_escape("cat ~/.ssh/id_rsa") is not None
+        assert _has_escape("ls /") is not None
         assert _has_escape("ls ..\\..\\..") is not None
         assert _has_escape("cd /d X:\\project") is not None
+        # Windows cmd 单字符开关不应误伤
+        assert _has_escape("exit /b 7") is None
 
     def test_normal_commands_allowed(self):
         assert _has_escape("echo hello") is None

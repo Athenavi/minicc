@@ -115,7 +115,7 @@ func (h *InstallHandler) Setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	SetTokenCookie(w, token, int(h.cfg.JWTExpiration.Seconds()))
+	SetTokenCookie(w, token, int(h.cfg.JWTExpiration.Seconds()), h.cfg.CookieSecure)
 	Created(w, map[string]interface{}{
 		"message": "system initialized",
 		"user": map[string]string{

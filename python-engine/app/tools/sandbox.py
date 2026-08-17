@@ -60,18 +60,30 @@ def safe_join(rel: str) -> Path:
 
 
 def sandboxed_env() -> dict[str, str]:
-    """执行环境：清理敏感/宿主变量，仅保留基础 PATH。"""
+    """执行环境：清理敏感/宿主变量，仅保留基础 PATH，并把用户目录变量
+    重定向到沙箱内，防止 `$HOME`/`~` 泄漏宿主路径（S 安全修复）。"""
     allow = {"PATH", "SYSTEMROOT", "WINDIR", "COMSPEC", "TEMP", "TMP", "HOME", "USERPROFILE"}
     env = {k: v for k, v in os.environ.items() if k in allow}
+    env["HOME"] = str(workspace_dir())
+    env["USERPROFILE"] = str(workspace_dir())
+    env["TEMP"] = str(get_sandbox_dir())
+    env["TMP"] = str(get_sandbox_dir())
     return env
 
 
 # 被禁止的 shell 逃逸模式（S 安全修复：cwd 锁定无法阻止命令内绝对路径访问宿主）
+# 注意：生产部署为 Linux/alpine（见 Dockerfile），必须覆盖 Unix 绝对路径。
 _ESCAPE_PATTERNS = [
     r"[A-Za-z]:[\\/]",        # Windows 盘符绝对路径 (C:\ 或 C:/)
     r"\\\\",                  # UNC 路径
     r"(^|[^A-Za-z0-9_.])(\.\.)[\\/]",  # 父目录跳转 ..\ 或 ../
     r"\bcd\b[^&|;]*[A-Za-z]:[\\/]",   # cd 到绝对路径
+    # Unix/Linux 逃逸：绝对路径（/xxx，2+ 字符路径段或单独 /）、~ 家目录、$HOME 变量。
+    # 以空格/引号/分号开头界定，避免误伤相对路径（a/b）、URL（http://）
+    # 与 Windows cmd 单字符开关（/b /d /s）。
+    r"(?:^|[\s\"';])(?:/(?:[A-Za-z0-9_.-]{2,}|$)|~/?|\$\{?HOME\}?\b)",
+    # 云元数据 / 内网地址（curl/wget 等 SSRF 常见目标）
+    r"(?:^|[\s\"';])(?:curl|wget)\s+https?://(?:169\.254\.169\.254|127\.0\.0\.1|localhost)",
 ]
 
 

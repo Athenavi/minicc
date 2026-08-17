@@ -44,13 +44,13 @@ type UserResponse struct {
 }
 
 // SetTokenCookie sets the JWT as an HTTP-only secure cookie.
-func SetTokenCookie(w http.ResponseWriter, token string, maxAge int) {
+func SetTokenCookie(w http.ResponseWriter, token string, maxAge int, secure bool) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     tokenCookieName,
 		Value:    token,
 		Path:     "/",
 		HttpOnly: false, // 允许 JS 读取以便前端使用
-		Secure:   false, // 本地开发不需要 HTTPS
+		Secure:   secure, // 生产 HTTPS（COOKIE_SECURE=true）下防止明文传输（S 安全修复）
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   maxAge,
 	})
@@ -133,7 +133,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	SetTokenCookie(w, token, int(h.cfg.JWTExpiration.Seconds()))
+	SetTokenCookie(w, token, int(h.cfg.JWTExpiration.Seconds()), h.cfg.CookieSecure)
 	OK(w, map[string]interface{}{
 		"token": token,
 		"user":  user,
@@ -147,6 +147,11 @@ type RegisterRequest struct {
 }
 
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
+	if h.cfg.DisableRegistration {
+		Forbidden(w, "registration is disabled on this instance")
+		return
+	}
+
 	var req RegisterRequest
 	if err := DecodeJSON(w, r, &req); err != nil {
 		BadRequest(w, "invalid request body")
@@ -240,7 +245,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	SetTokenCookie(w, token, int(h.cfg.JWTExpiration.Seconds()))
+	SetTokenCookie(w, token, int(h.cfg.JWTExpiration.Seconds()), h.cfg.CookieSecure)
 	Created(w, map[string]interface{}{
 		"token": token,
 		"user":  UserResponse{ID: userID, Email: req.Email, Name: req.Name, Role: "user"},
@@ -343,7 +348,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	SetTokenCookie(w, newToken, int(h.cfg.JWTExpiration.Seconds()))
+	SetTokenCookie(w, newToken, int(h.cfg.JWTExpiration.Seconds()), h.cfg.CookieSecure)
 	OK(w, map[string]string{"message": "token refreshed"})
 }
 

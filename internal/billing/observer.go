@@ -21,12 +21,16 @@ func NewTransactionRecorder(store Store) *TransactionRecorder {
 
 // OnCreditChange persists a credit_transactions row for the event.
 // Called by the Manager's background dispatcher goroutine.
+// 余额为交易后真实余额（事件携带）；free_chat 标记用量不计入交易历史。
 func (r *TransactionRecorder) OnCreditChange(evt CreditEvent) {
+	if evt.Reason == "free_chat" {
+		return
+	}
 	tx := &CreditChange{
 		ID:        "tx_" + id.NextID(),
 		UserID:    evt.UserID,
 		Amount:    evt.Amount,
-		Balance:   0, // balance recorded at event time; not critical for history
+		Balance:   evt.Balance,
 		Reason:    evt.Reason,
 		CreatedAt: evt.Timestamp,
 	}

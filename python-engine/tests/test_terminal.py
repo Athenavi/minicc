@@ -22,17 +22,21 @@ async def test_basic_command_output():
 
 
 @pytest.mark.asyncio
-async def test_cwd_persists_across_calls(tmp_path):
-    """cd 一次后，后续调用在同一目录执行（deepseek persistent-bash 语义）。"""
+async def test_cwd_persists_across_calls():
+    """cd 一次后，后续调用在同一目录执行（deepseek persistent-bash 语义）。
+
+    只能 cd 到沙箱 workspace 内（逃逸拦截会阻止沙箱外路径）。
+    """
     set_tool_context(session_id="t-sess-2")
-    d = str(tmp_path)
+    from app.tools.sandbox import workspace_dir
+    sub = workspace_dir() / "persist-sub"
+    sub.mkdir(parents=True, exist_ok=True)
+    await persistent_shell("cd persist-sub")
     if sys.platform == "win32":
-        await persistent_shell(f"cd /d {d}")
         pwd = await persistent_shell("echo %CD%")
     else:
-        await persistent_shell(f"cd {d}")
         pwd = await persistent_shell("pwd")
-    assert str(tmp_path) in pwd["output"], f"expected cwd {d}, got {pwd}"
+    assert str(sub) in pwd["output"], f"expected cwd {sub}, got {pwd}"
     await _terminal.close_all()
 
 

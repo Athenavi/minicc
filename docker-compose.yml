@@ -7,10 +7,12 @@ services:
     image: pgvector/pgvector:pg16-alpine
     environment:
       POSTGRES_USER: minicc
+      # 生产部署请务必替换为强密码（S 安全加固）
       POSTGRES_PASSWORD: minicc
       POSTGRES_DB: minicc
     ports:
-      - "5432:5432"
+      # 仅绑定本机回环，避免基础设施直接暴露公网（S 安全加固）
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -22,7 +24,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redisdata:/data
     healthcheck:
@@ -35,10 +37,12 @@ services:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      # 仅绑定本机回环（S 安全加固）
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     environment:
       MINIO_ROOT_USER: minioadmin
+      # 生产部署请务必替换为强密码（S 安全加固）
       MINIO_ROOT_PASSWORD: minioadmin123
     volumes:
       - miniodata:/data
@@ -53,8 +57,9 @@ services:
   temporal:
     image: temporalio/auto-setup:latest
     ports:
-      - "7233:7233"
-      - "8233:8233"
+      # 仅绑定本机回环（S 安全加固）
+      - "127.0.0.1:7233:7233"
+      - "127.0.0.1:8233:8233"
     environment:
       - DB=postgres12
       - DB_PORT=5432

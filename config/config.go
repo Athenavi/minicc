@@ -35,6 +35,12 @@ type Config struct {
 	JWTSecret     string
 	JWTExpiration time.Duration
 
+	// Registration
+	DisableRegistration bool // 生产单租户可关闭公开注册（S 安全加固）
+
+	// Cookie
+	CookieSecure bool // 生产 HTTPS 下设置 Secure 标志，防止 JWT cookie 明文传输
+
 	// CORS
 	CORSOrigins string
 
@@ -111,6 +117,8 @@ func Load() *Config {
 		RedisSentinelAddrs: getStringSlice("REDIS_SENTINEL_ADDRS", []string{}),
 		JWTSecret:       getEnv("JWT_SECRET", ""),
 		JWTExpiration:   getDuration("JWT_EXPIRATION", 24*time.Hour),
+		DisableRegistration: isTruthy(getEnv("DISABLE_REGISTRATION", "")),
+		CookieSecure:    isTruthy(getEnv("COOKIE_SECURE", "")),
 		CORSOrigins:     getEnv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173"),
 		LLMProvider:     getEnv("LLM_PROVIDER", "openai"),
 		LLMAPIKey:       getEnv("LLM_API_KEY", ""),

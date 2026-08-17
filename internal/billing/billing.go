@@ -43,6 +43,7 @@ const DailyFreeLimit = 5
 type CreditEvent struct {
 	UserID    string
 	Amount    int       // positive = credit, negative = debit
+	Balance   int       // balance after this change
 	Reason    string
 	Timestamp time.Time
 }
@@ -193,6 +194,7 @@ func (m *Manager) Deduct(userID, reason string, amount int) (int, error) {
 			m.publish(CreditEvent{
 				UserID:    userID,
 				Amount:    -amount,
+				Balance:   int(newVal),
 				Reason:    reason,
 				Timestamp: time.Now(),
 			})
@@ -218,6 +220,7 @@ func (m *Manager) AddCredits(userID, reason string, amount int) (int, error) {
 	m.publish(CreditEvent{
 		UserID:    userID,
 		Amount:    amount,
+		Balance:   int(newVal),
 		Reason:    reason,
 		Timestamp: time.Now(),
 	})

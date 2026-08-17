@@ -67,6 +67,13 @@ class PersistentTerminal:
     async def execute(self, key: str, command: str, timeout: int = DEFAULT_TIMEOUT_SECONDS) -> dict[str, Any]:
         proc = await self._get_proc(key)
 
+        # 逃逸拦截：与 shell_exec 同一套规则（绝对路径/父目录/云元数据），
+        # 否则持久 shell 可直接 cat /etc/passwd 等（S 安全修复）
+        from app.tools.sandbox import _has_escape
+        esc = _has_escape(command)
+        if esc:
+            return {"output": f"[blocked: {esc}] command not allowed in sandbox", "exit_code": -1, "persistent": True}
+
         # 每命令一个临时工作目录：out=输出 / code=退出码 / done=完成哨兵
         workdir = Path(tempfile.mkdtemp(prefix="minicc_sh_"))
         out_file = workdir / "out.txt"

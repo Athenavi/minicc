@@ -9,7 +9,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/athenavi/minicc/internal/auth"
 	"github.com/athenavi/minicc/internal/broadcast"
+	"github.com/athenavi/minicc/internal/session"
 	"github.com/gorilla/websocket"
 )
 
@@ -103,7 +105,9 @@ func (h *WebSocketHub) connCount(sessionID string) int {
 
 // WebSocketHandler handles WebSocket upgrade and message loop.
 // If eventHub is non-nil, messages are bridged through Redis Pub/Sub for cross-instance delivery.
-func WebSocketHandler(hub *WebSocketHub, eventHub *broadcast.Hub) http.HandlerFunc {
+// 连接前校验 JWT（?token= / cookie / Authorization）并验证 session 归属（S 安全修复：
+// 原实现无认证，任意客户端可订阅任意 session 的事件流）。
+func WebSocketHandler(hub *WebSocketHub, eventHub *broadcast.Hub, authenticator *auth.Authenticator, sessionMgr *session.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sessionID := r.PathValue("sessionId")
 		if sessionID == "" {
@@ -112,6 +116,33 @@ func WebSocketHandler(hub *WebSocketHub, eventHub *broadcast.Hub) http.HandlerFu
 		if sessionID == "" {
 			http.Error(w, "sessionId required", http.StatusBadRequest)
 			return
+		}
+
+		// 认证：与 SSE/AuthMiddleware 同源（?token= 供 ws 客户端使用）
+		tokenStr := r.URL.Query().Get("token")
+		if tokenStr == "" {
+			if c, err := r.Cookie("minicc_token"); err == nil && c.Value != "" {
+				tokenStr = c.Value
+			}
+		}
+		if tokenStr == "" {
+			if ah := r.Header.Get("Authorization"); strings.HasPrefix(ah, "Bearer ") {
+				tokenStr = strings.TrimPrefix(ah, "Bearer ")
+			}
+		}
+		claims, err := authenticator.ValidateToken(tokenStr)
+		if err != nil || claims == nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		// 会话归属校验：仅允许访问自己的会话
+		if sessionMgr != nil {
+			sess, err := sessionMgr.GetSession(r.Context(), sessionID)
+			if err != nil || sess.UserID != claims.UserID {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
 		}
 
 		conn, err := upgrader.Upgrade(w, r, nil)

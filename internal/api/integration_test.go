@@ -118,8 +118,9 @@ func TestIntegration_SSE(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// S1: /events now requires auth — pass ?token=
-	req := httptest.NewRequest("GET", "/events?client_id=test-client&token="+testToken(t), nil)
+	// S1: /events now requires auth — Authorization header（S 安全修复：不再支持 ?token= 查询参数）
+	req := httptest.NewRequest("GET", "/events?client_id=test-client", nil)
+	req.Header.Set("Authorization", "Bearer "+testToken(t))
 	req = req.WithContext(ctx)
 	w := httptest.NewRecorder()
 
@@ -248,13 +249,36 @@ func TestIntegration_SystemHealth(t *testing.T) {
 func TestIntegration_SystemTraces(t *testing.T) {
 	router := testRouter(t)
 
+	// S 安全修复：traces/spans 仅管理员可见，匿名访问应被拒绝
 	req := httptest.NewRequest("GET", "/v1/system/traces", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
+	if resp := w.Result(); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without auth, got %d", resp.StatusCode)
+	}
 
-	resp := w.Result()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	// admin 可访问
+	os.Setenv("JWT_SECRET", "test-secret-that-is-at-least-32-bytes-long!")
+	adminAuth := auth.NewAuthenticator(config.Load().JWTSecret, time.Hour)
+	adminToken, err := adminAuth.GenerateToken("admin-id", "admin@example.com", "admin", auth.RolePermissions["admin"])
+	if err != nil {
+		t.Fatalf("generate admin token: %v", err)
+	}
+	req2 := httptest.NewRequest("GET", "/v1/system/traces", nil)
+	req2.Header.Set("Authorization", "Bearer "+adminToken)
+	w2 := httptest.NewRecorder()
+	router.ServeHTTP(w2, req2)
+	if resp := w2.Result(); resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 with admin token, got %d", resp.StatusCode)
+	}
+
+	// 普通 user 无权限
+	userReq := httptest.NewRequest("GET", "/v1/system/traces", nil)
+	userReq.Header.Set("Authorization", "Bearer "+testToken(t))
+	w3 := httptest.NewRecorder()
+	router.ServeHTTP(w3, userReq)
+	if resp := w3.Result(); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403 for regular user, got %d", resp.StatusCode)
 	}
 }
 

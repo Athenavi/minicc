@@ -295,7 +295,7 @@ func NewGatewayRouter(
 
 	// SSE + WebSocket
 	mux.Handle("GET /events", authMW(rlMW(SSEHandler(eventHub, sessionMgr))))
-	mux.HandleFunc("GET /ws/{sessionId}", WebSocketHandler(NewWebSocketHub(), eventHub))
+	mux.HandleFunc("GET /ws/{sessionId}", WebSocketHandler(NewWebSocketHub(), eventHub, authenticator, sessionMgr))
 	mux.HandleFunc("GET /ws/rpa", RPAWebSocketHandler(rpaHub, authenticator))
 
 	// ── /v1/* routes (rate limited) ──
@@ -333,10 +333,10 @@ func NewGatewayRouter(
 	mux.Handle("GET /v1/tools", rlMW(http.HandlerFunc(toolHandler.ListTools)))
 	mux.Handle("POST /v1/tools/execute", rlMW(sanitizeMW(http.HandlerFunc(toolHandler.ExecuteTool))))
 
-	// System (rate limited)
+	// System (rate limited; spans/traces 仅管理员可见，S 安全修复：原为公开信息泄露)
 	mux.Handle("GET /v1/system/health", rlMW(http.HandlerFunc(systemHandler.HealthScores)))
-	mux.Handle("GET /v1/system/spans", rlMW(http.HandlerFunc(systemHandler.Spans)))
-	mux.Handle("GET /v1/system/traces", rlMW(http.HandlerFunc(systemHandler.Traces)))
+	mux.Handle("GET /v1/system/spans", authMW(rlMW(RequirePermission(auth.PermAdminRead)(http.HandlerFunc(systemHandler.Spans)))))
+	mux.Handle("GET /v1/system/traces", authMW(rlMW(RequirePermission(auth.PermAdminRead)(http.HandlerFunc(systemHandler.Traces)))))
 	mux.Handle("GET /v1/metrics", rlMW(http.HandlerFunc(systemHandler.Metrics)))
 
 	// Media (rate limited)

@@ -66,7 +66,8 @@ async def test_execute_workflow_returns_instance():
             resp = await ac.post("/v1/graphs/demo/execute", json=payload)
         assert resp.status_code == 200
         body = resp.json()
-        assert body["status"] in {"completed", "error"}
+        # execute 为异步提交契约：立即返回 running + instance_id，前端轮询 status
+        assert body["status"] == "running"
         assert "instance_id" in body
     finally:
         app.dependency_overrides.pop(get_gateway, None)

@@ -153,19 +153,12 @@ func AuthMiddleware(a *auth.Authenticator) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			tokenStr := ""
 
-			// 0. Try ?token= query param (for SSE/EventSource, which cannot set headers)
-			if qt := r.URL.Query().Get("token"); qt != "" {
-				tokenStr = qt
+			// 1. Cookie (primary for browser clients; SSE 经 withCredentials 携带)
+			if c, err := r.Cookie("minicc_token"); err == nil && c.Value != "" {
+				tokenStr = c.Value
 			}
 
-			// 1. Try cookie (primary for browser clients)
-			if tokenStr == "" {
-				if c, err := r.Cookie("minicc_token"); err == nil && c.Value != "" {
-					tokenStr = c.Value
-				}
-			}
-
-			// 2. Try Authorization: Bearer <token> (for API clients)
+			// 2. Authorization: Bearer <token> (for API clients)
 			if tokenStr == "" {
 				if ah := r.Header.Get("Authorization"); ah != "" {
 					if strings.HasPrefix(ah, "Bearer ") {

@@ -174,11 +174,11 @@ api.interceptors.response.use(
 
 // SSE 连接
 export function createSSEConnection(sessionId: string, onMessage: (data: any) => void, onError?: () => void) {
-  // EventSource 无法设置 header → token 走 query 参数（网关 authMW 支持 ?token=）
-  const token = localStorage.getItem('token') || ''
-  const url = `${API_URL}/events?session_id=${encodeURIComponent(sessionId)}&token=${encodeURIComponent(token)}`
+  // EventSource 无法设置 header → 用 withCredentials 携带同源 cookie（JWT cookie 由登录接口下发），
+  // 避免 JWT 出现在 URL 查询参数（会被浏览器历史/代理日志/Referer 泄露）
+  const url = `${API_URL}/events?session_id=${encodeURIComponent(sessionId)}`
 
-  const eventSource = new EventSource(url)
+  const eventSource = new EventSource(url, { withCredentials: true })
 
   eventSource.onmessage = (event) => {
     try {

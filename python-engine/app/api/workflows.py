@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["graphs"])
 
+# 保存后台任务引用，防止被 GC 回收导致工作流静默丢失（asyncio.create_task 必须持有引用）
+_background_tasks: set[asyncio.Task] = set()
+
 
 class GraphCreateRequest(BaseModel):
     id: Optional[str] = None
@@ -193,7 +196,9 @@ async def execute_graph(
     except Exception as e:
         logger.warning("workflow instance insert failed: %s", e)
 
-    asyncio.create_task(_run_and_store(instance_id, graph_json, gateway, body.initial_state))
+    task = asyncio.create_task(_run_and_store(instance_id, graph_json, gateway, body.initial_state))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
     return {"instance_id": instance_id, "status": "running", "workflow": graph_name}
 
