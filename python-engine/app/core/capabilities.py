@@ -99,6 +99,8 @@ class Capability:
     # 执行耗时统计
     call_count: int = 0
     total_duration_ms: int = 0
+    successful_calls: int = 0
+    failed_calls: int = 0
     
     @property
     def avg_duration_ms(self) -> int:
@@ -106,11 +108,23 @@ class Capability:
             return self.avg_latency_ms
         return self.total_duration_ms // max(self.call_count, 1)
     
+    @property
+    def success_rate(self) -> float:
+        """计算成功率 (避免使用默认值 1.0)"""
+        if self.call_count == 0:
+            return 1.0
+        return self.successful_calls / max(self.call_count, 1)
+    
     def record_call(self, duration_ms: int, success: bool = True):
-        """记录一次调用"""
+        """记录一次调用,更新成功率和平均耗时"""
         self.call_count += 1
         self.total_duration_ms += duration_ms
-        # TODO: 更新 success_rate
+        if success:
+            self.successful_calls += 1
+        else:
+            self.failed_calls += 1
+        # 更新 avg_latency_ms (移动平均值)
+        self.avg_latency_ms = self.total_duration_ms // max(self.call_count, 1)
         
 
 class CapabilitiesRegistry:

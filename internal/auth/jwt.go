@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/athenavi/minicc/internal/id"
@@ -95,6 +96,32 @@ func GetClaims(ctx context.Context) *Claims {
 
 func generateID() string {
 	return id.NextID()
+}
+
+// Global JWT authenticator instance for use in middleware.
+var jwtAuth *Authenticator
+
+// InitJWTAuth initializes the global JWT authenticator from environment variables.
+func InitJWTAuth() {
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		secret = "dev-secret-change-in-production"
+	}
+	expiration := 24 * time.Hour
+	if v := os.Getenv("JWT_EXPIRATION"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			expiration = d
+		}
+	}
+	jwtAuth = NewAuthenticator(secret, expiration)
+}
+
+// ParseJWT is a convenience function that parses and validates a JWT token string.
+func ParseJWT(token string) (*Claims, error) {
+	if jwtAuth == nil {
+		return nil, fmt.Errorf("JWT authenticator not initialized, call InitJWTAuth() first")
+	}
+	return jwtAuth.ValidateToken(token)
 }
 
 // Built-in permissions

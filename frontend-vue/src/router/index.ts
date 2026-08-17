@@ -1,4 +1,4 @@
-﻿import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory } from 'vue-router'
 
 const routes = [
   {
@@ -126,6 +126,30 @@ const routes = [
         name: 'AdminSettings',
         component: () => import('../views/admin/SettingsView.vue'),
         meta: { title: '系统设置' },
+      },
+      {
+        path: 'tenants',
+        name: 'AdminTenants',
+        component: () => import('../views/admin/TenantManagementView.vue'),
+        meta: { title: '租户管理' },
+      },
+      {
+        path: 'redis',
+        name: 'AdminRedis',
+        component: () => import('../views/admin/RedisManagementView.vue'),
+        meta: { title: 'Redis 管理' },
+      },
+      {
+        path: 'database',
+        name: 'AdminDatabase',
+        component: () => import('../views/admin/DatabaseManagementView.vue'),
+        meta: { title: '数据库管理' },
+      },
+      {
+        path: 'domains',
+        name: 'AdminDomains',
+        component: () => import('../views/admin/DomainManagementView.vue'),
+        meta: { title: '域名管理' },
       },
     ],
   },

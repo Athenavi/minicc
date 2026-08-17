@@ -34,9 +34,14 @@ MAX_LOG_CHARS = 20_000
 DANGEROUS_MODULES = {
     "os", "subprocess", "sys", "ctypes", "socket", "importlib",
     "pathlib", "shutil", "tempfile", "glob", "atexit", "signal", "multiprocessing",
+    "pickle", "marshal", "dbm", "shelve",  # 防止序列化攻击
+    "asyncio.tasks", "http.client", "urllib", "requests",  # 防止网络请求
+    "telnetlib", "ftplib", "smtplib", "imaplib", "poplib",  # 防止协议攻击
 }
 DANGEROUS_CALLS = {"open", "exec", "eval", "compile", "__import__", "input", "breakpoint"}
 DANGEROUS_ATTRS = ("os.", "subprocess.", "sys.", "socket.", "ctypes.")
+# 新增: 防止反射攻击和元编程绕过
+REFLECTIVE_ATTACKS = {"getattr", "setattr", "delattr", "dir", "vars", "locals", "globals"}
 
 
 def _check_static(code: str) -> str | None:
@@ -57,20 +62,35 @@ def _check_static(code: str) -> str | None:
         if isinstance(node, _ast.ImportFrom):
             if node.module and node.module.split(".")[0] in DANGEROUS_MODULES:
                 return f"module '{node.module}' is not allowed — use tools.* instead"
-        # open(...) / exec(...) / eval(...) / __import__(...)
+        
+        # 反射攻击检测 (getattr/setattr/dir/vars/locals/globals)
         if isinstance(node, _ast.Call):
             fn = node.func
+            if isinstance(fn, _ast.Name) and fn.id in REFLECTIVE_ATTACKS:
+                return f"call '{fn.id}()' is not allowed — potential reflection attack"
+            # open(...) / exec(...) / eval(...) / __import__(...) / getattr(...)
             if isinstance(fn, _ast.Name) and fn.id in DANGEROUS_CALLS:
                 return f"call '{fn.id}()' is not allowed — use tools.* instead"
             # os.system / subprocess.run / sys.exit / socket.* 属性调用
             if isinstance(fn, _ast.Attribute) and isinstance(fn.value, _ast.Name):
                 attr_path = f"{fn.value.id}.{fn.attr}"
-                if attr_path in ("os.system", "os.popen", "os.startfile", "os.remove",
-                                 "os.rename", "os.chdir", "os.mkdir", "os.makedirs",
-                                 "sys.exit", "subprocess.run", "subprocess.Popen",
-                                 "subprocess.call", "socket.socket", "shutil.rmtree",
-                                 "shutil.copy", "shutil.move", "pathlib.Path", "open"):
+                dangerous_paths = (
+                    "os.system", "os.popen", "os.startfile", "os.remove",
+                    "os.rename", "os.chdir", "os.mkdir", "os.makedirs",
+                    "sys.exit", "subprocess.run", "subprocess.Popen",
+                    "subprocess.call", "socket.socket", "shutil.rmtree",
+                    "shutil.copy", "shutil.move", "pathlib.Path",
+                    # 反射攻击的属性访问
+                    "getattr", "setattr", "delattr",
+                )
+                if attr_path in dangerous_paths:
                     return f"call '{attr_path}()' is not allowed — use tools.* instead"
+    
+    # 检测 __builtins__ 访问尝试
+    if "__builtins__" in code or "__class__" in code or "__mro__" in code:
+        if any(magic in code for magic in ["__builtins__", "__class__", "__mro__", "__subclasses__"]):
+            return "access to special attributes (__builtins__, __class__) is prohibited — prevents sandbox escape"
+    
     return None
 
 
@@ -82,8 +102,11 @@ def _check_static(code: str) -> str | None:
 _SAFE_IMPORTS = frozenset({
     "json", "math", "random", "datetime", "re", "collections",
     "itertools", "asyncio", "typing", "time", "functools", "decimal",
+    "string", "io", "copy", "operator", "enum",
 })
 _BLOCKED_BUILTINS = frozenset({"open", "exec", "eval", "compile", "input", "breakpoint"})
+# 新增: 阻止反射攻击函数
+_BLOCKED_REFLECTIVE = frozenset({"getattr", "setattr", "delattr", "dir", "vars", "locals", "globals"})
 
 
 def _make_blocked_builtin(name: str):
@@ -104,9 +127,20 @@ def _safe_builtins() -> dict:
             return real_import(name, globals, locals, fromlist, level)
         raise RuntimeError(f"blocked by runtime guard: import '{name}'")
 
+    # 阻塞危险内置函数
     for name in _BLOCKED_BUILTINS:
         orig[name] = _make_blocked_builtin(name)
+    
+    # 阻塞反射攻击函数
+    for name in _BLOCKED_REFLECTIVE:
+        orig[name] = _make_blocked_builtin(name)
+    
+    # 替换 __import__ 为安全版本
     orig["__import__"] = _guarded_import
+    
+    # 移除潜在的危险属性访问
+    orig.pop("__builtins__", None)  # 防止通过 __builtins__ 访问内置函数
+    
     return orig
 
 

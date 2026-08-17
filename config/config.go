@@ -1,4 +1,4 @@
-﻿package config
+package config
 
 import (
 	"bufio"
@@ -198,7 +198,27 @@ func Load() *Config {
 
 // ValidateJWTSecret returns true if the secret is valid for production use.
 func ValidateJWTSecret(secret string) bool {
-	return secret != "" && secret != "dev-secret-change-in-production" && len(secret) >= 16
+	if secret == "" {
+		return false
+	}
+	// Reject weak/known secrets
+	weakSecrets := []string{
+		"dev-secret-change-in-production",
+		"dev-secret-change-in-production-12345678",
+		"secret",
+		"test-secret",
+		"change-me",
+	}
+	for _, ws := range weakSecrets {
+		if secret == ws {
+			return false
+		}
+	}
+	// Require minimum length for security (at least 32 chars for strong encryption)
+	if len(secret) < 32 {
+		return false
+	}
+	return true
 }
 
 func getEnv(key, fallback string) string {

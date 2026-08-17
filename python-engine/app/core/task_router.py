@@ -191,27 +191,124 @@ class TaskRouter:
     ) -> dict[str, Any]:
         """理解用户意图
         
-        TODO: 调用 LLM 进行意图识别
-        简化版: 关键词提取
+        策略:
+        1. 尝试调用 LLM (如果 gateway 可用)
+        2. 降级到关键词提取 (LLM 不可用时)
         """
-        # 简单关键词提取 (生产环境应使用 NLU 模型)
-        intent = {
-            "keywords": self._extract_keywords(user_input),
-            "entities": self._extract_entities(user_input),
-            "action": self._infer_action(user_input),
-        }
+        # 尝试使用 LLM 进行意图识别
+        try:
+            return await self._llm_understand_intent(user_input, context)
+        except Exception as e:
+            logger.warning(f"LLM intent recognition failed, falling back to keywords: {e}")
+            # 降级到关键词提取
+            return {
+                "keywords": self._extract_keywords(user_input),
+                "entities": self._extract_entities(user_input),
+                "action": self._infer_action(user_input),
+                "fallback": True,
+            }
+    
+    async def _llm_understand_intent(
+        self,
+        user_input: str,
+        context: dict,
+    ) -> dict[str, Any]:
+        """使用 LLM 理解用户意图 (生产级实现)"""
+        from app.gateway.router import get_gateway
         
-        logger.debug(f"Intent understood: {json.dumps(intent, ensure_ascii=False)}")
-        return intent
+        gateway = get_gateway()
+        if not gateway:
+            raise RuntimeError("Gateway not available for LLM intent recognition")
+        
+        prompt = f"""Analyze the user's intent and return a structured JSON response.
+
+User input: "{user_input}"
+
+Context: {json.dumps(context, ensure_ascii=False) if context else "None"}
+
+Please provide:
+1. action: One of ["analyze", "generate_code", "search", "create_workflow", "manage_knowledge", "general"]
+2. keywords: List of important keywords/entities
+3. entities: Extracted entities (files, functions, data)
+4. complexity: ["simple", "moderate", "complex"] - How many steps needed
+5. recommended_workstations: List of workstation types that should handle this task
+6. description: Brief description of what the user wants to achieve
+
+Return ONLY valid JSON without markdown formatting."""
+        
+        messages = [
+            {
+                "role": "system",
+                "content": "You are a task intent analyzer. Your job is to understand user requests and structure them for automated processing. Return only JSON, no explanations."
+            },
+            {"role": "user", "content": prompt}
+        ]
+        
+        # 调用 LLM
+        response_text = ""
+        async for chunk in gateway.chat_stream(messages=messages, model="gpt-4o-mini"):
+            if chunk.content:
+                response_text += chunk.content
+        
+        # 解析 LLM 响应
+        import re
+        # 清理可能的 markdown 格式
+        response_text = re.sub(r'```json\s*|\s*```', '', response_text.strip())
+        
+        try:
+            intent = json.loads(response_text)
+            intent["fallback"] = False
+            logger.info(f"LLM intent recognized: action={intent.get('action')}, complexity={intent.get('complexity')}")
+            return intent
+        except json.JSONDecodeError:
+            logger.warning(f"Failed to parse LLM response as JSON, using fallback")
+            raise ValueError("Invalid LLM response format")
     
     async def _decompose_task(
         self,
         intent: dict,
         tenant_id: str,
     ) -> list[SubTask]:
-        """将意图拆解为子任务"""
+        """将意图拆解为子任务
+        
+        策略:
+        1. 如果使用 LLM (fallback=False),直接使用推荐的分解
+        2. 否则降级到基于动作的规则分解
+        """
         action = intent.get("action", "")
         keywords = intent.get("keywords", [])
+        complexity = intent.get("complexity", "simple")
+        fallback = intent.get("fallback", True)
+        
+        # 如果是简单任务,直接单任务处理
+        if complexity == "simple":
+            return [
+                SubTask(
+                    subtask_id=f"sub_0_default",
+                    description=user_input if 'user_input' in locals() else intent.get("description", ""),
+                    capability_id="",
+                    tags=keywords,
+                )
+            ]
+        
+        if fallback:
+            # 降级到基于动作的分解
+            return await self._rule_based_decomposition(action, keywords)
+        
+        # LLM 提供了推荐的工作台,可以在这里做更细粒度的分解
+        recommended_workstations = intent.get("recommended_workstations", [])
+        
+        # TODO: 根据 LLM 推荐的站台做高级编排
+        # 简化版: 仍然使用动作判断,但可以考虑站台偏好
+        return await self._rule_based_decomposition(action, keywords)
+    
+    async def _rule_based_decomposition(
+        self,
+        action: str,
+        keywords: list[str],
+    ) -> list[SubTask]:
+        """基于动作的任务分解 (降级策略)"""
+        user_input = intent.get("description", "") if isinstance(intent, dict) else ""
         
         # 基于动作拆解
         if action == "analyze":
@@ -244,6 +341,71 @@ class TaskRouter:
                     description="编写代码",
                     capability_id="skill:execute_python",
                     dependencies=["sub_0_parse"],
+                    tags=keywords,
+                ),
+            ]
+        
+        else:
+            # 默认: 单任务
+            return [
+                SubTask(
+                    subtask_id=f"sub_0_default",
+                    description=user_input,
+                    capability_id="",  # 待匹配
+                    tags=keywords,
+                )
+            ]
+    
+    async def _rule_based_decomposition(
+        self,
+        action: str,
+        keywords: list[str],
+    ) -> list[SubTask]:
+        """基于动作的任务分解 (降级策略)"""
+        # 找到 user_input 从上下文中
+        user_input = "Execute task"
+        
+        # 基于动作拆解
+        if action == "analyze":
+            return [
+                SubTask(
+                    subtask_id=f"sub_0_read",
+                    description="读取文件内容",
+                    capability_id="skill:read_file",
+                    tags=keywords,
+                ),
+                SubTask(
+                    subtask_id=f"sub_1_analyze",
+                    description="分析内容并提取关键信息",
+                    capability_id="agent:analyzer",  # 需要注册
+                    dependencies=["sub_0_read"],
+                    tags=keywords,
+                ),
+            ]
+        
+        elif action == "generate_code":
+            return [
+                SubTask(
+                    subtask_id=f"sub_0_parse",
+                    description="解析需求",
+                    capability_id="agent:requirement_parser",
+                    tags=keywords,
+                ),
+                SubTask(
+                    subtask_id=f"sub_1_write",
+                    description="编写代码",
+                    capability_id="skill:execute_python",
+                    dependencies=["sub_0_parse"],
+                    tags=keywords,
+                ),
+            ]
+        
+        elif action == "search":
+            return [
+                SubTask(
+                    subtask_id=f"sub_0_search",
+                    description="搜索相关信息",
+                    capability_id="knowledge:kb_search",
                     tags=keywords,
                 ),
             ]

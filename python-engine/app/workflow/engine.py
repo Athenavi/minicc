@@ -17,6 +17,7 @@ import logging
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
+from datetime import datetime, timezone
 
 from app.gateway.router import GatewayRouter
 from app.tools.registry import registry as tool_registry
@@ -39,16 +40,28 @@ class NodeResult:
 class WorkflowInstance:
     instance_id: str
     graph_name: str
+    user_id: str = ""  # P1-1: 用户 ID 用于持久化
     state: dict[str, Any] = field(default_factory=dict)
     results: dict[str, NodeResult] = field(default_factory=dict)
     status: str = "running"
+    error: str = ""  # P1-1: 错误信息
     started_at: float = field(default_factory=time.time)
     finished_at: float | None = None
+    
+    def _should_timeout(self) -> bool:
+        """P1-1: 检查是否超时 (>24 小时)"""
+        if not self.finished_at:
+            return False
+        elapsed = time.time() - self.started_at
+        return elapsed > _INSTANCE_TIMEOUT_SECONDS
 
 
 _instances: dict[str, WorkflowInstance] = {}
 _MAX_INSTANCES = 500  # 最大实例数，防止内存泄漏
 _instance_order: list[str] = []  # FIFO 顺序
+
+# P1-1: Workflow 实例超时清理（生产安全检查 2026-08-17）
+_INSTANCE_TIMEOUT_SECONDS = 3600 * 24  # 24 小时超时
 
 
 def _topological_sort(nodes: list[dict], edges: list[dict]) -> list[dict]:
@@ -273,8 +286,27 @@ async def run_workflow(
     except Exception as e:
         logger.error("workflow execution failed: %s", e)
         instance.status = "error"
+        instance.error = str(e)
     finally:
         instance.finished_at = time.time()
+        
+        # P1-1: 检查超时并持久化（如果 DB 可用）
+        if instance._should_timeout():
+            logger.info(
+                "Workflow instance timed out (%.1fh), cleaning up", 
+                (time.time() - instance.started_at) / 3600
+            )
+            _persist_workflow_instance(instance)  # type: ignore
+        
+        # FIFO 淘汰：超过最大数量时删除最旧实例
+        _instance_order.append(instance.instance_id)
+        if len(_instances) > _MAX_INSTANCES:
+            oldest = _instance_order.pop(0)
+            _instances.pop(oldest, None)
+            logger.warning(
+                "Workflow instances exceeded limit (%d), removed oldest: %s",
+                _MAX_INSTANCES, oldest
+            )
 
     return instance
 

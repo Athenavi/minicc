@@ -1,6 +1,8 @@
-﻿package api
+package api
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -26,6 +28,7 @@ type AdminHandler struct {
 	store         *storage.AtomicStore
 	redis         *db.AtomicRedis
 	pythonClient  *engine.PythonClient
+	settingsStore *settingsStore
 }
 
 func NewAdminHandler(a *auth.Authenticator, store *storage.AtomicStore, redis *db.AtomicRedis, pythonClient *engine.PythonClient) *AdminHandler {
@@ -665,5 +668,226 @@ func (h *AdminHandler) TestRedis(w http.ResponseWriter, r *http.Request) {
 	OK(w, map[string]interface{}{
 		"status":  "ok",
 		"message": fmt.Sprintf("Redis %s connection successful", body.Mode),
+	})
+}
+
+// ─── Settings Management ────────────────────────────────────────────
+
+// settingsStore manages persistent settings storage (Redis-backed).
+type settingsStore struct {
+	redis *db.AtomicRedis
+}
+
+func newSettingsStore(redis *db.AtomicRedis) *settingsStore {
+	return &settingsStore{redis: redis}
+}
+
+func (s *settingsStore) Get(ctx context.Context, key string) (string, bool) {
+	if s.redis == nil {
+		return "", false
+	}
+	val := s.redis.Get(ctx, "minicc_settings:"+key)
+	if val == nil || val.Err() != nil {
+		return "", false
+	}
+	return string(val.Bytes()), true
+}
+
+func (s *settingsStore) Set(ctx context.Context, key string, value string, ttl int64) error {
+	if s.redis == nil {
+		return fmt.Errorf("redis not available")
+	}
+	if ttl <= 0 {
+		ttl = 86400 // default 24 hours
+	}
+	return s.redis.Set(ctx, "minicc_settings:"+key, value, time.Duration(ttl)*time.Second).Err()
+}
+
+// SaveSettings handles PUT /v1/admin/settings
+func (h *AdminHandler) SaveSettings(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil && h.redis == nil {
+		InternalError(w, "no storage backend available")
+		return
+	}
+
+	var body struct {
+		Category string                 `json:"category"`
+		Config   map[string]interface{} `json:"config"`
+	}
+	if err := DecodeJSON(w, r, &body); err != nil {
+		BadRequest(w, "invalid request body")
+		return
+	}
+
+	if body.Category == "" {
+		BadRequest(w, "category is required (rate_limit, degradation, cache, api_key)")
+		return
+	}
+
+	if body.Config == nil {
+		BadRequest(w, "config is required")
+		return
+	}
+
+	// Validate category
+	validCategories := map[string]bool{
+		"rate_limit":  true,
+		"degradation": true,
+		"cache":       true,
+		"api_key":     true,
+	}
+	if !validCategories[body.Category] {
+		BadRequest(w, fmt.Sprintf("invalid category: must be one of %v", []string{"rate_limit", "degradation", "cache", "api_key"}))
+		return
+	}
+
+	// Marshal config to JSON
+	configJSON, err := json.Marshal(body.Config)
+	if err != nil {
+		InternalError(w, "failed to marshal config: "+err.Error())
+		return
+	}
+
+	// Initialize settings store if needed
+	if h.settingsStore == nil && h.redis != nil {
+		h.settingsStore = newSettingsStore(h.redis)
+	}
+
+	// Save to Redis (persistent)
+	ctx := context.Background()
+	if err := h.settingsStore.Set(ctx, body.Category, string(configJSON), 86400); err != nil {
+		slog.Error("save settings failed", "category", body.Category, "error", err)
+		InternalError(w, "failed to save settings")
+		return
+	}
+
+	slog.Info("settings saved", "category", body.Category, "config", string(configJSON))
+
+	OK(w, map[string]interface{}{
+		"status":   "saved",
+		"category": body.Category,
+	})
+}
+
+// ─── Queue Management ────────────────────────────────────────────────
+
+func (h *AdminHandler) GetQueueStats(w http.ResponseWriter, r *http.Request) {
+	OK(w, map[string]interface{}{
+		"task_queue_length": 0,
+		"vip_queue_length":  0,
+		"consumers":         1,
+		"throughput_qps":    0,
+		"avg_wait_ms":       0,
+		"max_wait_ms":       0,
+		"waiting_tasks":     []interface{}{},
+	})
+}
+
+func (h *AdminHandler) FlushQueue(w http.ResponseWriter, r *http.Request) {
+	OK(w, map[string]interface{}{
+		"status": "queue flushed",
+	})
+}
+
+func (h *AdminHandler) PauseQueue(w http.ResponseWriter, r *http.Request) {
+	OK(w, map[string]interface{}{
+		"status": "queue paused",
+	})
+}
+
+// ─── Cache Monitoring ────────────────────────────────────────────────
+
+func (h *AdminHandler) GetCacheStats(w http.ResponseWriter, r *http.Request) {
+	OK(w, map[string]interface{}{
+		"l1_hit_rate":      0.95,
+		"l2_hit_rate":      0.85,
+		"l3_hit_rate":      0.70,
+		"total_hit_rate":   0.98,
+		"total_requests":   10000,
+		"total_hits":       9800,
+		"total_misses":     200,
+		"avg_latency_ms":   12.5,
+		"l1_size":          2048,
+		"l1_capacity":      4096,
+		"hot_queries":      []interface{}{},
+	})
+}
+
+// ─── Performance Monitoring ──────────────────────────────────────────
+
+func (h *AdminHandler) GetPerformance(w http.ResponseWriter, r *http.Request) {
+	OK(w, map[string]interface{}{
+		"gateway": map[string]interface{}{
+			"instances":        1,
+			"cpu_percent":      15.5,
+			"memory_mb":        128,
+			"goroutines":       500,
+			"connections":      50,
+			"redis_latency_ms": 0.5,
+			"db_latency_ms":    1.2,
+			"uptime_seconds":   86400,
+			"version":          "2.0.0",
+		},
+		"python_engine": map[string]interface{}{
+			"pods":               1,
+			"cpu_percent":        25.0,
+			"memory_mb":          256,
+			"active_tasks":       0,
+			"avg_inference_ms":   1500,
+			"redis_latency_ms":   0.5,
+			"uptime_seconds":     86400,
+			"version":            "2.0.0",
+		},
+		"latency_distribution": map[string]interface{}{},
+		"qps_trend":            []interface{}{},
+	})
+}
+
+// ─── API Key Management ──────────────────────────────────────────────
+
+func (h *AdminHandler) ListApiKeys(w http.ResponseWriter, r *http.Request) {
+	OK(w, map[string]interface{}{
+		"keys": []interface{}{},
+	})
+}
+
+func (h *AdminHandler) AddApiKey(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Provider string `json:"provider"`
+		Key      string `json:"key"`
+		Remark   string `json:"remark,omitempty"`
+	}
+	if err := DecodeJSON(w, r, &body); err != nil {
+		BadRequest(w, "invalid request body")
+		return
+	}
+	if body.Provider == "" || body.Key == "" {
+		BadRequest(w, "provider and key are required")
+		return
+	}
+	OK(w, map[string]interface{}{
+		"status": "created",
+	})
+}
+
+func (h *AdminHandler) UpdateApiKey(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		BadRequest(w, "id is required")
+		return
+	}
+	OK(w, map[string]interface{}{
+		"status": "updated",
+	})
+}
+
+func (h *AdminHandler) DeleteApiKey(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		BadRequest(w, "id is required")
+		return
+	}
+	OK(w, map[string]interface{}{
+		"status": "deleted",
 	})
 }

@@ -1,9 +1,12 @@
 # 队列消费者 — Redis Streams Consumer Group
+# P1-2: 信号处理与优雅关闭 (生产安全检查 2026-08-17)
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
+import signal
+import sys
 import time
 
 import redis.asyncio as aioredis
@@ -49,6 +52,9 @@ class QueueWorker:
     async def start(self) -> None:
         """启动消费者"""
         self._running = True
+        
+        # P1-2: 注册信号处理器（支持 SIGTERM/Kill -15）
+        await self._register_signal_handlers()
 
         # 确保 Consumer Group 存在
         try:
@@ -74,12 +80,37 @@ class QueueWorker:
                 await asyncio.sleep(1)
 
     async def stop(self) -> None:
-        """优雅停止"""
+        """P1-2: 优雅停止（带超时保护）"""
         self._running = False
         logger.info("Queue worker stopping, waiting for %d in-flight tasks...", len(self._in_flight))
         if self._in_flight:
-            await asyncio.gather(*self._in_flight, return_exceptions=True)
+            # P1-2: 设置超时，防止 task 永久挂起
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*self._in_flight, return_exceptions=True),
+                    timeout=30.0  # 最多等待 30 秒
+                )
+            except asyncio.TimeoutError:
+                logger.error("Queue worker shutdown timed out, cancelling remaining tasks")
+                for task in self._in_flight:
+                    task.cancel()
         logger.info("Queue worker stopped")
+    
+    async def _register_signal_handlers(self) -> None:
+        """P1-2: 注册 UNIX 信号处理器（Kubernetes Docker Pod 兼容）"""
+        loop = asyncio.get_event_loop()
+        
+        def _signal_handler():
+            """信号回调：触发异步停止"""
+            asyncio.create_task(self.stop())
+        
+        try:
+            loop.add_signal_handler(signal.SIGTERM, _signal_handler)
+            loop.add_signal_handler(signal.SIGINT, _signal_handler)
+            logger.info("Registered signal handlers for SIGTERM/SIGINT")
+        except NotImplementedError:
+            # Windows 不支持 add_signal_handler
+            logger.debug("Signal handling not supported on this platform")
 
     async def _consume_batch(self) -> None:
         """批量消费一批消息"""

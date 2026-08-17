@@ -10,7 +10,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/athenavi/minicc/internal/admin/middleware"
 	"github.com/athenavi/minicc/internal/api"
+	"github.com/athenavi/minicc/internal/auth"
 	"github.com/athenavi/minicc/internal/broadcast"
 	"github.com/athenavi/minicc/config"
 	"github.com/athenavi/minicc/internal/db"
@@ -111,6 +113,19 @@ func main() {
 
 	// ── Monitor ──
 	monitor.Init()
+
+	// ── Auth: Initialize JWT authenticator ──
+	auth.InitJWTAuth()
+	if !cfg.ValidateJWTSecret(cfg.JWTSecret) {
+		slog.Error("FATAL: JWT_SECRET is weak or not set. Generate a strong secret (32+ chars) and set JWT_SECRET env var")
+		exitCode = 1
+		return
+	}
+	slog.Info("auth initialized", "jwt_secret_set", cfg.JWTSecret != "")
+
+	// ── Rate Limiter: Initialize rate limiting ──
+	middleware.InitRateLimiter(cfg.RateLimitRPM)
+	slog.Info("rate limiter initialized", "default_rpm", cfg.RateLimitRPM)
 
 	// ── Event Hub ──
 	var eventHub *broadcast.Hub

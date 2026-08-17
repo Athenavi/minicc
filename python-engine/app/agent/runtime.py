@@ -18,13 +18,16 @@ from app.tools.registry import registry as local_tool_registry
 logger = logging.getLogger(__name__)
 
 # ── Token 节省参数（默认值；可被 CompactionConfig 覆盖，租户/模式可配） ──
-MAX_CONTEXT_TOKENS = 4000        # 上下文预算（tokens），超出触发压缩
-MAX_MESSAGES = 8                 # 消息数量硬上限（含 system），超出丢弃中间消息
-SNIP_THRESHOLD = 0.60            # 60% → 压缩旧工具结果
-PRUNE_THRESHOLD = 0.80           # 80% → 裁剪旧消息
-TOOL_RESULT_MAX_CHARS = 8000     # 工具调用结果截断长度（2000 太小，read_file 内容常被截断成不可用片段）
-TOOL_RESULT_HEAD = 1200          # head 保留长度
-TOOL_RESULT_TAIL = 500           # tail 保留长度
+# P2-1: 消息压缩策略调优 (生产安全检查 2026-08-17)
+# 原值过于激进：MAX_CONTEXT_TOKENS=4000 (仅 GPT-4 的 1/4), MAX_MESSAGES=8
+# 新值根据模型能力调整，支持租户级覆盖
+MAX_CONTEXT_TOKENS = 8192       # 增加到 8K tokens (约 GPT-4 的 1/10)
+MAX_MESSAGES = 16               # 增加到 16 条消息
+SNIP_THRESHOLD = 0.70           # 70% 才开始压缩 (原 60%)
+PRUNE_THRESHOLD = 0.85          # 85% 才裁剪旧消息 (原 80%)
+TOOL_RESULT_MAX_CHARS = 16000   # 增加到 16K chars (原 8K)
+TOOL_RESULT_HEAD = 2000         # head 保留长度
+TOOL_RESULT_TAIL = 1000         # tail 保留长度
 
 
 @dataclass(frozen=True)

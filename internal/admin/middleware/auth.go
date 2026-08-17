@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/athenavi/minicc/internal/auth"
 	"github.com/gin-gonic/gin"
 )
 
@@ -32,36 +33,34 @@ func AdminAuth() gin.HandlerFunc {
 			return
 		}
 
-		// TODO: Implement actual JWT verification
-		// For now, accept any non-empty token for development
-		// In production, use: claims, err := ParseToken(tokenString)
-		
-		// Extract user info from token and store in context
-		/*
-			claims, err := auth.ParseJWT(tokenString)
-			if err != nil {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
-				c.Abort()
-				return
-			}
+		// Verify JWT token
+		claims, err := auth.ParseJWT(tokenString)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
+			c.Abort()
+			return
+		}
 
-			if !claims.IsAdmin {
-				c.JSON(http.StatusForbidden, gin.H{"error": "admin access required"})
-				c.Abort()
-				return
-			}
+		// Check if admin or owner role
+		if claims.Role != "admin" && claims.Role != "owner" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "admin access required"})
+			c.Abort()
+			return
+		}
 
-			c.Set("user_id", claims.UserID)
-			c.Set("username", claims.Username)
-			c.Set("role", claims.Role)
-		*/
+		// Store user info in context
+		c.Set("user_id", claims.UserID)
+		c.Set("email", claims.Email)
+		c.Set("role", claims.Role)
+		c.Set("tenant_id", claims.TenantID)
+		c.Set("perms", claims.Perms)
 
 		c.Next()
 	}
 }
 
 // APIKeyAuth verifies API key from header or query parameter.
-func APIKeyAuth(keyStore interface{}) gin.HandlerFunc {
+func APIKeyAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Get API key from header
 		apiKey := c.GetHeader("X-API-Key")
@@ -76,32 +75,20 @@ func APIKeyAuth(keyStore interface{}) gin.HandlerFunc {
 			return
 		}
 
-		// TODO: Verify API key against database
-		/*
-			hash := util.HashKey(apiKey)
-			key, err := keyStore.(store.APIKeyStore).GetByHash(c.Request.Context(), hash)
-			if err != nil {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid API key"})
-				c.Abort()
-				return
-			}
+		// Verify JWT token (API keys are also JWT tokens in our implementation)
+		claims, err := auth.ParseJWT(apiKey)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid API key"})
+			c.Abort()
+			return
+		}
 
-			if key.Status != "active" {
-				c.JSON(http.StatusForbidden, gin.H{"error": "API key is not active"})
-				c.Abort()
-				return
-			}
-
-			if key.ExpiresAt.Before(time.Now()) {
-				c.JSON(http.StatusForbidden, gin.H{"error": "API key has expired"})
-				c.Abort()
-				return
-			}
-
-			// Store key info in context
-			c.Set("api_key_id", key.ID)
-			c.Set("tenant_id", key.TenantID)
-		*/
+		// Store key info in context
+		c.Set("user_id", claims.UserID)
+		c.Set("email", claims.Email)
+		c.Set("role", claims.Role)
+		c.Set("tenant_id", claims.TenantID)
+		c.Set("perms", claims.Perms)
 
 		c.Next()
 	}
