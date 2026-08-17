@@ -71,6 +71,18 @@ type Config struct {
 	StripeWebhookSecret string
 	StripePriceID      string
 
+	// 支付（支付宝/微信）
+	PublicBaseURL     string // 公网可达的基础 URL，用于构造支付回调 notify_url
+	AlipayAppID       string
+	AlipayPrivateKey  string // 应用私钥（PEM）
+	AlipayPublicKey   string // 支付宝公钥（PEM）
+	AlipayGateway     string // 默认生产网关；沙箱用 https://openapi-sandbox.dl.alipaydev.com/gateway.do
+	WechatMchID       string
+	WechatAppID       string
+	WechatAPIv3Key    string // APIv3 密钥（32 位）
+	WechatMchCertSerialNo string // 商户 API 证书序列号
+	WechatMchPrivateKey   string // 商户 API 证书私钥（PEM）
+
 	// Agent behavior
 	AgentMaxTurns     int // max LLM-tool turns per run (default 10)
 	AgentMaxTokens    int // max output tokens per LLM call (default 8192)
@@ -137,6 +149,18 @@ func Load() *Config {
 		StripeSecretKey:   getEnv("STRIPE_SECRET_KEY", ""),
 		StripeWebhookSecret: getEnv("STRIPE_WEBHOOK_SECRET", ""),
 		StripePriceID:     getEnv("STRIPE_PRICE_ID", "price_1000_credits"),
+
+		// 支付（支付宝/微信）
+		PublicBaseURL:      getEnv("PUBLIC_BASE_URL", ""),
+		AlipayAppID:        getEnv("ALIPAY_APP_ID", ""),
+		AlipayPrivateKey:   getEnv("ALIPAY_PRIVATE_KEY", ""),
+		AlipayPublicKey:    getEnv("ALIPAY_PUBLIC_KEY", ""),
+		AlipayGateway:      getEnv("ALIPAY_GATEWAY", ""),
+		WechatMchID:        getEnv("WXPAY_MCH_ID", ""),
+		WechatAppID:        getEnv("WXPAY_APP_ID", ""),
+		WechatAPIv3Key:     getEnv("WXPAY_API_V3_KEY", ""),
+		WechatMchCertSerialNo: getEnv("WXPAY_MCH_CERT_SERIAL_NO", ""),
+		WechatMchPrivateKey:   getEnv("WXPAY_MCH_PRIVATE_KEY", ""),
 		AgentMaxTurns:     getInt("AGENT_MAX_TURNS", 10),
 		AgentMaxTokens:    getInt("AGENT_MAX_TOKENS", 8192),
 		AgentContextLimit: getInt("AGENT_CONTEXT_LIMIT", 20),

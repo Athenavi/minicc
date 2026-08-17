@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import dayjs from 'dayjs'
+import QRCode from 'qrcode'
 import {
   Card, Button, Spin, Input, Radio, Tabs, TabPane, Table, Tag, Progress,
-  Alert, Empty, message,
+  Alert, Empty, Modal, message,
 } from 'ant-design-vue'
 import {
   CreditCardOutlined, WalletOutlined, ThunderboltOutlined, BarChartOutlined,
-  ShoppingOutlined,
+  ShoppingOutlined, QrcodeOutlined, PayCircleOutlined,
 } from '@ant-design/icons-vue'
 import { api } from '../api'
 
@@ -61,17 +62,28 @@ const activeTab = ref('balance')
 
 const credits = ref(1000)
 const customCredits = ref('')
-const provider = ref('stripe')
+const provider = ref('alipay')
 
 // 支付结果提示（从 URL 参数读取一次后清除）
 const payResult = ref<{ type: 'success' | 'info'; text: string } | null>(null)
+
+// 二维码支付弹层状态
+const qrVisible = ref(false)
+const qrCode = ref('')
+const currentOrderId = ref('')
+const qrChannel = ref<'alipay' | 'wechat'>('alipay')
+const qrCanvas = ref<HTMLCanvasElement | null>(null)
+const payStatus = ref<'pending' | 'paid' | 'expired' | 'failed'>('pending')
+let pollTimer: number | undefined
+const PAY_POLL_INTERVAL = 3000
 
 // ── 常量 ──
 
 const PRESET_CREDITS = [500, 1000, 2000, 5000, 10000]
 
 const providerOptions = [
-  { label: '银行卡 / 支付宝 / 微信支付', value: 'stripe' },
+  { label: '支付宝', value: 'alipay' },
+  { label: '微信支付', value: 'wechat' },
   { label: 'PayPal', value: 'paypal' },
 ]
 
@@ -112,7 +124,11 @@ const effectiveCredits = computed(() => {
 
 const priceHint = computed(() => {
   if (!effectiveCredits.value) return ''
-  return `≈ $${(effectiveCredits.value / 100).toFixed(2)} USD`
+  // 支付宝/微信：1 credit = 1 分人民币；PayPal：1 credit = 1 美分
+  if (provider.value === 'paypal') {
+    return `≈ $${(effectiveCredits.value / 100).toFixed(2)} USD`
+  }
+  return `≈ ¥${(effectiveCredits.value / 100).toFixed(2)} CNY`
 })
 
 const historyColumns = [
@@ -202,22 +218,90 @@ async function handlePurchase() {
   }
   checkoutLoading.value = true
   try {
-    const response = await api.post('/v1/billing/create-checkout-session', {
+    const response = await api.post('/v1/billing/pay', {
       credits: amount,
-      provider: provider.value,
+      channel: provider.value,
     })
-    const checkoutUrl = response.data?.data?.checkout_url
-    if (checkoutUrl) {
-      window.location.href = checkoutUrl
-    } else {
-      throw new Error('未获取到支付链接')
+    const data = response.data?.data
+    if (!data) throw new Error('创建订单失败')
+
+    if (provider.value === 'paypal') {
+      // PayPal：跳转授权页
+      if (data.checkout_url) {
+        window.location.href = data.checkout_url
+      } else {
+        throw new Error('未获取到 PayPal 支付链接')
+      }
+      return
     }
+
+    // 支付宝/微信：展示二维码并轮询订单状态
+    if (!data.qr_code) throw new Error('未获取到支付二维码')
+    qrCode.value = data.qr_code
+    currentOrderId.value = data.id
+    qrChannel.value = provider.value as 'alipay' | 'wechat'
+    payStatus.value = 'pending'
+    qrVisible.value = true
+    await nextTick()
+    renderQRCode()
+    startPolling()
   } catch (error: any) {
-    message.error(error.message || '创建支付会话失败')
+    message.error(error.message || '创建支付订单失败')
   } finally {
     checkoutLoading.value = false
   }
 }
+
+async function renderQRCode() {
+  if (!qrCanvas.value || !qrCode.value) return
+  try {
+    await QRCode.toCanvas(qrCanvas.value, qrCode.value, {
+      width: 220, margin: 1, errorCorrectionLevel: 'M',
+    })
+  } catch (e) {
+    message.error('二维码生成失败')
+  }
+}
+
+function startPolling() {
+  stopPolling()
+  pollTimer = window.setInterval(async () => {
+    if (!currentOrderId.value) return
+    try {
+      const resp = await api.get(`/v1/billing/orders/${encodeURIComponent(currentOrderId.value)}`)
+      const order = resp.data?.data
+      if (!order) return
+      if (order.status === 'paid') {
+        payStatus.value = 'paid'
+        stopPolling()
+        qrVisible.value = false
+        message.success('充值成功，Credits 已到账')
+        await loadBalanceAndUsage()
+        if (activeTab.value === 'history') await loadHistory()
+      } else if (order.status === 'expired' || order.status === 'failed') {
+        payStatus.value = order.status
+        stopPolling()
+      }
+    } catch (error: any) {
+      // 轮询出错静默，等待下一次
+      console.error('payment poll error:', error)
+    }
+  }, PAY_POLL_INTERVAL)
+}
+
+function stopPolling() {
+  if (pollTimer !== undefined) {
+    window.clearInterval(pollTimer)
+    pollTimer = undefined
+  }
+}
+
+function closeQR() {
+  stopPolling()
+  qrVisible.value = false
+}
+
+onUnmounted(stopPolling)
 
 // ── 展示辅助 ──
 
@@ -345,7 +429,7 @@ function amountText(amount: number): string {
 
             <div class="form-item">
               <label>支付方式</label>
-              <Radio.Group v-model:value="provider" :options="providerOptions" />
+              <Radio.Group v-model:value="provider" :options="providerOptions" option-type="button" button-style="solid" />
             </div>
 
             <div class="price-hint">
@@ -365,7 +449,10 @@ function amountText(amount: number): string {
             </Button>
 
             <div class="purchase-note">
-              支付成功后 Credits 将自动到账。1000 credits ≈ $10.00。充值不可退款，请确认数量。
+              {{ provider === 'paypal'
+                ? '跳转 PayPal 完成付款，1 credit = 1 美分（USD）。'
+                : '扫码完成付款，1 credit = 1 分（CNY）。支付成功后 Credits 自动到账。' }}
+              充值不可退款，请确认数量。
             </div>
           </div>
         </Card>
@@ -405,6 +492,40 @@ function amountText(amount: number): string {
         </Card>
       </TabPane>
     </Tabs>
+
+    <!-- 扫码支付弹层 -->
+    <Modal
+      :open="qrVisible"
+      :footer="null"
+      :closable="true"
+      :maskClosable="false"
+      width="340px"
+      title="扫码支付"
+      @cancel="closeQR"
+    >
+      <div class="qr-body">
+        <div class="qr-channel">
+          {{ qrChannel === 'alipay' ? '支付宝' : '微信支付' }}
+          <Tag color="#f59e0b">{{ effectiveCredits }} credits</Tag>
+        </div>
+
+        <Spin :spinning="payStatus === 'pending' && !qrCode" tip="生成二维码中...">
+          <canvas v-show="qrCode" ref="qrCanvas" class="qr-canvas" />
+        </Spin>
+
+        <div v-if="payStatus === 'pending'" class="qr-tip">
+          <QrcodeOutlined /> 请使用{{ qrChannel === 'alipay' ? '支付宝' : '微信' }}扫码完成支付
+          <br />
+          <span class="qr-sub">页面将自动检测支付结果，无需手动刷新</span>
+        </div>
+        <div v-else-if="payStatus === 'paid'" class="qr-success">
+          <PayCircleOutlined /> 支付成功，Credits 已到账
+        </div>
+        <div v-else class="qr-expired">
+          <Alert type="warning" message="订单已{{ payStatus === 'expired' ? '超时' : '失败' }}" description="请关闭后重新发起充值" />
+        </div>
+      </div>
+    </Modal>
   </div>
 </template>
 
@@ -446,4 +567,12 @@ function amountText(amount: number): string {
 
 .amount-add { color: #10b981; font-weight: 600; }
 .amount-deduct { color: #ef4444; font-weight: 600; }
+
+.qr-body { text-align: center; padding: 8px 0; }
+.qr-channel { margin-bottom: 14px; font-size: 15px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.qr-canvas { width: 220px; height: 220px; border: 1px solid #e5e7eb; border-radius: 8px; }
+.qr-tip { margin-top: 14px; color: #374151; font-size: 14px; }
+.qr-sub { color: #9ca3af; font-size: 12px; }
+.qr-success { margin-top: 16px; color: #10b981; font-size: 16px; font-weight: 600; }
+.qr-expired { margin-top: 16px; text-align: left; }
 </style>

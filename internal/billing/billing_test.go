@@ -30,6 +30,22 @@ func (m *mockStore) AtomicAddBalance(ctx context.Context, userID string, amount 
 	return 0, nil
 }
 
+// ── PaymentStore（测试空实现） ──
+func (m *mockStore) CreatePayment(ctx context.Context, p *Payment) error { return nil }
+func (m *mockStore) GetPayment(ctx context.Context, id string) (*Payment, error) {
+	return nil, nil
+}
+func (m *mockStore) GetPaymentByProviderOrderID(ctx context.Context, providerOrderID string) (*Payment, error) {
+	return nil, nil
+}
+func (m *mockStore) MarkPaymentPaid(ctx context.Context, id, tradeNo string) (*Payment, error) {
+	return nil, nil
+}
+func (m *mockStore) MarkPaymentFailed(ctx context.Context, id string) error { return nil }
+func (m *mockStore) UpdatePaymentProvider(ctx context.Context, id, qrCode, providerOrderID string) error {
+	return nil
+}
+
 // recordingStore captures every AddTransaction call for assertions.
 type recordingStore struct {
 	mockStore

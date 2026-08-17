@@ -364,8 +364,11 @@ func NewGatewayRouter(
 	mux.Handle("GET /v1/billing/balance", authMW(rlMW(http.HandlerFunc(billingHandler.GetBalance))))
 	mux.Handle("GET /v1/billing/history", authMW(rlMW(http.HandlerFunc(billingHandler.GetHistory))))
 	mux.Handle("POST /v1/billing/recharge", authMW(rlMW(http.HandlerFunc(billingHandler.Recharge))))
-	mux.Handle("POST /v1/billing/create-checkout-session", authMW(rlMW(http.HandlerFunc(billingHandler.CreateCheckoutSession))))
-	mux.Handle("POST /v1/billing/stripe-webhook", rlMW(http.HandlerFunc(billingHandler.StripeWebhook)))
+	mux.Handle("POST /v1/billing/pay", authMW(rlMW(http.HandlerFunc(billingHandler.CreatePayment))))
+	mux.Handle("GET /v1/billing/orders/{id}", authMW(rlMW(http.HandlerFunc(billingHandler.GetOrder))))
+	// 支付渠道异步回调（无 auth：支付宝验签 / 微信平台证书验签 + AES-GCM 解密）
+	mux.Handle("POST /v1/billing/callback/alipay", rlMW(http.HandlerFunc(billingHandler.AlipayCallback)))
+	mux.Handle("POST /v1/billing/callback/wechat", rlMW(http.HandlerFunc(billingHandler.WechatCallback)))
 	mux.Handle("POST /v1/billing/paypal-capture", rlMW(http.HandlerFunc(billingHandler.PayPalCapture)))
 	mux.Handle("GET /v1/billing/usage", authMW(rlMW(http.HandlerFunc(billingHandler.GetUsage))))
 

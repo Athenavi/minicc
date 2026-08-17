@@ -77,6 +77,7 @@ type Store interface {
 	MarkFreeUsage(ctx context.Context, userID string) error
 	AtomicDeductBalance(ctx context.Context, userID string, amount int) (int, error)
 	AtomicAddBalance(ctx context.Context, userID string, amount int) (int, error)
+	PaymentStore
 }
 
 // NewManager creates a billing manager with the given store.
@@ -230,6 +231,28 @@ func (m *Manager) AddCredits(userID, reason string, amount int) (int, error) {
 // GetHistory returns the user's credit transaction history.
 func (m *Manager) GetHistory(ctx context.Context, userID string, limit int) ([]CreditChange, error) {
 	return m.store.GetHistory(ctx, userID, limit)
+}
+
+// ── 支付订单（delegate 到 PaymentStore） ──
+
+// CreatePayment 创建一笔 pending 支付订单。
+func (m *Manager) CreatePayment(ctx context.Context, p *Payment) error {
+	return m.store.CreatePayment(ctx, p)
+}
+
+// GetPayment 按内部订单号查询订单。
+func (m *Manager) GetPayment(ctx context.Context, id string) (*Payment, error) {
+	return m.store.GetPayment(ctx, id)
+}
+
+// UpdatePaymentProvider 预下单成功后回填二维码与渠道订单号。
+func (m *Manager) UpdatePaymentProvider(ctx context.Context, id, qrCode, providerOrderID string) error {
+	return m.store.UpdatePaymentProvider(ctx, id, qrCode, providerOrderID)
+}
+
+// MarkPaymentFailed 标记订单支付失败。
+func (m *Manager) MarkPaymentFailed(ctx context.Context, id string) error {
+	return m.store.MarkPaymentFailed(ctx, id)
 }
 
 // Config returns the current billing config.

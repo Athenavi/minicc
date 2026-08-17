@@ -3,11 +3,13 @@ package billing
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/athenavi/minicc/internal/db"
+	"github.com/jackc/pgx/v5"
 )
 
 // PGStore implements Store using the minicc PostgreSQL database.
@@ -44,6 +46,37 @@ func (s *PGStore) EnsureTables(ctx context.Context) error {
 		)`)
 	if err != nil {
 		return fmt.Errorf("create credit_transactions: %w", err)
+	}
+
+	// Create payments table（支付宝/微信/PayPal 通用充值订单）
+	_, err = db.Pool.Exec(ctx,
+		`CREATE TABLE IF NOT EXISTS payments (
+			id VARCHAR(64) PRIMARY KEY,
+			user_id VARCHAR(32) NOT NULL,
+			channel VARCHAR(16) NOT NULL,
+			credits INTEGER NOT NULL,
+			amount_cents BIGINT NOT NULL DEFAULT 0,
+			currency VARCHAR(8) NOT NULL DEFAULT 'CNY',
+			status VARCHAR(16) NOT NULL DEFAULT 'pending',
+			qr_code TEXT,
+			provider_order_id VARCHAR(64) NOT NULL DEFAULT '',
+			trade_no VARCHAR(64) NOT NULL DEFAULT '',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			paid_at TIMESTAMPTZ,
+			expired_at TIMESTAMPTZ
+		)`)
+	if err != nil {
+		return fmt.Errorf("create payments: %w", err)
+	}
+	_, err = db.Pool.Exec(ctx,
+		`CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id, created_at DESC)`)
+	if err != nil {
+		return fmt.Errorf("create payments user index: %w", err)
+	}
+	_, err = db.Pool.Exec(ctx,
+		`CREATE INDEX IF NOT EXISTS idx_payments_provider ON payments(provider_order_id) WHERE provider_order_id <> ''`)
+	if err != nil {
+		return fmt.Errorf("create payments provider index: %w", err)
 	}
 
 	// Index for fast history lookups
@@ -202,4 +235,94 @@ type BalanceResponse struct {
 func FormatBalance(userID string, balance int) string {
 	data, _ := json.Marshal(BalanceResponse{UserID: userID, Balance: balance})
 	return string(data)
+}
+
+// ── PaymentStore ──────────────────────────────────────────────────────────
+
+const _paymentColumns = `id, user_id, channel, credits, amount_cents, currency, status,
+	COALESCE(qr_code, ''), provider_order_id, trade_no, created_at, paid_at, expired_at`
+
+func scanPayment(row interface{ Scan(...any) error }) (*Payment, error) {
+	var p Payment
+	var qr string
+	var paidAt, expiredAt *time.Time
+	err := row.Scan(&p.ID, &p.UserID, &p.Channel, &p.Credits, &p.AmountCents, &p.Currency,
+		&p.Status, &qr, &p.ProviderOrderID, &p.TradeNo, &p.CreatedAt, &paidAt, &expiredAt)
+	if err != nil {
+		return nil, err
+	}
+	p.QRCode = qr
+	p.PaidAt = paidAt
+	p.ExpiredAt = expiredAt
+	return &p, nil
+}
+
+func (s *PGStore) CreatePayment(ctx context.Context, p *Payment) error {
+	if db.Pool == nil {
+		return fmt.Errorf("database not available")
+	}
+	_, err := db.Pool.Exec(ctx,
+		`INSERT INTO payments (id, user_id, channel, credits, amount_cents, currency, status,
+			qr_code, provider_order_id, trade_no, created_at, paid_at, expired_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+		p.ID, p.UserID, p.Channel, p.Credits, p.AmountCents, p.Currency, p.Status,
+		p.QRCode, p.ProviderOrderID, p.TradeNo, p.CreatedAt, p.PaidAt, p.ExpiredAt)
+	return err
+}
+
+func (s *PGStore) GetPayment(ctx context.Context, id string) (*Payment, error) {
+	if db.Pool == nil {
+		return nil, fmt.Errorf("database not available")
+	}
+	row := db.ReadPool().QueryRow(ctx,
+		`SELECT `+_paymentColumns+` FROM payments WHERE id = $1`, id)
+	return scanPayment(row)
+}
+
+func (s *PGStore) GetPaymentByProviderOrderID(ctx context.Context, providerOrderID string) (*Payment, error) {
+	if db.Pool == nil {
+		return nil, fmt.Errorf("database not available")
+	}
+	row := db.ReadPool().QueryRow(ctx,
+		`SELECT `+_paymentColumns+` FROM payments WHERE provider_order_id = $1`, providerOrderID)
+	return scanPayment(row)
+}
+
+// MarkPaymentPaid 幂等推进 pending→paid。返回 nil 表示订单非 pending（已处理/不存在）。
+func (s *PGStore) MarkPaymentPaid(ctx context.Context, id, tradeNo string) (*Payment, error) {
+	if db.Pool == nil {
+		return nil, fmt.Errorf("database not available")
+	}
+	row := db.Pool.QueryRow(ctx,
+		`UPDATE payments SET status = 'paid', trade_no = $2, paid_at = NOW()
+		 WHERE id = $1 AND status = 'pending'
+		 RETURNING `+_paymentColumns,
+		id, tradeNo)
+	p, err := scanPayment(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil // 已处理或不存在
+		}
+		return nil, err
+	}
+	return p, nil
+}
+
+func (s *PGStore) MarkPaymentFailed(ctx context.Context, id string) error {
+	if db.Pool == nil {
+		return fmt.Errorf("database not available")
+	}
+	_, err := db.Pool.Exec(ctx,
+		`UPDATE payments SET status = 'failed' WHERE id = $1 AND status = 'pending'`, id)
+	return err
+}
+
+func (s *PGStore) UpdatePaymentProvider(ctx context.Context, id, qrCode, providerOrderID string) error {
+	if db.Pool == nil {
+		return fmt.Errorf("database not available")
+	}
+	_, err := db.Pool.Exec(ctx,
+		`UPDATE payments SET qr_code = $2, provider_order_id = $3 WHERE id = $1 AND status = 'pending'`,
+		id, qrCode, providerOrderID)
+	return err
 }

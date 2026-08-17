@@ -28,6 +28,7 @@
     "markdown-it-texmath": "^1.0.0",
     "mermaid": "^11.16.0",
     "pinia": "^3.0.4",
+    "qrcode": "^1.5.4",
     "vue": "^3.5.39",
     "vue-echarts": "^8.0.1",
     "vue-router": "^4.6.4"
@@ -35,6 +36,7 @@
   "devDependencies": {
     "@file-viewer/vite-plugin": "^2.2.9",
     "@types/node": "^24.13.2",
+    "@types/qrcode": "^1.5.6",
     "@types/three": "^0.184.0",
     "@vitejs/plugin-vue": "^6.0.7",
     "@vue/tsconfig": "^0.9.1",
