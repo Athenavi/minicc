@@ -178,12 +178,45 @@ def _build_node_fns(graph_json: dict, gateway: GatewayRouter) -> dict[str, NodeF
     async def _output_node(state: dict, node_id: str) -> dict:
         return {f"__out_{node_id}__": _prev_output(state, node_id)}
 
+    async def _skill_node(state: dict, node_id: str) -> dict:
+        """技能节点：调用已安装技能（复用 skill_run，支持 prompt/python/shell/http）。"""
+        from app.tools.skill import skill_run
+
+        node = node_map[node_id]
+        config = node.get("config", {})
+        skill_name = config.get("skill_name", "")
+        if not skill_name:
+            return {f"__out_{node_id}__": "error: skill_name is required in node config"}
+        params = config.get("params", {}) or {}
+        # 支持将前驱输出作为 skill 的 input 参数
+        if "input" in config and isinstance(config["input"], str) and config["input"].startswith("$"):
+            key = config["input"][1:]
+            params = {**params, key: _prev_output(state, node_id)}
+        result = await skill_run(skill_name, params)
+        return {f"__out_{node_id}__": result.get("output", result.get("error", ""))}
+
+    async def _knowledge_node(state: dict, node_id: str) -> dict:
+        """知识库节点：检索知识库并把片段注入上下文（复用 kb_search）。"""
+        from app.tools.kb import kb_search
+
+        node = node_map[node_id]
+        config = node.get("config", {})
+        kb_id = config.get("kb_id", "")
+        if not kb_id:
+            return {f"__out_{node_id}__": "error: kb_id is required in node config"}
+        query = config.get("query", "") or _prev_output(state, node_id)
+        top_k = int(config.get("top_k", 5) or 5)
+        result = await kb_search(kb_id, query, top_k=top_k)
+        return {f"__out_{node_id}__": str(result)}
+
     node_fn = {
         "input": _input_node,
         "llm": _llm_node,
         "tool": _tool_node,
         "condition": _condition_node,
         "output": _output_node,
+        "skill": _skill_node,
+        "knowledge": _knowledge_node,
     }
 
     node_fns: dict[str, NodeFn] = {}
@@ -210,6 +243,10 @@ async def run_workflow(
         graph_name=graph_json.get("name", "workflow"),
         state=dict(initial_state or {}),
     )
+    # 兜底设置工具会话上下文（幂等：不覆盖调用方已设置的 user/tenant）
+    from app.tools.context import set_tool_context
+    set_tool_context(session_id=instance.instance_id)
+
     _instances[instance.instance_id] = instance
     # FIFO 淘汰：超过最大数量时删除最旧实例
     _instance_order.append(instance.instance_id)

@@ -82,6 +82,10 @@ class Settings(BaseSettings):
     semantic_cache_threshold: float = 0.95
     semantic_cache_prefix_dims: int = 64
 
+    # ── 插件/内部端点鉴权 ──
+    # 与 Go 网关 LLM_GATEWAY_KEY 一致；插件 reload 等内部端点校验 X-API-Key
+    llm_gateway_key: str = ""
+
     # ── 限流 ──
     rate_limit_rpm: int = 60  # requests per minute per tenant
     rate_limit_rps: int = 10  # requests per second per tenant

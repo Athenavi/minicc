@@ -71,6 +71,8 @@ const nodeTypes = [
   { type: 'input', label: '输入', color: '#22c55e', icon: '📥', description: '接收用户输入' },
   { type: 'llm', label: 'LLM', color: '#8b5cf6', icon: '🧠', description: '调用大语言模型' },
   { type: 'tool', label: '工具', color: '#3b82f6', icon: '🔧', description: '执行注册工具' },
+  { type: 'skill', label: '技能', color: '#ec4899', icon: '🎯', description: '调用已安装技能' },
+  { type: 'knowledge', label: '知识库', color: '#14b8a6', icon: '📚', description: '检索知识库片段' },
   { type: 'condition', label: '条件', color: '#f59e0b', icon: '🔀', description: '条件分支判断' },
   { type: 'output', label: '输出', color: '#6b7280', icon: '📤', description: '输出结果' },
 ]
@@ -131,6 +133,11 @@ const editModel = ref('deepseek-chat')
 const editRetries = ref(0)
 const editCondition = ref('')
 const editVariable = ref('')
+const editSkillName = ref('')
+const editSkillParams = ref('')
+const editKbId = ref('')
+const editKbQuery = ref('')
+const editKbTopK = ref(5)
 
 // ── Helper ──
 let nodeCounter = 0
@@ -193,6 +200,11 @@ function onNodeClick(_event: any) {
   editRetries.value = cfg.retries || 0
   editCondition.value = cfg.condition || ''
   editVariable.value = cfg.variable || '$'
+  editSkillName.value = cfg.skill_name || ''
+  editSkillParams.value = cfg.params ? JSON.stringify(cfg.params) : ''
+  editKbId.value = cfg.kb_id || ''
+  editKbQuery.value = cfg.query || ''
+  editKbTopK.value = cfg.top_k || 5
 }
 
 function onPaneClick() {
@@ -216,11 +228,21 @@ function applyNodeConfig() {
       retries: editRetries.value > 0 ? editRetries.value : undefined,
       condition: editCondition.value || undefined,
       variable: editVariable.value || undefined,
+      skill_name: editSkillName.value || undefined,
+      params: parseJSON(editSkillParams.value),
+      kb_id: editKbId.value || undefined,
+      query: editKbQuery.value || undefined,
+      top_k: editKbTopK.value > 0 ? editKbTopK.value : undefined,
     },
   }
 }
 
-watch([editLabel, editSystemPrompt, editPrompt, editUserMessage, editToolName, editModel, editRetries, editCondition, editVariable], () => {
+function parseJSON(s: string): any {
+  if (!s) return undefined
+  try { return JSON.parse(s) } catch { return { input: s } }
+}
+
+watch([editLabel, editSystemPrompt, editPrompt, editUserMessage, editToolName, editModel, editRetries, editCondition, editVariable, editSkillName, editSkillParams, editKbId, editKbQuery, editKbTopK], () => {
   applyNodeConfig()
 })
 
@@ -625,6 +647,30 @@ function statusClass(nodeProps: any): string {
             </div>
           </template>
 
+          <template #node-skill="nodeProps">
+            <div class="custom-node" :class="statusClass(nodeProps)" :style="{ borderColor: '#ec4899' }">
+              <Handle type="target" :position="Position.Top" />
+              <div class="node-header" style="background: #ec489920;"><span>🎯 {{ nodeProps.data?.label || '技能' }}</span></div>
+              <div class="node-body">
+                <span class="node-type-tag">skill</span>
+                <span v-if="nodeProps.data?.config?.skill_name" class="node-detail">{{ nodeProps.data.config.skill_name }}</span>
+              </div>
+              <Handle type="source" :position="Position.Bottom" />
+            </div>
+          </template>
+
+          <template #node-knowledge="nodeProps">
+            <div class="custom-node" :class="statusClass(nodeProps)" :style="{ borderColor: '#14b8a6' }">
+              <Handle type="target" :position="Position.Top" />
+              <div class="node-header" style="background: #14b8a620;"><span>📚 {{ nodeProps.data?.label || '知识库' }}</span></div>
+              <div class="node-body">
+                <span class="node-type-tag">knowledge</span>
+                <span v-if="nodeProps.data?.config?.kb_id" class="node-detail">{{ nodeProps.data.config.kb_id }}</span>
+              </div>
+              <Handle type="source" :position="Position.Bottom" />
+            </div>
+          </template>
+
           <template #node-condition="nodeProps">
             <div class="custom-node" :class="statusClass(nodeProps)" :style="{ borderColor: '#f59e0b' }">
               <Handle type="target" :position="Position.Top" />
@@ -679,6 +725,29 @@ function statusClass(nodeProps: any): string {
               </FormItem>
               <FormItem label="失败重试次数">
                 <InputNumber v-model:value="editRetries" :min="0" :max="5" style="width: 100%" />
+              </FormItem>
+            </template>
+
+            <template v-if="selectedNode.data?.nodeType === 'skill'">
+              <div class="section-divider"></div>
+              <FormItem label="技能名称">
+                <Input v-model:value="editSkillName" placeholder="已安装技能名（如 greeting-summary）" />
+              </FormItem>
+              <FormItem label="参数 JSON">
+                <Input.TextArea v-model:value="editSkillParams" :rows="3" placeholder='{"name": "Alice"}' />
+              </FormItem>
+            </template>
+
+            <template v-if="selectedNode.data?.nodeType === 'knowledge'">
+              <div class="section-divider"></div>
+              <FormItem label="知识库 ID">
+                <Input v-model:value="editKbId" placeholder="kb_id（知识库页面查看）" />
+              </FormItem>
+              <FormItem label="检索问题">
+                <Input.TextArea v-model:value="editKbQuery" :rows="2" placeholder="留空则用上游输出作为检索词" />
+              </FormItem>
+              <FormItem label="返回条数">
+                <InputNumber v-model:value="editKbTopK" :min="1" :max="20" style="width: 100%" />
               </FormItem>
             </template>
 

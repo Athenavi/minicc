@@ -130,7 +130,7 @@ func NewGatewayRouter(
 	installHandler := NewInstallHandler(cfg)
 
 	// Plugins (MCP server config management)
-	pluginHandler := NewPluginHandler(cfg)
+	pluginHandler := NewPluginHandler(cfg, authenticator)
 
 	// Search (no auth)
 	searchHandler := NewSearchHandler()

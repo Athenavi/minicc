@@ -18,7 +18,7 @@ from typing import Any, Optional
 
 from app.gateway.provider import ChatMessage, ChatResponse, ToolCall
 from app.gateway.router import GatewayRouter
-from app.tools.registry import ToolRegistry
+from app.tools.registry import registry, ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -192,16 +192,19 @@ class SubAgent:
                     )
                     messages.append(assistant_msg)
 
-                    # 工具结果消息（简化：返回工具调用信息，不实际执行）
+                    # 工具结果消息（真实执行：走工具注册表沙箱，返回实际结果/错误）
+                    from app.tools.context import set_tool_context
+
+                    set_tool_context(
+                        session_id=context.get("session_id") if isinstance(context, dict) else "",
+                        user_id=tenant_id or "anonymous",
+                        tenant_id=tenant_id or "default",
+                    )
                     for tc in tool_calls:
-                        tool_result = json.dumps({
-                            "status": "dispatched",
-                            "tool": tc["name"],
-                            "arguments": tc["arguments"],
-                        })
+                        tool_result = await self._execute_tool(tc)
                         messages.append(ChatMessage(
                             role="tool",
-                            content=tool_result,
+                            content=json.dumps(tool_result, ensure_ascii=False, default=str),
                             tool_call_id=tc["id"],
                         ))
                     continue
@@ -235,6 +238,19 @@ class SubAgent:
                 duration=time.monotonic() - start_time,
                 error=str(e),
             )
+
+    async def _execute_tool(self, tc: dict[str, Any]) -> dict[str, Any]:
+        """执行一次工具调用（走注册表；含沙箱/SSRF 防护），返回真实结果或错误。"""
+        name = tc.get("name", "")
+        raw_args = tc.get("arguments", "{}")
+        try:
+            args = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
+        except (json.JSONDecodeError, TypeError):
+            args = {"input": str(raw_args)}
+        if not isinstance(args, dict):
+            args = {"input": args}
+        result = await registry.execute(name, args)
+        return {"tool": name, **result}
 
 
 # ── 调度器 ────────────────────────────────────────────────

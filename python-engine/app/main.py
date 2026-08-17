@@ -57,6 +57,24 @@ async def get_key_pool():
     return _key_pool
 
 
+# ── 插件 MCP 连接池（无状态友好：配置存磁盘，连接为可重建缓存） ──
+
+_plugin_pool = None  # MCPClientPool
+
+
+def get_plugin_pool():
+    """获取 MCP 插件连接池（FastAPI Depends / 内部调用）。"""
+    if _plugin_pool is None:
+        raise RuntimeError("Plugin pool not initialized")
+    return _plugin_pool
+
+
+def touch_user(user_id: str) -> None:
+    """标记用户活跃（有会话/工具/Agent 请求时调用），驱动 MCP 轮询范围。"""
+    if _plugin_pool is not None and user_id:
+        _plugin_pool._tracker.touch(user_id)  # noqa: SLF001 — 池内专用入口
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期：启动初始化 + 关闭清理"""
@@ -157,6 +175,15 @@ async def lifespan(app: FastAPI):
     )
     logger.info("LLM Gateway: %s providers", ", ".join(providers.keys()) or "none")
 
+    # ── 3.4. 工具/工作流 gateway 注入（六大互通：对话/agent 可调用工作流） ──
+    from app.tools.graph import bind_gateway as bind_graph_gateway
+    from app.tools.pm import bind_gateway as bind_pm_gateway
+    from app.workflow.tools import bind_gateway as bind_workflow_gateway
+    bind_graph_gateway(_gateway)
+    bind_pm_gateway(_gateway)
+    bind_workflow_gateway(_gateway)
+    logger.info("Tool/Workflow gateways bound")
+
     # ── 3.5. SmartAPIKeyPool ──
     from app.gateway.smart_key_pool import SmartAPIKeyPool
     _key_pool = SmartAPIKeyPool()
@@ -180,13 +207,13 @@ async def lifespan(app: FastAPI):
         limiter = None
     app.state.limiter = limiter
 
-    # ── 5. MCP Plugin System ──
-    from app.mcp.registry import init_mcp
-    import os
-    mcp_config_path = os.getenv("MCP_CONFIG_PATH", os.path.join(".", "workspace", "plugins.json"))
-    _mcp_client = await init_mcp(mcp_config_path)
-    if _mcp_client:
-        logger.info("MCP initialized: %d tools", len(_mcp_client.tools))
+    # ── 5. MCP Plugin System（用户级连接池：25s 轮询活跃用户配置） ──
+    global _plugin_pool
+    from app.plugins.pool import MCPClientPool
+    from app.plugins.store import ActiveTracker, PluginStore
+    _plugin_pool = MCPClientPool(store=PluginStore(), tracker=ActiveTracker())
+    await _plugin_pool.start()
+    logger.info("MCP plugin pool started (poll=%ds)", 25)
 
     # ── 6. 启动 Queue Worker ──
     if _redis is not None:
@@ -231,9 +258,10 @@ async def lifespan(app: FastAPI):
     from app.db import close_pool
     await close_pool()
 
-    # 关闭 MCP
-    if _mcp_client:
-        await _mcp_client.close()
+    # 关闭 MCP 插件池
+    if _plugin_pool:
+        await _plugin_pool.stop()
+        _plugin_pool = None
 
     # 关闭 Gateway
     if _gateway:

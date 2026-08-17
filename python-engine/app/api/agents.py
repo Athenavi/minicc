@@ -43,6 +43,10 @@ async def dispatch_agent(body: AgentDispatchRequest) -> dict[str, Any]:
     - 否则（工具链调用）：回退到内存 registry 的假派发。
     """
     if body.system_prompt.strip():
+        # 标记用户活跃（驱动 MCP 插件轮询范围）
+        from app.main import touch_user
+        touch_user(body.tenant_id)
+
         # 延迟导入：避免 app.main ↔ app.api 循环依赖
         from app.agent.multi_agent import SubAgent
         from app.main import get_gateway
@@ -65,7 +69,11 @@ async def dispatch_agent(body: AgentDispatchRequest) -> dict[str, Any]:
             max_tokens=body.max_tokens or 4096,
             temperature=body.temperature or 0.7,
         )
-        result = await agent.run(task=body.task, tenant_id=body.tenant_id)
+        result = await agent.run(
+            task=body.task,
+            context={"session_id": body.session_id} if body.session_id else None,
+            tenant_id=body.tenant_id,
+        )
         return {
             "success": result.success,
             "output": result.output,

@@ -196,7 +196,7 @@ async def execute_graph(
     except Exception as e:
         logger.warning("workflow instance insert failed: %s", e)
 
-    task = asyncio.create_task(_run_and_store(instance_id, graph_json, gateway, body.initial_state))
+    task = asyncio.create_task(_run_and_store(instance_id, graph_json, gateway, body.initial_state, user_id))
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
 
@@ -208,8 +208,14 @@ async def _run_and_store(
     graph_json: dict,
     gateway: Any,
     initial_state: dict[str, Any],
+    user_id: str = "",
 ) -> None:
     """后台执行工作流并把最终结果写回 workflow_instances。"""
+    # 工具沙箱上下文：create_task 不继承 contextvars，必须在任务内显式设置
+    # （MCP 插件工具/技能等按当前用户过滤，S 安全修复）
+    from app.tools.context import set_tool_context
+    set_tool_context(session_id=instance_id, user_id=user_id or "", tenant_id=user_id or "")
+
     status = "error"
     results_json = "{}"
     error_text = ""

@@ -106,6 +106,7 @@ type Config struct {
 
 	// Plugins
 	PluginsConfigPath string // path to plugins.json (MCP server config)
+	PluginDataDir     string // per-user plugin config root: {PluginDataDir}/{user_id}/plugins.json
 }
 
 func Load() *Config {
@@ -183,6 +184,7 @@ func Load() *Config {
 		PayPalSandbox:     isTruthy(getEnv("PAYPAL_SANDBOX", "")),
 
 		PluginsConfigPath: getEnv("PLUGINS_CONFIG_PATH", "./plugins.json"),
+		PluginDataDir:     getEnv("PLUGIN_DATA_DIR", "./data/plugins"),
 	}
 
 	// JWT_SECRET is required.

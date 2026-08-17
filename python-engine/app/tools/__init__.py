@@ -18,5 +18,6 @@ import app.tools.media  # noqa: F401
 import app.tools.edit_file  # noqa: F401
 import app.tools.glob_tools  # noqa: F401
 import app.tools.git_tools  # noqa: F401
+import app.tools.kb  # noqa: F401
 
 __all__ = ["SystemToolClient", "ToolDiscovery", "ToolRegistry", "registry"]

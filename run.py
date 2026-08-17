@@ -62,6 +62,10 @@ DEFAULT_ENV = {
     "POSTGRES_DSN": "postgres://minicc:minicc@localhost:5432/minicc?sslmode=disable",
     "REDIS_ADDR": "localhost:6379",
     "PYTHON_ENGINE_ADDRESS": "localhost:8000",
+    # 插件 per-user 配置目录：与 Go 网关 PLUGIN_DATA_DIR 指向同一位置
+    "PLUGIN_DATA_DIR": str(BASE_DIR / "data" / "plugins"),
+    # 内部端点共享密钥（Go 网关 LLM_GATEWAY_KEY，插件 reload 等校验）
+    "LLM_GATEWAY_KEY": "",
 }
 
 

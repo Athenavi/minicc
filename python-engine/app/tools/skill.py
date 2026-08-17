@@ -146,30 +146,125 @@ async def skill_discover(url: str = "") -> dict[str, Any]:
     return {"output": f"Available skills ({len(results)})\n" + "\n".join(lines), "count": len(results), "results": results}
 
 
-async def skill_run(name: str, params: str = "{}") -> dict[str, Any]:
-    """执行一个已安装的技能，渲染提示词模板并返回结果"""
+async def skill_run(name: str, params: str | dict = "{}") -> dict[str, Any]:
+    """执行一个已安装的技能。
+
+    支持四种 exec 类型：
+    - prompt：渲染模板后调用 LLM 生成结果
+    - python：渲染代码后在工具沙箱（run_code，AST 静态检查 + tools 命名空间）中执行
+    - shell：渲染命令后在 sandbox（逃逸拦截 + 环境清理）中执行
+    - http：渲染 URL 后经 SSRF 防护抓取内容
+    """
     skill = _store.get(name)
     if not skill:
         return {"error": f"Skill not found: {name}"}
-
-    if skill.exec_type != "prompt":
-        return {"error": f"Unsupported skill type: {skill.exec_type}"}
+    if not skill.enabled:
+        return {"error": f"Skill '{name}' is disabled"}
 
     try:
-        param_dict = json.loads(params) if isinstance(params, str) else params
+        param_dict = json.loads(params) if isinstance(params, str) else (params or {})
     except json.JSONDecodeError:
         param_dict = {"input": params}
+    if not isinstance(param_dict, dict):
+        param_dict = {"input": param_dict}
 
-    # 简单模板渲染：替换 {key} 为参数值
-    source = skill.source
-    for key, value in param_dict.items():
-        source = source.replace("{" + key + "}", str(value))
+    try:
+        if skill.exec_type == "prompt":
+            output = await _run_prompt_skill(skill, param_dict)
+        elif skill.exec_type == "python":
+            output = await _run_python_skill(skill, param_dict)
+        elif skill.exec_type == "shell":
+            output = await _run_shell_skill(skill, param_dict)
+        elif skill.exec_type == "http":
+            output = await _run_http_skill(skill, param_dict)
+        else:
+            return {"error": f"Unsupported skill type: {skill.exec_type}"}
+    except Exception as e:  # noqa: BLE001 — 执行异常以结构化结果返回，便于模型自纠
+        return {"error": f"skill execution failed: {e}"}
 
-    return {
-        "output": source,
-        "skill": name,
-        "rendered": True,
-    }
+    return {"output": output, "skill": name, "exec_type": skill.exec_type}
+
+
+def _render_template(source: str, params: dict[str, Any], parameters: list[dict[str, Any]]) -> str:
+    """渲染模板：先注入参数默认值，再替换 {key} 占位符。"""
+    merged: dict[str, Any] = {}
+    for p in parameters or []:
+        if "default" in p:
+            merged[p.get("name", "")] = p.get("default")
+    merged.update(params or {})
+    rendered = source
+    for key, value in merged.items():
+        rendered = rendered.replace("{" + key + "}", str(value))
+    return rendered
+
+
+async def _run_prompt_skill(skill: SkillDef, params: dict[str, Any]) -> str:
+    """prompt 技能：渲染模板 → LLM 生成。"""
+    from app.main import get_gateway
+
+    try:
+        gateway = await get_gateway()
+    except Exception:  # noqa: BLE001 — 引擎未初始化时明确报错
+        return "error: LLM gateway not initialized"
+    if gateway is None:
+        return "error: LLM gateway not initialized"
+
+    prompt = _render_template(skill.source, params, skill.parameters)
+    messages: list[dict[str, str]] = [{"role": "user", "content": prompt}]
+    text = ""
+    async for chunk in gateway.chat_stream(messages=messages):
+        if chunk.content:
+            text += chunk.content
+    return text or "(empty response)"
+
+
+async def _run_python_skill(skill: SkillDef, params: dict[str, Any]) -> str:
+    """python 技能：渲染代码后在工具沙箱中执行（复用 run_code 的 AST 检查与 tools 命名空间）。"""
+    from app.tools.run_code import run_code
+
+    code = _render_template(skill.source, params, skill.parameters)
+    result = await run_code(code, description=f"skill:{skill.name}")
+    if result.get("isError"):
+        return f"error: {result.get('message', 'execution failed')}"
+    value = result.get("result", result.get("output", ""))
+    if value is None or value == "":
+        logs = (result.get("logs") or "").strip()
+        return logs or "(no output)"
+    return str(value)
+
+
+async def _run_shell_skill(skill: SkillDef, params: dict[str, Any]) -> str:
+    """shell 技能：渲染命令后在 sandbox 中执行（逃逸拦截 + 环境清理）。"""
+    from app.tools.sandbox import run_in_sandbox
+
+    command = _render_template(skill.source, params, skill.parameters)
+    result = await run_in_sandbox(command)
+    if result.get("error"):
+        return f"error: {result['error']}"
+    stdout = (result.get("stdout") or "").strip()
+    stderr = (result.get("stderr") or "").strip()
+    parts = []
+    if stdout:
+        parts.append(stdout)
+    if stderr:
+        parts.append(f"[stderr] {stderr}")
+    return "\n".join(parts) or "(empty output)"
+
+
+async def _run_http_skill(skill: SkillDef, params: dict[str, Any]) -> str:
+    """http 技能：渲染 URL 后经 SSRF 防护抓取内容。"""
+    from app.tools.ssrf import assert_safe_url
+
+    url = _render_template(skill.source, params, skill.parameters).strip()
+    if not url.startswith(("http://", "https://")):
+        return f"error: invalid url: {url}"
+    assert_safe_url(url)
+    import httpx
+
+    async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+        resp = await client.get(url)
+        text = resp.text[:20000]
+    return f"[HTTP {resp.status_code}]\n{text}"
 
 
 registry.register(

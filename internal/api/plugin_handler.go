@@ -9,18 +9,23 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/athenavi/minicc/config"
+	"github.com/athenavi/minicc/internal/auth"
 )
 
-// PluginHandler manages MCP plugin configurations stored in plugins.json.
+// PluginHandler manages per-user MCP plugin configurations.
+// 配置存储：{PluginDataDir}/{user_id}/plugins.json（用户级隔离，S 安全修复：
+// 原实现全局单文件，任何登录用户都可读写/修改其他用户的插件配置）。
 type PluginHandler struct {
-	cfg        *config.Config
-	configPath string
-	mu         sync.Mutex
+	cfg           *config.Config
+	authenticator *auth.Authenticator
+	dataDir       string
+	mu            sync.Mutex
 }
 
 // MCPPlugin represents an MCP server configuration entry.
@@ -39,20 +44,38 @@ type pluginsFile struct {
 	MCPServers []MCPPlugin `json:"mcp_servers"`
 }
 
-func NewPluginHandler(cfg *config.Config) *PluginHandler {
-	path := cfg.PluginsConfigPath
-	if path == "" {
-		path = filepath.Join(".", "plugins.json")
+func NewPluginHandler(cfg *config.Config, authenticator *auth.Authenticator) *PluginHandler {
+	dir := cfg.PluginDataDir
+	if dir == "" {
+		dir = filepath.Join(".", "data", "plugins")
 	}
-	return &PluginHandler{cfg: cfg, configPath: path}
+	return &PluginHandler{cfg: cfg, authenticator: authenticator, dataDir: dir}
+}
+
+// userPluginPath 返回当前用户的插件配置文件路径。
+func (h *PluginHandler) userPluginPath(userID string) string {
+	return filepath.Join(h.dataDir, userID, "plugins.json")
+}
+
+// resolveUser 从请求认证信息取当前用户 ID（authMW 已保证登录）。
+func (h *PluginHandler) resolveUser(r *http.Request) string {
+	claims := getAuthClaims(r, h.authenticator)
+	if claims != nil {
+		return claims.UserID
+	}
+	return ""
 }
 
 // ── List ──
 
 func (h *PluginHandler) List(w http.ResponseWriter, r *http.Request) {
-	plugins, err := h.readPlugins()
+	userID := h.resolveUser(r)
+	if userID == "" {
+		Unauthorized(w, "auth required")
+		return
+	}
+	plugins, err := h.readPlugins(userID)
 	if err != nil {
-		// File not found or parse error — return empty list
 		if os.IsNotExist(err) {
 			OK(w, []MCPPlugin{})
 			return
@@ -62,22 +85,29 @@ func (h *PluginHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ensure each plugin has a status
 	for i := range plugins {
 		if plugins[i].Status == "" {
 			plugins[i].Status = "active"
 		}
 	}
-
 	OK(w, plugins)
 }
 
 // ── Install ──
 
 func (h *PluginHandler) Install(w http.ResponseWriter, r *http.Request) {
+	userID := h.resolveUser(r)
+	if userID == "" {
+		Unauthorized(w, "auth required")
+		return
+	}
 	name := r.PathValue("name")
 	if name == "" {
 		BadRequest(w, "plugin name is required")
+		return
+	}
+	if !validPluginName(name) {
+		BadRequest(w, "invalid plugin name")
 		return
 	}
 
@@ -100,7 +130,7 @@ func (h *PluginHandler) Install(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	plugins, err := h.readPlugins()
+	plugins, err := h.readPlugins(userID)
 	if err != nil && !os.IsNotExist(err) {
 		slog.Error("plugin install: read plugins.json", "error", err)
 		InternalError(w, "failed to read plugins config")
@@ -110,7 +140,6 @@ func (h *PluginHandler) Install(w http.ResponseWriter, r *http.Request) {
 		plugins = []MCPPlugin{}
 	}
 
-	// Check for duplicate
 	for _, p := range plugins {
 		if p.Name == name {
 			BadRequest(w, "plugin already installed: "+name)
@@ -119,29 +148,29 @@ func (h *PluginHandler) Install(w http.ResponseWriter, r *http.Request) {
 	}
 
 	plugin := MCPPlugin{
-		Name:        name,
-		Command:     body.Command,
-		Args:        body.Args,
-		Env:         body.Env,
-		Description: body.Description,
-		Version:     body.Version,
-		Status:      "active",
+		Name: name, Command: body.Command, Args: body.Args, Env: body.Env,
+		Description: body.Description, Version: body.Version, Status: "active",
 	}
 	plugins = append(plugins, plugin)
 
-	if err := h.writePlugins(plugins); err != nil {
+	if err := h.writePlugins(userID, plugins); err != nil {
 		slog.Error("plugin install: write plugins.json", "error", err)
 		InternalError(w, "failed to save plugins config")
 		return
 	}
 
-	slog.Info("plugin installed", "name", name, "command", body.Command)
+	slog.Info("plugin installed", "user", userID, "name", name, "command", body.Command)
 	OK(w, plugin)
 }
 
 // ── Uninstall ──
 
 func (h *PluginHandler) Uninstall(w http.ResponseWriter, r *http.Request) {
+	userID := h.resolveUser(r)
+	if userID == "" {
+		Unauthorized(w, "auth required")
+		return
+	}
 	name := r.PathValue("name")
 	if name == "" {
 		BadRequest(w, "plugin name is required")
@@ -151,7 +180,7 @@ func (h *PluginHandler) Uninstall(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	plugins, err := h.readPlugins()
+	plugins, err := h.readPlugins(userID)
 	if err != nil {
 		if os.IsNotExist(err) {
 			NotFound(w, "plugin not found: "+name)
@@ -176,49 +205,24 @@ func (h *PluginHandler) Uninstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.writePlugins(updated); err != nil {
+	if err := h.writePlugins(userID, updated); err != nil {
 		slog.Error("plugin uninstall: write plugins.json", "error", err)
 		InternalError(w, "failed to save plugins config")
 		return
 	}
 
-	slog.Info("plugin uninstalled", "name", name)
+	slog.Info("plugin uninstalled", "user", userID, "name", name)
 	OK(w, map[string]string{"status": "deleted", "name": name})
 }
 
-// ── Internal helpers ──
+// ── Update ──
 
-func (h *PluginHandler) readPlugins() ([]MCPPlugin, error) {
-	data, err := os.ReadFile(h.configPath)
-	if err != nil {
-		return nil, err
-	}
-
-	var pf pluginsFile
-	if err := json.Unmarshal(data, &pf); err != nil {
-		return nil, err
-	}
-	if pf.MCPServers == nil {
-		return []MCPPlugin{}, nil
-	}
-	return pf.MCPServers, nil
-}
-
-func (h *PluginHandler) writePlugins(plugins []MCPPlugin) error {
-	if plugins == nil {
-		plugins = []MCPPlugin{}
-	}
-	pf := pluginsFile{MCPServers: plugins}
-	data, err := json.MarshalIndent(pf, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(h.configPath, data, 0644)
-}
-
-// Update 更新插件配置或启停状态（PUT /v1/plugins/{name}）。
-// 字段为空/未提供则不修改；Status 仅接受 active / inactive。
 func (h *PluginHandler) Update(w http.ResponseWriter, r *http.Request) {
+	userID := h.resolveUser(r)
+	if userID == "" {
+		Unauthorized(w, "auth required")
+		return
+	}
 	name := r.PathValue("name")
 	if name == "" {
 		BadRequest(w, "plugin name is required")
@@ -249,7 +253,7 @@ func (h *PluginHandler) Update(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	plugins, err := h.readPlugins()
+	plugins, err := h.readPlugins(userID)
 	if err != nil {
 		InternalError(w, "failed to read plugins config")
 		return
@@ -288,7 +292,7 @@ func (h *PluginHandler) Update(w http.ResponseWriter, r *http.Request) {
 		NotFound(w, "plugin not found: "+name)
 		return
 	}
-	if err := h.writePlugins(plugins); err != nil {
+	if err := h.writePlugins(userID, plugins); err != nil {
 		InternalError(w, "failed to save plugins config")
 		return
 	}
@@ -301,16 +305,21 @@ func (h *PluginHandler) Update(w http.ResponseWriter, r *http.Request) {
 	OK(w, map[string]string{"name": name, "updated": "true"})
 }
 
-// Test 探测 MCP 服务器可连接性（POST /v1/plugins/{name}/test）。
-// stdio MCP：启动 command 并发送 JSON-RPC initialize 握手，收到响应即通。
+// ── Test ──
+
 func (h *PluginHandler) Test(w http.ResponseWriter, r *http.Request) {
+	userID := h.resolveUser(r)
+	if userID == "" {
+		Unauthorized(w, "auth required")
+		return
+	}
 	name := r.PathValue("name")
 	if name == "" {
 		BadRequest(w, "plugin name is required")
 		return
 	}
 
-	plugins, err := h.readPlugins()
+	plugins, err := h.readPlugins(userID)
 	if err != nil {
 		InternalError(w, "failed to read plugins config")
 		return
@@ -355,7 +364,6 @@ func (h *PluginHandler) Test(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = cmd.Process.Kill() }()
 
-	// MCP initialize（JSON-RPC 2.0 over stdio）
 	req := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"minicc","version":"1.0"}}}`
 	if _, err := stdin.Write([]byte(req + "\n")); err != nil {
 		OK(w, map[string]interface{}{
@@ -396,3 +404,41 @@ func (h *PluginHandler) Test(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 }
+
+// ── Internal helpers ──
+
+func (h *PluginHandler) readPlugins(userID string) ([]MCPPlugin, error) {
+	data, err := os.ReadFile(h.userPluginPath(userID))
+	if err != nil {
+		return nil, err
+	}
+	var pf pluginsFile
+	if err := json.Unmarshal(data, &pf); err != nil {
+		return nil, err
+	}
+	if pf.MCPServers == nil {
+		return []MCPPlugin{}, nil
+	}
+	return pf.MCPServers, nil
+}
+
+func (h *PluginHandler) writePlugins(userID string, plugins []MCPPlugin) error {
+	if plugins == nil {
+		plugins = []MCPPlugin{}
+	}
+	path := h.userPluginPath(userID)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	pf := pluginsFile{MCPServers: plugins}
+	data, err := json.MarshalIndent(pf, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
+var validPluginName = func() func(string) bool {
+	re := regexp.MustCompile(`^[a-zA-Z0-9_.-]{1,64}$`)
+	return re.MatchString
+}()
