@@ -25,7 +25,6 @@ import {
   LogoutOutlined,
   TeamOutlined,
   GlobalOutlined,
-  RiFaOutlined,
 } from '@ant-design/icons-vue'
 
 const router = useRouter()
@@ -46,7 +45,7 @@ const menuItems: any[] = [
   { key: '/admin/tenants', label: '租户管理', icon: () => h(TeamOutlined) },
   { key: '/admin/api-keys', label: 'API Key 管理', icon: () => h(KeyOutlined) },
   { key: '/admin/domains', label: '域名管理', icon: () => h(GlobalOutlined) },
-  { key: '/admin/redis', label: 'Redis 管理', icon: () => h(RiFaOutlined) },
+  { key: '/admin/redis', label: 'Redis 管理', icon: () => h(DatabaseOutlined) },
   { key: '/admin/database', label: '数据库管理', icon: () => h(DatabaseOutlined) },
   { key: '/admin/queue', label: '队列监控', icon: () => h(OrderedListOutlined) },
   { key: '/admin/cache', label: '缓存监控', icon: () => h(DatabaseOutlined) },

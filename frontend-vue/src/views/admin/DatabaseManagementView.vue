@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, h, onMounted } from 'vue'
 import { Card, Table, Button, Space, Tag, Input, Modal, Form, InputNumber, Alert, Progress, Descriptions } from 'ant-design-vue'
-import { PlusOutlined, ReloadOutlined, DatabaseOutlined, BackupOutlined, SearchOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, ReloadOutlined, DatabaseOutlined, DatabaseTwoTone, SearchOutlined } from '@ant-design/icons-vue'
 import { api } from '../../api'
 
 // State
@@ -174,8 +174,8 @@ onMounted(() => {
             customRender: ({ record }: any) => (
               <Space>
                 <Button size="small" icon={<MonitorOutlined />} onClick={() => getStatus(record.id)}>监控</Button>
-                <Button size="small" icon={<SearchOutlined />} onClick={() => { selectedDB.value = record; queryModalVisible.value = true; }}>查询</Button>
-                <Button size="small" icon={<BackupOutlined />} onClick={() => createBackup(`手动备份 - ${record.name}`)}>备份</Button>
+                <Button size="small" icon={h(SearchOutlined)} onClick={() => { selectedDB.value = record; queryModalVisible.value = true; }}>查询</Button>
+                <Button size="small" icon={h(DatabaseTwoTone)} onClick={() => createBackup(`手动备份 - ${record.name}`)}>备份</Button>
               </Space>
             )
           }
@@ -227,9 +227,10 @@ onMounted(() => {
       width={900}
       onClose={() => selectedDB.value = null}
     >
-      <Tabs>
-        <!-- Overview Tab -->
-        <TabPane tab="概览" key="overview">
+      <div v-if="selectedDB">
+        <Tabs default-active-key="overview">
+          <!-- Overview Tab -->
+          <TabPane tab="概览" key="overview">
           <Space direction="vertical" style="width: 100%" size="large">
             <Card>
               <Descriptions column="2" bordered>
@@ -261,10 +262,10 @@ onMounted(() => {
               </Space>
             </Card>
           </Space>
-        </TabPane>
+          </TabPane>
 
-        <!-- Performance Tab -->
-        <TabPane tab="性能指标" key="performance">
+          <!-- Performance Tab -->
+          <TabPane tab="性能指标" key="performance">
           <Space direction="vertical" style="width: 100%" size="large">
             <Card title="查询统计">
               <Descriptions column="2" bordered>
@@ -282,7 +283,7 @@ onMounted(() => {
                   :percent="(statusData.performance?.cache_hit_rate || 0).toFixed(2)"
                   format={(percent: number) => `${percent}%`}
                 />
-                <p style="text-align: center; color: getCacheHitRateColor(statusData.performance?.cache_hit_rate) ">
+                <p style="text-align: center; color: getCacheHitRateColor(statusData.performance?.cache_hit_rate) + '>'">
                   缓存命中率
                 </p>
               </Space>
@@ -296,10 +297,10 @@ onMounted(() => {
               </Descriptions>
             </Card>
           </Space>
-        </TabPane>
+          </TabPane>
 
-        <!-- Optimization Tab -->
-        <TabPane tab="优化操作" key="optimization">
+          <!-- Optimization Tab -->
+          <TabPane tab="优化操作" key="optimization">
           <Alert message="以下操作将直接影响数据库性能,请谨慎使用" type="warning" showIcon style="margin-bottom: 16px" />
           <Space direction="vertical" style="width: 100%">
             <Button block @click="optimize('vacuum')">
@@ -313,7 +314,7 @@ onMounted(() => {
             </Button>
           </Space>
         </TabPane>
-      </Tabs>
+            </Tabs>
     </Modal>
 
     <!-- Query Modal -->
