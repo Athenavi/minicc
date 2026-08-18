@@ -775,11 +775,13 @@ def _setup_middleware_early(app: FastAPI) -> None:
     from app.middleware.error_handler import ErrorHandlerMiddleware
     from app.middleware.metrics import MetricsMiddleware
     from app.middleware.request_context import RequestContextMiddleware
+    from app.middleware.privacy_middleware import PrivacyModeMiddleware
 
-    # 执行顺序: RequestContext → Auth → RateLimit → Metrics → ErrorHandler → handler
+    # 执行顺序: PrivacyMode → RequestContext → Auth → RateLimit → Metrics → ErrorHandler → handler
     app.add_middleware(ErrorHandlerMiddleware)
     app.add_middleware(MetricsMiddleware)
     app.add_middleware(RequestContextMiddleware)
+    app.add_middleware(PrivacyModeMiddleware)
 
 
 if __name__ == "__main__":

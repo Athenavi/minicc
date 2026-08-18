@@ -45,6 +45,7 @@ class SubTask:
     capability_id: str  # 匹配到的能力 ID
     parameters: dict[str, Any] = field(default_factory=dict)
     dependencies: list[str] = field(default_factory=list)  # 依赖的其他 subtask_id
+    tags: list[str] = field(default_factory=list)  # 意图关键词 (能力语义匹配用)
     workstation_type: Optional[WorkstationType] = None
     status: str = "pending"  # pending/running/completed/failed
 

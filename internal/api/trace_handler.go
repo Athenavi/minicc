@@ -44,9 +44,9 @@ func NewTraceHandler(rdb db.RedisClient) *TraceHandler {
 // GetTrace retrieves the complete call chain for a trace_id.
 // GET /v1/traces/{trace_id}
 func (h *TraceHandler) GetTrace(w http.ResponseWriter, r *http.Request) {
-	claims := getAuthClaims(r, nil)
+	claims := auth.GetClaims(r.Context())
 	if claims == nil {
-		Unauthorized(w, "authentication required")
+		Unauthorized(w, ErrAuthRequired)
 		return
 	}
 
@@ -111,9 +111,9 @@ func (h *TraceHandler) GetTrace(w http.ResponseWriter, r *http.Request) {
 // ListTraces lists recent trace IDs for a tenant.
 // GET /v1/traces?limit=20&tenant_id=xxx
 func (h *TraceHandler) ListTraces(w http.ResponseWriter, r *http.Request) {
-	claims := getAuthClaims(r, nil)
+	claims := auth.GetClaims(r.Context())
 	if claims == nil {
-		Unauthorized(w, "authentication required")
+		Unauthorized(w, ErrAuthRequired)
 		return
 	}
 
@@ -143,14 +143,17 @@ func (h *TraceHandler) ListTraces(w http.ResponseWriter, r *http.Request) {
 	traceMap := make(map[string]*TraceSpan)
 	for _, entry := range rawEntries {
 		var span TraceSpan
-		if err := json.Unmarshal(entry.Values["metadata"], &span.Metadata); err != nil {
+		metaRaw, _ := entry.Values["metadata"].(string)
+		if err := json.Unmarshal([]byte(metaRaw), &span.Metadata); err != nil {
 			continue
 		}
 		
-		span.TraceID = entry.Values["trace_id"]
-		span.SpanName = entry.Values["span_name"]
-		span.DurationMs, _ = strconv.Atoi(entry.Values["duration_ms"])
-		span.Timestamp, _ = time.Parse(time.RFC3339, entry.Values["timestamp"])
+		span.TraceID, _ = entry.Values["trace_id"].(string)
+		span.SpanName, _ = entry.Values["span_name"].(string)
+		durationMs, _ := entry.Values["duration_ms"].(string)
+		span.DurationMs, _ = strconv.Atoi(durationMs)
+		timestamp, _ := entry.Values["timestamp"].(string)
+		span.Timestamp, _ = time.Parse(time.RFC3339, timestamp)
 		
 		// Only keep the first occurrence of each trace_id (latest)
 		if _, exists := traceMap[span.TraceID]; !exists {
@@ -203,20 +206,24 @@ func (h *TraceHandler) queryTraces(traceID, tenantID string) ([]TraceSpan, error
 	// Filter by trace_id and build ordered list
 	var spans []TraceSpan
 	for _, entry := range entries {
-		if entry.Values["trace_id"] != traceID {
+		entryTraceID, _ := entry.Values["trace_id"].(string)
+		if entryTraceID != traceID {
 			continue
 		}
 
 		var span TraceSpan
-		if err := json.Unmarshal([]byte(entry.Values["metadata"]), &span.Metadata); err != nil {
+		metaRaw, _ := entry.Values["metadata"].(string)
+		if err := json.Unmarshal([]byte(metaRaw), &span.Metadata); err != nil {
 			continue
 		}
 
-		span.TraceID = entry.Values["trace_id"]
-		span.SpanName = entry.Values["span_name"]
-		span.DurationMs, _ = strconv.Atoi(entry.Values["duration_ms"])
-		span.TenantID = entry.Values["tenant_id"]
-		span.Timestamp, _ = time.Parse(time.RFC3339, entry.Values["timestamp"])
+		span.TraceID = entryTraceID
+		span.SpanName, _ = entry.Values["span_name"].(string)
+		durationMs, _ := entry.Values["duration_ms"].(string)
+		span.DurationMs, _ = strconv.Atoi(durationMs)
+		span.TenantID, _ = entry.Values["tenant_id"].(string)
+		timestamp, _ := entry.Values["timestamp"].(string)
+		span.Timestamp, _ = time.Parse(time.RFC3339, timestamp)
 		
 		spans = append(spans, span)
 	}

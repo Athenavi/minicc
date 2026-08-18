@@ -56,7 +56,8 @@ async def test_grep_files_returns_matches():
 
 @pytest.mark.asyncio
 async def test_shell_exec_echo():
-    result = await registry.execute("shell_exec", {"command": "echo ok"})
+    # 使用 python -c 替代 echo（echo 是 shell 内建命令，create_subprocess_exec 无法直接执行）
+    result = await registry.execute("shell_exec", {"command": "python -c \"print('ok')\""})
     assert result.get("exit_code") == 0
     assert "ok" in result.get("stdout", "")
 

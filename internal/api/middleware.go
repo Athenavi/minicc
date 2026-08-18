@@ -139,7 +139,7 @@ func SecurityHeadersMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' http://localhost:3000 http://localhost:8080 ws://localhost:8080; font-src 'self' https://fonts.gstatic.com; frame-ancestors 'none'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' http://localhost:3000 http://localhost:8080 ws://localhost:8080; font-src 'self' https://fonts.gstatic.com; frame-ancestors 'none'")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
@@ -171,23 +171,21 @@ func AuthMiddleware(a *auth.Authenticator) func(http.Handler) http.Handler {
 			if tokenStr == "" {
 				if key := r.Header.Get("X-API-Key"); key != "" {
 					// Validate API key against PostgreSQL
-					if db.Pool != nil {
-						var userID, role string
-						keyHash := sha256.Sum256([]byte(key))
-						err := db.ReadPool().QueryRow(r.Context(),
-							`SELECT u.id, u.role FROM users u
-							 JOIN api_keys ak ON ak.user_id = u.id
-							 WHERE ak.key_hash = $1`, hex.EncodeToString(keyHash[:])).Scan(&userID, &role)
-						if err == nil {
-							claims := &auth.Claims{
-								UserID: userID,
-								Role:   role,
-								Perms:  auth.RolePermissions[role],
-							}
-							ctx := auth.WithClaims(r.Context(), claims)
-							next.ServeHTTP(w, r.WithContext(ctx))
-							return
+					var userID, role string
+					keyHash := sha256.Sum256([]byte(key))
+					err := db.ReadPool().QueryRow(r.Context(),
+						`SELECT u.id, u.role FROM users u
+						 JOIN api_keys ak ON ak.user_id = u.id
+						 WHERE ak.key_hash = $1`, hex.EncodeToString(keyHash[:])).Scan(&userID, &role)
+					if err == nil {
+						claims := &auth.Claims{
+							UserID: userID,
+							Role:   role,
+							Perms:  auth.RolePermissions[role],
 						}
+						ctx := auth.WithClaims(r.Context(), claims)
+						next.ServeHTTP(w, r.WithContext(ctx))
+						return
 					}
 					Unauthorized(w, "invalid API key")
 					return
@@ -207,7 +205,10 @@ func AuthMiddleware(a *auth.Authenticator) func(http.Handler) http.Handler {
 
 			// ── JWT 黑名单检查（登出后的 token 立即失效）──
 			if claims.ID != "" && db.Redis != nil {
-				blacklisted, _ := db.Redis.Exists(r.Context(), "jwt:blacklist:"+claims.ID).Result()
+				blacklisted, err := db.Redis.Exists(r.Context(), "jwt:blacklist:"+claims.ID).Result()
+				if err != nil {
+					slog.Warn("jwt blacklist check failed", "error", err)
+				}
 				if blacklisted > 0 {
 					Unauthorized(w, "token has been revoked")
 					return

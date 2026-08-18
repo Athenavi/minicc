@@ -129,31 +129,16 @@ func (r *DatabaseRouter) Read() *pgxpool.Pool {
 	return r.readPools[idx]
 }
 
-// ReadPreferred returns a healthy replica pool.
-// Falls back to primary if no healthy replicas are available.
+// ReadPreferred returns a replica pool using round-robin load balancing.
+// Falls back to primary if no replicas are available.
+// Relies on pgx pool's built-in health check instead of per-request Ping.
 func (r *DatabaseRouter) ReadPreferred() *pgxpool.Pool {
 	if len(r.readPools) == 0 {
 		return r.writePool
 	}
 
-	// Try each pool in round-robin order
-	startIdx := r.next.Add(1)
-	for i := 0; i < len(r.readPools); i++ {
-		idx := (startIdx + uint64(i)) % uint64(len(r.readPools))
-		pool := r.readPools[idx]
-
-		// Quick health check
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		if err := pool.Ping(ctx); err == nil {
-			cancel()
-			return pool
-		}
-		cancel()
-	}
-
-	// All replicas unhealthy, fall back to primary
-	slog.Warn("all read pools unhealthy, falling back to write pool")
-	return r.writePool
+	idx := r.next.Add(1) % uint64(len(r.readPools))
+	return r.readPools[idx]
 }
 
 // Close closes all database pools.

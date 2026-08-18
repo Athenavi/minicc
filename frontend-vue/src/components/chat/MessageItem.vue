@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import MarkdownIt from 'markdown-it'
+import DOMPurify from 'dompurify'
 import 'katex/dist/katex.min.css'
 import texmath from 'markdown-it-texmath'
 import katex from 'katex'
@@ -63,7 +64,11 @@ function renderMarkdown(src: string): string {
   if (hit !== undefined) return hit
   let out: string
   try {
-    out = md.render(src)
+    out = DOMPurify.sanitize(md.render(src), {
+      ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'code', 'pre', 'ul', 'ol', 'li', 'a', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'span', 'div', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'hr', 'del', 'sup', 'sub', 'img', 'button'],
+      ALLOWED_ATTR: ['href', 'target', 'rel', 'class', 'style', 'src', 'alt', 'loading', 'decoding', 'data-code'],
+      ALLOW_DATA_ATTR: true,
+    })
   } catch {
     out = md.utils.escapeHtml(src)
   }

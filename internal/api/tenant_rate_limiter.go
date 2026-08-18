@@ -1,12 +1,12 @@
 package api
 
 import (
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/athenavi/minicc/internal/auth"
 	"github.com/athenavi/minicc/internal/db"
 )
 
@@ -81,9 +81,9 @@ func (rl *TenantRateLimiter) ClearExpired() {
 // Middleware returns an HTTP middleware that enforces per-tenant rate limits.
 func (rl *TenantRateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		claims := getAuthClaims(r, nil)
+		claims := auth.GetClaims(r.Context())
 		if claims == nil {
-			Unauthorized(w, "authentication required")
+			Unauthorized(w, ErrAuthRequired)
 			return
 		}
 		
@@ -99,7 +99,7 @@ func (rl *TenantRateLimiter) Middleware(next http.Handler) http.Handler {
 		if !allowed {
 			slog.Warn("rate limit exceeded", "resource", resource, "tenant", tenantID, "retry_after", retryAfter)
 			w.Header().Set("Retry-After", formatFloat(retryAfter))
-			RateLimited(w, "rate limit exceeded for this resource")
+			TooManyRequests(w)
 			return
 		}
 		

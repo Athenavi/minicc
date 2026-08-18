@@ -229,12 +229,10 @@ func (h *AdminHandler) GetPerformance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 测量 DB 延迟
-	if db.Pool != nil {
-		ctx := r.Context()
-		start := time.Now()
-		db.Pool.Ping(ctx)
-		stats.Gateway.DBLatencyMs = float64(time.Since(start).Microseconds()) / 1000
-	}
+	ctx := r.Context()
+	start := time.Now()
+	db.Pool.Ping(ctx)
+	stats.Gateway.DBLatencyMs = float64(time.Since(start).Microseconds()) / 1000
 
 	OK(w, stats)
 }
@@ -282,8 +280,7 @@ func (h *AdminHandler) AddApiKey(w http.ResponseWriter, r *http.Request) {
 	}
 	var resp interface{}
 	if err := h.pythonClient.PostJSON(r.Context(), "/v1/admin/api-keys", body, &resp); err != nil {
-		slog.Error("add api key proxy error", "error", err)
-		InternalError(w, "python engine error")
+		logAndRespond(w, err, http.StatusInternalServerError, "python engine error")
 		return
 	}
 	OK(w, resp)
@@ -325,7 +322,7 @@ func (h *AdminHandler) SaveSettings(w http.ResponseWriter, r *http.Request) {
 		Config   map[string]interface{} `json:"config"`
 	}
 	if err := DecodeJSON(w, r, &body); err != nil {
-		BadRequest(w, "invalid request body")
+		BadRequest(w, ErrInvalidReq)
 		return
 	}
 
@@ -354,7 +351,7 @@ func (h *AdminHandler) SaveSettings(w http.ResponseWriter, r *http.Request) {
 	// Marshal config to JSON
 	configJSON, err := json.Marshal(body.Config)
 	if err != nil {
-		InternalError(w, "failed to marshal config: "+err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "failed to marshal config")
 		return
 	}
 

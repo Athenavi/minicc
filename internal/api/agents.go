@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -27,7 +26,14 @@ type AgentHandler struct {
 
 func NewAgentHandler(a *auth.Authenticator, pc *engine.PythonClient) *AgentHandler {
 	h := &AgentHandler{authenticator: a, pythonClient: pc}
-	go h.seedPresetAgents()
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Warn("seed preset agents failed", "panic", r)
+			}
+		}()
+		h.seedPresetAgents()
+	}()
 	return h
 }
 
@@ -70,9 +76,6 @@ type presetAgent struct {
 }
 
 func (h *AgentHandler) seedPresetAgents() {
-	if db.Pool == nil {
-		return
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -124,12 +127,17 @@ func (h *AgentHandler) seedPresetAgents() {
 	}
 
 	for _, p := range presets {
+		agentID, err := id.UUID()
+		if err != nil {
+			slog.Warn("seed preset agent: generate id", "name", p.name, "error", err)
+			continue
+		}
 		toolsJSON, _ := json.Marshal(p.tools)
 		llmJSON, _ := json.Marshal(p.llm)
 		if _, err := db.Pool.Exec(ctx,
 			`INSERT INTO agents (id, tenant_id, name, description, system_prompt, tools, llm_config, max_turns, timeout_seconds, enabled)
 			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)`,
-			id.UUID(), session.DefaultTenantID, p.name, p.description, p.prompt,
+			agentID, session.DefaultTenantID, p.name, p.description, p.prompt,
 			string(toolsJSON), string(llmJSON), p.turns, 120); err != nil {
 			slog.Warn("seed preset agent", "name", p.name, "error", err)
 		}
@@ -140,15 +148,11 @@ func (h *AgentHandler) seedPresetAgents() {
 
 // List 返回全部 Agent（按创建时间倒序）。
 func (h *AgentHandler) List(w http.ResponseWriter, r *http.Request) {
-	if db.Pool == nil {
-		OK(w, []Agent{})
-		return
-	}
 	rows, err := db.Pool.Query(r.Context(),
 		`SELECT id::text, name, COALESCE(description,''), COALESCE(system_prompt,''), COALESCE(tools,'[]'::jsonb), COALESCE(llm_config,'{}'::jsonb), max_turns, timeout_seconds, enabled, created_at, updated_at
 		 FROM agents ORDER BY created_at DESC`)
 	if err != nil {
-		InternalError(w, "list agents: "+err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "list agents failed")
 		return
 	}
 	defer rows.Close()
@@ -178,10 +182,6 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "name is required")
 		return
 	}
-	if db.Pool == nil {
-		InternalError(w, "database not available")
-		return
-	}
 
 	toolsJSON := body.Tools
 	if len(toolsJSON) == 0 || string(toolsJSON) == "null" {
@@ -198,14 +198,18 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		body.TimeoutSeconds = 120
 	}
 
-	id := id.UUID()
-	_, err := db.Pool.Exec(r.Context(),
+	id, err := id.UUID()
+	if err != nil {
+		logAndRespond(w, err, http.StatusInternalServerError, "generate id failed")
+		return
+	}
+	_, err = db.Pool.Exec(r.Context(),
 		`INSERT INTO agents (id, tenant_id, name, description, system_prompt, tools, llm_config, max_turns, timeout_seconds, enabled)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 		id, session.DefaultTenantID, body.Name, body.Description, body.SystemPrompt,
 		string(toolsJSON), string(llmJSON), body.MaxTurns, body.TimeoutSeconds, body.Enabled)
 	if err != nil {
-		InternalError(w, "create agent: "+err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "create agent failed")
 		return
 	}
 	body.ID = id
@@ -238,15 +242,11 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	var body Agent
 	if err := DecodeJSON(w, r, &body); err != nil {
-		BadRequest(w, "invalid request")
+		BadRequest(w, ErrInvalidReq)
 		return
 	}
-	if db.Pool == nil {
-		InternalError(w, "database not available")
-		return
-	}
-
-	// 动态 SET：非零字段才更新（避免把空值当"清除"）
+	
+	// 动态 SET：非零字段才更新（避免把空值当“清除”）
 	sets := []string{}
 	args := []any{}
 	push := func(expr string, v any) {
@@ -281,7 +281,7 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, err := db.Pool.Exec(r.Context(),
 		`UPDATE agents SET `+joinComma(sets)+`, updated_at = NOW() WHERE id = $`+itoa(len(args)), args...); err != nil {
-		InternalError(w, "update agent: "+err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "update agent failed")
 		return
 	}
 	a, err := h.queryAgent(r, agentID)
@@ -299,11 +299,9 @@ func (h *AgentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "id is required")
 		return
 	}
-	if db.Pool != nil {
-		if _, err := db.Pool.Exec(r.Context(), `DELETE FROM agents WHERE id = $1`, agentID); err != nil {
-			InternalError(w, "delete agent: "+err.Error())
-			return
-		}
+	if _, err := db.Pool.Exec(r.Context(), `DELETE FROM agents WHERE id = $1`, agentID); err != nil {
+		logAndRespond(w, err, http.StatusInternalServerError, "delete agent failed")
+		return
 	}
 	OK(w, map[string]string{"status": "deleted"})
 }
@@ -317,25 +315,17 @@ func (h *AgentHandler) Run(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "id is required")
 		return
 	}
-	claims := getAuthClaims(r, h.authenticator)
-	if claims == nil {
-		Unauthorized(w, "authentication required")
-		return
-	}
+	claims := auth.GetClaims(r.Context())
 	var body struct {
 		Task string `json:"task"`
 	}
 	if err := DecodeJSON(w, r, &body); err != nil {
-		BadRequest(w, "invalid request")
+		BadRequest(w, ErrInvalidReq)
 		return
 	}
 	body.Task = trimSpace(body.Task)
 	if body.Task == "" {
 		BadRequest(w, "task is required")
-		return
-	}
-	if db.Pool == nil {
-		InternalError(w, "database not available")
 		return
 	}
 
@@ -349,13 +339,17 @@ func (h *AgentHandler) Run(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessionID := id.UUID()
+	sessionID, err := id.UUID()
+	if err != nil {
+		logAndRespond(w, err, http.StatusInternalServerError, "generate id failed")
+		return
+	}
 	now := time.Now()
 	if _, err := db.Pool.Exec(r.Context(),
 		`INSERT INTO agent_sessions (id, user_id, agent_id, name, task, status, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, $5, 'pending', $6, $6)`,
 		sessionID, claims.UserID, agent.ID, agent.Name, body.Task, now); err != nil {
-		InternalError(w, "create session: "+err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "create session failed")
 		return
 	}
 
@@ -425,21 +419,13 @@ func (h *AgentHandler) executeAgent(agent *Agent, task, sessionID, userID string
 
 // ListSessions 返回当前用户的运行记录（倒序）。
 func (h *AgentHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
-	claims := getAuthClaims(r, h.authenticator)
-	if claims == nil {
-		Unauthorized(w, "authentication required")
-		return
-	}
-	if db.Pool == nil {
-		OK(w, []AgentSession{})
-		return
-	}
+	claims := auth.GetClaims(r.Context())
 	rows, err := db.Pool.Query(r.Context(),
 		`SELECT s.id, COALESCE(s.agent_id::text,''), COALESCE(a.name,''), s.task, s.status, COALESCE(s.result,''), s.created_at, s.updated_at
 		 FROM agent_sessions s LEFT JOIN agents a ON a.id = s.agent_id
 		 WHERE s.user_id = $1 ORDER BY s.created_at DESC LIMIT 100`, claims.UserID)
 	if err != nil {
-		InternalError(w, "list sessions: "+err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "list sessions failed")
 		return
 	}
 	defer rows.Close()
@@ -463,15 +449,7 @@ func (h *AgentHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "id is required")
 		return
 	}
-	claims := getAuthClaims(r, h.authenticator)
-	if claims == nil {
-		Unauthorized(w, "authentication required")
-		return
-	}
-	if db.Pool == nil {
-		NotFound(w, "session not found")
-		return
-	}
+	claims := auth.GetClaims(r.Context())
 	var s AgentSession
 	err := db.Pool.QueryRow(r.Context(),
 		`SELECT s.id, COALESCE(s.agent_id::text,''), COALESCE(a.name,''), s.task, s.status, COALESCE(s.result,''), s.created_at, s.updated_at
@@ -488,9 +466,6 @@ func (h *AgentHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 // ── helpers ───────────────────────────────────────────────────
 
 func (h *AgentHandler) queryAgent(r *http.Request, agentID string) (*Agent, error) {
-	if db.Pool == nil {
-		return nil, errors.New("database not available")
-	}
 	var a Agent
 	err := db.Pool.QueryRow(r.Context(),
 		`SELECT id::text, name, COALESCE(description,''), COALESCE(system_prompt,''), COALESCE(tools,'[]'::jsonb), COALESCE(llm_config,'{}'::jsonb), max_turns, timeout_seconds, enabled, created_at, updated_at

@@ -7,8 +7,8 @@ import (
 
 var Redis RedisClient
 
-func ConnectRedis(ctx context.Context, addr, password string, db int) error {
-	client, err := NewSingleRedis(addr, password, db)
+func ConnectRedis(ctx context.Context, addr, password string, db int, poolSize int) error {
+	client, err := NewSingleRedis(addr, password, db, poolSize)
 	if err != nil {
 		return err
 	}

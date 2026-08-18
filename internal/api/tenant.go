@@ -23,7 +23,7 @@ func TenantMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		claims := auth.GetClaims(r.Context())
 		if claims == nil {
-			Unauthorized(w, "authentication required")
+			Unauthorized(w, ErrAuthRequired)
 			return
 		}
 
@@ -39,7 +39,7 @@ func RequireRole(roles ...string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			claims := auth.GetClaims(r.Context())
 			if claims == nil {
-				Unauthorized(w, "authentication required")
+				Unauthorized(w, ErrAuthRequired)
 				return
 			}
 

@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -44,7 +45,7 @@ func (h *UploadHandler) chunkDir(uploadID string) (string, error) {
 }
 
 func (h *UploadHandler) userID(r *http.Request) (string, bool) {
-	claims := getAuthClaims(r, h.authenticator)
+	claims := auth.GetClaims(r.Context())
 	if claims == nil {
 		return "", false
 	}
@@ -56,7 +57,7 @@ func (h *UploadHandler) userID(r *http.Request) (string, bool) {
 func (h *UploadHandler) Init(w http.ResponseWriter, r *http.Request) {
 	userID, ok := h.userID(r)
 	if !ok {
-		Unauthorized(w, "authentication required")
+		Unauthorized(w, ErrAuthRequired)
 		return
 	}
 	var body struct {
@@ -96,17 +97,19 @@ func (h *UploadHandler) Init(w http.ResponseWriter, r *http.Request) {
 		chunkCount = 1
 	}
 
-	uploadID := id.UUID()
+	uploadID, err := id.UUID()
+	if err != nil {
+		logAndRespond(w, err, http.StatusInternalServerError, "generate id failed")
+		return
+	}
 	now := time.Now()
-	if db.Pool != nil {
-		if _, err := db.Pool.Exec(r.Context(),
-			`INSERT INTO uploads (id, user_id, name, size, mime_type, purpose, parent_id, category, chunk_size, chunk_count, status, created_at, updated_at)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'uploading', $11, $11)`,
-			uploadID, userID, body.Name, body.Size, truncateMIME(body.MimeType), body.Purpose,
-			body.ParentID, body.Category, chunkSize, chunkCount, now); err != nil {
-			InternalError(w, "init upload: "+err.Error())
-			return
-		}
+	if _, err := db.Pool.Exec(r.Context(),
+		`INSERT INTO uploads (id, user_id, name, size, mime_type, purpose, parent_id, category, chunk_size, chunk_count, status, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'uploading', $11, $11)`,
+		uploadID, userID, body.Name, body.Size, truncateMIME(body.MimeType), body.Purpose,
+		body.ParentID, body.Category, chunkSize, chunkCount, now); err != nil {
+		logAndRespond(w, err, http.StatusInternalServerError, "init upload failed")
+		return
 	}
 
 	OK(w, map[string]interface{}{
@@ -121,7 +124,7 @@ func (h *UploadHandler) Init(w http.ResponseWriter, r *http.Request) {
 func (h *UploadHandler) PutChunk(w http.ResponseWriter, r *http.Request) {
 	userID, ok := h.userID(r)
 	if !ok {
-		Unauthorized(w, "authentication required")
+		Unauthorized(w, ErrAuthRequired)
 		return
 	}
 	uploadID := r.PathValue("id")
@@ -133,36 +136,34 @@ func (h *UploadHandler) PutChunk(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 归属校验
-	if db.Pool != nil {
-		var owner string
-		if err := db.Pool.QueryRow(r.Context(),
-			`SELECT user_id FROM uploads WHERE id = $1`, uploadID).Scan(&owner); err != nil || owner != userID {
-			NotFound(w, "upload not found")
-			return
-		}
+	var owner string
+	if err := db.Pool.QueryRow(r.Context(),
+		`SELECT user_id FROM uploads WHERE id = $1`, uploadID).Scan(&owner); err != nil || owner != userID {
+		NotFound(w, "upload not found")
+		return
 	}
 
 	dir, err := h.chunkDir(uploadID)
 	if err != nil {
-		InternalError(w, "create chunk dir: "+err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "create chunk dir failed")
 		return
 	}
 	dst := filepath.Join(dir, fmt.Sprintf("chunk_%d", idx))
 	out, err := os.Create(dst)
 	if err != nil {
-		InternalError(w, "create chunk: "+err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "create chunk failed")
 		return
 	}
 	defer out.Close()
 	if _, err := io.Copy(out, r.Body); err != nil {
-		InternalError(w, "write chunk: "+err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "write chunk failed")
 		return
 	}
 
-	if db.Pool != nil {
-		_, _ = db.Pool.Exec(r.Context(),
-			`UPDATE uploads SET chunks_received = array_append(chunks_received, $1), updated_at = NOW()
-			 WHERE id = $2 AND NOT ($1 = ANY(chunks_received))`, idxStr, uploadID)
+	if _, err := db.Pool.Exec(r.Context(),
+		`UPDATE uploads SET chunks_received = array_append(chunks_received, $1), updated_at = NOW()
+		 WHERE id = $2 AND NOT ($1 = ANY(chunks_received))`, idxStr, uploadID); err != nil {
+		slog.Warn("failed to record upload", "error", err)
 	}
 	OK(w, map[string]interface{}{"upload_id": uploadID, "index": idx, "received": true})
 }
@@ -172,14 +173,10 @@ func (h *UploadHandler) PutChunk(w http.ResponseWriter, r *http.Request) {
 func (h *UploadHandler) GetProgress(w http.ResponseWriter, r *http.Request) {
 	userID, ok := h.userID(r)
 	if !ok {
-		Unauthorized(w, "authentication required")
+		Unauthorized(w, ErrAuthRequired)
 		return
 	}
 	uploadID := r.PathValue("id")
-	if db.Pool == nil {
-		NotFound(w, "upload not found")
-		return
-	}
 	var received []string
 	var status string
 	err := db.Pool.QueryRow(r.Context(),
@@ -208,14 +205,10 @@ func (h *UploadHandler) GetProgress(w http.ResponseWriter, r *http.Request) {
 func (h *UploadHandler) Complete(w http.ResponseWriter, r *http.Request) {
 	userID, ok := h.userID(r)
 	if !ok {
-		Unauthorized(w, "authentication required")
+		Unauthorized(w, ErrAuthRequired)
 		return
 	}
 	uploadID := r.PathValue("id")
-	if db.Pool == nil {
-		InternalError(w, "database not available")
-		return
-	}
 
 	var up struct {
 		ID        string
@@ -247,12 +240,12 @@ func (h *UploadHandler) Complete(w http.ResponseWriter, r *http.Request) {
 	// 按序合并分片
 	dir, err := h.chunkDir(uploadID)
 	if err != nil {
-		InternalError(w, "chunk dir: "+err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "read chunk dir failed")
 		return
 	}
 	merged, err := h.mergeChunks(dir, up.ChunkCnt)
 	if err != nil {
-		InternalError(w, "merge chunks: "+err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "merge chunks failed")
 		return
 	}
 	defer merged.Close()
@@ -274,12 +267,14 @@ func (h *UploadHandler) Complete(w http.ResponseWriter, r *http.Request) {
 		fileURL, err = h.finalizeGeneric(up, merged)
 	}
 	if err != nil {
-		InternalError(w, "finalize upload: "+err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "finalize upload failed")
 		return
 	}
 
-	_, _ = db.Pool.Exec(r.Context(),
-		`UPDATE uploads SET status = 'completed', updated_at = NOW() WHERE id = $1`, uploadID)
+	if _, err := db.Pool.Exec(r.Context(),
+		`UPDATE uploads SET status = 'completed', updated_at = NOW() WHERE id = $1`, uploadID); err != nil {
+		slog.Warn("failed to record upload", "error", err)
+	}
 	// 清理临时分片
 	_ = os.RemoveAll(dir)
 
@@ -338,7 +333,10 @@ func (h *UploadHandler) finalizeMedia(r *http.Request, up struct {
 		return "", err
 	}
 
-	assetID := id.UUID()
+	assetID, err := id.UUID()
+	if err != nil {
+		return "", err
+	}
 	assetType := detectType(up.MimeType)
 	if _, err := db.Pool.Exec(r.Context(),
 		`INSERT INTO media_assets (id, tenant_id, user_id, type, name, file_url, mime_type, category, size, parent_id, created_at, updated_at)
@@ -372,7 +370,10 @@ func (h *UploadHandler) finalizeKBDoc(r *http.Request, up struct {
 	if ext == "" {
 		ext = "txt"
 	}
-	docID := id.UUID()
+	docID, err := id.UUID()
+	if err != nil {
+		return "", err
+	}
 	_, err = db.Pool.Exec(r.Context(),
 		`INSERT INTO knowledge_documents (id, tenant_id, knowledge_base_id, user_id, name, file_type, file_size_bytes, status, content, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, NOW(), NOW())`,

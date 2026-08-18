@@ -19,6 +19,8 @@ import logging
 from collections import OrderedDict
 from typing import Optional
 
+from app.middleware.privacy_middleware import is_no_retention
+
 logger = logging.getLogger(__name__)
 
 REDIS_KEY_PREFIX = "session_cache:"
@@ -40,6 +42,11 @@ class SessionStore:
         if not session_id:
             return list(history)
 
+        # 隐私模式：no_retention 时跳过 Redis 持久层，降级到内存（不落盘）
+        if is_no_retention():
+            logger.debug("Privacy no_retention: skip Redis session persistence for %s", session_id)
+            return self._local_get_or_init(session_id, history)
+
         # 尝试 Redis 后端
         if self._redis is not None:
             try:
@@ -53,6 +60,12 @@ class SessionStore:
 
     async def append(self, session_id: str, messages: list[dict]) -> None:
         if not session_id:
+            return
+
+        # 隐私模式：no_retention 时跳过 Redis 持久层，仅保留内存态（不落盘）
+        if is_no_retention():
+            logger.debug("Privacy no_retention: skip Redis session persistence for %s", session_id)
+            self._local_set(session_id, messages)
             return
 
         if self._redis is not None:

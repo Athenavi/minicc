@@ -11,6 +11,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import shlex
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -86,6 +88,58 @@ _ESCAPE_PATTERNS = [
     r"(?:^|[\s\"';])(?:curl|wget)\s+https?://(?:169\.254\.169\.254|127\.0\.0\.1|localhost)",
 ]
 
+# 允许在沙箱内执行的命令白名单（仅允许安全的 Python/数据操作命令）
+_ALLOWED_EXECUTABLES: set[str] = {
+    # Python 解释器
+    "python", "python3",
+    # 安全的基础命令
+    "echo", "ls", "dir", "cat", "type", "head", "tail", "wc",
+    "find", "grep", "sort", "uniq", "cut", "tr", "tee",
+    "pip", "pip3",
+}
+
+
+def _normalize_exe(name: str) -> str:
+    """规范化可执行文件名：取 basename，去平台后缀，小写。"""
+    name = Path(name).name.lower()
+    for suffix in (".exe", ".cmd", ".bat", ".com"):
+        if name.endswith(suffix):
+            name = name[: -len(suffix)]
+            break
+    return name
+
+
+def _parse_command(command: str) -> tuple[list[str], str | None]:
+    """将命令字符串解析为 [executable, *args]，校验白名单。
+
+    返回 (args, error_reason)。error_reason 非 None 表示被拒绝。
+    """
+    command = command.strip()
+    if not command:
+        return [], "empty command"
+
+    try:
+        parts = shlex.split(command)
+    except ValueError as e:
+        return [], f"invalid command syntax: {e}"
+
+    if not parts:
+        return [], "empty command"
+
+    exe_name = _normalize_exe(parts[0])
+
+    # 允许 Python 解释器（含 sys.executable 完整路径匹配）
+    if exe_name in ("python", "python3"):
+        return parts, None
+    if os.path.normcase(parts[0]) == os.path.normcase(sys.executable):
+        return parts, None
+
+    # 白名单校验
+    if exe_name not in _ALLOWED_EXECUTABLES:
+        return [], f"executable not allowed: {exe_name}"
+
+    return parts, None
+
 
 def _has_escape(command: str) -> str | None:
     """检测命令是否含逃逸模式，命中返回原因。"""
@@ -98,10 +152,15 @@ def _has_escape(command: str) -> str | None:
 
 
 async def run_in_sandbox(command: str, timeout: int = 120) -> dict[str, Any]:
-    """在沙箱 workspace 内执行命令（shell），cwd 锁定 + 环境清理 + 逃逸拦截。"""
+    """在沙箱 workspace 内执行命令（direct exec，不经过 shell），
+    cwd 锁定 + 环境清理 + 逃逸拦截 + 命令白名单。
+
+    使用 create_subprocess_exec 替代 create_subprocess_shell，
+    彻底消除 shell 元字符注入（管道/重定向/变量展开/通配符等）。
+    """
     import asyncio.subprocess
 
-    # 逃逸拦截：绝对路径/父目录访问宿主 → 拒绝（S 安全修复）
+    # 第一层：正则逃逸拦截（绝对路径/父目录/SSRF）
     esc = _has_escape(command)
     if esc:
         return {
@@ -109,8 +168,23 @@ async def run_in_sandbox(command: str, timeout: int = 120) -> dict[str, Any]:
             "reason": esc,
         }
 
-    proc = await asyncio.create_subprocess_shell(
-        command,
+    # 第二层：解析命令 + 白名单校验
+    args, reason = _parse_command(command)
+    if reason:
+        return {"error": f"command blocked: {reason}"}
+
+    prog = args[0]
+    rest = args[1:]
+
+    # Windows: echo/dir/type 等是 cmd.exe 内置命令，无独立可执行文件，
+    # create_subprocess_exec 直执会 WinError 2；用 cmd /c 包裹执行
+    # （argv 已经白名单 + 逃逸拦截，shlex 解析无 shell 元字符，不新增注入面）。
+    exe_name = _normalize_exe(prog)
+    if sys.platform == "win32" and exe_name not in ("python", "python3"):
+        prog, rest = os.environ.get("COMSPEC", "cmd.exe"), ["/d", "/s", "/c", *args]
+
+    proc = await asyncio.create_subprocess_exec(
+        prog, *rest,
         cwd=str(workspace_dir()),
         env=sandboxed_env(),
         stdout=asyncio.subprocess.PIPE,

@@ -112,9 +112,15 @@ func TestTruncateTitle_MultiByte(t *testing.T) {
 }
 
 func TestGenID_Unique(t *testing.T) {
-	id1 := genID()
+	id1, err := genID()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	time.Sleep(1 * time.Nanosecond)
-	id2 := genID()
+	id2, err := genID()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if id1 == id2 {
 		t.Fatal("expected unique IDs")
 	}

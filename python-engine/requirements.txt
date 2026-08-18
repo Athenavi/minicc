@@ -16,13 +16,13 @@ redis==5.3.0
 
 # gRPC
 grpcio==1.71.1
-protobuf==5.29.4
+protobuf==5.29.6
 
 # PostgreSQL
 asyncpg==0.30.0
 
 # 文档处理
-python-multipart==0.0.20
+python-multipart==0.0.31
 pymupdf==1.25.5
 python-docx==1.1.2
 
@@ -32,7 +32,7 @@ pydantic-settings==2.10.1
 python-dotenv==1.1.0
 
 # 认证
-PyJWT==2.10.1
+PyJWT==2.13.0
 
 # 日志
 structlog==25.4.0
@@ -54,4 +54,4 @@ pytest==8.4.1
 pytest-asyncio==1.0.0
 
 # S3 存储（可选，用于 MediaStore S3 后端）
-boto3>=1.34.0
+boto3==1.40.76

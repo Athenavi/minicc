@@ -30,14 +30,7 @@ type InstallStatus struct {
 // Status checks if the system needs initialization.
 // GET /v1/install/status
 func (h *InstallHandler) Status(w http.ResponseWriter, r *http.Request) {
-	status := InstallStatus{DB: db.Pool != nil}
-
-	if db.Pool == nil {
-		status.Needed = true
-		status.Reason = "database not connected"
-		OK(w, status)
-		return
-	}
+	status := InstallStatus{DB: true}
 
 	// If at least one user with role 'owner' exists, system is initialized
 	var count int
@@ -59,14 +52,9 @@ type SetupRequest struct {
 // Setup initializes the system with the first admin user.
 // POST /v1/install/setup
 func (h *InstallHandler) Setup(w http.ResponseWriter, r *http.Request) {
-	if db.Pool == nil {
-		InternalError(w, "database not available")
-		return
-	}
-
 	var req SetupRequest
 	if err := DecodeJSON(w, r, &req); err != nil {
-		BadRequest(w, "invalid request body")
+		BadRequest(w, ErrInvalidReq)
 		return
 	}
 

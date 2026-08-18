@@ -83,7 +83,7 @@ func SSEHandler(hub *broadcast.Hub, sessionMgr *session.Manager) http.HandlerFun
 		if sessionID != "" {
 			claims := auth.GetClaims(r.Context())
 			if claims == nil {
-				Unauthorized(w, "authentication required")
+				Unauthorized(w, ErrAuthRequired)
 				return
 			}
 			if sessionMgr != nil {

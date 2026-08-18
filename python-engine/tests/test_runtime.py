@@ -29,7 +29,8 @@ class TestTruncateText:
         assert _truncate_text(text) == text
 
     def test_long_text_keeps_head_and_tail(self):
-        text = "a" * 100 + "B" * 10000 + "c" * 100
+        # 长度随常量缩放，避免调参（如 8K→16K）导致测试静默失效
+        text = "a" * 100 + "B" * TOOL_RESULT_MAX_CHARS + "c" * 100
         truncated = _truncate_text(text)
         assert len(truncated) <= TOOL_RESULT_MAX_CHARS
         assert truncated.startswith("a" * 100)

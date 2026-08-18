@@ -3,10 +3,13 @@ import { ref, onMounted } from 'vue'
 import { Card, Table, Button, Space, Tag, Input, Modal, Form, InputNumber, Switch, Alert } from 'ant-design-vue'
 import { PlusOutlined, ReloadOutlined, CheckCircleOutlined, SyncOutlined } from '@ant-design/icons-vue'
 import { api } from '../../api'
+import { useCrudResource, apiErrorMessage } from '../../composables/useCrudResource'
 
 // State
-const loading = ref(true)
-const domains = ref<any[]>([])
+const { data: domains, loading, load: loadDomains } = useCrudResource<any[]>(
+  [],
+  async () => (await api.get('/admin/domains')).data?.data || []
+)
 const selectedDomain = ref<any>(null)
 const modalVisible = ref(false)
 const dnsResult = ref<any>(null)
@@ -18,19 +21,6 @@ const currentForm = ref({
   auto_renew: true
 })
 
-// Load domains
-async function loadDomains() {
-  try {
-    loading.value = true
-    const response = await api.get('/admin/domains')
-    domains.value = response.data?.data || []
-  } catch (error: any) {
-    console.error('Failed to load domains:', error)
-  } finally {
-    loading.value = false
-  }
-}
-
 // Create domain
 async function createDomain() {
   try {
@@ -38,7 +28,7 @@ async function createDomain() {
     modalVisible.value = false
     loadDomains()
   } catch (error: any) {
-    alert(error.response?.data?.error || '创建失败')
+    alert(apiErrorMessage(error, '创建失败'))
   }
 }
 
@@ -49,7 +39,7 @@ async function updateDomain() {
     modalVisible.value = false
     loadDomains()
   } catch (error: any) {
-    alert(error.response?.data?.error || '更新失败')
+    alert(apiErrorMessage(error, '更新失败'))
   }
 }
 
@@ -61,7 +51,7 @@ async function verifyDNS(id: string) {
     alert(response.data?.message || 'DNS 验证完成')
     loadDomains()
   } catch (error: any) {
-    alert(error.response?.data?.error || 'DNS 验证失败')
+    alert(apiErrorMessage(error, 'DNS 验证失败'))
   }
 }
 
@@ -74,7 +64,7 @@ async function renewSSL(id: string) {
     alert(response.data?.message || 'SSL 证书续期已启动')
     loadDomains()
   } catch (error: any) {
-    alert(error.response?.data?.error || 'SSL 续期失败')
+    alert(apiErrorMessage(error, 'SSL 续期失败'))
   }
 }
 

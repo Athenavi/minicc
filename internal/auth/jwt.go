@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"time"
 
@@ -105,7 +106,10 @@ var jwtAuth *Authenticator
 func InitJWTAuth() {
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
-		secret = "dev-secret-change-in-production"
+		log.Fatal("JWT_SECRET environment variable is required and must be at least 32 characters")
+	}
+	if len(secret) < 32 {
+		log.Fatal("JWT_SECRET must be at least 32 characters long")
 	}
 	expiration := 24 * time.Hour
 	if v := os.Getenv("JWT_EXPIRATION"); v != "" {

@@ -2,6 +2,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from app.knowledge.enhanced_kb import EnhancedKnowledgeBase
 from app.rag.retriever import RAGRetriever
 
 
@@ -92,6 +93,27 @@ def world():
     print("World")"""
         chunks = retriever._split_text(code, chunk_size=40, chunk_overlap=10)
         assert len(chunks) > 1
+
+
+class TestKnowledgeBaseFailLoud:
+    """知识库未实现接口必须显式报错。
+
+    意图: 统计/列表接口没有真实数据源 (PG kb_documents 表不存在),
+    绝不允许返回硬编码 0/空列表伪装成真实数据 ——
+    否则调用方无法区分"真的 0 条"和"功能未实现"。
+    """
+
+    @pytest.mark.asyncio
+    async def test_tenant_stats_not_implemented_raises(self):
+        kb = EnhancedKnowledgeBase()
+        with pytest.raises(NotImplementedError, match="get_tenant_stats"):
+            await kb.get_tenant_stats(tenant_id="tenant-x")
+
+    @pytest.mark.asyncio
+    async def test_list_documents_not_implemented_raises(self):
+        kb = EnhancedKnowledgeBase()
+        with pytest.raises(NotImplementedError, match="list_documents"):
+            await kb.list_documents(tenant_id="tenant-x")
 
 
 if __name__ == "__main__":

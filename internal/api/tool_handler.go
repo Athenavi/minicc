@@ -52,9 +52,9 @@ func (h *ToolHandler) ListTools(w http.ResponseWriter, r *http.Request) {
 
 // ExecuteTool proxies execution to Python service.
 func (h *ToolHandler) ExecuteTool(w http.ResponseWriter, r *http.Request) {
-	claims := getAuthClaims(r, h.authenticator)
+	claims := auth.GetClaims(r.Context())
 	if claims == nil {
-		Unauthorized(w, "authentication required")
+		Unauthorized(w, ErrAuthRequired)
 		return
 	}
 
@@ -64,7 +64,7 @@ func (h *ToolHandler) ExecuteTool(w http.ResponseWriter, r *http.Request) {
 		SessionID string                 `json:"session_id"`
 	}
 	if err := DecodeJSON(w, r, &body); err != nil {
-		BadRequest(w, "invalid request body")
+		BadRequest(w, ErrInvalidReq)
 		return
 	}
 	if body.Name == "" {
@@ -103,18 +103,22 @@ func (h *ToolHandler) ExecuteTool(w http.ResponseWriter, r *http.Request) {
 }
 
 func recordToolCall(r *http.Request, toolName string, input map[string]interface{}, sessionID string, output map[string]interface{}, execErr error, elapsed time.Duration) string {
-	if db.Pool == nil {
-		return ""
+	inputJSON, err := json.Marshal(input)
+	if err != nil {
+		slog.Warn("record tool call: marshal input failed", "tool", toolName, "error", err)
+		inputJSON = []byte("{}")
 	}
-
-	inputJSON, _ := json.Marshal(input)
 	outputStr := ""
 	if output != nil {
 		if out, ok := output["output"]; ok {
 			outputStr = fmt.Sprintf("%v", out)
 		} else {
-			outJSON, _ := json.Marshal(output)
-			outputStr = string(outJSON)
+			outJSON, err := json.Marshal(output)
+			if err != nil {
+				slog.Warn("record tool call: marshal output failed", "tool", toolName, "error", err)
+			} else {
+				outputStr = string(outJSON)
+			}
 		}
 	}
 	if execErr != nil {
@@ -126,7 +130,7 @@ func recordToolCall(r *http.Request, toolName string, input map[string]interface
 	// Generate a unique ID
 	id := fmt.Sprintf("tc_%d", time.Now().UnixNano())
 
-	_, err := db.Pool.Exec(r.Context(),
+	_, err = db.Pool.Exec(r.Context(),
 		`INSERT INTO tool_calls (id, session_id, tool_name, input, output, is_error, duration_ms, created_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
 		id, nullableStr(sessionID), toolName, string(inputJSON), outputStr, execErr != nil, durationMs)

@@ -72,7 +72,7 @@ async def test_workflow_skill_node(tmp_path, monkeypatch):
     from app.tools import skill as skill_mod
 
     store = SkillStore(str(tmp_path / "skills"))
-    store.save(SkillDef(name="wf-echo", description="echo", exec_type="shell", source="echo wf-{who}"))
+    store.save(SkillDef(name="wf-echo", description="echo", exec_type="shell", source='python -c "print(\'wf-{who}\')"'))
     skill_mod._store = store  # noqa: SLF001 — 测试注入临时 store
 
     graph = {

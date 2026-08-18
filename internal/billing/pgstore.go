@@ -24,7 +24,7 @@ func NewPGStore() *PGStore {
 // EnsureTables creates the billing tables if they don't exist.
 func (s *PGStore) EnsureTables(ctx context.Context) error {
 	if db.Pool == nil {
-		return fmt.Errorf("database not available")
+		return nil // no database available, skip table initialization
 	}
 
 	// Add balance column to users table if not exists
@@ -90,9 +90,6 @@ func (s *PGStore) EnsureTables(ctx context.Context) error {
 }
 
 func (s *PGStore) GetBalance(ctx context.Context, userID string) (int, error) {
-	if db.Pool == nil {
-		return 0, fmt.Errorf("database not available")
-	}
 	var balance int
 	err := db.ReadPool().QueryRow(ctx,
 		`SELECT COALESCE(credits, 0) FROM users WHERE id = $1`, userID).Scan(&balance)
@@ -103,18 +100,12 @@ func (s *PGStore) GetBalance(ctx context.Context, userID string) (int, error) {
 }
 
 func (s *PGStore) SetBalance(ctx context.Context, userID string, balance int) error {
-	if db.Pool == nil {
-		return fmt.Errorf("database not available")
-	}
 	_, err := db.Pool.Exec(ctx,
 		`UPDATE users SET credits = $1 WHERE id = $2`, balance, userID)
 	return err
 }
 
 func (s *PGStore) AddTransaction(ctx context.Context, tx *CreditChange) error {
-	if db.Pool == nil {
-		return fmt.Errorf("database not available")
-	}
 	_, err := db.Pool.Exec(ctx,
 		`INSERT INTO credit_transactions (id, user_id, amount, balance, reason, created_at)
 		 VALUES ($1, $2, $3, $4, $5, $6)`,
@@ -123,9 +114,6 @@ func (s *PGStore) AddTransaction(ctx context.Context, tx *CreditChange) error {
 }
 
 func (s *PGStore) GetHistory(ctx context.Context, userID string, limit int) ([]CreditChange, error) {
-	if db.Pool == nil {
-		return nil, fmt.Errorf("database not available")
-	}
 	if limit <= 0 {
 		limit = 50
 	}
@@ -156,9 +144,6 @@ func (s *PGStore) GetHistory(ctx context.Context, userID string, limit int) ([]C
 
 // DailyFreeCount returns the number of free conversations used today (UTC).
 func (s *PGStore) DailyFreeCount(ctx context.Context, userID string) (int, error) {
-	if db.Pool == nil {
-		return 0, fmt.Errorf("database not available")
-	}
 	var count int
 	todayUTC := time.Now().UTC().Truncate(24 * time.Hour)
 	err := db.ReadPool().QueryRow(ctx,
@@ -172,9 +157,6 @@ func (s *PGStore) DailyFreeCount(ctx context.Context, userID string) (int, error
 
 // MarkFreeUsage records a free conversation usage for today.
 func (s *PGStore) MarkFreeUsage(ctx context.Context, userID string) error {
-	if db.Pool == nil {
-		return fmt.Errorf("database not available")
-	}
 	tx := &CreditChange{
 		ID:        fmt.Sprintf("free_%d", time.Now().UnixNano()),
 		UserID:    userID,
@@ -193,9 +175,6 @@ func (s *PGStore) MarkFreeUsage(ctx context.Context, userID string) error {
 // AtomicDeductBalance atomically deducts credits using a single SQL statement.
 // Returns the new balance, or an error if insufficient credits or user not found.
 func (s *PGStore) AtomicDeductBalance(ctx context.Context, userID string, amount int) (int, error) {
-	if db.Pool == nil {
-		return 0, fmt.Errorf("database not available")
-	}
 	var newBalance int
 	err := db.Pool.QueryRow(ctx,
 		`UPDATE users SET credits = credits - $1
@@ -211,9 +190,6 @@ func (s *PGStore) AtomicDeductBalance(ctx context.Context, userID string, amount
 // AtomicAddBalance atomically adds credits using a single SQL statement.
 // Returns the new balance, or an error if user not found.
 func (s *PGStore) AtomicAddBalance(ctx context.Context, userID string, amount int) (int, error) {
-	if db.Pool == nil {
-		return 0, fmt.Errorf("database not available")
-	}
 	var newBalance int
 	err := db.Pool.QueryRow(ctx,
 		`UPDATE users SET credits = credits + $1
@@ -258,9 +234,6 @@ func scanPayment(row interface{ Scan(...any) error }) (*Payment, error) {
 }
 
 func (s *PGStore) CreatePayment(ctx context.Context, p *Payment) error {
-	if db.Pool == nil {
-		return fmt.Errorf("database not available")
-	}
 	_, err := db.Pool.Exec(ctx,
 		`INSERT INTO payments (id, user_id, channel, credits, amount_cents, currency, status,
 			qr_code, provider_order_id, trade_no, created_at, paid_at, expired_at)
@@ -271,18 +244,12 @@ func (s *PGStore) CreatePayment(ctx context.Context, p *Payment) error {
 }
 
 func (s *PGStore) GetPayment(ctx context.Context, id string) (*Payment, error) {
-	if db.Pool == nil {
-		return nil, fmt.Errorf("database not available")
-	}
 	row := db.ReadPool().QueryRow(ctx,
 		`SELECT `+_paymentColumns+` FROM payments WHERE id = $1`, id)
 	return scanPayment(row)
 }
 
 func (s *PGStore) GetPaymentByProviderOrderID(ctx context.Context, providerOrderID string) (*Payment, error) {
-	if db.Pool == nil {
-		return nil, fmt.Errorf("database not available")
-	}
 	row := db.ReadPool().QueryRow(ctx,
 		`SELECT `+_paymentColumns+` FROM payments WHERE provider_order_id = $1`, providerOrderID)
 	return scanPayment(row)
@@ -290,9 +257,6 @@ func (s *PGStore) GetPaymentByProviderOrderID(ctx context.Context, providerOrder
 
 // MarkPaymentPaid 幂等推进 pending→paid。返回 nil 表示订单非 pending（已处理/不存在）。
 func (s *PGStore) MarkPaymentPaid(ctx context.Context, id, tradeNo string) (*Payment, error) {
-	if db.Pool == nil {
-		return nil, fmt.Errorf("database not available")
-	}
 	row := db.Pool.QueryRow(ctx,
 		`UPDATE payments SET status = 'paid', trade_no = $2, paid_at = NOW()
 		 WHERE id = $1 AND status = 'pending'
@@ -309,18 +273,12 @@ func (s *PGStore) MarkPaymentPaid(ctx context.Context, id, tradeNo string) (*Pay
 }
 
 func (s *PGStore) MarkPaymentFailed(ctx context.Context, id string) error {
-	if db.Pool == nil {
-		return fmt.Errorf("database not available")
-	}
 	_, err := db.Pool.Exec(ctx,
 		`UPDATE payments SET status = 'failed' WHERE id = $1 AND status = 'pending'`, id)
 	return err
 }
 
 func (s *PGStore) UpdatePaymentProvider(ctx context.Context, id, qrCode, providerOrderID string) error {
-	if db.Pool == nil {
-		return fmt.Errorf("database not available")
-	}
 	_, err := db.Pool.Exec(ctx,
 		`UPDATE payments SET qr_code = $2, provider_order_id = $3 WHERE id = $1 AND status = 'pending'`,
 		id, qrCode, providerOrderID)

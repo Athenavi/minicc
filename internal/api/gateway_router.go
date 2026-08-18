@@ -25,6 +25,15 @@ var startTime = time.Now()
 // sessionCancels tracks running session contexts for cancellation support.
 var sessionCancels sync.Map
 
+// sessionCancel tracks the owner and cancel function of a running session task.
+type sessionCancel struct {
+	userID string
+	cancel context.CancelFunc
+}
+
+// routeMiddleware is a middleware wrapper used by route registration helpers.
+type routeMiddleware func(http.Handler) http.Handler
+
 // middlewareChain wraps an http.Handler with a list of middleware functions.
 func middlewareChain(h http.Handler, mws ...func(http.Handler) http.Handler) http.Handler {
 	for i := len(mws) - 1; i >= 0; i-- {
@@ -132,7 +141,7 @@ func NewGatewayRouter(
 	// Plugins (MCP server config management)
 	pluginHandler := NewPluginHandler(cfg, authenticator)
 
-	// Search (no auth)
+	// Search (auth + rate limited)
 	searchHandler := NewSearchHandler()
 
 	// Editor
@@ -174,287 +183,27 @@ func NewGatewayRouter(
 
 	// Knowledge base — proxied to Python engine
 	// SaaS 安全: 知识库独立限流 (每租户 QPS=50, Burst=100)
-	kbRateLimiter := NewTenantRateLimiter(atomicRedis.LoadRaw(), 50, 100)
-	kbRateMW := kbRateLimiter.Middleware
-	
-	kbProxy := func(method, path string, body any) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
-			if pythonClient == nil || !pythonClient.IsConnected() {
-				InternalError(w, "python engine not available")
-				return
-			}
-			claims := getAuthClaims(r, authenticator)
-			if claims == nil {
-				Unauthorized(w, "authentication required")
-				return
-			}
-			proxiedPath := path + "?user_id=" + claims.UserID
-			var resp interface{}
-			var err error
-			switch method {
-			case "GET":
-				err = pythonClient.GetJSON(r.Context(), proxiedPath, &resp)
-			case "POST":
-				var reqBody map[string]interface{}
-				if body != nil {
-					reqBody = body.(map[string]interface{})
-				} else {
-					var b map[string]interface{}
-					if err2 := DecodeJSON(w, r, &b); err2 != nil {
-						return
-					}
-					reqBody = b
-				}
-				err = pythonClient.PostJSON(r.Context(), proxiedPath, reqBody, &resp)
-			case "PUT":
-				var putBody map[string]interface{}
-				if body != nil {
-					putBody = body.(map[string]interface{})
-				} else {
-					var b map[string]interface{}
-					if err2 := DecodeJSON(w, r, &b); err2 != nil {
-						return
-					}
-					putBody = b
-				}
-				err = pythonClient.PutJSON(r.Context(), proxiedPath, putBody, &resp)
-			case "DELETE":
-				err = pythonClient.DeleteJSON(r.Context(), proxiedPath, &resp)
-			}
-			if err != nil {
-				slog.Error("kb proxy error", "path", proxiedPath, "error", err)
-				InternalError(w, strings.TrimSpace(err.Error()))
-				return
-			}
-			OK(w, resp)
-		}
+	var kbRateRedis db.RedisClient
+	if atomicRedis != nil {
+		kbRateRedis = atomicRedis.LoadRaw()
 	}
+	kbRateLimiter := NewTenantRateLimiter(kbRateRedis, 50, 100)
+	kbRateMW := kbRateLimiter.Middleware
 
 	// Admin handler
 	adminHandler := NewAdminHandler(authenticator, fileStore, atomicRedis, pythonClient)
 
-	// ── Public endpoints ──
+	// ── Route registration by functional domain ──
 
-	mux.HandleFunc("GET /search", searchHandler.Search)
-
-	// Public share view (no auth; revoked shares return 410 Gone)
-	mux.Handle("GET /share/{id}", rlMW(publicMW(http.HandlerFunc(shareHandler.PublicGet))))
-
-	mux.Handle("GET /health", rlMW(publicMW(http.HandlerFunc(handleHealth))))
-	mux.Handle("GET /ready", rlMW(publicMW(http.HandlerFunc(handleReadiness))))
-
-	mux.Handle("POST /v1/agent/approval", authMW(rlMW(http.HandlerFunc(submitHandler.SubmitApproval))))
-	mux.Handle("POST /submit", publicMW(sanitizeMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Content   string                 `json:"content"`
-			SessionID string                 `json:"session_id"`
-			LLMConfig map[string]interface{} `json:"llm_config"`
-		}
-		if err := DecodeJSON(w, r, &body); err != nil {
-			BadRequest(w, "invalid request")
-			return
-		}
-		if body.Content == "" {
-			BadRequest(w, "content is required")
-			return
-		}
-		claims := getAuthClaims(r, authenticator)
-		if claims == nil {
-			Unauthorized(w, "authentication required")
-			return
-		}
-		userID := claims.UserID
-
-		// Billing pre-check
-		if billingMgr != nil {
-			count, err := billingMgr.DailyFreeCount(r.Context(), userID)
-			overFreeQuota := err != nil || count >= billing.DailyFreeLimit
-			if overFreeQuota {
-				if balance, balErr := billingMgr.GetBalance(userID); balErr == nil && balance <= 0 {
-					JSON(w, http.StatusPaymentRequired, APIResponse{
-						Success: false,
-						Error:   "insufficient credits — please recharge in Billing",
-					})
-					return
-				}
-			}
-		}
-
-		select {
-		case agentSem <- struct{}{}:
-		default:
-			TooManyRequests(w)
-			return
-		}
-
-		Accepted(w, map[string]string{"status": "accepted", "session_id": body.SessionID})
-		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					slog.Error("submit handler panic", "panic", r)
-				}
-			}()
-			defer func() { <-agentSem }()
-			ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
-			defer cancel()
-			submitHandler.HandleSubmit(ctx, userID, body.SessionID, body.Content, body.LLMConfig)
-		}()
-	}))))
-
-	mux.Handle("POST /cancel", rlMW(publicMW(http.HandlerFunc(handleCancel))))
-
-	// SSE + WebSocket
-	mux.Handle("GET /events", authMW(rlMW(SSEHandler(eventHub, sessionMgr))))
-	mux.HandleFunc("GET /ws/{sessionId}", WebSocketHandler(NewWebSocketHub(), eventHub, authenticator, sessionMgr))
-	mux.HandleFunc("GET /ws/rpa", RPAWebSocketHandler(rpaHub, authenticator))
-
-	// ── /v1/* routes (rate limited) ──
-
-	// Auth (public, rate limited)
-	mux.Handle("POST /v1/auth/login", rlMW(http.HandlerFunc(authHandler.Login)))
-	mux.Handle("POST /v1/auth/register", rlMW(http.HandlerFunc(authHandler.Register)))
-	mux.Handle("POST /v1/auth/refresh", rlMW(http.HandlerFunc(authHandler.Refresh)))
-	mux.Handle("POST /v1/auth/logout", rlMW(http.HandlerFunc(authHandler.Logout)))
-	mux.Handle("GET /v1/auth/profile", authMW(rlMW(http.HandlerFunc(authHandler.Profile))))
-	mux.Handle("PUT /v1/auth/profile", authMW(rlMW(http.HandlerFunc(authHandler.UpdateProfile))))
-
-	// Install (public, rate limited)
-	mux.Handle("GET /v1/install/status", rlMW(http.HandlerFunc(installHandler.Status)))
-	mux.Handle("POST /v1/install/setup", rlMW(http.HandlerFunc(installHandler.Setup)))
-
-	// Editor (auth + rate limited)
-	mux.Handle("GET /api/editor/files", authMW(rlMW(http.HandlerFunc(editorHandler.ListFiles))))
-	mux.Handle("GET /api/editor/read", authMW(rlMW(http.HandlerFunc(editorHandler.ReadFile))))
-	mux.Handle("POST /api/editor/write", authMW(rlMW(http.HandlerFunc(editorHandler.WriteFile))))
-
-	// Conversations (auth + rate limited)
-	mux.Handle("GET /v1/conversations", authMW(rlMW(http.HandlerFunc(conversationHandler.List))))
-	mux.Handle("POST /v1/conversations", authMW(rlMW(http.HandlerFunc(conversationHandler.Create))))
-	mux.Handle("GET /v1/conversations/{id}", authMW(rlMW(http.HandlerFunc(conversationHandler.Get))))
-	mux.Handle("PUT /v1/conversations/{id}", authMW(rlMW(http.HandlerFunc(conversationHandler.Update))))
-	mux.Handle("DELETE /v1/conversations/{id}", authMW(rlMW(http.HandlerFunc(conversationHandler.Delete))))
-
-	// Conversation shares (auth + rate limited; public GET below)
-	mux.Handle("POST /v1/conversations/{id}/share", authMW(rlMW(http.HandlerFunc(shareHandler.Create))))
-	mux.Handle("GET /v1/conversations/{id}/share", authMW(rlMW(http.HandlerFunc(shareHandler.GetActive))))
-	mux.Handle("DELETE /v1/conversations/{id}/share", authMW(rlMW(http.HandlerFunc(shareHandler.Revoke))))
-
-	// Tools (rate limited, proxies to Python)
-	mux.Handle("GET /v1/tools", rlMW(http.HandlerFunc(toolHandler.ListTools)))
-	mux.Handle("POST /v1/tools/execute", rlMW(sanitizeMW(http.HandlerFunc(toolHandler.ExecuteTool))))
-
-	// System (rate limited; spans/traces 仅管理员可见，S 安全修复：原为公开信息泄露)
-	mux.Handle("GET /v1/system/health", rlMW(http.HandlerFunc(systemHandler.HealthScores)))
-	mux.Handle("GET /v1/system/spans", authMW(rlMW(RequirePermission(auth.PermAdminRead)(http.HandlerFunc(systemHandler.Spans)))))
-	mux.Handle("GET /v1/system/traces", authMW(rlMW(RequirePermission(auth.PermAdminRead)(http.HandlerFunc(systemHandler.Traces)))))
-	mux.Handle("GET /v1/metrics", rlMW(http.HandlerFunc(systemHandler.Metrics)))
-
-	// Trace (user-level call chain tracing, tenant-isolated)
-	if traceHandler != nil {
-		mux.Handle("GET /v1/traces", authMW(rlMW(http.HandlerFunc(traceHandler.ListTraces))))
-		mux.Handle("GET /v1/traces/{trace_id}", authMW(rlMW(http.HandlerFunc(traceHandler.GetTrace))))
-	}
-
-	// Media (rate limited)
-	mux.Handle("GET /v1/media", rlMW(http.HandlerFunc(mediaHandler.List)))
-	mux.Handle("POST /v1/media", rlMW(http.HandlerFunc(mediaHandler.Create)))
-	mux.Handle("POST /v1/media/folders", rlMW(http.HandlerFunc(mediaHandler.CreateFolder)))
-	mux.Handle("GET /v1/media/folders", rlMW(http.HandlerFunc(mediaHandler.ListFolders)))
-	mux.Handle("POST /v1/media/upload", rlMW(http.HandlerFunc(mediaHandler.Upload)))
-	mux.Handle("POST /v1/media/presign", rlMW(http.HandlerFunc(mediaHandler.PresignUpload)))
-	mux.Handle("POST /v1/media/complete", rlMW(http.HandlerFunc(mediaHandler.CompleteUpload)))
-	mux.Handle("POST /v1/media/batch-delete", rlMW(http.HandlerFunc(mediaHandler.BatchDelete)))
-	mux.Handle("PUT /v1/media/{id}", rlMW(http.HandlerFunc(mediaHandler.Update)))
-	mux.Handle("GET /v1/media/{id}/download", rlMW(http.HandlerFunc(mediaHandler.Download)))
-	mux.Handle("POST /v1/media/{id}/share", rlMW(http.HandlerFunc(mediaHandler.Share)))
-	mux.Handle("DELETE /v1/media/{id}", rlMW(http.HandlerFunc(mediaHandler.Delete)))
-
-	// Plugins (auth + rate limited)
-	mux.Handle("GET /v1/plugins", authMW(rlMW(http.HandlerFunc(pluginHandler.List))))
-	mux.Handle("POST /v1/plugins/{name}/install", authMW(rlMW(http.HandlerFunc(pluginHandler.Install))))
-	mux.Handle("PUT /v1/plugins/{name}", authMW(rlMW(http.HandlerFunc(pluginHandler.Update))))
-	mux.Handle("POST /v1/plugins/{name}/test", authMW(rlMW(http.HandlerFunc(pluginHandler.Test))))
-	mux.Handle("DELETE /v1/plugins/{name}", authMW(rlMW(http.HandlerFunc(pluginHandler.Uninstall))))
-
-	// Billing (auth + rate limited)
-	mux.Handle("GET /v1/billing/balance", authMW(rlMW(http.HandlerFunc(billingHandler.GetBalance))))
-	mux.Handle("GET /v1/billing/history", authMW(rlMW(http.HandlerFunc(billingHandler.GetHistory))))
-	mux.Handle("POST /v1/billing/recharge", authMW(rlMW(http.HandlerFunc(billingHandler.Recharge))))
-	mux.Handle("POST /v1/billing/pay", authMW(rlMW(http.HandlerFunc(billingHandler.CreatePayment))))
-	mux.Handle("GET /v1/billing/orders/{id}", authMW(rlMW(http.HandlerFunc(billingHandler.GetOrder))))
-	// 支付渠道异步回调（无 auth：支付宝验签 / 微信平台证书验签 + AES-GCM 解密）
-	mux.Handle("POST /v1/billing/callback/alipay", rlMW(http.HandlerFunc(billingHandler.AlipayCallback)))
-	mux.Handle("POST /v1/billing/callback/wechat", rlMW(http.HandlerFunc(billingHandler.WechatCallback)))
-	mux.Handle("POST /v1/billing/paypal-capture", rlMW(http.HandlerFunc(billingHandler.PayPalCapture)))
-	mux.Handle("GET /v1/billing/usage", authMW(rlMW(http.HandlerFunc(billingHandler.GetUsage))))
-
-	// Graphs (auth + rate limited, proxies to Python)
-	graphProxy := func(method, path string, body any) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
-			if pythonClient == nil || !pythonClient.IsConnected() {
-				InternalError(w, "python engine not available")
-				return
-			}
-			claims := getAuthClaims(r, authenticator)
-			if claims == nil {
-				Unauthorized(w, "authentication required")
-				return
-			}
-			proxiedPath := path
-			if strings.Contains(path, "?") {
-				proxiedPath = path + "&user_id=" + claims.UserID
-			} else {
-				proxiedPath = path + "?user_id=" + claims.UserID
-			}
-			var resp interface{}
-			var err error
-			switch method {
-			case "GET":
-				err = pythonClient.GetJSON(r.Context(), proxiedPath, &resp)
-			case "POST":
-				var reqBody map[string]interface{}
-				if body != nil {
-					reqBody = body.(map[string]interface{})
-				} else {
-					if err2 := DecodeJSON(w, r, &reqBody); err2 != nil {
-						return
-					}
-				}
-				err = pythonClient.PostJSON(r.Context(), proxiedPath, reqBody, &resp)
-			case "DELETE":
-				err = pythonClient.DeleteJSON(r.Context(), proxiedPath, &resp)
-			}
-			if err != nil {
-				slog.Error("graph proxy error", "path", proxiedPath, "error", err)
-				InternalError(w, strings.TrimSpace(err.Error()))
-				return
-			}
-			OK(w, resp)
-		}
-	}
-	mux.Handle("GET /v1/graphs", authMW(rlMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		graphProxy("GET", "/v1/graphs", nil)(w, r)
-	}))))
-	mux.Handle("POST /v1/graphs", authMW(rlMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		graphProxy("POST", "/v1/graphs", nil)(w, r)
-	}))))
-	mux.Handle("GET /v1/graphs/{id}", authMW(rlMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		graphProxy("GET", "/v1/graphs/"+r.PathValue("id"), nil)(w, r)
-	}))))
-	mux.Handle("DELETE /v1/graphs/{id}", authMW(rlMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		graphProxy("DELETE", "/v1/graphs/"+r.PathValue("id"), nil)(w, r)
-	}))))
-	mux.Handle("POST /v1/graphs/{id}/execute", authMW(rlMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		graphProxy("POST", "/v1/graphs/"+r.PathValue("id")+"/execute", nil)(w, r)
-	}))))
-
-	// Workflow 执行状态与历史（代理 Python；status 支持内存实例 + DB 回退）
-	mux.Handle("GET /v1/workflows/instances", authMW(rlMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		graphProxy("GET", "/v1/workflows/instances", nil)(w, r)
-	}))))
-	mux.Handle("GET /v1/workflows/{id}/status", authMW(rlMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		graphProxy("GET", "/v1/workflows/"+r.PathValue("id")+"/status", nil)(w, r)
-	}))))
+	registerPublicEndpoints(mux, authMW, rlMW, publicMW, searchHandler, shareHandler)
+	registerAgentRoutes(mux, authMW, rlMW, publicMW, sanitizeMW, submitHandler, billingMgr, agentSem, eventHub, sessionMgr, authenticator, rpaHub)
+	registerAuthRoutes(mux, authHandler, authMW, rlMW)
+	registerSystemRoutes(mux, authMW, rlMW, sanitizeMW, installHandler, editorHandler, toolHandler, systemHandler, traceHandler)
+	registerConversationRoutes(mux, conversationHandler, shareHandler, authMW, rlMW)
+	registerMediaRoutes(mux, mediaHandler, authMW, rlMW, cfg.StorageRoot)
+	registerPluginRoutes(mux, pluginHandler, authMW, rlMW)
+	registerBillingRoutes(mux, billingHandler, authMW, rlMW)
+	registerProxyRoutes(mux, authMW, rlMW, kbRateMW, pythonClient)
 
 	// Agents (auth + rate limited; DB 驱动 CRUD + 运行会话)
 	agentHandler := NewAgentHandler(authenticator, pythonClient)
@@ -494,40 +243,348 @@ func NewGatewayRouter(
 	mux.Handle("POST /v1/permission/approve", authMW(rlMW(http.HandlerFunc(modeHandler.ApprovePermission))))
 	mux.Handle("POST /v1/permission/reject", authMW(rlMW(http.HandlerFunc(modeHandler.RejectPermission))))
 
+	registerAdminRoutes(mux, authMW, adminHandler, pythonClient)
+
+	// Wrap main mux with public middleware
+	return publicMW(mux)
+}
+
+// ── Public endpoints ──
+
+func registerPublicEndpoints(
+	mux *http.ServeMux,
+	authMW, rlMW, publicMW routeMiddleware,
+	searchHandler *SearchHandler,
+	shareHandler *ShareHandler,
+) {
+	mux.Handle("GET /search", authMW(rlMW(http.HandlerFunc(searchHandler.Search))))
+
+	// Public share view (no auth; revoked shares return 410 Gone)
+	mux.Handle("GET /share/{id}", rlMW(publicMW(http.HandlerFunc(shareHandler.PublicGet))))
+
+	mux.Handle("GET /health", rlMW(publicMW(http.HandlerFunc(handleHealth))))
+	mux.Handle("GET /ready", rlMW(publicMW(http.HandlerFunc(handleReadiness))))
+}
+
+// ── Agent submit/cancel/events ──
+
+func registerAgentRoutes(
+	mux *http.ServeMux,
+	authMW, rlMW, publicMW, sanitizeMW routeMiddleware,
+	submitHandler *SubmitHandler,
+	billingMgr *billing.Manager,
+	agentSem chan struct{},
+	eventHub *broadcast.Hub,
+	sessionMgr *session.Manager,
+	authenticator *auth.Authenticator,
+	rpaHub *RPAHub,
+) {
+	mux.Handle("POST /v1/agent/approval", authMW(rlMW(http.HandlerFunc(submitHandler.SubmitApproval))))
+
+	mux.Handle("POST /submit", authMW(publicMW(sanitizeMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Content   string                 `json:"content"`
+			SessionID string                 `json:"session_id"`
+			LLMConfig map[string]interface{} `json:"llm_config"`
+		}
+		if err := DecodeJSON(w, r, &body); err != nil {
+			BadRequest(w, "invalid request")
+			return
+		}
+		if body.Content == "" {
+			BadRequest(w, "content is required")
+			return
+		}
+		claims := auth.GetClaims(r.Context())
+		if claims == nil {
+			Unauthorized(w, ErrAuthRequired)
+			return
+		}
+		userID := claims.UserID
+
+		// Billing pre-check
+		if billingMgr != nil {
+			count, err := billingMgr.DailyFreeCount(r.Context(), userID)
+			overFreeQuota := err != nil || count >= billing.DailyFreeLimit
+			if overFreeQuota {
+				if balance, balErr := billingMgr.GetBalance(userID); balErr == nil && balance <= 0 {
+					JSON(w, http.StatusPaymentRequired, APIResponse{
+						Success: false,
+						Error:   "insufficient credits — please recharge in Billing",
+					})
+					return
+				}
+			}
+		}
+
+		// Reject concurrent submits within the same session
+		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+		if _, loaded := sessionCancels.LoadOrStore(body.SessionID, sessionCancel{userID: userID, cancel: cancel}); loaded {
+			cancel() // cancel the new one since there's already an active task
+			BadRequest(w, "task already running for this session")
+			return
+		}
+
+		select {
+		case agentSem <- struct{}{}:
+		default:
+			sessionCancels.Delete(body.SessionID)
+			cancel()
+			TooManyRequests(w)
+			return
+		}
+
+		Accepted(w, map[string]string{"status": "accepted", "session_id": body.SessionID})
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					slog.Error("submit handler panic", "panic", r)
+				}
+			}()
+			defer func() { <-agentSem }()
+			defer cancel()
+			defer sessionCancels.Delete(body.SessionID)
+			submitHandler.HandleSubmit(ctx, userID, body.SessionID, body.Content, body.LLMConfig)
+		}()
+	})))))
+
+	mux.Handle("POST /cancel", authMW(rlMW(publicMW(http.HandlerFunc(handleCancel)))))
+
+	// SSE + WebSocket
+	mux.Handle("GET /events", authMW(rlMW(SSEHandler(eventHub, sessionMgr))))
+	mux.HandleFunc("GET /ws/{sessionId}", WebSocketHandler(NewWebSocketHub(), eventHub, authenticator, sessionMgr))
+	mux.HandleFunc("GET /ws/rpa", RPAWebSocketHandler(rpaHub, authenticator))
+}
+
+// ── Auth (login / register / logout) ──
+
+func registerAuthRoutes(mux *http.ServeMux, authHandler *AuthHandler, authMW, rlMW routeMiddleware) {
+	// Auth (public, rate limited)
+	mux.Handle("POST /v1/auth/login", rlMW(http.HandlerFunc(authHandler.Login)))
+	mux.Handle("POST /v1/auth/register", rlMW(http.HandlerFunc(authHandler.Register)))
+	mux.Handle("POST /v1/auth/refresh", rlMW(http.HandlerFunc(authHandler.Refresh)))
+	mux.Handle("POST /v1/auth/logout", rlMW(http.HandlerFunc(authHandler.Logout)))
+	mux.Handle("GET /v1/auth/profile", authMW(rlMW(http.HandlerFunc(authHandler.Profile))))
+	mux.Handle("PUT /v1/auth/profile", authMW(rlMW(http.HandlerFunc(authHandler.UpdateProfile))))
+}
+
+// ── System (install / editor / tools / health / trace) ──
+
+func registerSystemRoutes(
+	mux *http.ServeMux,
+	authMW, rlMW, sanitizeMW routeMiddleware,
+	installHandler *InstallHandler,
+	editorHandler *EditorHandler,
+	toolHandler *ToolHandler,
+	systemHandler *SystemHandler,
+	traceHandler *TraceHandler,
+) {
+	// Install (public, rate limited)
+	mux.Handle("GET /v1/install/status", rlMW(http.HandlerFunc(installHandler.Status)))
+	mux.Handle("POST /v1/install/setup", rlMW(http.HandlerFunc(installHandler.Setup)))
+
+	// Editor (auth + rate limited)
+	mux.Handle("GET /api/editor/files", authMW(rlMW(http.HandlerFunc(editorHandler.ListFiles))))
+	mux.Handle("GET /api/editor/read", authMW(rlMW(http.HandlerFunc(editorHandler.ReadFile))))
+	mux.Handle("POST /api/editor/write", authMW(rlMW(http.HandlerFunc(editorHandler.WriteFile))))
+
+	// Tools (rate limited, proxies to Python)
+	mux.Handle("GET /v1/tools", rlMW(http.HandlerFunc(toolHandler.ListTools)))
+	mux.Handle("POST /v1/tools/execute", authMW(rlMW(sanitizeMW(http.HandlerFunc(toolHandler.ExecuteTool)))))
+
+	// System (rate limited; spans/traces 仅管理员可见，S 安全修复：原为公开信息泄露)
+	mux.Handle("GET /v1/system/health", rlMW(http.HandlerFunc(systemHandler.HealthScores)))
+	mux.Handle("GET /v1/system/spans", authMW(rlMW(RequirePermission(auth.PermAdminRead)(http.HandlerFunc(systemHandler.Spans)))))
+	mux.Handle("GET /v1/system/traces", authMW(rlMW(RequirePermission(auth.PermAdminRead)(http.HandlerFunc(systemHandler.Traces)))))
+	mux.Handle("GET /v1/metrics", authMW(rlMW(http.HandlerFunc(systemHandler.Metrics))))
+
+	// Trace (user-level call chain tracing, tenant-isolated)
+	if traceHandler != nil {
+		mux.Handle("GET /v1/traces", authMW(rlMW(http.HandlerFunc(traceHandler.ListTraces))))
+		mux.Handle("GET /v1/traces/{trace_id}", authMW(rlMW(http.HandlerFunc(traceHandler.GetTrace))))
+	}
+}
+
+// ── Conversations ──
+
+func registerConversationRoutes(
+	mux *http.ServeMux,
+	conversationHandler *ConversationHandler,
+	shareHandler *ShareHandler,
+	authMW, rlMW routeMiddleware,
+) {
+	// Conversations (auth + rate limited)
+	mux.Handle("GET /v1/conversations", authMW(rlMW(http.HandlerFunc(conversationHandler.List))))
+	mux.Handle("POST /v1/conversations", authMW(rlMW(http.HandlerFunc(conversationHandler.Create))))
+	mux.Handle("GET /v1/conversations/{id}", authMW(rlMW(http.HandlerFunc(conversationHandler.Get))))
+	mux.Handle("PUT /v1/conversations/{id}", authMW(rlMW(http.HandlerFunc(conversationHandler.Update))))
+	mux.Handle("DELETE /v1/conversations/{id}", authMW(rlMW(http.HandlerFunc(conversationHandler.Delete))))
+
+	// Conversation shares (auth + rate limited; public GET in registerPublicEndpoints)
+	mux.Handle("POST /v1/conversations/{id}/share", authMW(rlMW(http.HandlerFunc(shareHandler.Create))))
+	mux.Handle("GET /v1/conversations/{id}/share", authMW(rlMW(http.HandlerFunc(shareHandler.GetActive))))
+	mux.Handle("DELETE /v1/conversations/{id}/share", authMW(rlMW(http.HandlerFunc(shareHandler.Revoke))))
+}
+
+// ── Media ──
+
+func registerMediaRoutes(
+	mux *http.ServeMux,
+	mediaHandler *MediaHandler,
+	authMW, rlMW routeMiddleware,
+	storageRoot string,
+) {
+	// Media (auth + rate limited)
+	mux.Handle("GET /v1/media", authMW(rlMW(http.HandlerFunc(mediaHandler.List))))
+	mux.Handle("POST /v1/media", authMW(rlMW(http.HandlerFunc(mediaHandler.Create))))
+	mux.Handle("POST /v1/media/folders", authMW(rlMW(http.HandlerFunc(mediaHandler.CreateFolder))))
+	mux.Handle("GET /v1/media/folders", authMW(rlMW(http.HandlerFunc(mediaHandler.ListFolders))))
+	mux.Handle("POST /v1/media/upload", authMW(rlMW(http.HandlerFunc(mediaHandler.Upload))))
+	mux.Handle("POST /v1/media/presign", authMW(rlMW(http.HandlerFunc(mediaHandler.PresignUpload))))
+	mux.Handle("POST /v1/media/complete", authMW(rlMW(http.HandlerFunc(mediaHandler.CompleteUpload))))
+	mux.Handle("POST /v1/media/batch-delete", authMW(rlMW(http.HandlerFunc(mediaHandler.BatchDelete))))
+	mux.Handle("PUT /v1/media/{id}", authMW(rlMW(http.HandlerFunc(mediaHandler.Update))))
+	mux.Handle("GET /v1/media/{id}/download", authMW(rlMW(http.HandlerFunc(mediaHandler.Download))))
+	mux.Handle("POST /v1/media/{id}/share", authMW(rlMW(http.HandlerFunc(mediaHandler.Share))))
+	mux.Handle("DELETE /v1/media/{id}", authMW(rlMW(http.HandlerFunc(mediaHandler.Delete))))
+
+	// Media file serving
+	mux.Handle("GET /media/", rlMW(http.StripPrefix("/media/", http.FileServer(http.Dir(storageRoot+"/media")))))
+}
+
+// ── Plugins ──
+
+func registerPluginRoutes(mux *http.ServeMux, pluginHandler *PluginHandler, authMW, rlMW routeMiddleware) {
+	// Plugins (auth + rate limited)
+	mux.Handle("GET /v1/plugins", authMW(rlMW(http.HandlerFunc(pluginHandler.List))))
+	mux.Handle("POST /v1/plugins/{name}/install", authMW(rlMW(http.HandlerFunc(pluginHandler.Install))))
+	mux.Handle("PUT /v1/plugins/{name}", authMW(rlMW(http.HandlerFunc(pluginHandler.Update))))
+	mux.Handle("POST /v1/plugins/{name}/test", authMW(rlMW(http.HandlerFunc(pluginHandler.Test))))
+	mux.Handle("DELETE /v1/plugins/{name}", authMW(rlMW(http.HandlerFunc(pluginHandler.Uninstall))))
+}
+
+// ── Billing ──
+
+func registerBillingRoutes(mux *http.ServeMux, billingHandler *BillingHandler, authMW, rlMW routeMiddleware) {
+	// Billing (auth + rate limited)
+	mux.Handle("GET /v1/billing/balance", authMW(rlMW(http.HandlerFunc(billingHandler.GetBalance))))
+	mux.Handle("GET /v1/billing/history", authMW(rlMW(http.HandlerFunc(billingHandler.GetHistory))))
+	mux.Handle("POST /v1/billing/recharge", authMW(rlMW(http.HandlerFunc(billingHandler.Recharge))))
+	mux.Handle("POST /v1/billing/pay", authMW(rlMW(http.HandlerFunc(billingHandler.CreatePayment))))
+	mux.Handle("GET /v1/billing/orders/{id}", authMW(rlMW(http.HandlerFunc(billingHandler.GetOrder))))
+	// 支付渠道异步回调（无 auth：支付宝验签 / 微信平台证书验签 + AES-GCM 解密）
+	mux.Handle("POST /v1/billing/callback/alipay", rlMW(http.HandlerFunc(billingHandler.AlipayCallback)))
+	mux.Handle("POST /v1/billing/callback/wechat", rlMW(http.HandlerFunc(billingHandler.WechatCallback)))
+	mux.Handle("POST /v1/billing/paypal-capture", authMW(rlMW(http.HandlerFunc(billingHandler.PayPalCapture))))
+	mux.Handle("GET /v1/billing/usage", authMW(rlMW(http.HandlerFunc(billingHandler.GetUsage))))
+}
+
+// ── Python engine proxy routes (graphs / workflows / knowledge base) ──
+
+func registerProxyRoutes(
+	mux *http.ServeMux,
+	authMW, rlMW, kbRateMW routeMiddleware,
+	pythonClient *engine.PythonClient,
+) {
+	// pythonProxy is a factory for reverse-proxy handlers to the Python engine.
+	// All routes using this factory are wrapped with authMW, so claims are
+	// guaranteed present in context.
+	type proxyOpt struct {
+		methods []string // allowed HTTP methods; empty = GET+POST+PUT+DELETE
+		logTag  string
+	}
+	newProxy := func(prefix string, opt proxyOpt) func(func(*http.Request) string) http.HandlerFunc {
+		return func(buildPath func(*http.Request) string) http.HandlerFunc {
+			return func(w http.ResponseWriter, r *http.Request) {
+				if pythonClient == nil || !pythonClient.IsConnected() {
+					InternalError(w, "python engine not available")
+					return
+				}
+				claims := auth.GetClaims(r.Context())
+				proxiedPath := buildPath(r) + "?user_id=" + claims.UserID
+				var resp interface{}
+				var err error
+				switch r.Method {
+				case "GET":
+					err = pythonClient.GetJSON(r.Context(), proxiedPath, &resp)
+				case "POST":
+					var body map[string]interface{}
+					if err2 := DecodeJSON(w, r, &body); err2 != nil {
+						return
+					}
+					err = pythonClient.PostJSON(r.Context(), proxiedPath, body, &resp)
+				case "PUT":
+					var body map[string]interface{}
+					if err2 := DecodeJSON(w, r, &body); err2 != nil {
+						return
+					}
+					err = pythonClient.PutJSON(r.Context(), proxiedPath, body, &resp)
+				case "DELETE":
+					err = pythonClient.DeleteJSON(r.Context(), proxiedPath, &resp)
+				}
+				if err != nil {
+					slog.Error(opt.logTag+" proxy error", "path", proxiedPath, "error", err)
+					logAndRespond(w, err, http.StatusInternalServerError, "internal error")
+					return
+				}
+				OK(w, resp)
+			}
+		}
+	}
+
+	// Helper: build path functions for parameterised routes
+	pathFn := func(static string) func(*http.Request) string {
+		return func(*http.Request) string { return static }
+	}
+	pathParam := func(prefix string) func(*http.Request) string {
+		return func(r *http.Request) string { return prefix + "/" + r.PathValue("id") }
+	}
+	pathParamSuffix := func(prefix, suffix string) func(*http.Request) string {
+		return func(r *http.Request) string {
+			return prefix + "/" + r.PathValue("id") + suffix
+		}
+	}
+
+	// Graphs (auth + rate limited, proxies to Python)
+	graphP := newProxy("", proxyOpt{logTag: "graph"})
+	mux.Handle("GET /v1/graphs", authMW(rlMW(graphP(pathFn("/v1/graphs")))))
+	mux.Handle("POST /v1/graphs", authMW(rlMW(graphP(pathFn("/v1/graphs")))))
+	mux.Handle("GET /v1/graphs/{id}", authMW(rlMW(graphP(pathParam("/v1/graphs")))))
+	mux.Handle("DELETE /v1/graphs/{id}", authMW(rlMW(graphP(pathParam("/v1/graphs")))))
+	mux.Handle("POST /v1/graphs/{id}/execute", authMW(rlMW(graphP(pathParamSuffix("/v1/graphs", "/execute")))))
+
+	// Workflow 执行状态与历史（代理 Python；status 支持内存实例 + DB 回退）
+	mux.Handle("GET /v1/workflows/instances", authMW(rlMW(graphP(pathFn("/v1/workflows/instances")))))
+	mux.Handle("GET /v1/workflows/{id}/status", authMW(rlMW(graphP(pathParamSuffix("/v1/workflows", "/status")))))
+
 	// Knowledge Base (auth + rate limited + tenant QPS limit, proxies to Python)
-	mux.Handle("GET /v1/kb", authMW(kbRateMW(http.HandlerFunc(kbProxy("GET", "/v1/kb", nil)))))
-	mux.Handle("POST /v1/kb", authMW(kbRateMW(http.HandlerFunc(kbProxy("POST", "/v1/kb", nil)))))
-	mux.Handle("GET /v1/kb/{id}", authMW(kbRateMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		kbProxy("GET", "/v1/kb/"+r.PathValue("id"), nil)(w, r)
-	}))))
-	mux.Handle("PUT /v1/kb/{id}", authMW(kbRateMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		kbProxy("PUT", "/v1/kb/"+r.PathValue("id"), nil)(w, r)
-	}))))
-	mux.Handle("DELETE /v1/kb/{id}", authMW(kbRateMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		kbProxy("DELETE", "/v1/kb/"+r.PathValue("id"), nil)(w, r)
-	}))))
+	kbP := newProxy("/v1/kb", proxyOpt{logTag: "kb"})
+	mux.Handle("GET /v1/kb", authMW(kbRateMW(kbP(pathFn("/v1/kb")))))
+	mux.Handle("POST /v1/kb", authMW(kbRateMW(kbP(pathFn("/v1/kb")))))
+	mux.Handle("GET /v1/kb/{id}", authMW(kbRateMW(kbP(pathParam("/v1/kb")))))
+	mux.Handle("PUT /v1/kb/{id}", authMW(kbRateMW(kbP(pathParam("/v1/kb")))))
+	mux.Handle("DELETE /v1/kb/{id}", authMW(kbRateMW(kbP(pathParam("/v1/kb")))))
 	mux.Handle("POST /v1/kb/{id}/documents", authMW(kbRateMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if pythonClient == nil || !pythonClient.IsConnected() {
 			InternalError(w, "python engine not available")
 			return
 		}
-		claims := getAuthClaims(r, authenticator)
-		if claims == nil {
-			Unauthorized(w, "authentication required")
-			return
-		}
+		claims := auth.GetClaims(r.Context())
 		pythonClient.ForwardRequest(w, r, "/v1/kb/"+r.PathValue("id")+"/documents?user_id="+claims.UserID)
 	}))))
-	mux.Handle("GET /v1/kb/{id}/documents", authMW(kbRateMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		kbProxy("GET", "/v1/kb/"+r.PathValue("id")+"/documents", nil)(w, r)
-	}))))
-	mux.Handle("POST /v1/kb/{id}/build", authMW(kbRateMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		kbProxy("POST", "/v1/kb/"+r.PathValue("id")+"/build", nil)(w, r)
-	}))))
-	mux.Handle("POST /v1/kb/{id}/query", authMW(kbRateMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		kbProxy("POST", "/v1/kb/"+r.PathValue("id")+"/query", nil)(w, r)
-	}))))
+	mux.Handle("GET /v1/kb/{id}/documents", authMW(kbRateMW(kbP(pathParamSuffix("/v1/kb", "/documents")))))
+	mux.Handle("POST /v1/kb/{id}/build", authMW(kbRateMW(kbP(pathParamSuffix("/v1/kb", "/build")))))
+	mux.Handle("POST /v1/kb/{id}/query", authMW(kbRateMW(kbP(pathParamSuffix("/v1/kb", "/query")))))
+}
 
+// ── Admin ──
+
+func registerAdminRoutes(
+	mux *http.ServeMux,
+	authMW routeMiddleware,
+	adminHandler *AdminHandler,
+	pythonClient *engine.PythonClient,
+) {
 	// Admin routes (auth + admin permission)
 	adminPermMW := RequirePermission(auth.PermAdminRead)
 	adminMux := http.NewServeMux()
@@ -548,11 +605,7 @@ func NewGatewayRouter(
 			InternalError(w, "python engine not available")
 			return
 		}
-		claims := getAuthClaims(r, authenticator)
-		if claims == nil {
-			Unauthorized(w, "authentication required")
-			return
-		}
+		claims := auth.GetClaims(r.Context())
 		r.Header.Set("X-User-Role", claims.Role)
 		pythonClient.ForwardRequest(w, r, "/v1/admin/kb?user_id="+claims.UserID)
 	}))))
@@ -606,14 +659,8 @@ func NewGatewayRouter(
 			return
 		}
 		pythonClient.ForwardRequest(w, r, "/v1/admin/api-keys/"+r.PathValue("id"))
-}))))
+	}))))
 
 	// Settings admin routes
 	mux.Handle("PUT /v1/admin/settings", authMW(adminPermMW(adminStrip)))
-
-	// Media file serving
-	mux.Handle("GET /media/", http.StripPrefix("/media/", http.FileServer(http.Dir(cfg.StorageRoot+"/media"))))
-
-	// Wrap main mux with public middleware
-	return publicMW(mux)
 }

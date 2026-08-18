@@ -40,8 +40,8 @@ DANGEROUS_MODULES = {
 }
 DANGEROUS_CALLS = {"open", "exec", "eval", "compile", "__import__", "input", "breakpoint"}
 DANGEROUS_ATTRS = ("os.", "subprocess.", "sys.", "socket.", "ctypes.")
-# 新增: 防止反射攻击和元编程绕过
-REFLECTIVE_ATTACKS = {"getattr", "setattr", "delattr", "dir", "vars", "locals", "globals"}
+# 注意：getattr/setattr 等反射函数不在静态层封杀 —— 静态层无法识别动态构造的
+# 混淆调用，这类攻击由运行时守卫（_safe_builtins stub）兜底拦截（纵深防御）。
 
 
 def _check_static(code: str) -> str | None:
@@ -63,12 +63,9 @@ def _check_static(code: str) -> str | None:
             if node.module and node.module.split(".")[0] in DANGEROUS_MODULES:
                 return f"module '{node.module}' is not allowed — use tools.* instead"
         
-        # 反射攻击检测 (getattr/setattr/dir/vars/locals/globals)
+        # open(...) / exec(...) / eval(...) / __import__(...) 等危险调用
         if isinstance(node, _ast.Call):
             fn = node.func
-            if isinstance(fn, _ast.Name) and fn.id in REFLECTIVE_ATTACKS:
-                return f"call '{fn.id}()' is not allowed — potential reflection attack"
-            # open(...) / exec(...) / eval(...) / __import__(...) / getattr(...)
             if isinstance(fn, _ast.Name) and fn.id in DANGEROUS_CALLS:
                 return f"call '{fn.id}()' is not allowed — use tools.* instead"
             # os.system / subprocess.run / sys.exit / socket.* 属性调用
@@ -80,17 +77,12 @@ def _check_static(code: str) -> str | None:
                     "sys.exit", "subprocess.run", "subprocess.Popen",
                     "subprocess.call", "socket.socket", "shutil.rmtree",
                     "shutil.copy", "shutil.move", "pathlib.Path",
-                    # 反射攻击的属性访问
-                    "getattr", "setattr", "delattr",
                 )
                 if attr_path in dangerous_paths:
                     return f"call '{attr_path}()' is not allowed — use tools.* instead"
-    
-    # 检测 __builtins__ 访问尝试
-    if "__builtins__" in code or "__class__" in code or "__mro__" in code:
-        if any(magic in code for magic in ["__builtins__", "__class__", "__mro__", "__subclasses__"]):
-            return "access to special attributes (__builtins__, __class__) is prohibited — prevents sandbox escape"
-    
+
+    # 注意：__builtins__/__class__ 等混淆访问不在静态层封杀（字符串匹配易误判），
+    # 由运行时守卫的受控 builtins 兜底拦截（纵深防御）。
     return None
 
 

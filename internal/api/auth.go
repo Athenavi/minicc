@@ -49,20 +49,20 @@ func SetTokenCookie(w http.ResponseWriter, token string, maxAge int, secure bool
 		Name:     tokenCookieName,
 		Value:    token,
 		Path:     "/",
-		HttpOnly: false, // 允许 JS 读取以便前端使用
+		HttpOnly: true,
 		Secure:   secure, // 生产 HTTPS（COOKIE_SECURE=true）下防止明文传输（S 安全修复）
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   maxAge,
 	})
 }
 
-func ClearTokenCookie(w http.ResponseWriter) {
+func ClearTokenCookie(w http.ResponseWriter, secure bool) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     tokenCookieName,
 		Value:    "",
 		Path:     "/",
-		HttpOnly: false,
-		Secure:   false,
+		HttpOnly: true,
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})
@@ -71,7 +71,7 @@ func ClearTokenCookie(w http.ResponseWriter) {
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
 	if err := DecodeJSON(w, r, &req); err != nil {
-		BadRequest(w, "invalid request body")
+		BadRequest(w, ErrInvalidReq)
 		return
 	}
 	if req.Email == "" || req.Password == "" {
@@ -88,11 +88,6 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// No dev bypass — always validate against DB
-	if db.Pool == nil {
-		InternalError(w, "database not available")
-		return
-	}
-
 	ctx := r.Context()
 
 	// 设置租户上下文以绕过 RLS —— 必须在事务中才能让 SET LOCAL 持续生效
@@ -118,11 +113,13 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	).Scan(&user.ID, &user.Email, &user.Name, &user.Role, &passwordHash)
 	if err != nil {
 		slog.Warn("login failed", "email", req.Email, "error", err)
+		db.AuditLog(r.Context(), "", "login_failed", "/v1/auth/login", "email="+req.Email, r.RemoteAddr, nil)
 		Unauthorized(w, "invalid email or password")
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(req.Password)); err != nil {
+		db.AuditLog(r.Context(), "", "login_failed", "/v1/auth/login", "email="+req.Email, r.RemoteAddr, nil)
 		Unauthorized(w, "invalid email or password")
 		return
 	}
@@ -134,6 +131,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	SetTokenCookie(w, token, int(h.cfg.JWTExpiration.Seconds()), h.cfg.CookieSecure)
+	db.AuditLog(r.Context(), user.ID, "login_success", "/v1/auth/login", "email="+req.Email, r.RemoteAddr, nil)
 	OK(w, map[string]interface{}{
 		"token": token,
 		"user":  user,
@@ -154,7 +152,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	var req RegisterRequest
 	if err := DecodeJSON(w, r, &req); err != nil {
-		BadRequest(w, "invalid request body")
+		BadRequest(w, ErrInvalidReq)
 		return
 	}
 
@@ -172,11 +170,6 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(req.Email) > 255 || len(req.Name) > 128 {
 		BadRequest(w, "email or name too long")
-		return
-	}
-
-	if db.Pool == nil {
-		InternalError(w, "database not available")
 		return
 	}
 
@@ -227,8 +220,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		DefaultTenantID, req.Email, req.Name, string(hash),
 	).Scan(&userID)
 	if err != nil {
-		slog.Error("insert user", "error", err)
-		InternalError(w, "registration failed: "+err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "registration failed")
 		return
 	}
 
@@ -260,7 +252,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 			db.Redis.Set(r.Context(), "jwt:blacklist:"+claims.ID, "1", remaining)
 		}
 	}
-	ClearTokenCookie(w)
+	ClearTokenCookie(w, h.cfg.CookieSecure)
 	OK(w, map[string]string{"message": "logged out"})
 }
 
@@ -286,17 +278,13 @@ func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		Unauthorized(w, "not authenticated")
 		return
 	}
-	if db.Pool == nil {
-		NotFound(w, "database not available")
-		return
-	}
 
 	var body struct {
 		Email string `json:"email"`
 		Name  string `json:"name"`
 	}
 	if err := DecodeJSON(w, r, &body); err != nil {
-		BadRequest(w, "invalid request body")
+		BadRequest(w, ErrInvalidReq)
 		return
 	}
 	if body.Email == "" && body.Name == "" {
@@ -323,7 +311,7 @@ func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	if _, err := db.Pool.Exec(r.Context(),
 		fmt.Sprintf("UPDATE users SET %s, updated_at = NOW() WHERE id = $%d", setClauses, argIdx),
 		args...); err != nil {
-		InternalError(w, "update profile: "+err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "update profile failed")
 		return
 	}
 

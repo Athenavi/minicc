@@ -62,7 +62,9 @@ async def test_skill_run_prompt_calls_llm(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_skill_run_shell_in_sandbox(tmp_path):
     store = _make_store(tmp_path)
-    _save(store, SkillDef(name="echo-skill", description="echo", exec_type="shell", source="echo hi-{who}"))
+    # 使用 python -c 替代 echo（echo 是 shell 内建命令，create_subprocess_exec 无法直接执行）
+    _save(store, SkillDef(name="echo-skill", description="echo", exec_type="shell",
+                          source="python -c \"print('hi-{who}')\""))
     result = await skill_mod.skill_run("echo-skill", {"who": "skill"})
     assert "hi-skill" in result["output"]
 

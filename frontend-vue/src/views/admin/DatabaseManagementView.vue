@@ -3,13 +3,19 @@ import { ref, h, onMounted } from 'vue'
 import { Card, Table, Button, Space, Tag, Input, Modal, Form, InputNumber, Alert, Progress, Descriptions } from 'ant-design-vue'
 import { PlusOutlined, ReloadOutlined, DatabaseOutlined, DatabaseTwoTone, SearchOutlined } from '@ant-design/icons-vue'
 import { api } from '../../api'
+import { useCrudResource, apiErrorMessage } from '../../composables/useCrudResource'
 
 // State
-const loading = ref(true)
-const dbConfigs = ref<any[]>([])
+const { data: dbConfigs, loading, load: loadDBConfigs } = useCrudResource<any[]>(
+  [],
+  async () => (await api.get('/admin/database/configs')).data || []
+)
+const { data: backups, load: listBackups } = useCrudResource<any[]>(
+  [],
+  async () => (await api.get('/admin/database/backups')).data || []
+)
 const selectedDB = ref<any>(null)
 const statusData = ref<any>({})
-const backups = ref<any[]>([])
 const queryResult = ref<any[]>([])
 const modalVisible = ref(false)
 const queryModalVisible = ref(false)
@@ -26,19 +32,6 @@ const currentForm = ref({
   conn_max_lifetime: '30m'
 })
 
-// Load DB configs
-async function loadDBConfigs() {
-  try {
-    loading.value = true
-    const response = await api.get('/admin/database/configs')
-    dbConfigs.value = response.data || []
-  } catch (error: any) {
-    console.error('Failed to load DB configs:', error)
-  } finally {
-    loading.value = false
-  }
-}
-
 // Get status
 async function getStatus(id: string) {
   try {
@@ -46,7 +39,7 @@ async function getStatus(id: string) {
     statusData.value = response.data
     selectedDB.value = dbConfigs.value.find(d => d.id === id)
   } catch (error: any) {
-    alert(error.response?.data?.error || '获取状态失败')
+    alert(apiErrorMessage(error, '获取状态失败'))
   }
 }
 
@@ -56,17 +49,7 @@ async function createBackup(description: string) {
     await api.post('/admin/database/backups', { description })
     alert('备份已开始,请稍后查看状态')
   } catch (error: any) {
-    alert(error.response?.data?.error || '创建备份失败')
-  }
-}
-
-// List backups
-async function listBackups() {
-  try {
-    const response = await api.get('/admin/database/backups')
-    backups.value = response.data || []
-  } catch (error: any) {
-    console.error('Failed to list backups:', error)
+    alert(apiErrorMessage(error, '创建备份失败'))
   }
 }
 
@@ -78,7 +61,7 @@ async function restoreBackup(backupId: string) {
     await api.post(`/admin/database/backups/${backupId}/restore`)
     alert('恢复已启动,请稍后查看状态')
   } catch (error: any) {
-    alert(error.response?.data?.error || '恢复失败')
+    alert(apiErrorMessage(error, '恢复失败'))
   }
 }
 
@@ -95,7 +78,7 @@ async function executeQuery() {
     })
     queryResult.value = response.data || []
   } catch (error: any) {
-    alert(error.response?.data?.error || '查询执行失败')
+    alert(apiErrorMessage(error, '查询执行失败'))
   }
 }
 
@@ -113,7 +96,7 @@ async function optimize(action: string) {
     await api.post(`/admin/database/optimize/${action}`)
     alert('优化操作已完成')
   } catch (error: any) {
-    alert(error.response?.data?.error || '优化失败')
+    alert(apiErrorMessage(error, '优化失败'))
   }
 }
 

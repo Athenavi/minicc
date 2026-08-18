@@ -79,7 +79,7 @@ func (h *BillingHandler) firstOrigin() string {
 func (h *BillingHandler) GetBalance(w http.ResponseWriter, r *http.Request) {
 	userID := h.resolveUserID(r)
 	if userID == "" {
-		Unauthorized(w, "auth required")
+		Unauthorized(w, ErrAuthRequired)
 		return
 	}
 
@@ -109,7 +109,7 @@ func (h *BillingHandler) GetBalance(w http.ResponseWriter, r *http.Request) {
 func (h *BillingHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 	userID := h.resolveUserID(r)
 	if userID == "" {
-		Unauthorized(w, "auth required")
+		Unauthorized(w, ErrAuthRequired)
 		return
 	}
 
@@ -126,12 +126,7 @@ func (h *BillingHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 func (h *BillingHandler) GetUsage(w http.ResponseWriter, r *http.Request) {
 	userID := h.resolveUserID(r)
 	if userID == "" {
-		Unauthorized(w, "auth required")
-		return
-	}
-
-	if db.Pool == nil {
-		OK(w, map[string]interface{}{"daily": []interface{}{}})
+		Unauthorized(w, ErrAuthRequired)
 		return
 	}
 
@@ -189,11 +184,7 @@ func (h *BillingHandler) GetUsage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *BillingHandler) Recharge(w http.ResponseWriter, r *http.Request) {
-	claims := getAuthClaims(r, h.authenticator)
-	if claims == nil {
-		Unauthorized(w, "auth required")
-		return
-	}
+	claims := auth.GetClaims(r.Context())
 	if !auth.HasPermission(claims, auth.PermAdminWrite) {
 		Forbidden(w, "admin permission required")
 		return
@@ -204,7 +195,7 @@ func (h *BillingHandler) Recharge(w http.ResponseWriter, r *http.Request) {
 		Amount int `json:"amount"`
 	}
 	if err := DecodeJSON(w, r, &body); err != nil {
-		BadRequest(w, "invalid request")
+		BadRequest(w, ErrInvalidReq)
 		return
 	}
 	if body.Amount <= 0 {
@@ -214,7 +205,7 @@ func (h *BillingHandler) Recharge(w http.ResponseWriter, r *http.Request) {
 
 	balance, err := h.mgr.AddCredits(userID, "recharge", body.Amount)
 	if err != nil {
-		InternalError(w, err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "internal error")
 		return
 	}
 
@@ -222,7 +213,7 @@ func (h *BillingHandler) Recharge(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *BillingHandler) resolveUserID(r *http.Request) string {
-	claims := getAuthClaims(r, h.authenticator)
+	claims := auth.GetClaims(r.Context())
 	if claims != nil {
 		return claims.UserID
 	}
@@ -235,11 +226,7 @@ func (h *BillingHandler) resolveUserID(r *http.Request) string {
 // body: {credits: int, channel: "alipay" | "wechat" | "paypal"}
 // 返回订单信息（alipay/wechat 含 qr_code 二维码内容；paypal 含 checkout_url）。
 func (h *BillingHandler) CreatePayment(w http.ResponseWriter, r *http.Request) {
-	claims := getAuthClaims(r, h.authenticator)
-	if claims == nil {
-		Unauthorized(w, "auth required")
-		return
-	}
+	claims := auth.GetClaims(r.Context())
 	userID := claims.UserID
 
 	var body struct {
@@ -247,7 +234,7 @@ func (h *BillingHandler) CreatePayment(w http.ResponseWriter, r *http.Request) {
 		Channel string `json:"channel"`
 	}
 	if err := DecodeJSON(w, r, &body); err != nil {
-		BadRequest(w, "invalid request")
+		BadRequest(w, ErrInvalidReq)
 		return
 	}
 	if body.Credits <= 0 {
@@ -285,9 +272,10 @@ func (h *BillingHandler) CreatePayment(w http.ResponseWriter, r *http.Request) {
 		}
 		qr, err := h.alipay.Precreate(ctx, p.ID, amountCents, subject)
 		if err != nil {
-			slog.Error("alipay precreate failed", "error", err)
-			_ = h.mgr.MarkPaymentFailed(ctx, p.ID)
-			InternalError(w, "支付宝下单失败："+err.Error())
+			if mErr := h.mgr.MarkPaymentFailed(ctx, p.ID); mErr != nil {
+				slog.Error("payment status update failed", "error", mErr)
+			}
+			logAndRespond(w, err, http.StatusInternalServerError, "支付下单失败")
 			return
 		}
 		if err := h.mgr.UpdatePaymentProvider(ctx, p.ID, qr, p.ID); err != nil {
@@ -307,9 +295,10 @@ func (h *BillingHandler) CreatePayment(w http.ResponseWriter, r *http.Request) {
 		}
 		codeURL, err := h.wechat.Precreate(ctx, p.ID, amountCents, subject, notifyURL)
 		if err != nil {
-			slog.Error("wechat precreate failed", "error", err)
-			_ = h.mgr.MarkPaymentFailed(ctx, p.ID)
-			InternalError(w, "微信下单失败："+err.Error())
+			if mErr := h.mgr.MarkPaymentFailed(ctx, p.ID); mErr != nil {
+				slog.Error("payment status update failed", "error", mErr)
+			}
+			logAndRespond(w, err, http.StatusInternalServerError, "支付下单失败")
 			return
 		}
 		if err := h.mgr.UpdatePaymentProvider(ctx, p.ID, codeURL, p.ID); err != nil {
@@ -328,11 +317,7 @@ func (h *BillingHandler) CreatePayment(w http.ResponseWriter, r *http.Request) {
 // GetOrder 查询订单状态（前端轮询）。pending 时主动向渠道查询一次兜底，
 // 已支付则幂等入账并返回最新状态。
 func (h *BillingHandler) GetOrder(w http.ResponseWriter, r *http.Request) {
-	claims := getAuthClaims(r, h.authenticator)
-	if claims == nil {
-		Unauthorized(w, "auth required")
-		return
-	}
+	claims := auth.GetClaims(r.Context())
 	id := r.PathValue("id")
 	if id == "" {
 		BadRequest(w, "order id required")
@@ -500,7 +485,9 @@ func (h *BillingHandler) createPayPalPayment(w http.ResponseWriter, r *http.Requ
 	orderID, approvalURL, err := h.payPalCreateOrder(r.Context(), credits, amount, userID)
 	if err != nil {
 		slog.Error("paypal order failed", "error", err)
-		_ = h.mgr.MarkPaymentFailed(r.Context(), p.ID)
+		if mErr := h.mgr.MarkPaymentFailed(r.Context(), p.ID); mErr != nil {
+			slog.Error("payment status update failed", "error", mErr)
+		}
 		InternalError(w, "PayPal order failed")
 		return
 	}
@@ -525,7 +512,7 @@ func (h *BillingHandler) createPayPalPayment(w http.ResponseWriter, r *http.Requ
 func (h *BillingHandler) PayPalCapture(w http.ResponseWriter, r *http.Request) {
 	userID := h.resolveUserID(r)
 	if userID == "" {
-		Unauthorized(w, "auth required")
+		Unauthorized(w, ErrAuthRequired)
 		return
 	}
 	var body struct{ OrderID string `json:"order_id"` }
@@ -543,10 +530,6 @@ func (h *BillingHandler) PayPalCapture(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 从 payments 表按 provider_order_id 定位订单并幂等入账
-	if db.Pool == nil {
-		InternalError(w, "database not available")
-		return
-	}
 	var payID, credits string
 	err := db.Pool.QueryRow(r.Context(),
 		`SELECT id, credits::text FROM payments

@@ -148,7 +148,7 @@ func (a *Aggregator) cleanupLoop() {
 			}
 			
 			// Remove events older than expireDuration
-			cutoff := now - expireDuration
+			cutoff := now - expireDuration.Milliseconds()
 			validIdx := 0
 			for i, event := range buffer.events {
 				if event.Timestamp > cutoff {

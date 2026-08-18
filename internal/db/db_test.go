@@ -18,7 +18,7 @@ func TestClosePostgres_NilPool(t *testing.T) {
 }
 
 func TestConnectRedis_InvalidAddr(t *testing.T) {
-	err := ConnectRedis(context.Background(), "invalid:addr", "", 0)
+	err := ConnectRedis(context.Background(), "invalid:addr", "", 0, 10)
 	if err == nil {
 		t.Fatal("expected error for invalid addr")
 	}

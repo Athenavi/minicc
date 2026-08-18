@@ -30,6 +30,9 @@ type RedisClient interface {
 	XAck(ctx context.Context, stream, group string, ids ...string) *redis.IntCmd
 	XGroupCreateMkStream(ctx context.Context, stream, group, start string) *redis.StatusCmd
 	XReadGroup(ctx context.Context, a *redis.XReadGroupArgs) *redis.XStreamSliceCmd
+	// XRange returns stream entries between start and stop; when start is "+"
+	// the scan is reversed (latest first). Optional count limits the results.
+	XRange(ctx context.Context, stream, start, stop string, count ...int64) *redis.XMessageSliceCmd
 	XLen(ctx context.Context, stream string) *redis.IntCmd
 	Exists(ctx context.Context, keys ...string) *redis.IntCmd
 	Publish(ctx context.Context, channel string, message interface{}) *redis.IntCmd
@@ -41,7 +44,10 @@ type SingleRedis struct {
 }
 
 // NewSingleRedis creates a new single Redis client.
-func NewSingleRedis(addr, password string, db int) (*SingleRedis, error) {
+func NewSingleRedis(addr, password string, db int, poolSize int) (*SingleRedis, error) {
+	if poolSize <= 0 {
+		poolSize = 50
+	}
 	opts := &redis.Options{
 		Addr:         addr,
 		Password:     password,
@@ -49,7 +55,7 @@ func NewSingleRedis(addr, password string, db int) (*SingleRedis, error) {
 		DialTimeout:  3 * time.Second,
 		ReadTimeout:  3 * time.Second,
 		WriteTimeout: 3 * time.Second,
-		PoolSize:     10,
+		PoolSize:     poolSize,
 		MinIdleConns: 0,
 		MaxRetries:   0,
 		PoolTimeout:  2 * time.Second,
@@ -137,6 +143,19 @@ func (s *SingleRedis) XGroupCreateMkStream(ctx context.Context, stream, group, s
 
 func (s *SingleRedis) XReadGroup(ctx context.Context, a *redis.XReadGroupArgs) *redis.XStreamSliceCmd {
 	return s.client.XReadGroup(ctx, a)
+}
+
+func (s *SingleRedis) XRange(ctx context.Context, stream, start, stop string, count ...int64) *redis.XMessageSliceCmd {
+	if start == "+" {
+		if len(count) > 0 {
+			return s.client.XRevRangeN(ctx, stream, start, stop, count[0])
+		}
+		return s.client.XRevRange(ctx, stream, start, stop)
+	}
+	if len(count) > 0 {
+		return s.client.XRangeN(ctx, stream, start, stop, count[0])
+	}
+	return s.client.XRange(ctx, stream, start, stop)
 }
 
 func (s *SingleRedis) XLen(ctx context.Context, stream string) *redis.IntCmd {
@@ -252,6 +271,19 @@ func (c *ClusterRedis) XGroupCreateMkStream(ctx context.Context, stream, group, 
 
 func (c *ClusterRedis) XReadGroup(ctx context.Context, a *redis.XReadGroupArgs) *redis.XStreamSliceCmd {
 	return c.client.XReadGroup(ctx, a)
+}
+
+func (c *ClusterRedis) XRange(ctx context.Context, stream, start, stop string, count ...int64) *redis.XMessageSliceCmd {
+	if start == "+" {
+		if len(count) > 0 {
+			return c.client.XRevRangeN(ctx, stream, start, stop, count[0])
+		}
+		return c.client.XRevRange(ctx, stream, start, stop)
+	}
+	if len(count) > 0 {
+		return c.client.XRangeN(ctx, stream, start, stop, count[0])
+	}
+	return c.client.XRange(ctx, stream, start, stop)
 }
 
 func (c *ClusterRedis) XLen(ctx context.Context, stream string) *redis.IntCmd {
@@ -371,6 +403,19 @@ func (f *FailoverRedis) XReadGroup(ctx context.Context, a *redis.XReadGroupArgs)
 	return f.client.XReadGroup(ctx, a)
 }
 
+func (f *FailoverRedis) XRange(ctx context.Context, stream, start, stop string, count ...int64) *redis.XMessageSliceCmd {
+	if start == "+" {
+		if len(count) > 0 {
+			return f.client.XRevRangeN(ctx, stream, start, stop, count[0])
+		}
+		return f.client.XRevRange(ctx, stream, start, stop)
+	}
+	if len(count) > 0 {
+		return f.client.XRangeN(ctx, stream, start, stop, count[0])
+	}
+	return f.client.XRange(ctx, stream, start, stop)
+}
+
 func (f *FailoverRedis) XLen(ctx context.Context, stream string) *redis.IntCmd {
 	return f.client.XLen(ctx, stream)
 }
@@ -391,6 +436,7 @@ type RedisConfig struct {
 	Addr     string   `json:"addr"`
 	Password string   `json:"password"`
 	DB       int      `json:"db"`
+	PoolSize int      `json:"pool_size"`
 	
 	// Cluster mode config
 	Addrs    []string `json:"addrs"`
@@ -404,7 +450,7 @@ type RedisConfig struct {
 func NewRedisClient(cfg RedisConfig) (RedisClient, error) {
 	switch cfg.Mode {
 	case "single", "":
-		return NewSingleRedis(cfg.Addr, cfg.Password, cfg.DB)
+		return NewSingleRedis(cfg.Addr, cfg.Password, cfg.DB, cfg.PoolSize)
 	case "cluster":
 		if len(cfg.Addrs) == 0 {
 			return nil, fmt.Errorf("cluster mode requires at least one address")

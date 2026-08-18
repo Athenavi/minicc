@@ -101,6 +101,10 @@ func (a *AtomicRedis) XReadGroup(ctx context.Context, args *redis.XReadGroupArgs
 	return a.load().XReadGroup(ctx, args)
 }
 
+func (a *AtomicRedis) XRange(ctx context.Context, stream, start, stop string, count ...int64) *redis.XMessageSliceCmd {
+	return a.load().XRange(ctx, stream, start, stop, count...)
+}
+
 func (a *AtomicRedis) XLen(ctx context.Context, stream string) *redis.IntCmd {
 	return a.load().XLen(ctx, stream)
 }

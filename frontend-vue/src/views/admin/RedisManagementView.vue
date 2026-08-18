@@ -3,10 +3,13 @@ import { ref, onMounted, computed } from 'vue'
 import { Card, Table, Button, Space, Tag, Input, Modal, Form, InputNumber, Statistic, Tabs, TabPane, Alert, Progress } from 'ant-design-vue'
 import { PlusOutlined, ReloadOutlined, DeleteOutlined, DatabaseOutlined, MonitorOutlined } from '@ant-design/icons-vue'
 import { api } from '../../api'
+import { useCrudResource, apiErrorMessage } from '../../composables/useCrudResource'
 
 // State
-const loading = ref(true)
-const redisConfigs = ref<any[]>([])
+const { data: redisConfigs, loading, load: loadRedisConfigs } = useCrudResource<any[]>(
+  [],
+  async () => (await api.get('/admin/redis/configs')).data || []
+)
 const selectedRedis = ref<any>(null)
 const statusData = ref<any>({})
 const poolData = ref<any>({})
@@ -23,19 +26,6 @@ const currentForm = ref({
   password_hash: ''
 })
 
-// Load Redis configs
-async function loadRedisConfigs() {
-  try {
-    loading.value = true
-    const response = await api.get('/admin/redis/configs')
-    redisConfigs.value = response.data || []
-  } catch (error: any) {
-    console.error('Failed to load Redis configs:', error)
-  } finally {
-    loading.value = false
-  }
-}
-
 // Get status
 async function getStatus(id: string) {
   try {
@@ -43,7 +33,7 @@ async function getStatus(id: string) {
     statusData.value = response.data
     selectedRedis.value = redisConfigs.value.find(r => r.id === id)
   } catch (error: any) {
-    alert(error.response?.data?.error || '获取状态失败')
+    alert(apiErrorMessage(error, '获取状态失败'))
   }
 }
 
@@ -66,7 +56,7 @@ async function flushCache(id: string) {
     alert('缓存已清空')
     getStatus(id)
   } catch (error: any) {
-    alert(error.response?.data?.error || '清空缓存失败')
+    alert(apiErrorMessage(error, '清空缓存失败'))
   }
 }
 
@@ -79,7 +69,7 @@ async function flushAll(id: string) {
     alert('FLUSHALL 执行成功')
     getStatus(id)
   } catch (error: any) {
-    alert(error.response?.data?.error || '执行失败')
+    alert(apiErrorMessage(error, '执行失败'))
   }
 }
 

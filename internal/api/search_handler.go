@@ -34,11 +34,6 @@ func (h *SearchHandler) Search(w http.ResponseWriter, r *http.Request) {
 
 	var results []SearchResult
 
-	if db.Pool == nil {
-		OK(w, map[string]interface{}{"results": results})
-		return
-	}
-
 	// 1. Search messages (conversations)
 	msgRows, err := db.ReadPool().Query(r.Context(),
 		`SELECT m.id, m.session_id, m.content, s.title,

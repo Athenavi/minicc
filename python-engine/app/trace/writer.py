@@ -15,7 +15,9 @@ import asyncio
 import json
 import logging
 import time
-from typing import Optional
+from typing import Any, Optional
+
+from app.middleware.privacy_middleware import is_no_retention
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +80,11 @@ class TraceWriter:
             metadata: 额外上下文 (model, input_tokens, tool_name 等)
             tenant_id: 租户 ID (用于流隔离,可选)
         """
+        # 隐私模式: no_retention 时跳过 trace 写入 (不落盘)
+        if is_no_retention():
+            logger.debug("Privacy no_retention: skip trace span write: %s", span_name)
+            return
+
         if self._redis is None:
             logger.debug("TraceWriter disabled (Redis not available), skipping span: %s", span_name)
             return
@@ -103,7 +110,15 @@ class TraceWriter:
         Args:
             spans: 每个 dict 包含 trace_id, span_name, duration_ms, metadata
         """
-        if not spans or self._redis is None:
+        if not spans:
+            return
+
+        # 隐私模式: no_retention 时跳过 trace 写入 (不落盘)
+        if is_no_retention():
+            logger.debug("Privacy no_retention: skip trace batch write (%d spans)", len(spans))
+            return
+
+        if self._redis is None:
             return
         
         try:
@@ -119,8 +134,10 @@ class TraceWriter:
                 entries.append(entry)
             
             pipeline = self._redis.pipeline(transaction=False)
-            for entry in entries:
-                pipeline.xadd(TRACES_STREAM, entry, maxlen=10000, approximate=True)
+            for span, entry in zip(spans, entries):
+                # SaaS 安全: 按 tenant_id 分 stream（与 write_span 一致）
+                stream = get_tenant_stream(span.get("tenant_id") or "anonymous")
+                pipeline.xadd(stream, entry, maxlen=10000, approximate=True)
             await pipeline.execute()
             
             logger.debug("TraceWriter wrote %d spans to Redis", len(entries))

@@ -17,8 +17,12 @@ from __future__ import annotations
 
 import json
 import logging
-import resource
 import time
+
+try:
+    import resource
+except ImportError:
+    resource = None  # Windows doesn't have the resource module
 from dataclasses import dataclass, field
 from typing import Any
 

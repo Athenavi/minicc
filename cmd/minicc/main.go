@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/athenavi/minicc/internal/admin/middleware"
 	"github.com/athenavi/minicc/internal/api"
 	"github.com/athenavi/minicc/internal/auth"
 	"github.com/athenavi/minicc/internal/broadcast"
@@ -72,17 +71,18 @@ func main() {
 	if !pgConnected {
 		// No read replicas or router failed — fall back to single pool
 		if err := db.ConnectPostgres(ctx, cfg.PostgresDSN, cfg.PostgresMaxConn, cfg.PostgresMinConn); err != nil {
-			slog.Warn("postgres not available", "error", err)
-		} else {
-			pgConnected = true
-			defer db.ClosePostgres()
-			if err := db.RunAtlasMigrations(ctx, db.Pool, "migrations"); err != nil {
-				slog.Warn("migrations failed", "error", err)
-			}
-			// 幂等 seed 默认租户（不依赖迁移状态；缺失时注册会违反外键 23503）
-			if err := db.EnsureDefaultTenant(ctx, db.Pool); err != nil {
-				slog.Warn("ensure default tenant failed", "error", err)
-			}
+			slog.Error("failed to connect to PostgreSQL — cannot start without database", "error", err)
+			exitCode = 1
+			return
+		}
+		pgConnected = true
+		defer db.ClosePostgres()
+		if err := db.RunAtlasMigrations(ctx, db.Pool, "migrations"); err != nil {
+			slog.Warn("migrations failed", "error", err)
+		}
+		// 幂等 seed 默认租户（不依赖迁移状态；缺失时注册会违反外键 23503）
+		if err := db.EnsureDefaultTenant(ctx, db.Pool); err != nil {
+			slog.Warn("ensure default tenant failed", "error", err)
 		}
 	}
 
@@ -96,6 +96,7 @@ func main() {
 		Addrs:         cfg.RedisAddrs,
 		MasterName:    cfg.RedisMasterName,
 		SentinelAddrs: cfg.RedisSentinelAddrs,
+		PoolSize:      cfg.RedisPoolSize,
 	}
 	redisClient, redisErr := db.NewRedisClient(redisCfg)
 	if redisErr != nil {
@@ -107,8 +108,14 @@ func main() {
 		slog.Info("redis initialized", "mode", cfg.RedisMode)
 	}
 
-	if !pgConnected {
-		slog.Warn("running WITHOUT database — auth/login will use dev mode")
+	// ── Audit Consumer: Redis Stream audit:events → PG audit_logs 批量落库 ──
+	if db.Redis != nil {
+		auditSink := db.NewDefaultAuditSink()
+		defer auditSink.Close()
+		auditCtx, auditCancel := context.WithCancel(context.Background())
+		defer auditCancel()
+		go func() { _ = db.NewAuditConsumer(db.Redis, auditSink.Handle).Start(auditCtx) }()
+		slog.Info("audit consumer started", "stream", "audit:events")
 	}
 
 	// ── Monitor ──
@@ -116,16 +123,15 @@ func main() {
 
 	// ── Auth: Initialize JWT authenticator ──
 	auth.InitJWTAuth()
-	if !cfg.ValidateJWTSecret(cfg.JWTSecret) {
+	if !config.ValidateJWTSecret(cfg.JWTSecret) {
 		slog.Error("FATAL: JWT_SECRET is weak or not set. Generate a strong secret (32+ chars) and set JWT_SECRET env var")
 		exitCode = 1
 		return
 	}
 	slog.Info("auth initialized", "jwt_secret_set", cfg.JWTSecret != "")
 
-	// ── Rate Limiter: Initialize rate limiting ──
-	middleware.InitRateLimiter(cfg.RateLimitRPM)
-	slog.Info("rate limiter initialized", "default_rpm", cfg.RateLimitRPM)
+	// ── Rate Limiter: initialized per-router in GatewayRouter ──
+	slog.Info("rate limiter configured", "default_rpm", cfg.RateLimitRPM)
 
 	// ── Event Hub ──
 	var eventHub *broadcast.Hub

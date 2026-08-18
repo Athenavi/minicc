@@ -65,7 +65,7 @@ func (h *EditorHandler) ReadFile(w http.ResponseWriter, r *http.Request) {
 	}
 	b, err := os.ReadFile(abs)
 	if err != nil {
-		InternalError(w, err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "read file failed")
 		return
 	}
 	OK(w, map[string]interface{}{
@@ -95,11 +95,11 @@ func (h *EditorHandler) WriteFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
-		InternalError(w, err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "create directory failed")
 		return
 	}
 	if err := os.WriteFile(abs, []byte(body.Content), 0o644); err != nil {
-		InternalError(w, err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "write file failed")
 		return
 	}
 	OK(w, map[string]interface{}{

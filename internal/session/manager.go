@@ -243,7 +243,10 @@ func (m *Manager) SaveMessage(ctx context.Context, sessionID, role, content stri
 		return fmt.Errorf("ensure session: %w", err)
 	}
 
-	msgID := genID()
+	msgID, err := genID()
+	if err != nil {
+		return fmt.Errorf("generate message id: %w", err)
+	}
 	_, err = m.pool.Exec(ctx,
 		`INSERT INTO messages (id, session_id, role, content, created_at) VALUES ($1, $2, $3, $4, NOW())`,
 		msgID, sessionID, role, content)
@@ -270,9 +273,14 @@ func (m *Manager) SaveUserMessage(ctx context.Context, sessionID, userID, userCo
 		slog.Warn("ensure session", "error", err)
 		return
 	}
+	msgID, err := genID()
+	if err != nil {
+		slog.Warn("generate message id", "error", err)
+		return
+	}
 	_, err = m.pool.Exec(ctx,
 		`INSERT INTO messages (id, session_id, role, content, created_at) VALUES ($1, $2, 'user', $3, NOW())`,
-		genID(), sessionID, userContent)
+		msgID, sessionID, userContent)
 	if err != nil {
 		slog.Warn("save user message", "error", err)
 	}
@@ -299,10 +307,15 @@ func (m *Manager) SaveAssistantMessage(ctx context.Context, sessionID, assistant
 	if assistantContent == "" && toolCallsJSON == "[]" {
 		return
 	}
-	_, err := m.pool.Exec(ctx,
+	msgID, err := genID()
+	if err != nil {
+		slog.Warn("generate message id", "error", err)
+		return
+	}
+	_, err = m.pool.Exec(ctx,
 		`INSERT INTO messages (id, session_id, role, content, tool_calls, created_at)
 		 VALUES ($1, $2, 'assistant', $3, $4::jsonb, NOW())`,
-		genID(), sessionID, assistantContent, toolCallsJSON)
+		msgID, sessionID, assistantContent, toolCallsJSON)
 	if err != nil {
 		slog.Warn("save assistant message", "error", err)
 	}
@@ -434,17 +447,27 @@ func (m *Manager) SaveMessages(ctx context.Context, sessionID, userID, userConte
 	}
 
 	if userContent != "" {
-		_, err := m.pool.Exec(ctx,
+		msgID, err := genID()
+		if err != nil {
+			slog.Warn("generate message id", "error", err)
+			return
+		}
+		_, err = m.pool.Exec(ctx,
 			`INSERT INTO messages (id, session_id, role, content, created_at) VALUES ($1, $2, 'user', $3, NOW())`,
-			genID(), sessionID, userContent)
+			msgID, sessionID, userContent)
 		if err != nil {
 			slog.Warn("save user message", "error", err)
 		}
 	}
 	if assistantContent != "" {
-		_, err := m.pool.Exec(ctx,
+		msgID, err := genID()
+		if err != nil {
+			slog.Warn("generate message id", "error", err)
+			return
+		}
+		_, err = m.pool.Exec(ctx,
 			`INSERT INTO messages (id, session_id, role, content, created_at) VALUES ($1, $2, 'assistant', $3, NOW())`,
-			genID(), sessionID, assistantContent)
+			msgID, sessionID, assistantContent)
 		if err != nil {
 			slog.Warn("save assistant message", "error", err)
 		}
@@ -611,7 +634,7 @@ func (m *Manager) evictCache(ctx context.Context, id string) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-func genID() string {
+func genID() (string, error) {
 	return id.UUID()
 }
 

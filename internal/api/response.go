@@ -2,7 +2,16 @@ package api
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
+)
+
+// Unified error message constants — single source of truth for all handlers.
+const (
+	ErrAuthRequired  = "authentication required"
+	ErrDBUnavailable = "service temporarily unavailable"
+	ErrInvalidReq    = "invalid request body"
+	ErrNotFound      = "resource not found"
 )
 
 type APIResponse struct {
@@ -52,12 +61,22 @@ func InternalError(w http.ResponseWriter, msg string) {
 	JSON(w, http.StatusInternalServerError, APIResponse{Success: false, Error: msg})
 }
 
+// logAndRespond logs the internal error details and returns a generic message to the client.
+func logAndRespond(w http.ResponseWriter, err error, statusCode int, userMsg string) {
+	slog.Error(userMsg, "error", err)
+	JSON(w, statusCode, APIResponse{Success: false, Error: userMsg})
+}
+
 func Unauthorized(w http.ResponseWriter, msg string) {
 	JSON(w, http.StatusUnauthorized, APIResponse{Success: false, Error: msg})
 }
 
 func Forbidden(w http.ResponseWriter, msg string) {
 	JSON(w, http.StatusForbidden, APIResponse{Success: false, Error: msg})
+}
+
+func ServiceUnavailable(w http.ResponseWriter, msg string) {
+	JSON(w, http.StatusServiceUnavailable, APIResponse{Success: false, Error: msg})
 }
 
 func TooManyRequests(w http.ResponseWriter) {

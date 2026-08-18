@@ -16,7 +16,7 @@ from typing import Any, Optional
 from dataclasses import dataclass, field
 
 from app.core.task_router import TaskRouter, TaskPriority
-from app.core.context_bus import publish_result, MessageType
+from app.core.context_bus import publish_result
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +115,16 @@ class UnifiedChatHandler:
                 )
             
             # 提取最终输出
+            # Fail loud: 执行器返回 status=error (如 gateway 未初始化) 时,
+            # 不得包装成 success=True 响应,必须转入异常路径返回明确错误。
+            if result.get("status") == "error":
+                output_data = result.get("output")
+                error_msg = (
+                    output_data.get("error", "execution failed")
+                    if isinstance(output_data, dict) else "execution failed"
+                )
+                raise RuntimeError(str(error_msg))
+
             final_output = self._extract_output(result)
             
             # 添加到会话历史
@@ -133,7 +143,7 @@ class UnifiedChatHandler:
             session.shared_context["last_output"] = final_output
             session.shared_context["last_trace_id"] = trace_id
             
-            # 发布结果到 ContextBus
+            # 发布结果到 ContextBus (publish_result 默认即 RESULT_PUBLISH)
             await publish_result(
                 topic=f"chat.sessions.{session_id}",
                 data={
@@ -142,7 +152,6 @@ class UnifiedChatHandler:
                     "trace_id": trace_id,
                 },
                 tenant_id=tenant_id,
-                message_type=MessageType.RESULT_PUBLISH,
             )
             
             logger.info(
@@ -191,7 +200,7 @@ class UnifiedChatHandler:
         from app.main import get_gateway
         
         try:
-            gateway = get_gateway()
+            gateway = await get_gateway()
         except RuntimeError:
             return {"status": "error", "output": {"error": "LLM gateway not initialized"}}
         
@@ -210,13 +219,19 @@ class UnifiedChatHandler:
             max_turns=10,
         )
         
-        # TODO: 调用 agent.run()
-        # result = await agent.run(task=user_input, tenant_id=tenant_id)
+        # SubAgent.run 已实现: 真实调用并透传结果 (绝不返回伪造输出)
+        agent_result = await agent.run(task=user_input, tenant_id=tenant_id)
+        if not agent_result.success:
+            # Fail loud: Agent 执行失败必须向上抛出,由 submit_task 返回 success=False
+            raise RuntimeError(f"Agent execution failed: {agent_result.error or 'unknown error'}")
         
         return {
             "status": "completed",
-            "output": {"result": "Agent 执行结果"},
-            "total_duration_ms": 1000,
+            "output": {
+                "result": agent_result.output,
+                "tool_calls": agent_result.tool_calls,
+            },
+            "total_duration_ms": int(agent_result.duration * 1000),
         }
     
     async def _execute_via_workflow(
@@ -226,56 +241,10 @@ class UnifiedChatHandler:
         trace_id: str,
     ) -> dict:
         """通过工作流工作台执行"""
-        from app.workflow.tracing_engine import TracingWorkflowEngine
-        from app.main import get_gateway
-        
-        try:
-            gateway = get_gateway()
-        except RuntimeError:
-            return {"status": "error", "output": {"error": "Gateway not available"}}
-        
-        # 构建简单的工作流: 理解 → 执行 → 返回
-        graph_json = {
-            "name": "chat_workflow",
-            "nodes": [
-                {
-                    "id": "node_understand",
-                    "type": "llm",
-                    "label": "理解需求",
-                    "config": {
-                        "system_prompt": "分析用户需求,提取关键意图和实体",
-                        "prompt": user_input,
-                    }
-                },
-                {
-                    "id": "node_execute",
-                    "type": "tool",
-                    "label": "执行任务",
-                    "config": {
-                        "tool_name": "analyze_and_execute",  # 需要注册
-                    }
-                },
-                {
-                    "id": "node_output",
-                    "type": "output",
-                    "label": "返回结果",
-                },
-            ],
-            "edges": [
-                {"source_id": "node_understand", "target_id": "node_execute"},
-                {"source_id": "node_execute", "target_id": "node_output"},
-            ],
-        }
-        
-        engine = TracingWorkflowEngine(gateway)
-        
-        # TODO: 调用 engine.run_workflow_with_trace(...)
-        
-        return {
-            "status": "completed",
-            "output": {"result": "工作流执行结果"},
-            "total_duration_ms": 2000,
-        }
+        # Fail loud: TracingWorkflowEngine 与节点执行函数的对接未完成
+        # (其从 engine 导入的节点函数并非模块级函数),直接调用只会得到全节点报错。
+        # 绝不返回伪造的"工作流执行结果",显式抛错让 submit_task 返回 success=False。
+        raise NotImplementedError("workflow execution not implemented")
     
     def _extract_output(self, result: dict) -> str:
         """从执行结果中提取最终输出"""

@@ -26,12 +26,12 @@ type APIKeyStore interface {
 	UpdateLastUsed(id string) error
 }
 
-func GenerateAPIKey() string {
+func GenerateAPIKey() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		panic("crypto/rand.Read failed: " + err.Error())
+		return "", fmt.Errorf("crypto/rand.Read failed: %w", err)
 	}
-	return "mcc_" + hex.EncodeToString(b)
+	return "mcc_" + hex.EncodeToString(b), nil
 }
 
 func ValidateAPIKeyFormat(key string) error {

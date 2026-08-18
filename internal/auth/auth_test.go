@@ -89,7 +89,10 @@ func TestRefreshToken(t *testing.T) {
 }
 
 func TestGenerateAPIKey(t *testing.T) {
-	key := GenerateAPIKey()
+	key, err := GenerateAPIKey()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if key == "" {
 		t.Fatal("expected non-empty key")
 	}
@@ -103,15 +106,25 @@ func TestGenerateAPIKey(t *testing.T) {
 }
 
 func TestGenerateAPIKey_Unique(t *testing.T) {
-	k1 := GenerateAPIKey()
-	k2 := GenerateAPIKey()
+	k1, err := GenerateAPIKey()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	k2, err := GenerateAPIKey()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if k1 == k2 {
 		t.Fatal("expected unique keys")
 	}
 }
 
 func TestValidateAPIKeyFormat(t *testing.T) {
-	if err := ValidateAPIKeyFormat(GenerateAPIKey()); err != nil {
+	key, err := GenerateAPIKey()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := ValidateAPIKeyFormat(key); err != nil {
 		t.Fatalf("expected valid key, got %v", err)
 	}
 }

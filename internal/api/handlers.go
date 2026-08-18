@@ -1,9 +1,10 @@
 package api
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
+
+	"github.com/athenavi/minicc/internal/auth"
 )
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -26,8 +27,19 @@ func handleCancel(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "session_id is required")
 		return
 	}
-	if cancel, ok := sessionCancels.LoadAndDelete(sessionID); ok {
-		cancel.(context.CancelFunc)()
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		Unauthorized(w, ErrAuthRequired)
+		return
+	}
+	if v, ok := sessionCancels.Load(sessionID); ok {
+		sc := v.(sessionCancel)
+		if sc.userID != claims.UserID {
+			Forbidden(w, "not your session")
+			return
+		}
+		sessionCancels.Delete(sessionID)
+		sc.cancel()
 		slog.Info("session cancelled", "session_id", sessionID)
 		OK(w, map[string]string{"status": "cancelled", "session_id": sessionID})
 	} else {

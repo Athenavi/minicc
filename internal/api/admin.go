@@ -1,8 +1,6 @@
 package api
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -102,16 +100,11 @@ type AdminUser struct {
 }
 
 func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
-	if db.Pool == nil {
-		OK(w, []AdminUser{})
-		return
-	}
-
 	rows, err := db.ReadPool().Query(r.Context(),
 		`SELECT id, email, name, role, created_at, updated_at
 		 FROM users ORDER BY created_at DESC LIMIT 100`)
 	if err != nil {
-		InternalError(w, "query users: "+err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "query users failed")
 		return
 	}
 	defer rows.Close()
@@ -136,11 +129,6 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminHandler) GetUser(w http.ResponseWriter, r *http.Request) {
-	if db.Pool == nil {
-		NotFound(w, "database not available")
-		return
-	}
-
 	id := r.PathValue("id")
 	if id == "" {
 		BadRequest(w, "id is required")
@@ -164,11 +152,6 @@ func (h *AdminHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
-	if db.Pool == nil {
-		NotFound(w, "database not available")
-		return
-	}
-
 	id := r.PathValue("id")
 	if id == "" {
 		BadRequest(w, "id is required")
@@ -181,7 +164,7 @@ func (h *AdminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		Role  string `json:"role"`
 	}
 	if err := DecodeJSON(w, r, &body); err != nil {
-		BadRequest(w, "invalid request body")
+		BadRequest(w, ErrInvalidReq)
 		return
 	}
 
@@ -223,7 +206,7 @@ func (h *AdminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	query := fmt.Sprintf("UPDATE users SET %s WHERE id = $%d", setClauses, argIdx)
 	result, err := db.Pool.Exec(r.Context(), query, args...)
 	if err != nil {
-		InternalError(w, "update user: "+err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "update user failed")
 		return
 	}
 	if result.RowsAffected() == 0 {
@@ -235,11 +218,6 @@ func (h *AdminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
-	if db.Pool == nil {
-		NotFound(w, "database not available")
-		return
-	}
-
 	id := r.PathValue("id")
 	if id == "" {
 		BadRequest(w, "id is required")
@@ -255,7 +233,7 @@ func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 
 	_, err := db.Pool.Exec(r.Context(), `DELETE FROM users WHERE id = $1`, id)
 	if err != nil {
-		InternalError(w, "delete user: "+err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "delete user failed")
 		return
 	}
 
@@ -269,7 +247,7 @@ func (h *AdminHandler) SystemInfo(w http.ResponseWriter, r *http.Request) {
 		"version":   "2.0.0",
 		"uptime":    time.Since(monitor.Global.StartTime).String(),
 		"db":        map[string]interface{}{
-			"postgres": db.Pool != nil,
+			"postgres": true,
 			"redis":    db.Redis != nil,
 		},
 	}
@@ -291,30 +269,24 @@ func (h *AdminHandler) TriggerMaintenance(w http.ResponseWriter, r *http.Request
 
 	switch body.Action {
 	case "vacuum":
-		if db.Pool != nil {
-			if _, err := db.Pool.Exec(r.Context(), "VACUUM ANALYZE"); err != nil {
-				InternalError(w, fmt.Sprintf("vacuum failed: %v", err))
-				return
-			}
+		if _, err := db.Pool.Exec(r.Context(), "VACUUM ANALYZE"); err != nil {
+			logAndRespond(w, err, http.StatusInternalServerError, "vacuum failed")
+			return
 		}
 	case "reindex":
-		if db.Pool != nil {
-			dbName := dbNameFromDSN()
-			if !validDBName.MatchString(dbName) {
-				InternalError(w, fmt.Sprintf("invalid database name: %q", dbName))
-				return
-			}
-			if _, err := db.Pool.Exec(r.Context(), fmt.Sprintf("REINDEX DATABASE %s", dbName)); err != nil {
-				InternalError(w, fmt.Sprintf("reindex failed: %v", err))
-				return
-			}
+		dbName := dbNameFromDSN()
+		if !validDBName.MatchString(dbName) {
+			InternalError(w, "invalid database name")
+			return
+		}
+		if _, err := db.Pool.Exec(r.Context(), fmt.Sprintf("REINDEX DATABASE %s", dbName)); err != nil {
+			logAndRespond(w, err, http.StatusInternalServerError, "reindex failed")
+			return
 		}
 	case "analyze":
-		if db.Pool != nil {
-			if _, err := db.Pool.Exec(r.Context(), "ANALYZE"); err != nil {
-				InternalError(w, fmt.Sprintf("analyze failed: %v", err))
-				return
-			}
+		if _, err := db.Pool.Exec(r.Context(), "ANALYZE"); err != nil {
+			logAndRespond(w, err, http.StatusInternalServerError, "analyze failed")
+			return
 		}
 	case "flush_cache":
 		if db.Redis != nil {
@@ -326,7 +298,7 @@ func (h *AdminHandler) TriggerMaintenance(w http.ResponseWriter, r *http.Request
 				deleted++
 			}
 			if err := iter.Err(); err != nil {
-				InternalError(w, fmt.Sprintf("flush_cache scan failed: %v", err))
+				logAndRespond(w, err, http.StatusInternalServerError, "flush_cache failed")
 				return
 			}
 			slog.Info("cache flushed", "prefix", prefix, "deleted", deleted)
@@ -363,13 +335,9 @@ func dbNameFromDSN() string {
 // 鈹€鈹€ Backup & Restore 鈹€鈹€
 
 func (h *AdminHandler) CreateBackup(w http.ResponseWriter, r *http.Request) {
-	if db.Pool == nil {
-		InternalError(w, "database not available")
-		return
-	}
 	output, err := exec.Command("pg_dump", "--dbname="+extractDSN()).Output()
 	if err != nil {
-		InternalError(w, fmt.Sprintf("backup failed: %v", err))
+		logAndRespond(w, err, http.StatusInternalServerError, "backup failed")
 		return
 	}
 	w.Header().Set("Content-Type", "application/sql")
@@ -378,10 +346,6 @@ func (h *AdminHandler) CreateBackup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminHandler) RestoreBackup(w http.ResponseWriter, r *http.Request) {
-	if db.Pool == nil {
-		InternalError(w, "database not available")
-		return
-	}
 	file, _, err := r.FormFile("file")
 	if err != nil {
 		BadRequest(w, "file is required")
@@ -390,21 +354,21 @@ func (h *AdminHandler) RestoreBackup(w http.ResponseWriter, r *http.Request) {
 	defer file.Close()
 	sqlData, err := io.ReadAll(file)
 	if err != nil {
-		InternalError(w, fmt.Sprintf("read file failed: %v", err))
+		logAndRespond(w, err, http.StatusInternalServerError, "read file failed")
 		return
 	}
 	tx, err := db.Pool.Begin(r.Context())
 	if err != nil {
-		InternalError(w, fmt.Sprintf("begin tx failed: %v", err))
+		logAndRespond(w, err, http.StatusInternalServerError, "begin tx failed")
 		return
 	}
 	defer tx.Rollback(r.Context())
 	if _, err := tx.Exec(r.Context(), string(sqlData)); err != nil {
-		InternalError(w, fmt.Sprintf("restore failed: %v", err))
+		logAndRespond(w, err, http.StatusInternalServerError, "restore failed")
 		return
 	}
 	if err := tx.Commit(r.Context()); err != nil {
-		InternalError(w, fmt.Sprintf("commit failed: %v", err))
+		logAndRespond(w, err, http.StatusInternalServerError, "commit failed")
 		return
 	}
 	OK(w, map[string]string{"message": "Database restored successfully"})
@@ -455,7 +419,7 @@ func (h *AdminHandler) UpdateStorage(w http.ResponseWriter, r *http.Request) {
 
 	var body StorageUpdateRequest
 	if err := DecodeJSON(w, r, &body); err != nil {
-		BadRequest(w, "invalid request body")
+		BadRequest(w, ErrInvalidReq)
 		return
 	}
 
@@ -483,7 +447,7 @@ func (h *AdminHandler) UpdateStorage(w http.ResponseWriter, r *http.Request) {
 		newStore, err = storage.NewStore("s3", "", body.S3Endpoint, body.S3Bucket, body.S3AccessKey, body.S3SecretKey, body.S3UseSSL)
 	}
 	if err != nil {
-		InternalError(w, "failed to create storage backend: "+err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "failed to create storage backend")
 		return
 	}
 
@@ -516,7 +480,7 @@ func (h *AdminHandler) TestStorage(w http.ResponseWriter, r *http.Request) {
 
 	var body StorageUpdateRequest
 	if err := DecodeJSON(w, r, &body); err != nil {
-		BadRequest(w, "invalid request body")
+		BadRequest(w, ErrInvalidReq)
 		return
 	}
 
@@ -535,7 +499,7 @@ func (h *AdminHandler) TestStorage(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			OK(w, map[string]interface{}{
 				"status":  "error",
-				"message": fmt.Sprintf("S3 连接失败: %v", err),
+				"message": fmt.Errorf("S3 连接失败: %w", err).Error(),
 			})
 			return
 		}
@@ -544,7 +508,7 @@ func (h *AdminHandler) TestStorage(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			OK(w, map[string]interface{}{
 				"status":  "error",
-				"message": fmt.Sprintf("S3 bucket 访问失败: %v", err),
+				"message": fmt.Errorf("S3 bucket 访问失败: %w", err).Error(),
 			})
 			return
 		}
@@ -590,7 +554,7 @@ func (h *AdminHandler) UpdateRedis(w http.ResponseWriter, r *http.Request) {
 
 	var body db.RedisConfig
 	if err := DecodeJSON(w, r, &body); err != nil {
-		BadRequest(w, "invalid request body")
+		BadRequest(w, ErrInvalidReq)
 		return
 	}
 
@@ -625,7 +589,7 @@ func (h *AdminHandler) UpdateRedis(w http.ResponseWriter, r *http.Request) {
 
 	newClient, err := db.NewRedisClient(body)
 	if err != nil {
-		InternalError(w, "failed to connect to new redis: "+err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "failed to connect to redis")
 		return
 	}
 
@@ -647,7 +611,7 @@ func (h *AdminHandler) UpdateRedis(w http.ResponseWriter, r *http.Request) {
 func (h *AdminHandler) TestRedis(w http.ResponseWriter, r *http.Request) {
 	var body db.RedisConfig
 	if err := DecodeJSON(w, r, &body); err != nil {
-		BadRequest(w, "invalid request body")
+		BadRequest(w, ErrInvalidReq)
 		return
 	}
 
@@ -659,7 +623,7 @@ func (h *AdminHandler) TestRedis(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		OK(w, map[string]interface{}{
 			"status":  "error",
-			"message": fmt.Sprintf("Redis connection failed: %v", err),
+			"message": fmt.Errorf("Redis connection failed: %w", err).Error(),
 		})
 		return
 	}

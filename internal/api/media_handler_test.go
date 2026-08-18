@@ -28,21 +28,6 @@ func TestMediaHandler_New(t *testing.T) {
 	}
 }
 
-func TestMediaHandler_List_NoDB(t *testing.T) {
-	h, authenticator := newTestMediaHandler(t)
-	token, err := authenticator.GenerateToken("user-1", "test@test.com", "user", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req := httptest.NewRequest("GET", "/v1/media/", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	w := httptest.NewRecorder()
-	h.List(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-}
-
 func TestMediaHandler_Create_NoAuth(t *testing.T) {
 	h, _ := newTestMediaHandler(t)
 	body := `{"name":"test.txt","content":"hello"}`
@@ -106,7 +91,7 @@ func TestMediaHandler_CompleteUpload_NoAuth(t *testing.T) {
 	}
 }
 
-func TestMediaHandler_Create_WithAuth(t *testing.T) {
+func TestMediaHandler_Create_NoClaimsInContext(t *testing.T) {
 	h, auth := newTestMediaHandler(t)
 	// Generate a JWT token
 	token, err := auth.GenerateToken("user-1", "test@test.com", "user", nil)
@@ -120,10 +105,9 @@ func TestMediaHandler_Create_WithAuth(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 	h.Create(w, req)
-	// With auth but no DB, should fail at DB insert (which is optional now)
-	// Actually it writes to store first, then DB — so with LocalStore it should
-	// succeed the write but fail at DB (which is nil Pool)
-	if w.Code != http.StatusNotFound && w.Code != http.StatusOK {
-		t.Fatalf("expected 200 or 404, got %d: %s", w.Code, w.Body.String())
+	// Handler is invoked without authMW, so no claims exist in the request
+	// context — the defensive nil check must answer 401.
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without claims in context, got %d: %s", w.Code, w.Body.String())
 	}
 }

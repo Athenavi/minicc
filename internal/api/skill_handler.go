@@ -1,11 +1,13 @@
 ﻿package api
 
 import (
-	"log/slog"
+	"context"
 	"net/http"
 	"regexp"
 	"strings"
 
+	"github.com/athenavi/minicc/internal/auth"
+	"github.com/athenavi/minicc/internal/db"
 	"github.com/athenavi/minicc/internal/engine"
 )
 
@@ -49,10 +51,13 @@ func (h *SkillHandler) proxy(w http.ResponseWriter, r *http.Request) {
 		// 规范化转发路径：Python 端注册的是 /v1/skills（无尾斜杠）
 		path := strings.TrimSuffix(r.URL.Path, "/")
 		err = h.python.GetJSON(r.Context(), path, &result)
+		if err == nil && strings.HasSuffix(path, "/discover") {
+			filterDiscoverByMarket(r.Context(), result, skillTenantID(r))
+		}
 	case "POST", "PUT":
 		var body map[string]interface{}
 		if err := DecodeJSON(w, r, &body); err != nil {
-			BadRequest(w, "invalid request body")
+			BadRequest(w, ErrInvalidReq)
 			return
 		}
 		if r.Method == "PUT" {
@@ -66,8 +71,7 @@ func (h *SkillHandler) proxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		slog.Error("skill proxy error", "path", r.URL.Path, "error", err)
-		InternalError(w, "python engine error: "+err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "python engine error")
 		return
 	}
 	OK(w, result)
@@ -92,9 +96,60 @@ func (h *SkillHandler) proxyDelete(w http.ResponseWriter, r *http.Request) {
 
 	var result map[string]interface{}
 	if err := h.python.DeleteJSON(r.Context(), "/v1/skills/"+name, &result); err != nil {
-		slog.Error("skill proxy delete error", "name", name, "error", err)
-		InternalError(w, "python engine error: "+err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "python engine error")
 		return
 	}
 	OK(w, result)
+}
+
+// skillTenantID 取当前租户 ID：claims 优先，缺省回退默认租户。
+// （/v1/skills 路由未强制 authMW，claims 可能为 nil）
+func skillTenantID(r *http.Request) string {
+	if claims := auth.GetClaims(r.Context()); claims != nil && claims.TenantID != "" {
+		return claims.TenantID
+	}
+	return DefaultTenantID
+}
+
+// filterDiscoverByMarket 对 discover 代理响应做市场白名单过滤：
+// 仅当市场存在同名 published 条目时按租户授权过滤（IsItemEnabledForTenant
+// 内部保证未上架能力与查询故障均放行）。PG 不可用时整体跳过，避免逐条 warn。
+func filterDiscoverByMarket(ctx context.Context, result map[string]interface{}, tenantID string) {
+	if db.ReadPool() == nil {
+		return
+	}
+	// 兼容多种响应结构：在常见列表键中定位技能数组
+	var list []interface{}
+	var listKey string
+	for _, key := range []string{"skills", "items", "data", "list"} {
+		if arr, ok := result[key].([]interface{}); ok {
+			list, listKey = arr, key
+			break
+		}
+	}
+	if listKey == "" {
+		return
+	}
+	result[listKey] = filterSkillsByMarket(ctx, list, tenantID)
+}
+
+// filterSkillsByMarket 对技能列表逐项做市场门控过滤（纯逻辑，独立可测）。
+func filterSkillsByMarket(ctx context.Context, list []interface{}, tenantID string) []interface{} {
+	kept := make([]interface{}, 0, len(list))
+	for _, raw := range list {
+		entry, ok := raw.(map[string]interface{})
+		if !ok {
+			kept = append(kept, raw)
+			continue
+		}
+		name, _ := entry["name"].(string)
+		if name == "" {
+			kept = append(kept, raw)
+			continue
+		}
+		if enabled, _ := IsItemEnabledForTenant(ctx, "skill", name, tenantID); enabled {
+			kept = append(kept, raw)
+		}
+	}
+	return kept
 }

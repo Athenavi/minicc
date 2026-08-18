@@ -3,13 +3,27 @@ import { ref, onMounted } from 'vue'
 import { Card, Table, Button, Space, Tag, Input, Modal, Form, InputNumber, DatePicker, Select, Statistic, Tabs, TabPane } from 'ant-design-vue'
 import { PlusOutlined, EditOutlined, DeleteOutlined, StopOutlined, BarChartOutlined } from '@ant-design/icons-vue'
 import { api } from '../../api'
+import { useCrudResource, apiErrorMessage } from '../../composables/useCrudResource'
 
 // State
-const loading = ref(true)
-const tenants = ref<any[]>([])
 const totalTenants = ref(0)
 const selectedTenant = ref<any>(null)
 const usageData = ref<any[]>([])
+
+// Filters
+const searchText = ref('')
+const statusFilter = ref<string | null>(null)
+
+// Load tenants（loader 闭包读取筛选状态，reload 时自动生效）
+const { data: tenants, loading, load: loadTenants } = useCrudResource<any[]>([], async () => {
+  const params: any = { page: 1, page_size: 20 }
+  if (searchText.value) params.search = searchText.value
+  if (statusFilter.value) params.status = statusFilter.value
+
+  const response = await api.get('/admin/tenants', { params })
+  totalTenants.value = response.data?.total || 0
+  return response.data?.data || []
+})
 
 // CRUD state
 const modalVisible = ref(false)
@@ -28,28 +42,6 @@ const currentForm = ref({
   features: {} as any
 })
 
-// Filters
-const searchText = ref('')
-const statusFilter = ref<string | null>(null)
-
-// Load tenants
-async function loadTenants() {
-  try {
-    loading.value = true
-    const params: any = { page: 1, page_size: 20 }
-    if (searchText.value) params.search = searchText.value
-    if (statusFilter.value) params.status = statusFilter.value
-    
-    const response = await api.get('/admin/tenants', { params })
-    tenants.value = response.data?.data || []
-    totalTenants.value = response.data?.total || 0
-  } catch (error: any) {
-    console.error('Failed to load tenants:', error)
-  } finally {
-    loading.value = false
-  }
-}
-
 // Create tenant
 async function createTenant() {
   try {
@@ -57,7 +49,7 @@ async function createTenant() {
     modalVisible.value = false
     loadTenants()
   } catch (error: any) {
-    alert(error.response?.data?.error || '创建失败')
+    alert(apiErrorMessage(error, '创建失败'))
   }
 }
 
@@ -68,7 +60,7 @@ async function updateTenant() {
     editModalVisible.value = false
     loadTenants()
   } catch (error: any) {
-    alert(error.response?.data?.error || '更新失败')
+    alert(apiErrorMessage(error, '更新失败'))
   }
 }
 
@@ -80,7 +72,7 @@ async function suspendTenant(tenantId: string) {
     await api.post(`/admin/tenants/${tenantId}/suspend`)
     loadTenants()
   } catch (error: any) {
-    alert(error.response?.data?.error || '操作失败')
+    alert(apiErrorMessage(error, '操作失败'))
   }
 }
 

@@ -138,10 +138,11 @@ class TestAgentEventTenantPropagation:
         from app.agent.runtime import AgentRuntime, AgentTask
         from app.gateway.router import GatewayRouter
         
-        # 创建 mock gateway
+        # 创建 mock gateway（与其他测试一致：async generator 模拟流式响应）
         mock_gateway = AsyncMock(spec=GatewayRouter)
-        mock_gateway.chat_stream = AsyncIterator([
-            MagicMock(
+
+        async def fake_stream(**_kwargs):
+            yield MagicMock(
                 content="Hello",
                 reasoning_content="",
                 tool_calls=[],
@@ -149,7 +150,8 @@ class TestAgentEventTenantPropagation:
                 output_tokens=50,
                 finish_reason="stop",
             )
-        ])
+
+        mock_gateway.chat_stream = fake_stream
         
         # 创建带 tenant_id 的 task
         task = AgentTask(
@@ -168,7 +170,8 @@ class TestAgentEventTenantPropagation:
         async def mock_record_span(**kwargs):
             recorded_spans.append(kwargs)
         
-        with patch('app.agent.runtime.record_span', side_effect=mock_record_span):
+        # runtime 内局部导入 record_span，需 patch 源模块才能拦截
+        with patch('app.trace.record_span', side_effect=mock_record_span):
             # 消费完事件后停止
             events_collected = []
             try:
@@ -232,7 +235,7 @@ class TestTenantSecurityScenarios:
     
     def test_tenant_id_validation(self):
         """tenant_id 应防止注入攻击 (如 Redis 命令注入)."""
-        from app.trace.writer import TraceWriter
+        from app.trace.writer import get_tenant_stream
         
         malicious_ids = [
             "tenant;* MSET attack:true",  # Redis 命令注入

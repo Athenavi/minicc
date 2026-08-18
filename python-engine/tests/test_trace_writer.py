@@ -51,7 +51,8 @@ class TestTraceWriter:
             # Verify xadd was called with correct args
             mock_redis.xadd.assert_called_once()
             call_args = mock_redis.xadd.call_args
-            assert call_args[0][0] == "minicc:traces"  # stream name
+            # 多租户设计：无 tenant_id 时写入 anonymous stream
+            assert call_args[0][0] == "minicc:traces:anonymous"  # stream name
             entry = call_args[0][1]
             assert entry["trace_id"] == "abc123"
             assert entry["span_name"] == "tool:read_file"
@@ -81,7 +82,6 @@ class TestTraceWriter:
             # Verify pipeline usage
             mock_redis.pipeline.assert_called_once_with(transaction=False)
             assert mock_pipeline.xadd.call_count == 2
-            await mock_pipeline.execute()
             mock_pipeline.execute.assert_called_once()
     
     @pytest.mark.asyncio

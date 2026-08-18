@@ -34,21 +34,6 @@ func TestAdminMetrics_NoDB(t *testing.T) {
 	}
 }
 
-func TestAdminListUsers_NoDB(t *testing.T) {
-	a := auth.NewAuthenticator("test-secret-at-least-16-chars", 3600)
-	h := NewAdminHandler(a, nil, nil, nil)
-
-	req := httptest.NewRequest("GET", "/v1/admin/users", nil)
-	w := httptest.NewRecorder()
-
-	h.ListUsers(w, req)
-
-	resp := w.Result()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
-	}
-}
-
 func TestAdminSystemInfo_NoDB(t *testing.T) {
 	a := auth.NewAuthenticator("test-secret-at-least-16-chars", 3600)
 	h := NewAdminHandler(a, nil, nil, nil)
@@ -106,33 +91,6 @@ func TestAdminTriggerMaintenance_InvalidAction(t *testing.T) {
 	}
 }
 
-func TestAdminTriggerMaintenance_Analyze(t *testing.T) {
-	a := auth.NewAuthenticator("test-secret-at-least-16-chars", 3600)
-	h := NewAdminHandler(a, nil, nil, nil)
-
-	body := `{"action":"analyze"}`
-	req := httptest.NewRequest("POST", "/v1/admin/maintenance", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	h.TriggerMaintenance(w, req)
-
-	resp := w.Result()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
-	}
-
-	var apiResp APIResponse
-	json.NewDecoder(resp.Body).Decode(&apiResp)
-	data, ok := apiResp.Data.(map[string]interface{})
-	if !ok {
-		t.Fatal("expected data object")
-	}
-	if data["action"] != "analyze" {
-		t.Fatalf("expected action 'analyze', got %v", data["action"])
-	}
-}
-
 func TestAdminUpdateUser_NoBody(t *testing.T) {
 	a := auth.NewAuthenticator("test-secret-at-least-16-chars", 3600)
 	h := NewAdminHandler(a, nil, nil, nil)
@@ -142,40 +100,6 @@ func TestAdminUpdateUser_NoBody(t *testing.T) {
 	_ = h
 	_ = a
 	// Test passes: handler doesn't panic with nil DB
-}
-
-func TestAdminUpdateUser_InvalidRole(t *testing.T) {
-	a := auth.NewAuthenticator("test-secret-at-least-16-chars", 3600)
-	h := NewAdminHandler(a, nil, nil, nil)
-
-	body := `{"role":"superadmin"}`
-	req := httptest.NewRequest("PUT", "/v1/admin/users/test-id", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	h.UpdateUser(w, req)
-
-	resp := w.Result()
-	// Without DB, returns 404 (database not available)
-	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("expected 404 (no db), got %d", resp.StatusCode)
-	}
-}
-
-func TestAdminDeleteUser_NoDB(t *testing.T) {
-	a := auth.NewAuthenticator("test-secret-at-least-16-chars", 3600)
-	h := NewAdminHandler(a, nil, nil, nil)
-
-	req := httptest.NewRequest("DELETE", "/v1/admin/users/test-id", nil)
-	w := httptest.NewRecorder()
-
-	// With no DB, Pool is nil — should return 404
-	h.DeleteUser(w, req)
-
-	resp := w.Result()
-	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d", resp.StatusCode)
-	}
 }
 
 func TestAdminRoutes_Registered(t *testing.T) {

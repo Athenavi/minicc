@@ -63,7 +63,7 @@ func (h *SubmitHandler) HandleSubmit(ctx context.Context, userID, sessionID, con
 	ctx, cancel := context.WithTimeout(ctx, 180*time.Second)
 	defer cancel()
 	if sessionID != "" {
-		sessionCancels.Store(sessionID, cancel)
+		sessionCancels.Store(sessionID, sessionCancel{userID: userID, cancel: cancel})
 		defer sessionCancels.Delete(sessionID)
 	}
 

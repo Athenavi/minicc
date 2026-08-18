@@ -54,14 +54,9 @@ type ToolCall struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// List returns sessions for the current user (or empty for guests).
+// List returns sessions for the current user.
 func (h *ConversationHandler) List(w http.ResponseWriter, r *http.Request) {
-	claims := getAuthClaims(r, h.authenticator)
-	if claims == nil {
-		OK(w, []Conversation{})
-		return
-	}
-
+	claims := auth.GetClaims(r.Context())
 	sessions, err := h.sessionMgr.ListSessions(r.Context(), claims.UserID)
 	if err != nil {
 		// Fallback: return empty list
@@ -90,11 +85,7 @@ func (h *ConversationHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	claims := getAuthClaims(r, h.authenticator)
-	if claims == nil {
-		Unauthorized(w, "authentication required")
-		return
-	}
+	claims := auth.GetClaims(r.Context())
 
 	sess, err := h.sessionMgr.GetSession(r.Context(), id)
 	if err != nil {
@@ -180,16 +171,17 @@ func (h *ConversationHandler) Create(w http.ResponseWriter, r *http.Request) {
 		body.Title = "新对话"
 	}
 
-	claims := getAuthClaims(r, h.authenticator)
-	userID := ""
-	if claims != nil {
-		userID = claims.UserID
-	}
+	claims := auth.GetClaims(r.Context())
+	userID := claims.UserID
 
-	sessionID := id.UUID()
+	sessionID, err := id.UUID()
+	if err != nil {
+		logAndRespond(w, err, http.StatusInternalServerError, "generate id failed")
+		return
+	}
 	sess, err := h.sessionMgr.CreateSession(r.Context(), sessionID, userID, body.Title)
 	if err != nil {
-		InternalError(w, "create session: "+err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "create session failed")
 		return
 	}
 
@@ -215,11 +207,7 @@ func (h *ConversationHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	claims := getAuthClaims(r, h.authenticator)
-	if claims == nil {
-		Unauthorized(w, "authentication required")
-		return
-	}
+	claims := auth.GetClaims(r.Context())
 
 	sess, err := h.sessionMgr.GetSession(r.Context(), id)
 	if err != nil {
@@ -233,7 +221,7 @@ func (h *ConversationHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.sessionMgr.DeleteSession(r.Context(), id); err != nil {
-		InternalError(w, "delete session: "+err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "delete session failed")
 		return
 	}
 
@@ -266,11 +254,7 @@ func (h *ConversationHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	claims := getAuthClaims(r, h.authenticator)
-	if claims == nil {
-		Unauthorized(w, "authentication required")
-		return
-	}
+	claims := auth.GetClaims(r.Context())
 
 	sess, err := h.sessionMgr.GetSession(r.Context(), id)
 	if err != nil {
@@ -285,7 +269,7 @@ func (h *ConversationHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	updated, err := h.sessionMgr.UpdateSession(r.Context(), id, body.Title, body.Pinned)
 	if err != nil {
-		InternalError(w, "update session: "+err.Error())
+		logAndRespond(w, err, http.StatusInternalServerError, "update session failed")
 		return
 	}
 
@@ -296,29 +280,6 @@ func (h *ConversationHandler) Update(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: updated.CreatedAt,
 		UpdatedAt: updated.UpdatedAt,
 	})
-}
-
-// getAuthClaims extracts JWT claims optionally — no error if missing.
-func getAuthClaims(r *http.Request, a *auth.Authenticator) *auth.Claims {
-	tokenStr := ""
-	if c, err := r.Cookie("minicc_token"); err == nil && c.Value != "" {
-		tokenStr = c.Value
-	}
-	if tokenStr == "" {
-		if ah := r.Header.Get("Authorization"); ah != "" {
-			if strings.HasPrefix(ah, "Bearer ") {
-				tokenStr = strings.TrimPrefix(ah, "Bearer ")
-			}
-		}
-	}
-	if tokenStr == "" {
-		return nil
-	}
-	claims, err := a.ValidateToken(tokenStr)
-	if err != nil {
-		return nil
-	}
-	return claims
 }
 
 func userIDFromClaims(claims *auth.Claims) string {

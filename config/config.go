@@ -30,6 +30,7 @@ type Config struct {
 	RedisAddrs       []string // for cluster mode
 	RedisMasterName  string   // for sentinel mode
 	RedisSentinelAddrs []string // for sentinel mode
+	RedisPoolSize      int
 
 	// Auth
 	JWTSecret     string
@@ -128,6 +129,7 @@ func Load() *Config {
 		RedisAddrs:        getStringSlice("REDIS_ADDRS", []string{}),
 		RedisMasterName:   getEnv("REDIS_MASTER_NAME", ""),
 		RedisSentinelAddrs: getStringSlice("REDIS_SENTINEL_ADDRS", []string{}),
+		RedisPoolSize:      getInt("REDIS_POOL_SIZE", 50),
 		JWTSecret:       getEnv("JWT_SECRET", ""),
 		JWTExpiration:   getDuration("JWT_EXPIRATION", 24*time.Hour),
 		DisableRegistration: isTruthy(getEnv("DISABLE_REGISTRATION", "")),

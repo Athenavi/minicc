@@ -190,9 +190,12 @@ class EnhancedKnowledgeBase:
         tenant_id: str,
     ) -> list[dict]:
         """列出租户下的所有文档 (从 PG metadata)"""
-        # TODO: 从 PostgreSQL kb_documents 表查询
-        # 简化版: 返回空列表
-        return []
+        # Fail loud: PG kb_documents 元数据表尚不存在。
+        # 返回空列表会让调用方误以为"该租户真的没有文档",
+        # 必须显式抛错,由调用方转成 "功能未实现" 语义 (如 HTTP 501)。
+        raise NotImplementedError(
+            "list_documents not implemented: kb_documents metadata table does not exist yet"
+        )
     
     async def delete_document(
         self,
@@ -222,13 +225,13 @@ class EnhancedKnowledgeBase:
         tenant_id: str,
     ) -> dict:
         """获取租户知识库统计信息"""
-        # TODO: 从 PG 查询
-        return {
-            "tenant_id": tenant_id,
-            "document_count": 0,  # TODO: SELECT count(*) FROM kb_documents
-            "total_chunks": 0,     # TODO: SELECT SUM(chunks_count) FROM kb_documents
-            "storage_bytes": 0,    # TODO: 计算总大小
-        }
+        # Fail loud: 不存在可查询的真实数据源 (PG kb_documents 表未建立,
+        # Milvus 侧也没有租户级统计)。绝不允许返回硬编码 0 伪装成真实统计,
+        # 否则调用方无法区分"真的 0 条"和"功能未实现"。
+        # 调用方应捕获此异常并转成 HTTP 501 / "功能未实现" 标记。
+        raise NotImplementedError(
+            "get_tenant_stats not implemented: no kb_documents stats source exists yet"
+        )
 
 
 # ── API Handler ────────────────────────────────────────────────────

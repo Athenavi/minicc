@@ -37,7 +37,7 @@ class SkillStatus(str, Enum):
 
 
 @dataclass
-SkillMetadata:
+class SkillMetadata:
     """技能元数据"""
     skill_id: str
     name: str
@@ -48,6 +48,7 @@ SkillMetadata:
     tags: list[str] = field(default_factory=list)
     input_schema: dict = field(default_factory=dict)  # JSON Schema
     output_schema: dict = field(default_factory=dict)
+    config: dict = field(default_factory=dict)  # 技能配置 (如 prompt 模板)
     status: SkillStatus = SkillStatus.ACTIVE
     created_at: float = field(default_factory=time.time)
     updated_at: float = 0
@@ -91,29 +92,29 @@ class MCPClient:
         if time.time() - self._cache_time < 300 and self._tools_cache:
             return self._tools_cache
         
+        # Fail loud: 未实现/不支持的传输方式必须显式抛错。
+        # 若被下方 except 吞掉返回 [],调用方将无法区分
+        # "功能未实现" 和 "服务器确实没有工具"。
+        if self.transport == "stdio":
+            raise NotImplementedError("STDIO transport not yet implemented")
+        if self.transport != "http":
+            raise ValueError(f"Unsupported transport: {self.transport}")
+        
         try:
-            if self.transport == "http":
-                import httpx
-                async with httpx.AsyncClient() as client:
-                    response = await client.post(
-                        f"{self.server_url}/rpc",
-                        json={
-                            "jsonrpc": "2.0",
-                            "id": 1,
-                            "method": "tools/list",
-                            "params": {},
-                        },
-                        timeout=10.0,
-                    )
-                    response.raise_for_status()
-                    result = response.json()
-                    
-            elif self.transport == "stdio":
-                # TODO: 实现 STDIO 传输 (子进程通信)
-                raise NotImplementedError("STDIO transport not yet implemented")
-            
-            else:
-                raise ValueError(f"Unsupported transport: {self.transport}")
+            import httpx
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{self.server_url}/rpc",
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "tools/list",
+                        "params": {},
+                    },
+                    timeout=10.0,
+                )
+                response.raise_for_status()
+                result = response.json()
             
             # 解析工具列表
             tools = result.get("result", {}).get("tools", [])
@@ -137,26 +138,32 @@ class MCPClient:
         """调用 MCP 工具"""
         start_time = time.time()
         
+        # Fail loud: 未实现/不支持的传输方式显式抛错 (若静默走到下方
+        # result 未定义处会产生误导性的 UnboundLocalError)。
+        if self.transport == "stdio":
+            raise NotImplementedError("STDIO transport not yet implemented")
+        if self.transport != "http":
+            raise ValueError(f"Unsupported transport: {self.transport}")
+        
         try:
-            if self.transport == "http":
-                import httpx
-                async with httpx.AsyncClient() as client:
-                    response = await client.post(
-                        f"{self.server_url}/rpc",
-                        json={
-                            "jsonrpc": "2.0",
-                            "id": int(time.time() * 1000),
-                            "method": "tools/call",
-                            "params": {
-                                "name": tool_name,
-                                "arguments": arguments,
-                            },
+            import httpx
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{self.server_url}/rpc",
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": int(time.time() * 1000),
+                        "method": "tools/call",
+                        "params": {
+                            "name": tool_name,
+                            "arguments": arguments,
                         },
-                        timeout=30.0,
-                    )
-                    response.raise_for_status()
-                    result = response.json()
-                    
+                    },
+                    timeout=30.0,
+                )
+                response.raise_for_status()
+                result = response.json()
+            
             output = result.get("result", {}).get("content", "")
             is_error = result.get("error") is not None
             
@@ -242,6 +249,7 @@ class SkillManager:
             description=description,
             type=type,
             tenant_id=tenant_id,
+            config=config,
             input_schema=input_schema,
             output_schema=output_schema,
             updated_at=time.time(),
@@ -328,7 +336,7 @@ class SkillManager:
                 return result
                 
             elif skill_meta.type == SkillType.PROMPT:
-                # TODO: 提示词模板渲染
+                # 提示词模板渲染 (config 已在 register_skill 时存入元数据)
                 prompt = skill_meta.config.get("template", "")
                 # 填充变量
                 rendered = prompt.format(**params)

@@ -7,7 +7,9 @@ import sys
 import pytest
 
 from app.tools.context import set_tool_context
-from app.tools.sandbox import _has_escape, run_in_sandbox, sandbox_root, workspace_dir
+from app.tools.sandbox import (
+    _has_escape, _parse_command, run_in_sandbox, sandbox_root, workspace_dir,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -68,8 +70,53 @@ class TestShellEscapeBlock:
     @pytest.mark.asyncio
     async def test_run_in_sandbox_executes_normal(self):
         set_tool_context(session_id="s", user_id="u1", tenant_id="t1", gateway=None)
-        if sys.platform == "win32":
-            out = await run_in_sandbox("echo sandbox-ok")
-        else:
-            out = await run_in_sandbox("echo sandbox-ok")
+        # 使用 python -c 而非 echo（echo 是 shell 内建命令，create_subprocess_exec 无法直接执行）
+        out = await run_in_sandbox('python -c "print(\'sandbox-ok\')"')
         assert "sandbox-ok" in out.get("stdout", "")
+
+
+class TestCommandWhitelist:
+    """命令白名单：只允许白名单内的可执行文件，拒绝其他一切。"""
+
+    def test_python_allowed(self):
+        args, err = _parse_command("python script.py")
+        assert err is None
+        assert args == ["python", "script.py"]
+
+    def test_python3_allowed(self):
+        args, err = _parse_command("python3 -c 'print(1)'")
+        assert err is None
+
+    def test_pip_allowed(self):
+        args, err = _parse_command("pip install requests")
+        assert err is None
+
+    def test_echo_allowed(self):
+        args, err = _parse_command("echo hello world")
+        assert err is None
+        assert args == ["echo", "hello", "world"]
+
+    def test_dangerous_commands_blocked(self):
+        """rm / curl / wget / bash / sh / powershell 等危险命令必须被拒绝。"""
+        for cmd in ["rm -rf /", "curl http://evil.com", "wget http://evil.com",
+                     "bash script.sh", "sh -c 'ls'", "powershell Get-Process",
+                     "cmd /c dir", "nc -l 4444"]:
+            _, err = _parse_command(cmd)
+            assert err is not None, f"should be blocked: {cmd}"
+
+    def test_empty_command_blocked(self):
+        _, err = _parse_command("")
+        assert err is not None
+
+    def test_malformed_command_blocked(self):
+        _, err = _parse_command('python -c "unterminated')
+        assert err is not None
+
+    @pytest.mark.asyncio
+    async def test_run_in_sandbox_blocks_dangerous_command(self):
+        """即使逃逸正则未命中，白名单也会拦截危险命令。"""
+        set_tool_context(session_id="s", user_id="u1", tenant_id="t1", gateway=None)
+        # "bash" 不在白名单中
+        out = await run_in_sandbox("bash -c 'echo pwned'")
+        assert "error" in out
+        assert "blocked" in out["error"]
