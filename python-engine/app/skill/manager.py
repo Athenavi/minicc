@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import shlex
 import time
 from typing import Any, Optional
 from dataclasses import dataclass, field
@@ -91,12 +93,16 @@ class MCPClient:
         # 检查缓存 (5 分钟 TTL)
         if time.time() - self._cache_time < 300 and self._tools_cache:
             return self._tools_cache
-        
-        # Fail loud: 未实现/不支持的传输方式必须显式抛错。
-        # 若被下方 except 吞掉返回 [],调用方将无法区分
-        # "功能未实现" 和 "服务器确实没有工具"。
+
+        # Fail loud: 不支持的传输方式必须显式抛错。
         if self.transport == "stdio":
-            raise NotImplementedError("STDIO transport not yet implemented")
+            response = await self._stdio_rpc("tools/list", {}, timeout=10.0)
+            tools = response.get("result", {}).get("tools", [])
+            self._tools_cache = tools
+            self._cache_time = time.time()
+            logger.info(f"Discovered {len(tools)} MCP tools via STDIO from {self.server_url}")
+            return tools
+
         if self.transport != "http":
             raise ValueError(f"Unsupported transport: {self.transport}")
         
@@ -138,10 +144,42 @@ class MCPClient:
         """调用 MCP 工具"""
         start_time = time.time()
         
-        # Fail loud: 未实现/不支持的传输方式显式抛错 (若静默走到下方
-        # result 未定义处会产生误导性的 UnboundLocalError)。
+        # Fail loud: 不支持的传输方式显式抛错。
         if self.transport == "stdio":
-            raise NotImplementedError("STDIO transport not yet implemented")
+            response = await self._stdio_rpc(
+                "tools/call",
+                {"name": tool_name, "arguments": arguments},
+                timeout=30.0,
+            )
+            output = response.get("result", {}).get("content", "")
+            is_error = response.get("error") is not None
+
+            duration_ms = int((time.time() - start_time) * 1000)
+
+            if trace_id:
+                await record_span(
+                    trace_id=trace_id,
+                    span_name=f"mcp:{tool_name}",
+                    duration_ms=duration_ms,
+                    metadata={
+                        "tool_name": tool_name,
+                        "success": not is_error,
+                        "tenant_id": tenant_id,
+                    },
+                    tenant_id=tenant_id,
+                )
+
+            return SkillExecutionResult(
+                skill_id=f"mcp:{tool_name}",
+                skill_name=tool_name,
+                success=not is_error,
+                output=json.dumps(output, ensure_ascii=False) if not is_error else "",
+                error=json.dumps(response.get("error", {}), ensure_ascii=False) if is_error else "",
+                duration_ms=duration_ms,
+                trace_id=trace_id,
+                tenant_id=tenant_id,
+            )
+
         if self.transport != "http":
             raise ValueError(f"Unsupported transport: {self.transport}")
         
@@ -207,6 +245,108 @@ class MCPClient:
                 trace_id=trace_id,
                 tenant_id=tenant_id,
             )
+
+    # ── STDIO 传输 ──────────────────────────────────────────────────
+
+    async def _stdio_rpc(
+        self,
+        method: str,
+        params: dict,
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        """通过 STDIO 子进程发送 JSON-RPC 2.0 请求。
+
+        MCP STDIO 传输规范:
+        - server_url 字段复用为要执行的命令（如 "node server.js"）
+        - 每行一个 JSON-RPC 消息，通过 stdin/stdout 通信
+        - 先发送 initialize 握手，再发送实际请求
+
+        设计决策:
+        - 每次 RPC 请求 spawn 新子进程（简单可靠，避免生命周期管理复杂度）
+        - discover_tools 有 5 分钟缓存，不会频繁 spawn
+        - 超时 kill + stderr 截断 + fail-loud
+        """
+        import asyncio
+
+        cmd = shlex.split(self.server_url, posix=os.name != "nt")
+        if not cmd:
+            raise ValueError(
+                "STDIO transport: server_url must be a command to execute "
+                "(e.g. 'node /path/to/mcp-server.js')"
+            )
+
+        # 构造 initialize + 实际请求两条消息
+        init_req = {
+            "jsonrpc": "2.0",
+            "id": 0,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "minicc-mcp-client", "version": "1.0.0"},
+            },
+        }
+        actual_req = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": method,
+            "params": params,
+        }
+        payload = (
+            json.dumps(init_req) + "\n" + json.dumps(actual_req) + "\n"
+        ).encode()
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except FileNotFoundError:
+            raise RuntimeError(
+                f"STDIO transport: command not found: {cmd[0]}"
+            )
+        except Exception as e:
+            raise RuntimeError(
+                f"STDIO transport: failed to spawn process: {e}"
+            )
+
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(payload),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            raise TimeoutError(
+                f"MCP STDIO '{method}' timed out after {timeout}s"
+            )
+
+        # 从 stdout 解析 JSON-RPC 响应（取 id=1 的那条）
+        lines = stdout.decode(errors="replace").strip().splitlines()
+        response: dict[str, Any] | None = None
+        for line in reversed(lines):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                parsed = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict) and parsed.get("id") == 1:
+                response = parsed
+                break
+
+        if response is None:
+            err_snippet = stderr.decode(errors="replace")[:500]
+            raise RuntimeError(
+                f"MCP STDIO '{method}': no JSON-RPC response with id=1. "
+                f"stdout_lines={len(lines)}, stderr={err_snippet}"
+            )
+
+        return response
 
 
 class SkillManager:

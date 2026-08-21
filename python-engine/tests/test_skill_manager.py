@@ -1,11 +1,17 @@
-"""技能管理器 (app/skill/manager.py) fail loud 回归测试。
+"""技能管理器 (app/skill/manager.py) 测试。
 
 意图:
-- 未实现的 MCP 传输方式必须显式抛错,不得吞掉异常返回空列表/假结果
-- PROMPT 技能必须完成真实的模板渲染 (config 已在注册时持久化)
-- 未实现的技能类型执行必须返回明确的失败结果
+- MCP STDIO 传输: 使用 echo fixture 测试 discover_tools + call_tool
+- MCP HTTP 传输: 不支持的传输方式必须 fail-loud
+- PROMPT 技能必须完成真实的模板渲染
+- PYTHON_SCRIPT 技能必须在沙箱中执行并拦截危险 import
+- HTTP_REQUEST 技能必须拦截内网地址 (SSRF)
+- 租户隔离: 其他租户不得访问不属于自己的技能
 """
 from __future__ import annotations
+
+import os
+import sys
 
 import pytest
 
@@ -14,27 +20,95 @@ from app.skill.manager import MCPClient, SkillManager, SkillType
 
 TENANT = "tenant-skill-test"
 
+# MCP STDIO echo fixture 的路径
+_FIXTURE = os.path.join(
+    os.path.dirname(__file__), "fixtures", "mcp_stdio_echo.py"
+)
+_STDIO_CMD = f"{sys.executable} {_FIXTURE}"
 
-async def test_stdio_transport_discovery_fails_loud():
-    """STDIO 传输未实现: 必须抛 NotImplementedError。
 
-    若被吞掉返回 [],调用方无法区分"未实现"和"服务器没有工具"。
-    """
-    client = MCPClient(server_url="http://localhost:1", transport="stdio")
-    with pytest.raises(NotImplementedError, match="STDIO"):
+# ── STDIO 传输测试 ────────────────────────────────────────────────
+
+
+async def test_stdio_discover_tools():
+    """STDIO 传输: discover_tools 返回工具列表。"""
+    client = MCPClient(server_url=_STDIO_CMD, transport="stdio")
+    tools = await client.discover_tools()
+    assert len(tools) == 2
+    names = {t["name"] for t in tools}
+    assert names == {"echo", "add"}
+
+
+async def test_stdio_discover_tools_caches():
+    """STDIO 传输: 第二次 discover_tools 走缓存不 spawn 子进程。"""
+    client = MCPClient(server_url=_STDIO_CMD, transport="stdio")
+    tools1 = await client.discover_tools()
+    tools2 = await client.discover_tools()
+    assert tools1 == tools2
+
+
+async def test_stdio_call_tool_echo():
+    """STDIO 传输: call_tool 执行 echo 工具。"""
+    client = MCPClient(server_url=_STDIO_CMD, transport="stdio")
+    result = await client.call_tool(
+        tool_name="echo",
+        arguments={"message": "hello world"},
+    )
+    assert result.success is True
+    assert "hello world" in result.output
+
+
+async def test_stdio_call_tool_add():
+    """STDIO 传输: call_tool 执行 add 工具。"""
+    client = MCPClient(server_url=_STDIO_CMD, transport="stdio")
+    result = await client.call_tool(
+        tool_name="add",
+        arguments={"a": 3, "b": 7},
+    )
+    assert result.success is True
+    assert "10" in result.output
+
+
+async def test_stdio_unknown_tool_fails_loud():
+    """STDIO 传输: 调用不存在的工具必须 fail-loud。"""
+    client = MCPClient(server_url=_STDIO_CMD, transport="stdio")
+    result = await client.call_tool(
+        tool_name="nonexistent",
+        arguments={},
+    )
+    assert result.success is False
+    assert "error" in result.error.lower() or "unknown" in result.error.lower()
+
+
+async def test_stdio_empty_command_fails_loud():
+    """STDIO 传输: 空 server_url 必须抛 ValueError。"""
+    client = MCPClient(server_url="", transport="stdio")
+    with pytest.raises(ValueError, match="command"):
         await client.discover_tools()
 
 
-async def test_stdio_transport_call_fails_loud():
-    client = MCPClient(server_url="http://localhost:1", transport="stdio")
-    with pytest.raises(NotImplementedError, match="STDIO"):
-        await client.call_tool(tool_name="any", arguments={})
+async def test_stdio_bad_command_fails_loud():
+    """STDIO 传输: 不存在的命令必须 fail-loud（RuntimeError）。"""
+    client = MCPClient(
+        server_url="nonexistent-binary-xyz --flag", transport="stdio"
+    )
+    with pytest.raises(RuntimeError, match="not found|failed to spawn"):
+        await client.discover_tools()
+
+
+# ── 不支持的传输方式 ─────────────────────────────────────────────
 
 
 async def test_unsupported_transport_fails_loud():
     client = MCPClient(server_url="http://localhost:1", transport="carrier-pigeon")
     with pytest.raises(ValueError, match="Unsupported transport"):
         await client.discover_tools()
+
+
+async def test_unsupported_transport_call_fails_loud():
+    client = MCPClient(server_url="http://localhost:1", transport="carrier-pigeon")
+    with pytest.raises(ValueError, match="Unsupported transport"):
+        await client.call_tool(tool_name="any", arguments={})
 
 
 async def test_prompt_skill_renders_template():

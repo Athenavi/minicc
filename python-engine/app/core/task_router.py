@@ -735,21 +735,151 @@ Return ONLY valid JSON without markdown formatting."""
         intent: dict,
         original_input: str,
     ) -> dict[str, Any]:
-        """聚合子任务输出"""
-        # TODO: 根据意图类型定制聚合逻辑
-        return {
-            "subtasks_completed": sum(1 for r in results if r.status == "completed"),
-            "subtasks_failed": sum(1 for r in results if r.status == "failed"),
-            "outputs": [
-                {
-                    "subtask_id": r.subtask_id,
-                    "capability_id": r.capability_id,
-                    "output": r.output if r.status == "completed" else None,
-                    "error": r.error if r.status == "failed" else None,
-                }
-                for r in results
-            ],
+        """聚合子任务输出 — 按意图类型定制聚合策略
+
+        各意图的聚合逻辑:
+        - search:  收集所有来源，去重，生成摘要 + 来源列表
+        - analyze: 串联分析结论，按依赖顺序输出关键发现
+        - generate_code: 合并代码产出，按子任务顺序拼接
+        - create_workflow / manage_knowledge: 结构化输出
+        - general / default: 通用列表式聚合
+        """
+        completed = [r for r in results if r.status == "completed"]
+        failed = [r for r in results if r.status == "failed"]
+        action = intent.get("action", "general")
+
+        base: dict[str, Any] = {
+            "subtasks_completed": len(completed),
+            "subtasks_failed": len(failed),
+            "intent": action,
         }
+
+        if action == "search":
+            return self._aggregate_search(completed, failed, base, original_input)
+
+        if action == "analyze":
+            return self._aggregate_analyze(completed, failed, base, original_input)
+
+        if action == "generate_code":
+            return self._aggregate_code(completed, failed, base)
+
+        # 默认通用聚合
+        base["outputs"] = [
+            {
+                "subtask_id": r.subtask_id,
+                "capability_id": r.capability_id,
+                "output": r.output if r.status == "completed" else None,
+                "error": r.error if r.status == "failed" else None,
+            }
+            for r in results
+        ]
+        return base
+
+    def _aggregate_search(
+        self,
+        completed: list[ExecutedTask],
+        failed: list[ExecutedTask],
+        base: dict[str, Any],
+        original_input: str,
+    ) -> dict[str, Any]:
+        """搜索意图聚合: 收集来源 + 去重 + 摘要"""
+        sources: list[dict[str, Any]] = []
+        snippets: list[str] = []
+
+        for r in completed:
+            out = r.output
+            if isinstance(out, dict):
+                # kb_search 返回 {results: [...]} 或 {knowledge_bases: [...]}
+                for item in out.get("results", out.get("knowledge_bases", [])):
+                    if isinstance(item, dict):
+                        title = item.get("title", item.get("name", ""))
+                        url = item.get("url", item.get("id", ""))
+                        snippet = item.get("snippet", item.get("description", ""))
+                        source = {"title": title, "url": url, "snippet": snippet}
+                        # 去重 (按 url)
+                        if url and not any(
+                            s.get("url") == url for s in sources
+                        ):
+                            sources.append(source)
+                        if snippet:
+                            snippets.append(snippet)
+            elif isinstance(out, str) and out:
+                snippets.append(out[:200])
+
+        base["sources"] = sources
+        base["summary"] = (
+            f"找到 {len(sources)} 个相关来源"
+            + (f"，查询: '{original_input[:60]}'" if original_input else "")
+        )
+        if snippets:
+            base["key_snippets"] = snippets[:5]
+        if failed:
+            base["errors"] = [r.error for r in failed]
+        return base
+
+    def _aggregate_analyze(
+        self,
+        completed: list[ExecutedTask],
+        failed: list[ExecutedTask],
+        base: dict[str, Any],
+        original_input: str,
+    ) -> dict[str, Any]:
+        """分析意图聚合: 按依赖顺序串联分析结论"""
+        findings: list[dict[str, Any]] = []
+
+        for r in completed:
+            out = r.output
+            if isinstance(out, dict):
+                conclusion = out.get("result", out.get("analysis", out.get("summary", "")))
+            elif isinstance(out, str):
+                conclusion = out
+            else:
+                conclusion = str(out) if out else ""
+            findings.append({
+                "subtask_id": r.subtask_id,
+                "capability_id": r.capability_id,
+                "conclusion": conclusion[:500] if conclusion else "",
+            })
+
+        base["findings"] = findings
+        base["synthesis"] = (
+            " | ".join(f["conclusion"] for f in findings if f["conclusion"])
+            if findings
+            else "No analysis output"
+        )
+        if failed:
+            base["errors"] = [r.error for r in failed]
+        return base
+
+    def _aggregate_code(
+        self,
+        completed: list[ExecutedTask],
+        failed: list[ExecutedTask],
+        base: dict[str, Any],
+    ) -> dict[str, Any]:
+        """代码生成意图聚合: 按子任务顺序拼接代码产出"""
+        code_blocks: list[dict[str, Any]] = []
+
+        for r in completed:
+            out = r.output
+            if isinstance(out, dict):
+                code = out.get("code", out.get("result", ""))
+            elif isinstance(out, str):
+                code = out
+            else:
+                code = str(out) if out else ""
+            code_blocks.append({
+                "subtask_id": r.subtask_id,
+                "code": code,
+            })
+
+        base["code_blocks"] = code_blocks
+        base["combined_code"] = "\n\n".join(
+            cb["code"] for cb in code_blocks if cb["code"]
+        )
+        if failed:
+            base["errors"] = [r.error for r in failed]
+        return base
     
     def _extract_keywords(self, text: str) -> list[str]:
         """提取关键词 (简化版)"""
@@ -758,9 +888,90 @@ Return ONLY valid JSON without markdown formatting."""
         return [w for w in words if len(w) > 2]
     
     def _extract_entities(self, text: str) -> dict:
-        """提取实体 (简化版)"""
-        # TODO: 使用 NER 模型
-        return {}
+        """提取实体 — 规则式 NER（无需外部模型依赖）
+
+        识别实体类型:
+        - urls: URL 链接
+        - emails: 邮箱地址
+        - phones: 手机号（中国大陆 1xx 格式）
+        - file_paths: 文件路径（Unix / Win）
+        - dates: 日期（YYYY-MM-DD / YYYY/MM/DD / 中文日期）
+        - amounts: 金额（¥ / $ / 元）
+        - ip_addresses: IPv4 地址
+        - code_refs: 代码引用（function() / Class.method）
+        """
+        import re
+
+        entities: dict[str, list[str]] = {}
+
+        # URL
+        urls = re.findall(
+            r'https?://[^\s<>"\')\]]+', text
+        )
+        if urls:
+            entities["urls"] = urls
+
+        # Email
+        emails = re.findall(
+            r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text
+        )
+        if emails:
+            entities["emails"] = emails
+
+        # Phone (中国大陆手机号)
+        phones = re.findall(r'\b1[3-9]\d{9}\b', text)
+        if phones:
+            entities["phones"] = phones
+
+        # File paths (Unix / Windows)
+        unix_paths = re.findall(
+            r'(?:~/|/(?:usr|home|opt|var|etc|tmp)/)[^\s<>"\')\]]+',
+            text,
+        )
+        win_paths = re.findall(
+            r'[A-Za-z]:\\[^\s<>"\')\]]+',
+            text,
+        )
+        file_paths = unix_paths + win_paths
+        if file_paths:
+            entities["file_paths"] = file_paths
+
+        # Dates
+        dates = re.findall(
+            r'\d{4}[-/]\d{1,2}[-/]\d{1,2}'
+            r'|\d{4}年\d{1,2}月\d{1,2}日',
+            text,
+        )
+        if dates:
+            entities["dates"] = dates
+
+        # Amounts (¥ / $ / 元)
+        amounts = re.findall(
+            r'[¥$]\s*[\d,]+(?:\.\d+)?'
+            r'|\d+(?:\.\d+)?\s*(?:元|万元|USD|CNY)',
+            text,
+        )
+        if amounts:
+            entities["amounts"] = [a.strip() for a in amounts]
+
+        # IPv4
+        ips = re.findall(
+            r'\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}'
+            r'(?:25[0-5]|2[0-4]\d|1?\d?\d)\b',
+            text,
+        )
+        if ips:
+            entities["ip_addresses"] = ips
+
+        # Code references (function() / Class.method)
+        code_refs = re.findall(
+            r'\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+\([^)]*\)',
+            text,
+        )
+        if code_refs:
+            entities["code_refs"] = code_refs
+
+        return entities
     
     def _infer_action(self, text: str) -> str:
         """推断动作"""

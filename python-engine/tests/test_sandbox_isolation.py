@@ -29,7 +29,10 @@ class TestSandboxLocation:
         root = str(sandbox_root())
         assert "minicc-sandbox" in root
         cwd = os.getcwd()
-        assert root.startswith(os.path.dirname(os.path.dirname(cwd))), f"沙箱根未移到项目外: {root}"
+        # Windows 驱动器号大小写可能不一致 (D:\ vs d:\)，用 normcase 归一化
+        assert os.path.normcase(root).startswith(
+            os.path.normcase(os.path.dirname(os.path.dirname(cwd)))
+        ), f"沙箱根未移到项目外: {root}"
 
     def test_safe_join_rejects_escape(self):
         from app.tools.sandbox import safe_join
