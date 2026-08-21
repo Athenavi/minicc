@@ -1,686 +1,1385 @@
--- Database baseline migration (atlas single-file)
--- Generated from production schema (PostgreSQL 18) after cleanup:
---   - tool_calls 外键已移除（日志型表，应用层保证有效性）
---   - media_assets.parent_id 已加入（文件夹支持）
---   - RLS 已全部禁用（安全由应用层托底）
--- New environments: applies full schema. Existing environments: already applied (version 20260709000001).
-
-
-CREATE FUNCTION knowledge_chunks_search_vector_update() RETURNS trigger
-LANGUAGE plpgsql
-AS $$
-BEGIN
-NEW.search_vector := to_tsvector('chinese', COALESCE(NEW.content, ''));
-RETURN NEW;
-END;
-$$;
-
-CREATE FUNCTION update_updated_at_column() RETURNS trigger
-LANGUAGE plpgsql
-AS $$
-BEGIN
-NEW.updated_at = NOW();
-RETURN NEW;
-END;
-$$;
-
-CREATE TABLE agent_registry (
-agent_type character varying(32) NOT NULL,
-name character varying(128) NOT NULL,
-description text DEFAULT ''::text NOT NULL,
-enabled boolean DEFAULT true NOT NULL,
-config jsonb DEFAULT '{}'::jsonb,
-created_at timestamp with time zone DEFAULT now() NOT NULL
+create table if not exists schema_migrations
+(
+    version    bigint                                 not null
+        primary key,
+    name       varchar(255)                           not null,
+    checksum   varchar(128),
+    applied_at timestamp with time zone default now() not null
 );
 
-CREATE TABLE agent_sessions (
-id character varying(128) NOT NULL,
-user_id uuid NOT NULL,
-agent_id uuid,
-name character varying(128) NOT NULL,
-task text NOT NULL,
-status character varying(16) DEFAULT 'pending'::character varying NOT NULL,
-result text,
-created_at timestamp with time zone DEFAULT now() NOT NULL,
-updated_at timestamp with time zone DEFAULT now() NOT NULL
+create table if not exists agent_registry
+(
+    agent_type  varchar(32)                               not null
+        primary key,
+    name        varchar(128)                              not null,
+    description text                     default ''::text not null,
+    enabled     boolean                  default true     not null,
+    config      jsonb                    default '{}'::jsonb,
+    created_at  timestamp with time zone default now()    not null
 );
 
-CREATE TABLE agents (
-id uuid DEFAULT gen_random_uuid() NOT NULL,
-tenant_id uuid NOT NULL,
-name character varying(255) NOT NULL,
-description text,
-system_prompt text,
-tools jsonb DEFAULT '[]'::jsonb,
-llm_config jsonb DEFAULT '{}'::jsonb,
-max_turns integer DEFAULT 10,
-timeout_seconds integer DEFAULT 120,
-enabled boolean DEFAULT true NOT NULL,
-created_at timestamp with time zone DEFAULT now() NOT NULL,
-updated_at timestamp with time zone DEFAULT now() NOT NULL
+create table if not exists episodes
+(
+    id          uuid                     default gen_random_uuid() not null
+        primary key,
+    task        text                     default ''::text          not null,
+    summary     text                     default ''::text          not null,
+    tools_used  text[]                   default '{}'::text[]      not null,
+    success     boolean                  default true              not null,
+    duration_ms bigint                   default 0                 not null,
+    created_at  timestamp with time zone default now()             not null
 );
 
-CREATE TABLE api_keys (
-id uuid DEFAULT gen_random_uuid() NOT NULL,
-user_id uuid NOT NULL,
-name character varying(128) NOT NULL,
-key_hash character varying(64) NOT NULL,
-last_used_at timestamp with time zone,
-expires_at timestamp with time zone,
-created_at timestamp with time zone DEFAULT now() NOT NULL
+create table if not exists guest_storage
+(
+    client_id  varchar(64)                            not null
+        primary key,
+    storage_id varchar(64)                            not null
+        unique,
+    created_at timestamp with time zone default now() not null
 );
 
-CREATE TABLE audit_logs (
-id uuid DEFAULT gen_random_uuid() NOT NULL,
-tenant_id uuid NOT NULL,
-user_id uuid,
-action character varying(64) NOT NULL,
-resource_type character varying(64) NOT NULL,
-resource_id character varying(64),
-details jsonb DEFAULT '{}'::jsonb,
-ip_address character varying(45),
-created_at timestamp with time zone DEFAULT now() NOT NULL
+create index if not exists idx_guest_storage_id
+    on guest_storage (storage_id);
+
+create table if not exists stripe_payments
+(
+    session_id   varchar(128)                                                  not null
+        primary key,
+    user_id      uuid                                                          not null,
+    credits      integer                  default 1000                         not null,
+    amount_cents bigint                   default 0                            not null,
+    status       varchar(16)              default 'pending'::character varying not null,
+    created_at   timestamp with time zone default now()                        not null,
+    completed_at timestamp with time zone
 );
 
-CREATE TABLE billing_records (
-id uuid DEFAULT gen_random_uuid() NOT NULL,
-tenant_id uuid NOT NULL,
-user_id uuid NOT NULL,
-session_id uuid,
-input_tokens bigint DEFAULT 0 NOT NULL,
-output_tokens bigint DEFAULT 0 NOT NULL,
-cost_cents integer DEFAULT 0 NOT NULL,
-created_at timestamp with time zone DEFAULT now() NOT NULL
+create index if not exists idx_stripe_payments_user
+    on stripe_payments (user_id);
+
+create table if not exists tenants
+(
+    id         uuid                     default gen_random_uuid() not null
+        primary key,
+    name       varchar(255)                                       not null,
+    created_at timestamp with time zone default now()             not null
 );
 
-CREATE TABLE credit_transactions (
-id uuid DEFAULT gen_random_uuid() NOT NULL,
-user_id uuid NOT NULL,
-amount integer NOT NULL,
-balance integer NOT NULL,
-reason character varying(64) NOT NULL,
-created_at timestamp with time zone DEFAULT now() NOT NULL
+create table if not exists agents
+(
+    id              uuid                     default gen_random_uuid() not null
+        primary key,
+    tenant_id       uuid                                               not null
+        references tenants
+            on delete cascade,
+    name            varchar(255)                                       not null,
+    description     text,
+    system_prompt   text,
+    tools           jsonb                    default '[]'::jsonb,
+    llm_config      jsonb                    default '{}'::jsonb,
+    max_turns       integer                  default 10,
+    timeout_seconds integer                  default 120,
+    enabled         boolean                  default true              not null,
+    created_at      timestamp with time zone default now()             not null,
+    updated_at      timestamp with time zone default now()             not null
 );
 
-CREATE TABLE enterprise_tasks (
-id uuid DEFAULT gen_random_uuid() NOT NULL,
-tenant_id uuid NOT NULL,
-user_id character varying(32) DEFAULT ''::character varying NOT NULL,
-title character varying(255) NOT NULL,
-description text DEFAULT ''::text,
-project character varying(128) DEFAULT ''::character varying,
-assignee character varying(128) DEFAULT ''::character varying,
-priority character varying(16) DEFAULT 'medium'::character varying NOT NULL,
-status character varying(16) DEFAULT 'open'::character varying NOT NULL,
-created_at timestamp with time zone DEFAULT now() NOT NULL,
-updated_at timestamp with time zone DEFAULT now() NOT NULL
+create index if not exists idx_agents_name
+    on agents (tenant_id, name);
+
+create index if not exists idx_agents_tenant
+    on agents (tenant_id);
+
+create table if not exists enterprise_tasks
+(
+    id          uuid                     default gen_random_uuid()           not null
+        primary key,
+    tenant_id   uuid                                                         not null
+        references tenants
+            on delete cascade,
+    user_id     varchar(32)              default ''::character varying       not null,
+    title       varchar(255)                                                 not null,
+    description text                     default ''::text,
+    project     varchar(128)             default ''::character varying,
+    assignee    varchar(128)             default ''::character varying,
+    priority    varchar(16)              default 'medium'::character varying not null,
+    status      varchar(16)              default 'open'::character varying   not null,
+    created_at  timestamp with time zone default now()                       not null,
+    updated_at  timestamp with time zone default now()                       not null
 );
 
-CREATE TABLE episodes (
-id uuid DEFAULT gen_random_uuid() NOT NULL,
-task text DEFAULT ''::text NOT NULL,
-summary text DEFAULT ''::text NOT NULL,
-tools_used text[] DEFAULT '{}'::text[] NOT NULL,
-success boolean DEFAULT true NOT NULL,
-duration_ms bigint DEFAULT 0 NOT NULL,
-created_at timestamp with time zone DEFAULT now() NOT NULL
+create index if not exists idx_enterprise_tasks_tenant
+    on enterprise_tasks (tenant_id);
+
+create table if not exists kb_articles
+(
+    id         uuid                     default gen_random_uuid()     not null
+        primary key,
+    tenant_id  uuid                                                   not null
+        references tenants
+            on delete cascade,
+    user_id    varchar(32)              default ''::character varying not null,
+    title      varchar(255)                                           not null,
+    content    text                     default ''::text              not null,
+    tags       text[]                   default '{}'::text[],
+    category   varchar(64)              default ''::character varying,
+    created_at timestamp with time zone default now()                 not null,
+    updated_at timestamp with time zone default now()                 not null
 );
 
-CREATE TABLE guest_storage (
-client_id character varying(64) NOT NULL,
-storage_id character varying(64) NOT NULL,
-created_at timestamp with time zone DEFAULT now() NOT NULL
+create index if not exists idx_kb_articles_tenant
+    on kb_articles (tenant_id);
+
+create table if not exists marketing_campaigns
+(
+    id            uuid                     default gen_random_uuid()          not null
+        primary key,
+    tenant_id     uuid                                                        not null
+        references tenants
+            on delete cascade,
+    user_id       varchar(32)              default ''::character varying      not null,
+    name          varchar(255)                                                not null,
+    description   text                     default ''::text,
+    campaign_type varchar(32)              default 'email'::character varying not null,
+    config        jsonb                    default '{}'::jsonb,
+    status        varchar(16)              default 'draft'::character varying not null,
+    created_at    timestamp with time zone default now()                      not null,
+    updated_at    timestamp with time zone default now()                      not null
 );
 
-CREATE TABLE kb_articles (
-id uuid DEFAULT gen_random_uuid() NOT NULL,
-tenant_id uuid NOT NULL,
-user_id character varying(32) DEFAULT ''::character varying NOT NULL,
-title character varying(255) NOT NULL,
-content text DEFAULT ''::text NOT NULL,
-tags text[] DEFAULT '{}'::text[],
-category character varying(64) DEFAULT ''::character varying,
-created_at timestamp with time zone DEFAULT now() NOT NULL,
-updated_at timestamp with time zone DEFAULT now() NOT NULL
+create index if not exists idx_marketing_campaigns_tenant
+    on marketing_campaigns (tenant_id);
+
+create table if not exists media_assets
+(
+    id         uuid                     default gen_random_uuid()         not null
+        primary key,
+    tenant_id  uuid                                                       not null
+        references tenants
+            on delete cascade,
+    user_id    uuid                                                       not null,
+    type       varchar(16)              default 'text'::character varying not null,
+    name       varchar(255)                                               not null,
+    file_url   varchar(1024)            default ''::character varying,
+    file_path  varchar(512)             default ''::character varying,
+    mime_type  varchar(64)              default ''::character varying,
+    thumbnail  varchar(512)             default ''::character varying,
+    metadata   jsonb                    default '{}'::jsonb,
+    tags       text[]                   default '{}'::text[],
+    category   varchar(64)              default ''::character varying,
+    size       bigint                   default 0                         not null,
+    created_at timestamp with time zone default now()                     not null,
+    updated_at timestamp with time zone default now()                     not null,
+    parent_id  varchar(64)              default ''::character varying
 );
 
-CREATE TABLE knowledge_bases (
-id uuid DEFAULT gen_random_uuid() NOT NULL,
-tenant_id uuid NOT NULL,
-user_id uuid NOT NULL,
-name character varying(255) NOT NULL,
-description text,
-type character varying(32) DEFAULT 'rag'::character varying NOT NULL,
-visibility character varying(32) DEFAULT 'private'::character varying NOT NULL,
-status character varying(32) DEFAULT 'active'::character varying NOT NULL,
-document_count integer DEFAULT 0,
-total_size_bytes bigint DEFAULT 0,
-credits_consumed integer DEFAULT 0,
-config jsonb DEFAULT '{}'::jsonb,
-created_at timestamp with time zone DEFAULT now(),
-updated_at timestamp with time zone DEFAULT now(),
-doc_count integer DEFAULT 0
+create index if not exists idx_media_category
+    on media_assets (category);
+
+create index if not exists idx_media_created
+    on media_assets (created_at);
+
+create index if not exists idx_media_parent
+    on media_assets (parent_id);
+
+create index if not exists idx_media_tenant
+    on media_assets (tenant_id);
+
+create index if not exists idx_media_type
+    on media_assets (type);
+
+create index if not exists idx_media_user
+    on media_assets (user_id);
+
+create table if not exists meeting_notes
+(
+    id           uuid                     default gen_random_uuid()     not null
+        primary key,
+    tenant_id    uuid                                                   not null
+        references tenants
+            on delete cascade,
+    user_id      varchar(32)              default ''::character varying not null,
+    title        varchar(255)                                           not null,
+    notes        text                     default ''::text              not null,
+    summary      text                     default ''::text,
+    participants text[]                   default '{}'::text[],
+    date         date                     default CURRENT_DATE,
+    created_at   timestamp with time zone default now()                 not null
 );
 
-CREATE TABLE knowledge_chunks (
-id uuid DEFAULT gen_random_uuid() NOT NULL,
-document_id uuid NOT NULL,
-knowledge_base_id uuid NOT NULL,
-tenant_id uuid NOT NULL,
-chunk_index integer NOT NULL,
-content text NOT NULL,
-metadata jsonb DEFAULT '{}'::jsonb,
-search_vector tsvector,
-created_at timestamp with time zone DEFAULT now()
+create index if not exists idx_meeting_notes_tenant
+    on meeting_notes (tenant_id);
+
+create table if not exists okrs
+(
+    id          uuid                     default gen_random_uuid()           not null
+        primary key,
+    tenant_id   uuid                                                         not null
+        references tenants
+            on delete cascade,
+    user_id     varchar(32)              default ''::character varying       not null,
+    objective   varchar(255)                                                 not null,
+    key_results jsonb                    default '[]'::jsonb,
+    quarter     varchar(16)              default ''::character varying,
+    status      varchar(16)              default 'active'::character varying not null,
+    created_at  timestamp with time zone default now()                       not null,
+    updated_at  timestamp with time zone default now()                       not null
 );
 
-CREATE TABLE knowledge_documents (
-id uuid DEFAULT gen_random_uuid() NOT NULL,
-knowledge_base_id uuid NOT NULL,
-tenant_id uuid NOT NULL,
-user_id uuid NOT NULL,
-name character varying(255) NOT NULL,
-file_url character varying(1024),
-file_type character varying(32),
-file_size_bytes bigint DEFAULT 0,
-chunk_count integer DEFAULT 0,
-status character varying(32) DEFAULT 'pending'::character varying NOT NULL,
-error_message text,
-metadata jsonb DEFAULT '{}'::jsonb,
-created_at timestamp with time zone DEFAULT now(),
-updated_at timestamp with time zone DEFAULT now(),
-content bytea
+create index if not exists idx_okrs_tenant
+    on okrs (tenant_id);
+
+create table if not exists support_tickets
+(
+    id          uuid                     default gen_random_uuid()           not null
+        primary key,
+    tenant_id   uuid                                                         not null
+        references tenants
+            on delete cascade,
+    user_id     varchar(32)              default ''::character varying       not null,
+    subject     varchar(255)                                                 not null,
+    description text                     default ''::text,
+    priority    varchar(16)              default 'medium'::character varying not null,
+    status      varchar(16)              default 'open'::character varying   not null,
+    assignee    varchar(128)             default ''::character varying,
+    created_at  timestamp with time zone default now()                       not null,
+    updated_at  timestamp with time zone default now()                       not null
 );
 
-CREATE TABLE marketing_campaigns (
-id uuid DEFAULT gen_random_uuid() NOT NULL,
-tenant_id uuid NOT NULL,
-user_id character varying(32) DEFAULT ''::character varying NOT NULL,
-name character varying(255) NOT NULL,
-description text DEFAULT ''::text,
-campaign_type character varying(32) DEFAULT 'email'::character varying NOT NULL,
-config jsonb DEFAULT '{}'::jsonb,
-status character varying(16) DEFAULT 'draft'::character varying NOT NULL,
-created_at timestamp with time zone DEFAULT now() NOT NULL,
-updated_at timestamp with time zone DEFAULT now() NOT NULL
+create index if not exists idx_support_tickets_tenant
+    on support_tickets (tenant_id);
+
+create table if not exists tool_calls
+(
+    id          text                     default (gen_random_uuid())::text not null
+        primary key,
+    session_id  uuid                                                       not null,
+    message_id  uuid,
+    tool_name   varchar(128)                                               not null,
+    input       jsonb                    default '{}'::jsonb               not null,
+    output      text                     default ''::text                  not null,
+    is_error    boolean                  default false                     not null,
+    duration_ms bigint                   default 0                         not null,
+    created_at  timestamp with time zone default now()                     not null
 );
 
-CREATE TABLE media_assets (
-id uuid DEFAULT gen_random_uuid() NOT NULL,
-tenant_id uuid NOT NULL,
-user_id uuid NOT NULL,
-type character varying(16) DEFAULT 'text'::character varying NOT NULL,
-name character varying(255) NOT NULL,
-file_url character varying(1024) DEFAULT ''::character varying,
-file_path character varying(512) DEFAULT ''::character varying,
-mime_type character varying(64) DEFAULT ''::character varying,
-thumbnail character varying(512) DEFAULT ''::character varying,
-metadata jsonb DEFAULT '{}'::jsonb,
-tags text[] DEFAULT '{}'::text[],
-category character varying(64) DEFAULT ''::character varying,
-size bigint DEFAULT 0 NOT NULL,
-created_at timestamp with time zone DEFAULT now() NOT NULL,
-updated_at timestamp with time zone DEFAULT now() NOT NULL,
-parent_id character varying(64) DEFAULT ''::character varying
+create index if not exists idx_tool_calls_session
+    on tool_calls (session_id);
+
+create table if not exists users
+(
+    id            uuid                     default gen_random_uuid()         not null
+        primary key,
+    tenant_id     uuid                                                       not null
+        references tenants
+            on delete cascade,
+    email         varchar(255)                                               not null,
+    name          varchar(128)                                               not null,
+    password_hash varchar(255)                                               not null,
+    role          varchar(16)              default 'user'::character varying not null,
+    storage_id    varchar(64)
+        unique,
+    credits       integer                  default 1000                      not null,
+    created_at    timestamp with time zone default now()                     not null,
+    updated_at    timestamp with time zone default now()                     not null,
+    phone         varchar(32),
+    password_set  boolean                  default true                      not null,
+    unique (tenant_id, email)
 );
 
-CREATE TABLE meeting_notes (
-id uuid DEFAULT gen_random_uuid() NOT NULL,
-tenant_id uuid NOT NULL,
-user_id character varying(32) DEFAULT ''::character varying NOT NULL,
-title character varying(255) NOT NULL,
-notes text DEFAULT ''::text NOT NULL,
-summary text DEFAULT ''::text,
-participants text[] DEFAULT '{}'::text[],
-date date DEFAULT CURRENT_DATE,
-created_at timestamp with time zone DEFAULT now() NOT NULL
+create table if not exists agent_sessions
+(
+    id         varchar(128)                                                  not null
+        primary key,
+    user_id    uuid                                                          not null
+        references users
+            on delete cascade,
+    agent_id   uuid
+                                                                             references agents
+                                                                                 on delete set null,
+    name       varchar(128)                                                  not null,
+    task       text                                                          not null,
+    status     varchar(16)              default 'pending'::character varying not null,
+    result     text,
+    created_at timestamp with time zone default now()                        not null,
+    updated_at timestamp with time zone default now()                        not null
 );
 
-CREATE TABLE messages (
-id uuid DEFAULT gen_random_uuid() NOT NULL,
-session_id uuid NOT NULL,
-role character varying(16) NOT NULL,
-content text DEFAULT ''::text NOT NULL,
-tool_calls jsonb,
-created_at timestamp with time zone DEFAULT now() NOT NULL
+create index if not exists idx_agent_sessions_status
+    on agent_sessions (status);
+
+create index if not exists idx_agent_sessions_user
+    on agent_sessions (user_id);
+
+create table if not exists api_keys
+(
+    id           uuid                     default gen_random_uuid() not null
+        primary key,
+    user_id      uuid                                               not null
+        references users
+            on delete cascade,
+    name         varchar(128)                                       not null,
+    key_hash     varchar(64)                                        not null,
+    last_used_at timestamp with time zone,
+    expires_at   timestamp with time zone,
+    created_at   timestamp with time zone default now()             not null
 );
 
-CREATE TABLE okrs (
-id uuid DEFAULT gen_random_uuid() NOT NULL,
-tenant_id uuid NOT NULL,
-user_id character varying(32) DEFAULT ''::character varying NOT NULL,
-objective character varying(255) NOT NULL,
-key_results jsonb DEFAULT '[]'::jsonb,
-quarter character varying(16) DEFAULT ''::character varying,
-status character varying(16) DEFAULT 'active'::character varying NOT NULL,
-created_at timestamp with time zone DEFAULT now() NOT NULL,
-updated_at timestamp with time zone DEFAULT now() NOT NULL
+create index if not exists idx_api_keys_user
+    on api_keys (user_id);
+
+create index if not exists idx_api_keys_key_hash
+    on api_keys (key_hash);
+
+create table if not exists audit_logs
+(
+    id            uuid                     default gen_random_uuid() not null
+        primary key,
+    tenant_id     uuid                                               not null
+        references tenants
+            on delete cascade,
+    user_id       uuid
+                                                                     references users
+                                                                         on delete set null,
+    action        varchar(64)                                        not null,
+    resource_type varchar(64)                                        not null,
+    resource_id   varchar(64),
+    details       jsonb                    default '{}'::jsonb,
+    ip_address    varchar(45),
+    created_at    timestamp with time zone default now()             not null
 );
 
-CREATE TABLE IF NOT EXISTS schema_migrations (
-version bigint NOT NULL,
-name character varying(255) NOT NULL,
-checksum character varying(128),
-applied_at timestamp with time zone DEFAULT now() NOT NULL
+create index if not exists idx_audit_action
+    on audit_logs (action);
+
+create index if not exists idx_audit_created
+    on audit_logs (created_at);
+
+create index if not exists idx_audit_tenant
+    on audit_logs (tenant_id);
+
+create index if not exists idx_audit_user
+    on audit_logs (user_id);
+
+create index if not exists idx_audit_logs_tenant_time
+    on audit_logs (tenant_id asc, created_at desc);
+
+create index if not exists idx_audit_logs_user_time
+    on audit_logs (user_id, created_at);
+
+create table if not exists credit_transactions
+(
+    id         uuid                     default gen_random_uuid() not null
+        primary key,
+    user_id    uuid                                               not null
+        references users
+            on delete cascade,
+    amount     integer                                            not null,
+    balance    integer                                            not null,
+    reason     varchar(64)                                        not null,
+    created_at timestamp with time zone default now()             not null
 );
 
-CREATE TABLE sessions (
-id uuid DEFAULT gen_random_uuid() NOT NULL,
-tenant_id uuid NOT NULL,
-user_id uuid,
-agent_id uuid,
-title character varying(255) DEFAULT ''::character varying NOT NULL,
-status character varying(16) DEFAULT 'active'::character varying NOT NULL,
-created_at timestamp with time zone DEFAULT now() NOT NULL,
-updated_at timestamp with time zone DEFAULT now() NOT NULL
+create index if not exists idx_credit_tx_user
+    on credit_transactions (user_id asc, created_at desc);
+
+create table if not exists knowledge_bases
+(
+    id               uuid                     default gen_random_uuid()            not null
+        primary key,
+    tenant_id        uuid                                                          not null
+        references tenants
+            on delete cascade,
+    user_id          uuid                                                          not null
+        references users
+            on delete cascade,
+    name             varchar(255)                                                  not null,
+    description      text,
+    type             varchar(32)              default 'rag'::character varying     not null,
+    visibility       varchar(32)              default 'private'::character varying not null,
+    status           varchar(32)              default 'active'::character varying  not null,
+    document_count   integer                  default 0,
+    total_size_bytes bigint                   default 0,
+    credits_consumed integer                  default 0,
+    config           jsonb                    default '{}'::jsonb,
+    created_at       timestamp with time zone default now(),
+    updated_at       timestamp with time zone default now(),
+    doc_count        integer                  default 0
 );
 
-CREATE TABLE stripe_payments (
-session_id character varying(128) NOT NULL,
-user_id uuid NOT NULL,
-credits integer DEFAULT 1000 NOT NULL,
-amount_cents bigint DEFAULT 0 NOT NULL,
-status character varying(16) DEFAULT 'pending'::character varying NOT NULL,
-created_at timestamp with time zone DEFAULT now() NOT NULL,
-completed_at timestamp with time zone
+create index if not exists idx_knowledge_bases_status
+    on knowledge_bases (status);
+
+create index if not exists idx_knowledge_bases_tenant
+    on knowledge_bases (tenant_id);
+
+create index if not exists idx_knowledge_bases_user
+    on knowledge_bases (user_id);
+
+create index if not exists idx_knowledge_bases_visibility
+    on knowledge_bases (visibility);
+
+
+create table if not exists knowledge_documents
+(
+    id                uuid                     default gen_random_uuid()            not null
+        primary key,
+    knowledge_base_id uuid                                                          not null
+        references knowledge_bases
+            on delete cascade,
+    tenant_id         uuid                                                          not null
+        references tenants
+            on delete cascade,
+    user_id           uuid                                                          not null
+        references users
+            on delete cascade,
+    name              varchar(255)                                                  not null,
+    file_url          varchar(1024),
+    file_type         varchar(32),
+    file_size_bytes   bigint                   default 0,
+    chunk_count       integer                  default 0,
+    status            varchar(32)              default 'pending'::character varying not null,
+    error_message     text,
+    metadata          jsonb                    default '{}'::jsonb,
+    created_at        timestamp with time zone default now(),
+    updated_at        timestamp with time zone default now(),
+    content           bytea
 );
 
-CREATE TABLE support_tickets (
-id uuid DEFAULT gen_random_uuid() NOT NULL,
-tenant_id uuid NOT NULL,
-user_id character varying(32) DEFAULT ''::character varying NOT NULL,
-subject character varying(255) NOT NULL,
-description text DEFAULT ''::text,
-priority character varying(16) DEFAULT 'medium'::character varying NOT NULL,
-status character varying(16) DEFAULT 'open'::character varying NOT NULL,
-assignee character varying(128) DEFAULT ''::character varying,
-created_at timestamp with time zone DEFAULT now() NOT NULL,
-updated_at timestamp with time zone DEFAULT now() NOT NULL
+create table if not exists knowledge_chunks
+(
+    id                uuid                     default gen_random_uuid() not null
+        primary key,
+    document_id       uuid                                               not null
+        references knowledge_documents
+            on delete cascade,
+    knowledge_base_id uuid                                               not null
+        references knowledge_bases
+            on delete cascade,
+    tenant_id         uuid                                               not null
+        references tenants
+            on delete cascade,
+    chunk_index       integer                                            not null,
+    content           text                                               not null,
+    metadata          jsonb                    default '{}'::jsonb,
+    search_vector     tsvector,
+    created_at        timestamp with time zone default now()
 );
 
-CREATE TABLE tasks (
-id uuid DEFAULT gen_random_uuid() NOT NULL,
-user_id uuid NOT NULL,
-type character varying(32) NOT NULL,
-status character varying(16) DEFAULT 'pending'::character varying NOT NULL,
-priority integer DEFAULT 0 NOT NULL,
-payload jsonb DEFAULT '{}'::jsonb NOT NULL,
-result jsonb,
-error text,
-retries integer DEFAULT 0 NOT NULL,
-max_retries integer DEFAULT 3 NOT NULL,
-created_at timestamp with time zone DEFAULT now() NOT NULL,
-updated_at timestamp with time zone DEFAULT now() NOT NULL
+create index if not exists idx_knowledge_chunks_doc
+    on knowledge_chunks (document_id);
+
+create index if not exists idx_knowledge_chunks_kb
+    on knowledge_chunks (knowledge_base_id);
+
+create index if not exists idx_knowledge_chunks_search
+    on knowledge_chunks using gin (search_vector);
+
+create index if not exists idx_knowledge_chunks_tenant
+    on knowledge_chunks (tenant_id);
+
+
+create index if not exists idx_knowledge_documents_kb
+    on knowledge_documents (knowledge_base_id);
+
+create index if not exists idx_knowledge_documents_status
+    on knowledge_documents (status);
+
+create index if not exists idx_knowledge_documents_tenant
+    on knowledge_documents (tenant_id);
+
+
+create table if not exists sessions
+(
+    id         uuid                     default gen_random_uuid()           not null
+        primary key,
+    tenant_id  uuid                                                         not null
+        references tenants
+            on delete cascade,
+    user_id    uuid
+                                                                            references users
+                                                                                on delete set null,
+    agent_id   uuid
+                                                                            references agents
+                                                                                on delete set null,
+    title      varchar(255)             default ''::character varying       not null,
+    status     varchar(16)              default 'active'::character varying not null,
+    created_at timestamp with time zone default now()                       not null,
+    updated_at timestamp with time zone default now()                       not null,
+    pinned     boolean                  default false                       not null
 );
 
-CREATE TABLE tenants (
-id uuid DEFAULT gen_random_uuid() NOT NULL,
-name character varying(255) NOT NULL,
-created_at timestamp with time zone DEFAULT now() NOT NULL
+create table if not exists billing_records
+(
+    id            uuid                     default gen_random_uuid() not null
+        primary key,
+    tenant_id     uuid                                               not null
+        references tenants
+            on delete cascade,
+    user_id       uuid                                               not null
+        references users
+            on delete cascade,
+    session_id    uuid
+                                                                     references sessions
+                                                                         on delete set null,
+    input_tokens  bigint                   default 0                 not null,
+    output_tokens bigint                   default 0                 not null,
+    cost_cents    integer                  default 0                 not null,
+    created_at    timestamp with time zone default now()             not null,
+    group_id      uuid
 );
 
--- 默认租户种子：注册/会话代码硬编码 DefaultTenantID
--- ('00000000-0000-0000-0000-000000000001')，且 users/sessions 等表均有
--- *_tenant_id_fkey → tenants(id) 外键；若无此行，从零建库后注册必然违反
--- users_tenant_id_fkey（SQLSTATE 23503）。
-INSERT INTO tenants (id, name) VALUES ('00000000-0000-0000-0000-000000000001', 'default');
+create index if not exists idx_billing_created
+    on billing_records (created_at);
 
-CREATE TABLE tool_calls (
-id uuid DEFAULT gen_random_uuid() NOT NULL,
-session_id uuid NOT NULL,
-message_id uuid,
-tool_name character varying(128) NOT NULL,
-input jsonb DEFAULT '{}'::jsonb NOT NULL,
-output text DEFAULT ''::text NOT NULL,
-is_error boolean DEFAULT false NOT NULL,
-duration_ms bigint DEFAULT 0 NOT NULL,
-created_at timestamp with time zone DEFAULT now() NOT NULL
+create index if not exists idx_billing_session
+    on billing_records (session_id);
+
+create index if not exists idx_billing_tenant
+    on billing_records (tenant_id);
+
+create index if not exists idx_billing_user
+    on billing_records (user_id);
+
+create index if not exists idx_billing_records_group
+    on billing_records (group_id);
+
+create table if not exists messages
+(
+    id         uuid                     default gen_random_uuid() not null
+        primary key,
+    session_id uuid                                               not null
+        references sessions
+            on delete cascade,
+    role       varchar(16)                                        not null,
+    content    text                     default ''::text          not null,
+    tool_calls jsonb,
+    created_at timestamp with time zone default now()             not null
 );
 
-CREATE TABLE users (
-id uuid DEFAULT gen_random_uuid() NOT NULL,
-tenant_id uuid NOT NULL,
-email character varying(255) NOT NULL,
-name character varying(128) NOT NULL,
-password_hash character varying(255) NOT NULL,
-role character varying(16) DEFAULT 'user'::character varying NOT NULL,
-storage_id character varying(64),
-credits integer DEFAULT 1000 NOT NULL,
-created_at timestamp with time zone DEFAULT now() NOT NULL,
-updated_at timestamp with time zone DEFAULT now() NOT NULL
+create index if not exists idx_messages_session
+    on messages (session_id, created_at);
+
+create index if not exists idx_sessions_agent
+    on sessions (agent_id);
+
+create index if not exists idx_sessions_tenant
+    on sessions (tenant_id);
+
+create index if not exists idx_sessions_updated
+    on sessions (updated_at);
+
+create index if not exists idx_sessions_user
+    on sessions (user_id);
+
+create table if not exists tasks
+(
+    id          uuid                     default gen_random_uuid()            not null
+        primary key,
+    user_id     uuid                                                          not null
+        references users
+            on delete cascade,
+    type        varchar(32)                                                   not null,
+    status      varchar(16)              default 'pending'::character varying not null,
+    priority    integer                  default 0                            not null,
+    payload     jsonb                    default '{}'::jsonb                  not null,
+    result      jsonb,
+    error       text,
+    retries     integer                  default 0                            not null,
+    max_retries integer                  default 3                            not null,
+    created_at  timestamp with time zone default now()                        not null,
+    updated_at  timestamp with time zone default now()                        not null
 );
 
-CREATE TABLE wiki_pages (
-id uuid DEFAULT gen_random_uuid() NOT NULL,
-tenant_id uuid NOT NULL,
-user_id character varying(32) DEFAULT ''::character varying NOT NULL,
-title character varying(255) NOT NULL,
-content text DEFAULT ''::text NOT NULL,
-tags text[] DEFAULT '{}'::text[],
-created_at timestamp with time zone DEFAULT now() NOT NULL,
-updated_at timestamp with time zone DEFAULT now() NOT NULL
+create index if not exists idx_tasks_status
+    on tasks (status);
+
+create index if not exists idx_tasks_type
+    on tasks (type);
+
+create index if not exists idx_tasks_user
+    on tasks (user_id);
+
+create index if not exists idx_users_email
+    on users (email);
+
+create index if not exists idx_users_tenant
+    on users (tenant_id);
+
+create unique index if not exists uq_users_tenant_phone
+    on users (tenant_id, phone)
+    where (phone IS NOT NULL);
+
+create table if not exists wiki_pages
+(
+    id         uuid                     default gen_random_uuid()     not null
+        primary key,
+    tenant_id  uuid                                                   not null
+        references tenants
+            on delete cascade,
+    user_id    varchar(32)              default ''::character varying not null,
+    title      varchar(255)                                           not null,
+    content    text                     default ''::text              not null,
+    tags       text[]                   default '{}'::text[],
+    created_at timestamp with time zone default now()                 not null,
+    updated_at timestamp with time zone default now()                 not null
 );
 
-CREATE TABLE workflow_graphs (
-id character varying(32) NOT NULL,
-name character varying(255) NOT NULL,
-user_id uuid,
-graph_json jsonb DEFAULT '{}'::jsonb NOT NULL,
-created_at timestamp with time zone DEFAULT now() NOT NULL,
-updated_at timestamp with time zone DEFAULT now() NOT NULL
+create index if not exists idx_wiki_pages_tenant
+    on wiki_pages (tenant_id);
+
+create table if not exists workflow_graphs
+(
+    id         varchar(32)                                  not null
+        primary key,
+    name       varchar(255)                                 not null,
+    user_id    uuid
+                                                            references users
+                                                                on delete set null,
+    graph_json jsonb                    default '{}'::jsonb not null,
+    created_at timestamp with time zone default now()       not null,
+    updated_at timestamp with time zone default now()       not null
 );
 
-ALTER TABLE ONLY agent_registry
-ADD CONSTRAINT agent_registry_pkey PRIMARY KEY (agent_type);
+create index if not exists idx_workflow_graphs_updated
+    on workflow_graphs (updated_at);
+
+create index if not exists idx_workflow_graphs_user
+    on workflow_graphs (user_id);
+
+create table if not exists conversation_shares
+(
+    id          varchar(32)                                            not null
+        primary key,
+    session_id  varchar(128)                                           not null,
+    user_id     uuid                                                   not null,
+    title       varchar(255)             default ''::character varying not null,
+    message_ids text[]                   default '{}'::text[]          not null,
+    created_at  timestamp with time zone default now()                 not null,
+    revoked_at  timestamp with time zone
+);
+
+create index if not exists idx_conversation_shares_session
+    on conversation_shares (session_id)
+    where (revoked_at IS NULL);
+
+create table if not exists workflow_instances
+(
+    id            varchar(64)                                                   not null
+        primary key,
+    user_id       varchar(64)              default ''::character varying        not null,
+    workflow_id   varchar(64)              default ''::character varying        not null,
+    workflow_name varchar(255)             default ''::character varying        not null,
+    status        varchar(16)              default 'running'::character varying not null,
+    results       jsonb                    default '{}'::jsonb                  not null,
+    error         text,
+    created_at    timestamp with time zone default now()                        not null,
+    updated_at    timestamp with time zone default now()                        not null
+);
+
+create index if not exists idx_workflow_instances_user
+    on workflow_instances (user_id asc, created_at desc);
+
+create table if not exists uploads
+(
+    id              varchar(64)                                                   not null
+        primary key,
+    user_id         varchar(64)              default ''::character varying        not null,
+    name            varchar(255)                                                  not null,
+    size            bigint                   default 0                            not null,
+    mime_type       varchar(64)              default ''::character varying        not null,
+    purpose         varchar(16)              default 'generic'::character varying not null,
+    parent_id       varchar(64)              default ''::character varying        not null,
+    category        varchar(64)              default ''::character varying        not null,
+    chunk_size      integer                  default 2097152                      not null,
+    chunk_count     integer                  default 0                            not null,
+    chunks_received text[]                   default '{}'::text[]                 not null,
+    status          varchar(16)              default 'pending'::character varying not null,
+    created_at      timestamp with time zone default now()                        not null,
+    updated_at      timestamp with time zone default now()                        not null
+);
+
+create index if not exists idx_uploads_user
+    on uploads (user_id asc, created_at desc);
+
+create table if not exists admin_api_keys
+(
+    id             uuid                     default gen_random_uuid() not null
+        primary key,
+    key_hash       varchar(64)                                        not null
+        unique,
+    name           varchar(100)                                       not null,
+    tenant_id      varchar(50)                                        not null,
+    user_id        varchar(50),
+    monthly_quota  integer                  default 0
+        constraint chk_quota
+            check (monthly_quota >= 0),
+    used_count     bigint                   default 0,
+    used_credits   bigint                   default 0,
+    status         varchar(20)              default 'active'::character varying
+        constraint chk_status
+            check ((status)::text = ANY
+                   ((ARRAY ['active'::character varying, 'expired'::character varying, 'suspended'::character varying])::text[])),
+    expires_at     timestamp with time zone,
+    created_at     timestamp with time zone default now(),
+    updated_at     timestamp with time zone default now(),
+    created_by     varchar(50),
+    description    text,
+    allowed_models text[],
+    rate_limit_qps integer                  default 10
+);
+
+comment on table admin_api_keys is 'API Key management with quota and lifecycle control';
+
+create index if not exists idx_api_keys_hash
+    on admin_api_keys (key_hash);
+
+create index if not exists idx_api_keys_tenant_status
+    on admin_api_keys (tenant_id, status);
+
+create index if not exists idx_api_keys_expires
+    on admin_api_keys (expires_at)
+    where ((status)::text = 'active'::text);
+
+create index if not exists idx_api_keys_created
+    on admin_api_keys (created_at desc);
+
+create table if not exists admin_model_configs
+(
+    id                 uuid                     default gen_random_uuid() not null
+        primary key,
+    model_id           varchar(50)                                        not null
+        unique,
+    display_name       varchar(100)                                       not null,
+    provider           varchar(50)                                        not null,
+    priority           integer                  default 0,
+    weight             integer                  default 100
+        constraint chk_weight
+            check ((weight >= 1) AND (weight <= 100)),
+    fallback_chain     text[],
+    max_rpm            integer                  default 1000,
+    max_tpm            integer                  default 500000,
+    concurrent_limit   integer                  default 50,
+    status             varchar(20)              default 'active'::character varying
+        constraint chk_model_status
+            check ((status)::text = ANY
+                   ((ARRAY ['active'::character varying, 'deprecated'::character varying, 'maintenance'::character varying])::text[])),
+    is_default         boolean                  default false,
+    input_cost_per_1m  double precision         default 0,
+    output_cost_per_1m double precision         default 0,
+    config_json        jsonb                    default '{}'::jsonb,
+    created_at         timestamp with time zone default now(),
+    updated_at         timestamp with time zone default now()
+);
+
+comment on table admin_model_configs is 'Model configuration with routing strategies';
+
+create index if not exists idx_model_configs_status
+    on admin_model_configs (status);
+
+create index if not exists idx_model_configs_provider
+    on admin_model_configs (provider);
+
+create table if not exists admin_workflows
+(
+    id                      uuid                     default gen_random_uuid() not null
+        primary key,
+    workflow_id             varchar(50)                                        not null
+        unique,
+    name                    varchar(100)                                       not null,
+    description             text,
+    nodes                   jsonb                                              not null,
+    edges                   jsonb                                              not null,
+    error_handling_strategy varchar(20)              default 'fail_fast'::character varying
+        constraint chk_error_strategy
+            check ((error_handling_strategy)::text = ANY
+                   ((ARRAY ['fail_fast'::character varying, 'continue'::character varying, 'skip'::character varying])::text[])),
+    timeout_ms              integer                  default 30000,
+    max_retries             integer                  default 3,
+    version                 integer                  default 1,
+    published_version       integer                  default 0,
+    status                  varchar(20)              default 'draft'::character varying
+        constraint chk_workflow_status
+            check ((status)::text = ANY
+                   ((ARRAY ['draft'::character varying, 'testing'::character varying, 'published'::character varying, 'archived'::character varying])::text[])),
+    created_by              varchar(50),
+    created_at              timestamp with time zone default now(),
+    updated_at              timestamp with time zone default now(),
+    published_at            timestamp with time zone
+);
+
+comment on table admin_workflows is 'Workflow DAG orchestration with version control';
+
+create index if not exists idx_workflows_status
+    on admin_workflows (status);
+
+create index if not exists idx_workflows_created
+    on admin_workflows (created_at desc);
+
+create table if not exists admin_workflow_executions
+(
+    id               uuid                     default gen_random_uuid() not null
+        primary key,
+    workflow_id      varchar(50)                                        not null,
+    workflow_version integer                                            not null,
+    status           varchar(20)              default 'running'::character varying
+        constraint chk_execution_status
+            check ((status)::text = ANY
+                   ((ARRAY ['running'::character varying, 'completed'::character varying, 'failed'::character varying, 'cancelled'::character varying])::text[])),
+    started_at       timestamp with time zone default now(),
+    completed_at     timestamp with time zone,
+    duration_ms      integer,
+    input_data       jsonb,
+    output_data      jsonb,
+    error_message    text,
+    triggered_by     varchar(50),
+    node_results     jsonb                    default '[]'::jsonb
+);
+
+comment on table admin_workflow_executions is 'Workflow execution history with node-level results';
+
+create index if not exists idx_workflow_executions_workflow
+    on admin_workflow_executions (workflow_id, workflow_version);
+
+create index if not exists idx_workflow_executions_status
+    on admin_workflow_executions (status);
+
+create index if not exists idx_workflow_executions_started
+    on admin_workflow_executions (started_at desc);
+
+create table if not exists admin_api_call_logs
+(
+    id                  uuid                     default gen_random_uuid() not null
+        primary key,
+    api_key_id          uuid
+        references admin_api_keys,
+    model_id            varchar(50),
+    workflow_id         varchar(50),
+    endpoint            varchar(100)                                       not null,
+    method              varchar(10)              default 'POST'::character varying,
+    request_size_bytes  integer,
+    response_size_bytes integer,
+    duration_ms         integer,
+    status_code         integer,
+    retry_count         integer                  default 0,
+    input_tokens        integer                  default 0,
+    output_tokens       integer                  default 0,
+    credits_consumed    bigint                   default 0,
+    created_at          timestamp with time zone default now()
+);
+
+comment on table admin_api_call_logs is 'API call audit log with performance and cost metrics';
+
+create index if not exists idx_api_logs_key
+    on admin_api_call_logs (api_key_id)
+    where (api_key_id IS NOT NULL);
+
+create index if not exists idx_api_logs_model
+    on admin_api_call_logs (model_id)
+    where (model_id IS NOT NULL);
+
+create index if not exists idx_api_logs_workflow
+    on admin_api_call_logs (workflow_id)
+    where (workflow_id IS NOT NULL);
+
+create index if not exists idx_api_logs_created
+    on admin_api_call_logs (created_at desc);
+
+create index if not exists idx_api_logs_date
+    on admin_api_call_logs (((created_at AT TIME ZONE 'UTC'::text)::date));
+
+create table if not exists admin_cron_jobs
+(
+    id              uuid                     default gen_random_uuid() not null
+        primary key,
+    job_id          varchar(50)                                        not null
+        unique,
+    name            varchar(100)                                       not null,
+    schedule        varchar(50)                                        not null,
+    last_run_at     timestamp with time zone,
+    last_run_status varchar(20),
+    last_error      text,
+    next_run_at     timestamp with time zone,
+    enabled         boolean                  default true,
+    metadata        jsonb                    default '{}'::jsonb,
+    created_at      timestamp with time zone default now(),
+    updated_at      timestamp with time zone default now()
+);
+
+comment on table admin_cron_jobs is 'Cron job scheduler registry';
+
+create unique index if not exists idx_cron_jobs_id
+    on admin_cron_jobs (job_id);
+
+create table if not exists admin_tenants
+(
+    id                      uuid                     default gen_random_uuid() not null
+        primary key,
+    tenant_id               varchar(50)                                        not null
+        unique,
+    name                    varchar(100)                                       not null,
+    company_name            varchar(200),
+    contact_email           varchar(100),
+    contact_phone           varchar(20),
+    max_api_keys            integer                  default 10,
+    max_models              integer                  default 5,
+    monthly_quota           bigint                   default 0
+        constraint chk_quota
+            check (monthly_quota >= 0),
+    max_concurrent_sessions integer                  default 10,
+    status                  varchar(20)              default 'active'::character varying
+        constraint chk_tenant_status
+            check ((status)::text = ANY
+                   ((ARRAY ['active'::character varying, 'suspended'::character varying, 'expired'::character varying])::text[])),
+    expires_at              timestamp with time zone,
+    created_at              timestamp with time zone default now(),
+    updated_at              timestamp with time zone default now(),
+    created_by              varchar(50),
+    features                jsonb                    default '{}'::jsonb
+);
+
+comment on table admin_tenants is 'Multi-tenant management with quota control';
+
+create index if not exists idx_tenants_status
+    on admin_tenants (status);
+
+create index if not exists idx_tenants_created
+    on admin_tenants (created_at desc);
+
+create table if not exists admin_tenant_usage
+(
+    id               uuid                     default gen_random_uuid() not null
+        primary key,
+    tenant_id        varchar(50)                                        not null
+        references admin_tenants (tenant_id),
+    stat_date        date                                               not null,
+    api_calls        bigint                   default 0,
+    tokens_used      bigint                   default 0,
+    credits_consumed bigint                   default 0,
+    storage_mb       double precision         default 0,
+    created_at       timestamp with time zone default now(),
+    unique (tenant_id, stat_date)
+);
+
+comment on table admin_tenant_usage is 'Daily usage statistics per tenant';
+
+create index if not exists idx_tenant_usage_date
+    on admin_tenant_usage (stat_date desc);
+
+create table if not exists admin_domains
+(
+    id             uuid                     default gen_random_uuid() not null
+        primary key,
+    domain         varchar(100)                                       not null
+        unique,
+    tenant_id      varchar(50)                                        not null
+        references admin_tenants (tenant_id),
+    dns_provider   varchar(50),
+    dns_record_id  varchar(100),
+    cname_target   varchar(200),
+    ssl_status     varchar(20)              default 'pending'::character varying
+        constraint chk_ssl_status
+            check ((ssl_status)::text = ANY
+                   ((ARRAY ['pending'::character varying, 'active'::character varying, 'expired'::character varying, 'failed'::character varying])::text[])),
+    ssl_expires_at timestamp with time zone,
+    auto_renew     boolean                  default true,
+    status         varchar(20)              default 'active'::character varying
+        constraint chk_domain_status
+            check ((status)::text = ANY
+                   ((ARRAY ['active'::character varying, 'inactive'::character varying, 'verifying'::character varying])::text[])),
+    verified_at    timestamp with time zone,
+    verified_by    varchar(50),
+    created_at     timestamp with time zone default now(),
+    updated_at     timestamp with time zone default now()
+);
+
+comment on table admin_domains is 'Domain management with SSL certificate tracking';
+
+create index if not exists idx_domains_tenant
+    on admin_domains (tenant_id);
+
+create index if not exists idx_domains_status
+    on admin_domains (status);
+
+create table if not exists admin_redis_configs
+(
+    id                   uuid                     default gen_random_uuid() not null
+        primary key,
+    host                 varchar(100)                                       not null,
+    port                 integer                  default 6379,
+    password_hash        varchar(256),
+    db_index             integer                  default 0,
+    pool_size            integer                  default 100,
+    min_idle_connections integer                  default 10,
+    max_conn_age         interval                 default '00:05:00'::interval,
+    status               varchar(20)              default 'active'::character varying,
+    last_health_check    timestamp with time zone,
+    avg_latency_ms       double precision         default 0,
+    memory_used_mb       double precision         default 0,
+    connected_clients    integer                  default 0,
+    hits                 bigint                   default 0,
+    misses               bigint                   default 0,
+    created_at           timestamp with time zone default now(),
+    updated_at           timestamp with time zone default now(),
+    unique (host, port)
+);
+
+comment on table admin_redis_configs is 'Redis connection and pool configuration';
+
+create table if not exists admin_db_configs
+(
+    id                   uuid                     default gen_random_uuid() not null
+        primary key,
+    dsn                  varchar(500)                                       not null,
+    host                 varchar(100)                                       not null,
+    port                 integer                  default 5432,
+    dbname               varchar(100)                                       not null,
+    max_open_connections integer                  default 25,
+    max_idle_connections integer                  default 5,
+    conn_max_lifetime    interval                 default '00:05:00'::interval,
+    status               varchar(20)              default 'active'::character varying,
+    last_health_check    timestamp with time zone,
+    avg_query_time_ms    double precision         default 0,
+    database_size_mb     double precision         default 0,
+    total_tables         integer                  default 0,
+    sequential_scans     bigint                   default 0,
+    created_at           timestamp with time zone default now(),
+    updated_at           timestamp with time zone default now(),
+    unique (host, port, dbname)
+);
+
+comment on table admin_db_configs is 'PostgreSQL connection and pool configuration';
+
+create table if not exists admin_database_backups
+(
+    id               uuid                     default gen_random_uuid() not null
+        primary key,
+    backup_type      varchar(20)              default 'manual'::character varying
+        constraint chk_backup_type
+            check ((backup_type)::text = ANY
+                   ((ARRAY ['manual'::character varying, 'scheduled'::character varying])::text[])),
+    description      text,
+    file_path        varchar(500),
+    file_size_mb     double precision,
+    status           varchar(20)              default 'running'::character varying
+        constraint chk_backup_status
+            check ((status)::text = ANY
+                   ((ARRAY ['running'::character varying, 'completed'::character varying, 'failed'::character varying, 'deleted'::character varying])::text[])),
+    error_message    text,
+    started_at       timestamp with time zone default now(),
+    completed_at     timestamp with time zone,
+    duration_seconds integer,
+    created_by       varchar(50)
+);
+
+comment on table admin_database_backups is 'Database backup history with status tracking';
+
+create index if not exists idx_backups_status
+    on admin_database_backups (status);
+
+create index if not exists idx_backups_created
+    on admin_database_backups (started_at desc);
+
+create table if not exists ent_roles
+(
+    id           uuid                     default gen_random_uuid() not null
+        primary key,
+    tenant_id    uuid                                               not null
+        references tenants,
+    name         varchar(64)                                        not null,
+    display_name varchar(128),
+    is_builtin   boolean                  default false,
+    permissions  text[]                   default '{}'::text[],
+    created_at   timestamp with time zone default now(),
+    updated_at   timestamp with time zone default now(),
+    unique (tenant_id, name)
+);
+
+comment on table ent_roles is 'Enterprise RBAC roles with permission points (resource:action)';
+
+create table if not exists ent_user_roles
+(
+    user_id uuid not null
+        references users
+            on delete cascade,
+    role_id uuid not null
+        references ent_roles
+            on delete cascade,
+    primary key (user_id, role_id)
+);
+
+comment on table ent_user_roles is 'User-to-role assignments';
+
+create index if not exists idx_ent_user_roles_role
+    on ent_user_roles (role_id);
+
+create table if not exists ent_groups
+(
+    id          uuid                     default gen_random_uuid() not null
+        primary key,
+    tenant_id   uuid                                               not null
+        references tenants,
+    name        varchar(128)                                       not null,
+    description text,
+    created_at  timestamp with time zone default now(),
+    unique (tenant_id, name)
+);
+
+comment on table ent_groups is 'Enterprise user groups';
+
+create table if not exists ent_group_members
+(
+    group_id uuid not null
+        references ent_groups
+            on delete cascade,
+    user_id  uuid not null
+        references users
+            on delete cascade,
+    primary key (group_id, user_id)
+);
+
+comment on table ent_group_members is 'Group membership (group -> user)';
+
+create index if not exists idx_ent_group_members_user
+    on ent_group_members (user_id);
+
+create table if not exists ent_group_roles
+(
+    group_id uuid not null
+        references ent_groups
+            on delete cascade,
+    role_id  uuid not null
+        references ent_roles
+            on delete cascade,
+    primary key (group_id, role_id)
+);
+
+comment on table ent_group_roles is 'Group-to-role assignments (roles granted to all group members)';
+
+create index if not exists idx_ent_group_roles_role
+    on ent_group_roles (role_id);
+
+create table if not exists ent_oidc_providers
+(
+    id                uuid                     default gen_random_uuid()           not null
+        primary key,
+    tenant_id         uuid                                                         not null
+        references tenants,
+    name              varchar(64)                                                  not null,
+    issuer            varchar(512),
+    client_id         varchar(256)                                                 not null,
+    client_secret_enc text                                                         not null,
+    scopes            text[]                   default '{openid,email,profile}'::text[],
+    enabled           boolean                  default true,
+    auto_provision    boolean                  default true,
+    role_mapping      jsonb                    default '{}'::jsonb,
+    created_at        timestamp with time zone default now(),
+    updated_at        timestamp with time zone default now(),
+    protocol          varchar(16)              default 'oidc'::character varying   not null,
+    provider_type     varchar(32)              default 'custom'::character varying not null,
+    display_name      varchar(64),
+    icon              varchar(64),
+    sort_order        integer                  default 100                         not null,
+    auth_url          varchar(512),
+    token_url         varchar(512),
+    userinfo_url      varchar(512),
+    extra             jsonb                    default '{}'::jsonb                 not null,
+    unique (tenant_id, name)
+);
+
+comment on table ent_oidc_providers is 'Per-tenant OIDC identity providers (client_secret_enc is encrypted at rest)';
+
+create table if not exists ent_user_identities
+(
+    id          uuid                     default gen_random_uuid() not null
+        primary key,
+    user_id     uuid                                               not null
+        references users
+            on delete cascade,
+    provider_id uuid                                               not null
+        references ent_oidc_providers
+            on delete cascade,
+    subject     varchar(256)                                       not null,
+    email       varchar(255),
+    created_at  timestamp with time zone default now(),
+    unique (provider_id, subject)
+);
+
+comment on table ent_user_identities is 'External identity bindings (provider subject -> local user)';
+
+create index if not exists idx_ent_user_identities_user
+    on ent_user_identities (user_id);
+
+create table if not exists ent_quota_pools
+(
+    id            uuid                     default gen_random_uuid()            not null
+        primary key,
+    tenant_id     uuid                                                          not null
+        references tenants,
+    resource_type varchar(20)                                                   not null
+        constraint chk_quota_pool_resource
+            check ((resource_type)::text = ANY
+                   ((ARRAY ['token'::character varying, 'storage_mb'::character varying, 'concurrency'::character varying, 'credits'::character varying])::text[])),
+    total_amount  bigint                   default 0                            not null
+        constraint chk_quota_pool_amount
+            check (total_amount >= 0),
+    period        varchar(10)              default 'monthly'::character varying not null
+        constraint chk_quota_pool_period
+            check ((period)::text = ANY ((ARRAY ['daily'::character varying, 'monthly'::character varying])::text[])),
+    created_at    timestamp with time zone default now(),
+    updated_at    timestamp with time zone default now(),
+    unique (tenant_id, resource_type, period)
+);
+
+comment on table ent_quota_pools is 'Per-tenant quota pools by resource type and reset period';
+
+create table if not exists ent_quota_allocations
+(
+    id          uuid                     default gen_random_uuid() not null
+        primary key,
+    pool_id     uuid                                               not null
+        references ent_quota_pools
+            on delete cascade,
+    target_type varchar(10)                                        not null
+        constraint chk_quota_alloc_target
+            check ((target_type)::text = ANY ((ARRAY ['group'::character varying, 'user'::character varying])::text[])),
+    target_id   uuid                                               not null,
+    amount      bigint                   default 0                 not null
+        constraint chk_quota_alloc_amount
+            check (amount >= 0),
+    created_at  timestamp with time zone default now(),
+    unique (pool_id, target_type, target_id)
+);
+
+comment on table ent_quota_allocations is 'Quota allocations from a pool to a group or user';
+
+create table if not exists ent_tenant_policies
+(
+    tenant_id           uuid not null
+        primary key
+        references tenants,
+    privacy_mode        boolean                  default false,
+    data_retention_days integer                  default 0,
+    training_allowed    boolean                  default true,
+    redaction_rules     jsonb                    default '{}'::jsonb,
+    updated_at          timestamp with time zone default now()
+);
+
+comment on table ent_tenant_policies is 'Per-tenant compliance policies (privacy, retention, redaction)';
+
+create table if not exists ent_model_policies
+(
+    id               uuid                     default gen_random_uuid() not null
+        primary key,
+    tenant_id        uuid                                               not null
+        references tenants,
+    role_id          uuid
+                                                                        references ent_roles
+                                                                            on delete set null,
+    allowed_models   text[]                   default '{}'::text[]      not null,
+    per_model_limits jsonb                    default '{}'::jsonb,
+    created_at       timestamp with time zone default now(),
+    updated_at       timestamp with time zone default now(),
+    unique nulls not distinct (tenant_id, role_id)
+);
+
+comment on table ent_model_policies is 'Model allow-list and per-model limits by tenant and role';
+
+create table if not exists ent_catalog_items
+(
+    id         uuid                     default gen_random_uuid()          not null
+        primary key,
+    type       varchar(8)                                                  not null
+        constraint chk_catalog_item_type
+            check ((type)::text = ANY ((ARRAY ['plugin'::character varying, 'skill'::character varying])::text[])),
+    name       varchar(128)                                                not null,
+    version    varchar(32)              default '1.0.0'::character varying,
+    manifest   jsonb                    default '{}'::jsonb,
+    status     varchar(16)              default 'draft'::character varying not null
+        constraint chk_catalog_item_status
+            check ((status)::text = ANY
+                   ((ARRAY ['draft'::character varying, 'published'::character varying, 'retired'::character varying])::text[])),
+    created_by uuid,
+    created_at timestamp with time zone default now(),
+    updated_at timestamp with time zone default now()
+);
+
+comment on table ent_catalog_items is 'Marketplace catalog entries (plugins and skills)';
+
+create table if not exists ent_catalog_installs
+(
+    item_id      uuid not null
+        references ent_catalog_items
+            on delete cascade,
+    tenant_id    uuid not null
+        references tenants,
+    enabled      boolean                  default true,
+    installed_at timestamp with time zone default now(),
+    primary key (item_id, tenant_id)
+);
+
+comment on table ent_catalog_installs is 'Which catalog items are installed per tenant';
+
+create table if not exists payments
+(
+    id                varchar(64)                                                   not null
+        primary key,
+    user_id           varchar(32)                                                   not null,
+    channel           varchar(16)                                                   not null,
+    credits           integer                                                       not null,
+    amount_cents      bigint                   default 0                            not null,
+    currency          varchar(8)               default 'CNY'::character varying     not null,
+    status            varchar(16)              default 'pending'::character varying not null,
+    qr_code           text,
+    provider_order_id varchar(64)              default ''::character varying        not null,
+    trade_no          varchar(64)              default ''::character varying        not null,
+    created_at        timestamp with time zone default now()                        not null,
+    paid_at           timestamp with time zone,
+    expired_at        timestamp with time zone
+);
+
+create index if not exists idx_payments_user
+    on payments (user_id asc, created_at desc);
+
+create index if not exists idx_payments_provider
+    on payments (provider_order_id)
+    where ((provider_order_id)::text <> ''::text);
+
+create table if not exists ent_captcha_config
+(
+    id         uuid                     default gen_random_uuid()              not null
+        primary key,
+    tenant_id  uuid                                                            not null
+        unique
+        references tenants,
+    provider   varchar(32)              default 'turnstile'::character varying not null,
+    site_key   varchar(256)             default ''::character varying          not null,
+    secret_enc text                     default ''::text                       not null,
+    verify_url varchar(512),
+    enabled    boolean                  default false                          not null,
+    created_at timestamp with time zone default now(),
+    updated_at timestamp with time zone default now()
+);
+
+comment on table ent_captcha_config is 'Per-tenant human verification (CAPTCHA) configuration (secret_enc encrypted at rest)';
+
+
+create trigger update_knowledge_bases_updated_at
+    before update
+    on knowledge_bases
+    for each row
+execute procedure update_updated_at_column();
+
+create trigger update_knowledge_documents_updated_at
+    before update
+    on knowledge_documents
+    for each row
+execute procedure update_updated_at_column();
+
+create trigger knowledge_chunks_search_vector_trigger
+    before insert or update
+    on knowledge_chunks
+    for each row
+execute procedure knowledge_chunks_search_vector_update();
 
-ALTER TABLE ONLY agent_sessions
-ADD CONSTRAINT agent_sessions_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY agents
-ADD CONSTRAINT agents_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY api_keys
-ADD CONSTRAINT api_keys_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY audit_logs
-ADD CONSTRAINT audit_logs_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY billing_records
-ADD CONSTRAINT billing_records_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY credit_transactions
-ADD CONSTRAINT credit_transactions_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY enterprise_tasks
-ADD CONSTRAINT enterprise_tasks_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY episodes
-ADD CONSTRAINT episodes_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY guest_storage
-ADD CONSTRAINT guest_storage_pkey PRIMARY KEY (client_id);
-
-ALTER TABLE ONLY guest_storage
-ADD CONSTRAINT guest_storage_storage_id_key UNIQUE (storage_id);
-
-ALTER TABLE ONLY kb_articles
-ADD CONSTRAINT kb_articles_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY knowledge_bases
-ADD CONSTRAINT knowledge_bases_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY knowledge_chunks
-ADD CONSTRAINT knowledge_chunks_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY knowledge_documents
-ADD CONSTRAINT knowledge_documents_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY marketing_campaigns
-ADD CONSTRAINT marketing_campaigns_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY media_assets
-ADD CONSTRAINT media_assets_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY meeting_notes
-ADD CONSTRAINT meeting_notes_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY messages
-ADD CONSTRAINT messages_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY okrs
-ADD CONSTRAINT okrs_pkey PRIMARY KEY (id);
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'schema_migrations_pkey'
-    ) THEN
-        ALTER TABLE ONLY schema_migrations
-        ADD CONSTRAINT schema_migrations_pkey PRIMARY KEY (version);
-    END IF;
-END
-$$;
-
-ALTER TABLE ONLY sessions
-ADD CONSTRAINT sessions_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY stripe_payments
-ADD CONSTRAINT stripe_payments_pkey PRIMARY KEY (session_id);
-
-ALTER TABLE ONLY support_tickets
-ADD CONSTRAINT support_tickets_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY tasks
-ADD CONSTRAINT tasks_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY tenants
-ADD CONSTRAINT tenants_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY tool_calls
-ADD CONSTRAINT tool_calls_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY users
-ADD CONSTRAINT users_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY users
-ADD CONSTRAINT users_storage_id_key UNIQUE (storage_id);
-
-ALTER TABLE ONLY users
-ADD CONSTRAINT users_tenant_id_email_key UNIQUE (tenant_id, email);
-
-ALTER TABLE ONLY wiki_pages
-ADD CONSTRAINT wiki_pages_pkey PRIMARY KEY (id);
-
-ALTER TABLE ONLY workflow_graphs
-ADD CONSTRAINT workflow_graphs_pkey PRIMARY KEY (id);
-
-CREATE INDEX idx_agent_sessions_status ON agent_sessions USING btree (status);
-
-CREATE INDEX idx_agent_sessions_user ON agent_sessions USING btree (user_id);
-
-CREATE INDEX idx_agents_name ON agents USING btree (tenant_id, name);
-
-CREATE INDEX idx_agents_tenant ON agents USING btree (tenant_id);
-
-CREATE INDEX idx_api_keys_user ON api_keys USING btree (user_id);
-
-CREATE INDEX idx_audit_action ON audit_logs USING btree (action);
-
-CREATE INDEX idx_audit_created ON audit_logs USING btree (created_at);
-
-CREATE INDEX idx_audit_tenant ON audit_logs USING btree (tenant_id);
-
-CREATE INDEX idx_audit_user ON audit_logs USING btree (user_id);
-
-CREATE INDEX idx_billing_created ON billing_records USING btree (created_at);
-
-CREATE INDEX idx_billing_session ON billing_records USING btree (session_id);
-
-CREATE INDEX idx_billing_tenant ON billing_records USING btree (tenant_id);
-
-CREATE INDEX idx_billing_user ON billing_records USING btree (user_id);
-
-CREATE INDEX idx_credit_tx_user ON credit_transactions USING btree (user_id, created_at DESC);
-
-CREATE INDEX idx_enterprise_tasks_tenant ON enterprise_tasks USING btree (tenant_id);
-
-CREATE INDEX idx_guest_storage_id ON guest_storage USING btree (storage_id);
-
-CREATE INDEX idx_kb_articles_tenant ON kb_articles USING btree (tenant_id);
-
-CREATE INDEX idx_knowledge_bases_status ON knowledge_bases USING btree (status);
-
-CREATE INDEX idx_knowledge_bases_tenant ON knowledge_bases USING btree (tenant_id);
-
-CREATE INDEX idx_knowledge_bases_user ON knowledge_bases USING btree (user_id);
-
-CREATE INDEX idx_knowledge_bases_visibility ON knowledge_bases USING btree (visibility);
-
-CREATE INDEX idx_knowledge_chunks_doc ON knowledge_chunks USING btree (document_id);
-
-CREATE INDEX idx_knowledge_chunks_kb ON knowledge_chunks USING btree (knowledge_base_id);
-
-CREATE INDEX idx_knowledge_chunks_search ON knowledge_chunks USING gin (search_vector);
-
-CREATE INDEX idx_knowledge_chunks_tenant ON knowledge_chunks USING btree (tenant_id);
-
-CREATE INDEX idx_knowledge_documents_kb ON knowledge_documents USING btree (knowledge_base_id);
-
-CREATE INDEX idx_knowledge_documents_status ON knowledge_documents USING btree (status);
-
-CREATE INDEX idx_knowledge_documents_tenant ON knowledge_documents USING btree (tenant_id);
-
-CREATE INDEX idx_marketing_campaigns_tenant ON marketing_campaigns USING btree (tenant_id);
-
-CREATE INDEX idx_media_category ON media_assets USING btree (category);
-
-CREATE INDEX idx_media_created ON media_assets USING btree (created_at);
-
-CREATE INDEX idx_media_parent ON media_assets USING btree (parent_id);
-
-CREATE INDEX idx_media_tenant ON media_assets USING btree (tenant_id);
-
-CREATE INDEX idx_media_type ON media_assets USING btree (type);
-
-CREATE INDEX idx_media_user ON media_assets USING btree (user_id);
-
-CREATE INDEX idx_meeting_notes_tenant ON meeting_notes USING btree (tenant_id);
-
-CREATE INDEX idx_messages_session ON messages USING btree (session_id, created_at);
-
-CREATE INDEX idx_okrs_tenant ON okrs USING btree (tenant_id);
-
-CREATE INDEX idx_sessions_agent ON sessions USING btree (agent_id);
-
-CREATE INDEX idx_sessions_tenant ON sessions USING btree (tenant_id);
-
-CREATE INDEX idx_sessions_updated ON sessions USING btree (updated_at);
-
-CREATE INDEX idx_sessions_user ON sessions USING btree (user_id);
-
-CREATE INDEX idx_stripe_payments_user ON stripe_payments USING btree (user_id);
-
-CREATE INDEX idx_support_tickets_tenant ON support_tickets USING btree (tenant_id);
-
-CREATE INDEX idx_tasks_status ON tasks USING btree (status);
-
-CREATE INDEX idx_tasks_type ON tasks USING btree (type);
-
-CREATE INDEX idx_tasks_user ON tasks USING btree (user_id);
-
-CREATE INDEX idx_tool_calls_session ON tool_calls USING btree (session_id);
-
-CREATE INDEX idx_users_email ON users USING btree (email);
-
-CREATE INDEX idx_users_tenant ON users USING btree (tenant_id);
-
-CREATE INDEX idx_wiki_pages_tenant ON wiki_pages USING btree (tenant_id);
-
-CREATE INDEX idx_workflow_graphs_updated ON workflow_graphs USING btree (updated_at);
-
-CREATE INDEX idx_workflow_graphs_user ON workflow_graphs USING btree (user_id);
-
-CREATE TRIGGER knowledge_chunks_search_vector_trigger BEFORE INSERT OR UPDATE ON knowledge_chunks FOR EACH ROW EXECUTE FUNCTION knowledge_chunks_search_vector_update();
-
-CREATE TRIGGER update_knowledge_bases_updated_at BEFORE UPDATE ON knowledge_bases FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_knowledge_documents_updated_at BEFORE UPDATE ON knowledge_documents FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-ALTER TABLE ONLY agent_sessions
-ADD CONSTRAINT agent_sessions_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE SET NULL;
-
-ALTER TABLE ONLY agent_sessions
-ADD CONSTRAINT agent_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY agents
-ADD CONSTRAINT agents_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY api_keys
-ADD CONSTRAINT api_keys_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY audit_logs
-ADD CONSTRAINT audit_logs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY audit_logs
-ADD CONSTRAINT audit_logs_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;
-
-ALTER TABLE ONLY billing_records
-ADD CONSTRAINT billing_records_session_id_fkey FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE SET NULL;
-
-ALTER TABLE ONLY billing_records
-ADD CONSTRAINT billing_records_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY billing_records
-ADD CONSTRAINT billing_records_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY credit_transactions
-ADD CONSTRAINT credit_transactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY enterprise_tasks
-ADD CONSTRAINT enterprise_tasks_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY kb_articles
-ADD CONSTRAINT kb_articles_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY knowledge_bases
-ADD CONSTRAINT knowledge_bases_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY knowledge_bases
-ADD CONSTRAINT knowledge_bases_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY knowledge_chunks
-ADD CONSTRAINT knowledge_chunks_document_id_fkey FOREIGN KEY (document_id) REFERENCES knowledge_documents(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY knowledge_chunks
-ADD CONSTRAINT knowledge_chunks_knowledge_base_id_fkey FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY knowledge_chunks
-ADD CONSTRAINT knowledge_chunks_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY knowledge_documents
-ADD CONSTRAINT knowledge_documents_knowledge_base_id_fkey FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY knowledge_documents
-ADD CONSTRAINT knowledge_documents_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY knowledge_documents
-ADD CONSTRAINT knowledge_documents_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY marketing_campaigns
-ADD CONSTRAINT marketing_campaigns_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY media_assets
-ADD CONSTRAINT media_assets_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY meeting_notes
-ADD CONSTRAINT meeting_notes_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY messages
-ADD CONSTRAINT messages_session_id_fkey FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY okrs
-ADD CONSTRAINT okrs_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY sessions
-ADD CONSTRAINT sessions_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE SET NULL;
-
-ALTER TABLE ONLY sessions
-ADD CONSTRAINT sessions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY sessions
-ADD CONSTRAINT sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;
-
-ALTER TABLE ONLY support_tickets
-ADD CONSTRAINT support_tickets_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY tasks
-ADD CONSTRAINT tasks_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY users
-ADD CONSTRAINT users_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY wiki_pages
-ADD CONSTRAINT wiki_pages_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-
-ALTER TABLE ONLY workflow_graphs
-ADD CONSTRAINT workflow_graphs_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;
