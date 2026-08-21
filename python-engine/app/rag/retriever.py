@@ -78,13 +78,7 @@ class RAGRetriever:
             # 1. 分块
             chunks = self._split_text(content, settings.chunk_size, settings.chunk_overlap)
 
-            # 2. 嵌入
-            embeddings = []
-            for chunk in chunks:
-                embedding = await llm_client.embed(chunk)
-                embeddings.append(embedding)
-
-            # 3. 存入 Milvus
+            # 2. 检查 Milvus 可用性（不可用则跳过嵌入，避免无谓的 API 调用）
             collection = await self._get_collection()
             if collection is None:
                 logger.warning("Milvus 不可用，跳过索引")
@@ -94,6 +88,12 @@ class RAGRetriever:
                     "status": "indexed",
                     "error": "Milvus 不可用，已跳过",
                 }
+
+            # 3. 嵌入
+            embeddings = []
+            for chunk in chunks:
+                embedding = await llm_client.embed(chunk)
+                embeddings.append(embedding)
 
             # 准备数据
             ids = [f"{document_id}_{i}" for i in range(len(chunks))]
@@ -131,15 +131,16 @@ class RAGRetriever:
     ) -> list:
         """向量检索：查询相关文档片段"""
         try:
-            # 1. 计算查询嵌入
-            query_embedding = await llm_client.embed(query)
-
-            # 2. Milvus 检索
+            # 1. Milvus 可用性检查（不可用则直接返回，不做查询嵌入）
             collection = await self._get_collection()
             if collection is None:
                 logger.warning("Milvus 不可用，返回空结果")
                 return []
 
+            # 2. 计算查询嵌入
+            query_embedding = await llm_client.embed(query)
+
+            # 3. Milvus 检索
             results = await asyncio.to_thread(
                 collection.search,
                 data=[query_embedding],
@@ -150,7 +151,7 @@ class RAGRetriever:
                 output_fields=["document_id", "chunk_id", "content"],
             )
 
-            # 3. 过滤低分结果
+            # 4. 过滤低分结果
             filtered = []
             for hits in results:
                 for hit in hits:

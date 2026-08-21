@@ -182,6 +182,9 @@ async def lifespan(app: FastAPI):
     bind_graph_gateway(_gateway)
     bind_pm_gateway(_gateway)
     bind_workflow_gateway(_gateway)
+    # LLM client（RAG 检索嵌入）同样接入 gateway
+    from app.llm.client import llm_client
+    llm_client.bind_gateway(_gateway)
     logger.info("Tool/Workflow gateways bound")
 
     # ── 3.5. SmartAPIKeyPool ──

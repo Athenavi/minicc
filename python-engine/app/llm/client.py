@@ -1,21 +1,80 @@
-"""LLM client 兼容桩（供 RAG 等模块导入）。
+"""LLM client — 统一嵌入入口（供 RAG 检索等模块导入）。
 
-当前项目已改用 GatewayRouter / LLMProvider 抽象，本模块仅保留最小接口，
-避免旧代码 import 报错；生产环境请替换为真实实现。
+策略与 RAGBuilder 保持一致：本地模型（settings.local_embedding_model）优先，
+Gateway API 回退，确保存储与查询嵌入口径一致。
+gateway 由 main.py 启动时通过 bind_gateway 注入（与 tools/graph.py 等模块的模式一致）。
+
+fail-loud：未配置任何后端（本地模型 + gateway 均不可用）时抛出 RuntimeError，
+绝不返回零向量伪装成功。
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import List
+import asyncio
+import logging
+from typing import List, Optional
 
 from app.config import settings
 
+logger = logging.getLogger(__name__)
 
-@dataclass
-class _StubLLMClient:
+
+class LLMClient:
+    """嵌入客户端：本地模型优先、Gateway API 回退"""
+
+    def __init__(self):
+        self._gateway = None
+        self._local_encoder = None
+        self._local_encoder_lock = asyncio.Lock()
+
+    def bind_gateway(self, gateway) -> None:
+        """注入 GatewayRouter（main.py 启动时调用一次）"""
+        self._gateway = gateway
+
     async def embed(self, text: str) -> List[float]:
-        # 返回零向量，仅用于占位；真实实现应调用 embedding 模型。
-        return [0.0] * settings.embedding_dim
+        embedding = await self._get_local_embedding(text)
+        if embedding is None:
+            embedding = await self._get_api_embedding(text)
+        if not embedding:
+            raise RuntimeError(
+                "embedding unavailable: no local model configured "
+                "(settings.local_embedding_model) and no LLM gateway bound "
+                "(bind_gateway) or embed request failed — "
+                "refusing to return zero vectors"
+            )
+        return embedding
+
+    async def _get_local_embedding(self, text: str) -> Optional[List[float]]:
+        """使用本地模型计算嵌入（可插拔，默认关闭）
+
+        配置 settings.local_embedding_model（如 BGE/Jina 的本地路径/模型名）后启用；
+        依赖 sentence-transformers（可选 extra）。任何失败均回退到 API 嵌入。
+        """
+        if not settings.local_embedding_model:
+            return None
+        try:
+            async with self._local_encoder_lock:
+                if self._local_encoder is None:
+                    from sentence_transformers import SentenceTransformer
+
+                    self._local_encoder = await asyncio.to_thread(
+                        SentenceTransformer, settings.local_embedding_model
+                    )
+            vector = await asyncio.to_thread(self._local_encoder.encode, text)
+            return [float(x) for x in vector.tolist()]
+        except Exception as e:
+            logger.warning("本地嵌入计算失败（回退到 API）: %s", e)
+            return None
+
+    async def _get_api_embedding(self, text: str) -> Optional[List[float]]:
+        """使用 Gateway API 计算嵌入"""
+        if self._gateway is None:
+            return None
+        try:
+            resp = await self._gateway.embed(text, settings.embedding_model)
+            return resp.embedding
+        except Exception as e:
+            logger.warning("API 嵌入计算失败: %s", e)
+            return None
 
 
-llm_client = _StubLLMClient()
+llm_client = LLMClient()
