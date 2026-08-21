@@ -353,16 +353,19 @@ class SkillManager:
                 )
                 
             elif skill_meta.type == SkillType.PYTHON_SCRIPT:
-                # TODO: Python 脚本执行 (沙箱环境)
-                raise NotImplementedError("Python script execution not yet implemented")
-                
+                return await self._execute_python_script(
+                    skill_meta, params, full_skill_id, tenant_id, trace_id, start_time,
+                )
+
             elif skill_meta.type == SkillType.SHELL_COMMAND:
-                # TODO: Shell 命令执行 (沙箱环境)
-                raise NotImplementedError("Shell command execution not yet implemented")
-                
+                return await self._execute_shell_command(
+                    skill_meta, params, full_skill_id, tenant_id, trace_id, start_time,
+                )
+
             elif skill_meta.type == SkillType.HTTP_REQUEST:
-                # TODO: HTTP 请求
-                raise NotImplementedError("HTTP request not yet implemented")
+                return await self._execute_http_request(
+                    skill_meta, params, full_skill_id, tenant_id, trace_id, start_time,
+                )
             
             else:
                 raise ValueError(f"Unsupported skill type: {skill_meta.type}")
@@ -379,6 +382,277 @@ class SkillManager:
                 duration_ms=duration_ms,
                 tenant_id=tenant_id,
             )
+
+
+    # ── Python 脚本执行 (沙箱) ──────────────────────────────────────
+
+    async def _execute_python_script(
+        self,
+        skill_meta: SkillMetadata,
+        params: dict,
+        full_skill_id: str,
+        tenant_id: str,
+        trace_id: str,
+        start_time: float,
+    ) -> SkillExecutionResult:
+        """在安全沙箱中执行 Python 脚本技能。
+
+        复用 run_code 模块的静态 AST 检查 + 运行时 builtins 守卫，
+        确保脚本无法访问宿主文件系统/网络/子进程。
+
+        config 字段:
+            code:     Python 脚本源码（函数体，可引用 params 变量）
+            timeout:  超时秒数（默认 60，上限 300）
+        """
+        from app.tools.run_code import _check_static, _safe_builtins, _render_result
+
+        code = skill_meta.config.get("code", "")
+        timeout = int(skill_meta.config.get("timeout", 60))
+
+        if not code.strip():
+            raise ValueError("skill config missing 'code' field")
+
+        # 静态安全检查：AST 扫描禁止危险模块/调用
+        denied = _check_static(code)
+        if denied:
+            raise ValueError(f"python script blocked by static guard: {denied}")
+
+        # 将 params 注入为脚本可用的变量
+        import io
+        import contextlib
+        import asyncio
+
+        ns: dict[str, Any] = {
+            "params": params,
+            "__builtins__": _safe_builtins(),
+        }
+
+        # 包装为 async 函数（与 run_code 语义一致）
+        body = "\n".join("    " + line if line.strip() else line for line in code.splitlines())
+        src = f"async def _skill_main():\n{body}\n"
+
+        log_buf = io.StringIO()
+        try:
+            exec(compile(src, f"<skill:{skill_meta.name}>", "exec"), ns)
+            main_fn = ns["_skill_main"]
+
+            async def _run():
+                with contextlib.redirect_stdout(log_buf):
+                    result = await main_fn()
+                return result
+
+            result = await asyncio.wait_for(_run(), timeout=timeout)
+            output = json.dumps(
+                {"result": _render_result(result), "logs": log_buf.getvalue()[-5000:]},
+                ensure_ascii=False,
+                default=str,
+            )
+            success = True
+        except asyncio.TimeoutError:
+            output = ""
+            raise ValueError(f"python script timed out after {timeout}s")
+        except RuntimeError as e:
+            if "blocked by runtime guard" in str(e):
+                raise ValueError(f"python script blocked by runtime guard: {e}")
+            raise
+        finally:
+            log_buf.close()
+
+        duration_ms = int((time.time() - start_time) * 1000)
+
+        if trace_id:
+            await record_span(
+                trace_id=trace_id,
+                span_name=f"skill:python:{skill_meta.name}",
+                duration_ms=duration_ms,
+                metadata={"tenant_id": tenant_id, "success": True},
+                tenant_id=tenant_id,
+            )
+
+        return SkillExecutionResult(
+            skill_id=full_skill_id,
+            skill_name=skill_meta.name,
+            success=success,
+            output=output,
+            duration_ms=duration_ms,
+            trace_id=trace_id,
+            tenant_id=tenant_id,
+        )
+
+    # ── Shell 命令执行 (沙箱) ──────────────────────────────────────
+
+    async def _execute_shell_command(
+        self,
+        skill_meta: SkillMetadata,
+        params: dict,
+        full_skill_id: str,
+        tenant_id: str,
+        trace_id: str,
+        start_time: float,
+    ) -> SkillExecutionResult:
+        """在安全沙箱中执行 Shell 命令技能。
+
+        复用 sandbox 模块的 run_in_sandbox：cwd 锁定 + 环境清理 +
+        逃逸拦截 + 命令白名单。
+
+        config 字段:
+            command:  命令模板（可用 {var} 引用 params）
+            timeout:  超时秒数（默认 120）
+        """
+        from app.tools.sandbox import run_in_sandbox
+
+        command_template = skill_meta.config.get("command", "")
+        timeout = int(skill_meta.config.get("timeout", 120))
+
+        if not command_template.strip():
+            raise ValueError("skill config missing 'command' field")
+
+        # 安全地填充模板变量（仅 str.format，不执行任意代码）
+        try:
+            command = command_template.format(**params)
+        except KeyError as e:
+            raise ValueError(f"missing parameter in command template: {e}")
+        except Exception as e:
+            raise ValueError(f"command template render failed: {e}")
+
+        result = await run_in_sandbox(command, timeout=timeout)
+
+        duration_ms = int((time.time() - start_time) * 1000)
+
+        if "error" in result:
+            output = json.dumps(result, ensure_ascii=False)
+            success = False
+        else:
+            output = json.dumps(result, ensure_ascii=False)
+            success = result.get("exit_code", -1) == 0
+
+        if trace_id:
+            await record_span(
+                trace_id=trace_id,
+                span_name=f"skill:shell:{skill_meta.name}",
+                duration_ms=duration_ms,
+                metadata={"tenant_id": tenant_id, "exit_code": result.get("exit_code")},
+                tenant_id=tenant_id,
+            )
+
+        return SkillExecutionResult(
+            skill_id=full_skill_id,
+            skill_name=skill_meta.name,
+            success=success,
+            output=output,
+            error=result.get("error", ""),
+            duration_ms=duration_ms,
+            trace_id=trace_id,
+            tenant_id=tenant_id,
+        )
+
+    # ── HTTP 请求执行 ───────────────────────────────────────────────
+
+    async def _execute_http_request(
+        self,
+        skill_meta: SkillMetadata,
+        params: dict,
+        full_skill_id: str,
+        tenant_id: str,
+        trace_id: str,
+        start_time: float,
+    ) -> SkillExecutionResult:
+        """执行 HTTP 请求技能（带 SSRF 防护）。
+
+        复用 ssrf 模块的 assert_safe_url：解析目标 host，
+        拒绝内网/私有/保留 IP 段。
+
+        config 字段:
+            url:             请求 URL 模板（可用 {var} 引用 params）
+            method:          HTTP 方法（默认 GET）
+            headers:         请求头 dict（可选）
+            body_template:   请求体模板（可选）
+            timeout:         超时秒数（默认 30）
+            expected_status: 期望的响应状态码（可选，用于校验）
+        """
+        from app.tools.ssrf import assert_safe_url
+
+        try:
+            import httpx
+        except ImportError:
+            raise ValueError("httpx not installed — cannot execute HTTP request skill")
+
+        url_template = skill_meta.config.get("url", "")
+        method = skill_meta.config.get("method", "GET").upper()
+        headers = skill_meta.config.get("headers", {})
+        body_template = skill_meta.config.get("body_template", "")
+        timeout = int(skill_meta.config.get("timeout", 30))
+        expected_status = skill_meta.config.get("expected_status")
+
+        if not url_template.strip():
+            raise ValueError("skill config missing 'url' field")
+
+        # 安全地填充模板
+        try:
+            url = url_template.format(**params)
+        except KeyError as e:
+            raise ValueError(f"missing parameter in url template: {e}")
+        except Exception as e:
+            raise ValueError(f"url template render failed: {e}")
+
+        body = ""
+        if body_template:
+            try:
+                body = body_template.format(**params)
+            except KeyError as e:
+                raise ValueError(f"missing parameter in body template: {e}")
+            except Exception as e:
+                raise ValueError(f"body template render failed: {e}")
+
+        # SSRF 防护：拒绝内网/私有地址
+        assert_safe_url(url)
+
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.request(
+                method,
+                url,
+                headers=headers,
+                content=body if body else None,
+            )
+
+        duration_ms = int((time.time() - start_time) * 1000)
+
+        success = response.is_success
+        if expected_status is not None:
+            success = response.status_code == expected_status
+
+        output = json.dumps(
+            {
+                "status_code": response.status_code,
+                "headers": dict(response.headers),
+                "body": response.text[:10000],
+            },
+            ensure_ascii=False,
+        )
+
+        if trace_id:
+            await record_span(
+                trace_id=trace_id,
+                span_name=f"skill:http:{skill_meta.name}",
+                duration_ms=duration_ms,
+                metadata={
+                    "tenant_id": tenant_id,
+                    "url": url,
+                    "method": method,
+                    "status_code": response.status_code,
+                },
+                tenant_id=tenant_id,
+            )
+
+        return SkillExecutionResult(
+            skill_id=full_skill_id,
+            skill_name=skill_meta.name,
+            success=success,
+            output=output,
+            duration_ms=duration_ms,
+            trace_id=trace_id,
+            tenant_id=tenant_id,
+        )
 
 
 # ── 全局 SkillManager 实例 ────────────────────────────────────────

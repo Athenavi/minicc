@@ -53,8 +53,8 @@ async def test_prompt_skill_renders_template():
     assert result.output == "你好, 世界!"
 
 
-async def test_unimplemented_skill_types_return_explicit_error():
-    """python/shell/http 技能类型未实现: 执行必须返回明确失败,不得静默成功。"""
+async def test_python_shell_http_skills_missing_config_fail_loud():
+    """python/shell/http 技能已实现: 空 config 必须返回明确失败,不得静默成功。"""
     manager = SkillManager()
     for skill_type in (SkillType.PYTHON_SCRIPT, SkillType.SHELL_COMMAND, SkillType.HTTP_REQUEST):
         await manager.register_skill(
@@ -67,7 +67,55 @@ async def test_unimplemented_skill_types_return_explicit_error():
         )
         result = await manager.execute_skill(TENANT, f"s-{skill_type.value}", {})
         assert result.success is False
-        assert "not yet implemented" in result.error
+        assert "missing" in result.error.lower()
+
+
+async def test_python_script_skill_executes_in_sandbox():
+    """PYTHON_SCRIPT 技能必须在沙箱中执行并返回真实结果。"""
+    manager = SkillManager()
+    await manager.register_skill(
+        tenant_id=TENANT,
+        skill_id="calc",
+        name="calc",
+        description="计算",
+        type=SkillType.PYTHON_SCRIPT,
+        config={"code": "return {'sum': params['a'] + params['b']}"},
+    )
+    result = await manager.execute_skill(TENANT, "calc", {"a": 1, "b": 2})
+    assert result.success is True
+    assert "3" in result.output
+
+
+async def test_python_script_skill_blocks_dangerous_code():
+    """PYTHON_SCRIPT 技能必须拦截危险 import (沙箱安全)。"""
+    manager = SkillManager()
+    await manager.register_skill(
+        tenant_id=TENANT,
+        skill_id="evil",
+        name="evil",
+        description="危险脚本",
+        type=SkillType.PYTHON_SCRIPT,
+        config={"code": "import os\nreturn os.listdir('.')"},
+    )
+    result = await manager.execute_skill(TENANT, "evil", {})
+    assert result.success is False
+    assert "blocked" in result.error.lower() or "not allowed" in result.error.lower()
+
+
+async def test_http_request_skill_blocks_internal_addresses():
+    """HTTP_REQUEST 技能必须拦截内网地址 (SSRF 防护)。"""
+    manager = SkillManager()
+    await manager.register_skill(
+        tenant_id=TENANT,
+        skill_id="fetch",
+        name="fetch",
+        description="HTTP 请求",
+        type=SkillType.HTTP_REQUEST,
+        config={"url": "http://169.254.169.254/meta", "method": "GET"},
+    )
+    result = await manager.execute_skill(TENANT, "fetch", {})
+    assert result.success is False
+    assert "blocked" in result.error.lower() or "internal" in result.error.lower()
 
 
 async def test_skill_tenant_isolation():

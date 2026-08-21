@@ -96,24 +96,55 @@ def world():
 
 
 class TestKnowledgeBaseFailLoud:
-    """知识库未实现接口必须显式报错。
+    """知识库 PG 依赖接口必须有真实数据源。
 
-    意图: 统计/列表接口没有真实数据源 (PG kb_documents 表不存在),
+    list_documents / get_tenant_stats 已实现 (PG knowledge_documents 表),
+    但依赖数据库连接池: 未初始化时必须显式报错,
     绝不允许返回硬编码 0/空列表伪装成真实数据 ——
-    否则调用方无法区分"真的 0 条"和"功能未实现"。
+    否则调用方无法区分"真的 0 条"和"连接未就绪"。
     """
 
     @pytest.mark.asyncio
-    async def test_tenant_stats_not_implemented_raises(self):
+    async def test_tenant_stats_without_db_fails_loud(self):
         kb = EnhancedKnowledgeBase()
-        with pytest.raises(NotImplementedError, match="get_tenant_stats"):
+        with pytest.raises(RuntimeError, match="not initialized"):
             await kb.get_tenant_stats(tenant_id="tenant-x")
 
     @pytest.mark.asyncio
-    async def test_list_documents_not_implemented_raises(self):
+    async def test_list_documents_without_db_fails_loud(self):
         kb = EnhancedKnowledgeBase()
-        with pytest.raises(NotImplementedError, match="list_documents"):
+        with pytest.raises(RuntimeError, match="not initialized"):
             await kb.list_documents(tenant_id="tenant-x")
+
+    @pytest.mark.asyncio
+    async def test_list_documents_queries_pg_with_tenant_filter(self):
+        """list_documents 必须按 tenant_id 过滤查询 PG。"""
+        kb = EnhancedKnowledgeBase()
+
+        fake_pool = MagicMock()
+        fake_row = {
+            "id": "doc-1",
+            "knowledge_base_id": "kb-1",
+            "name": "测试文档",
+            "file_type": "txt",
+            "file_size_bytes": 1024,
+            "file_url": None,
+            "status": "indexed",
+            "chunk_count": 5,
+            "created_at": None,
+            "updated_at": None,
+        }
+        fake_pool.fetch = AsyncMock(return_value=[fake_row])
+
+        with patch("app.db.get_pool", return_value=fake_pool):
+            docs = await kb.list_documents(tenant_id="tenant-x")
+
+        assert len(docs) == 1
+        assert docs[0]["document_id"] == "doc-1"
+        assert docs[0]["name"] == "测试文档"
+        # 验证 SQL 带 tenant_id 参数
+        call_args = fake_pool.fetch.call_args
+        assert call_args.args[1] == "tenant-x"
 
 
 if __name__ == "__main__":

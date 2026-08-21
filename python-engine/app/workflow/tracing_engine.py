@@ -15,7 +15,9 @@ from dataclasses import dataclass, field
 
 from app.agent.runtime import AgentEvent
 from app.trace import record_span
-from app.workflow.engine import WorkflowInstance, NodeResult, _topological_sort
+from app.workflow.engine import (
+    WorkflowInstance, NodeResult, _topological_sort, _build_node_fns,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +145,10 @@ class TracingWorkflowEngine:
             nodes = graph_json.get("nodes", [])
             edges = graph_json.get("edges", [])
             sorted_nodes = _topological_sort(nodes, edges)
-            
+
+            # ── 构建节点执行函数（闭包，含 node_map / preds / gateway 上下文）──
+            node_fns = _build_node_fns(graph_json, self.gateway)
+
             logger.info(
                 "Workflow %s: executing %d nodes in topo order",
                 workflow_id, len(sorted_nodes),
@@ -152,7 +157,7 @@ class TracingWorkflowEngine:
             # ── 按序执行节点 ──────────────────────────────────────────
             for node_idx, node in enumerate(sorted_nodes):
                 node_id = node["id"]
-                node_type = node.get("type", "default")
+                node_type = node.get("node_type", node.get("type", "default"))
                 node_label = node.get("label", node_id)
                 
                 # ── 记录节点开始 span ───────────────────────────────────
@@ -195,10 +200,18 @@ class TracingWorkflowEngine:
                         state=instance.state,
                         trace_id=trace_id,
                         node_index=node_idx,
+                        node_fns=node_fns,
                     )
                     instance.results[node_id] = node_result
-                    instance.state.update(node_result.output or {})
-                    
+                    # node_result.output 是 JSON 字符串，解析回 dict 后合并进 state
+                    if node_result.output:
+                        try:
+                            out_dict = json.loads(node_result.output)
+                            if isinstance(out_dict, dict):
+                                instance.state.update(out_dict)
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+
                 except Exception as e:
                     logger.error(
                         "Workflow %s: node %s failed: %s",
@@ -301,37 +314,28 @@ class TracingWorkflowEngine:
         state: dict,
         trace_id: str,
         node_index: int,
+        node_fns: dict,
     ) -> NodeResult:
-        """执行单个节点 (带 trace)"""
-        from app.workflow.engine import (
-            _input_node, _llm_node, _tool_node,
-            _condition_node, _output_node, _skill_node, _knowledge_node,
-        )
-        
+        """执行单个节点 (带 trace)
+
+        使用 _build_node_fns 构建的闭包函数（含 node_map / preds / gateway 上下文），
+        而非直接导入 engine 模块的闭包局部函数。
+        """
         node_id = node["id"]
-        node_type = node.get("type", "default")
+        node_type = node.get("node_type", node.get("type", "default"))
         node_label = node.get("label", node_id)
-        
+
         node_start = time.time()
-        
-        # 路由到正确的执行函数
-        exec_map = {
-            "input": _input_node,
-            "llm": _llm_node,
-            "tool": _tool_node,
-            "condition": _condition_node,
-            "output": _output_node,
-            "skill": _skill_node,
-            "knowledge": _knowledge_node,
-        }
-        
-        executor = exec_map.get(node_type)
+
+        # 从 _build_node_fns 结果中获取该节点的执行函数
+        executor = node_fns.get(node_id)
         if executor is None:
-            raise ValueError(f"Unknown node type: {node_type}")
+            raise ValueError(f"Unknown node type: {node_type} (id={node_id})")
         
         try:
-            output_dict = await executor(node, node_id)
-            
+            # 节点函数签名: (state, node_id) -> 增量 dict
+            output_dict = await executor(state, node_id)
+
             node_result = NodeResult(
                 node_id=node_id,
                 status="completed",

@@ -260,59 +260,12 @@ class AgentHub:
                     if event.type == "text":
                         task.subtasks = self._parse_planner_output(event.content)
             
-            # ── 阶段 2: 并行执行子任务 ────────────────────────────────
+            # ── 阶段 2: DAG 调度执行子任务 ───────────────────────────
             task.status = "running"
-            
-            # TODO: 实现 DAG 调度器 (基于 dependencies 拓扑排序)
-            # 简化版: 串行执行 (实际应使用 asyncio.Semaphore 并发)
-            for i, subtask in enumerate(task.subtasks):
-                role_str = subtask.get("role", "researcher")
-                role = AgentRole(role_str)
-                
-                # 创建子任务 Agent
-                spec = self.AGENT_ROLES[role]
-                runtime = self._get_or_create_runtime(spec)
-                
-                # 注入共享上下文
-                context_injection = f"""
-【共享上下文】
-{json.dumps(task.shared_context.get(role_str, {}), ensure_ascii=False)}
 
-请直接回答问题,不要重复已确认的事实。"""
-                
-                sub_query = f"""【子任务 {i+1}/{len(task.subtasks)}】
-{subtask['description']}
-
-{context_injection}
-
-原始用户需求: {task.original_query}"""
-                
-                async for event in runtime.run_single_turn(
-                    task=type('obj', (object,), {
-                        'id': f"subtask_{i}_{trace_id}",
-                        'content': sub_query,
-                        'tenant_id': tenant_id,
-                    })(),
-                ):
-                    event.trace_id = trace_id
-                    yield event
-                    
-                    # 将输出写入共享上下文
-                    if event.type == "text" and event.content:
-                        task.shared_context.setdefault(role_str, {})[f"subtask_{i}"] = event.content
-                
-                # 记录 span
-                await record_span(
-                    trace_id=trace_id,
-                    span_name=f"agent:{role_str}",
-                    duration_ms=0,  # TODO: 计算实际耗时
-                    metadata={
-                        "subtask_index": i,
-                        "dependencies": subtask.get("dependencies", []),
-                        "tenant_id": tenant_id,
-                    },
-                    tenant_id=tenant_id,
-                )
+            async for event in self._execute_subtask_dag(task, trace_id, tenant_id):
+                event.trace_id = trace_id
+                yield event
             
             # ── 阶段 3: Orchestrator 聚合 ──────────────────────────────
             orchestrator_spec = self.AGENT_ROLES[AgentRole.ORCHESTRATOR]
@@ -359,6 +312,177 @@ class AgentHub:
                 0, self._tenant_running_agents.get(tenant_id, 1) - 1
             )
     
+    # ── DAG 调度器 ──────────────────────────────────────────────────
+
+    def _topological_waves(self, subtasks: list[dict]) -> list[list[int]]:
+        """将子任务按依赖关系拓扑排序为执行波次。
+
+        每一波次内的子任务无互相依赖，可并发执行。
+        依赖项引用格式: "subtask_N" (N 为索引)。
+
+        返回 [[idx, ...], [idx, ...], ...]
+        """
+        n = len(subtasks)
+        # 构建 dependency map: idx → set of dependency idx
+        deps: dict[int, set[int]] = {}
+        for i, st in enumerate(subtasks):
+            raw_deps = st.get("dependencies", [])
+            dep_indices: set[int] = set()
+            for d in raw_deps:
+                # 解析 "subtask_N" 格式
+                if isinstance(d, str) and d.startswith("subtask_"):
+                    try:
+                        dep_indices.add(int(d.split("_", 1)[1]))
+                    except (ValueError, IndexError):
+                        pass
+                elif isinstance(d, int):
+                    dep_indices.add(d)
+            deps[i] = dep_indices
+
+        # Kahn 算法分层
+        completed: set[int] = set()
+        waves: list[list[int]] = []
+
+        while len(completed) < n:
+            # 找出所有依赖已满足的未执行节点
+            ready = [
+                i for i in range(n)
+                if i not in completed and deps[i].issubset(completed)
+            ]
+            if not ready:
+                # 依赖环：打破环，按原始顺序执行剩余任务
+                remaining = [i for i in range(n) if i not in completed]
+                logger.warning(
+                    "DAG cycle detected, executing remaining subtasks linearly: %s",
+                    remaining,
+                )
+                waves.append(remaining)
+                break
+            waves.append(ready)
+            completed.update(ready)
+
+        return waves
+
+    async def _execute_subtask_dag(
+        self,
+        task: CollaborativeTask,
+        trace_id: str,
+        tenant_id: str,
+    ) -> AsyncIterator[AgentEvent]:
+        """基于 DAG 依赖关系调度子任务执行。
+
+        拓扑排序为波次，每波内的子任务并发执行（受 Semaphore 限制）。
+        每个子任务的实际耗时被记录到 span 中。
+        """
+        waves = self._topological_waves(task.subtasks)
+        sem = asyncio.Semaphore(self._max_concurrent_per_tenant)
+
+        for wave_idx, wave in enumerate(waves):
+            # 并发执行当前波次
+            event_queue: asyncio.Queue = asyncio.Queue()
+            running_tasks: list[asyncio.Task] = []
+
+            for subtask_idx in wave:
+                t = asyncio.create_task(
+                    self._run_single_subtask(
+                        subtask_idx, task, trace_id, tenant_id, sem, event_queue
+                    ),
+                    name=f"subtask_{subtask_idx}",
+                )
+                running_tasks.append(t)
+
+            # 边执行边 yield 事件
+            done_count = 0
+            total = len(running_tasks)
+            while done_count < total:
+                try:
+                    event = await event_queue.get()
+                    if event is None:
+                        # 某个子任务结束信号
+                        done_count += 1
+                        continue
+                    yield event
+                except asyncio.CancelledError:
+                    for t in running_tasks:
+                        t.cancel()
+                    raise
+
+            # 等待所有任务完成（应该已完成）
+            await asyncio.gather(*running_tasks, return_exceptions=True)
+
+            logger.debug(
+                "DAG wave %d/%d completed (%d subtasks)",
+                wave_idx + 1, len(waves), len(wave),
+            )
+
+    async def _run_single_subtask(
+        self,
+        subtask_idx: int,
+        task: CollaborativeTask,
+        trace_id: str,
+        tenant_id: str,
+        sem: asyncio.Semaphore,
+        event_queue: asyncio.Queue,
+    ) -> None:
+        """执行单个子任务，将事件推入队列供调度器 yield。"""
+        subtask = task.subtasks[subtask_idx]
+        role_str = subtask.get("role", "researcher")
+        try:
+            role = AgentRole(role_str)
+        except ValueError:
+            role = AgentRole.RESEARCHER
+
+        spec = self.AGENT_ROLES[role]
+        runtime = self._get_or_create_runtime(spec)
+
+        # 注入共享上下文
+        context_injection = f"""
+【共享上下文】
+{json.dumps(task.shared_context.get(role_str, {}), ensure_ascii=False)}
+
+请直接回答问题,不要重复已确认的事实。"""
+
+        sub_query = f"""【子任务 {subtask_idx + 1}/{len(task.subtasks)}】
+{subtask['description']}
+
+{context_injection}
+
+原始用户需求: {task.original_query}"""
+
+        start_time = time.time()
+
+        async with sem:
+            async for event in runtime.run_single_turn(
+                task=type('obj', (object,), {
+                    'id': f"subtask_{subtask_idx}_{trace_id}",
+                    'content': sub_query,
+                    'tenant_id': tenant_id,
+                })(),
+            ):
+                # 将输出写入共享上下文
+                if event.type == "text" and event.content:
+                    task.shared_context.setdefault(role_str, {})[f"subtask_{subtask_idx}"] = event.content
+
+                # 推入事件队列
+                await event_queue.put(event)
+
+        # 记录 span（含实际耗时）
+        duration_ms = int((time.time() - start_time) * 1000)
+        await record_span(
+            trace_id=trace_id,
+            span_name=f"agent:{role_str}",
+            duration_ms=duration_ms,
+            metadata={
+                "subtask_index": subtask_idx,
+                "dependencies": subtask.get("dependencies", []),
+                "tenant_id": tenant_id,
+            },
+            tenant_id=tenant_id,
+        )
+
+        # 发送结束信号
+        await event_queue.put(None)
+
     def _get_or_create_runtime(self, spec: AgentSpec) -> AgentRuntime:
         """获取或创建指定角色的 Agent Runtime"""
         if spec.role not in self._runtime_pool:

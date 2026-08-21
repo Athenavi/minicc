@@ -14,6 +14,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -129,6 +130,10 @@ class RedisContextBus:
     def __init__(self, redis_client):
         self.redis = redis_client
         self._local_subs: dict[str, list[Callable]] = defaultdict(list)
+        # Pub/Sub 监听：每对 (tenant_id, topic) 一个 channel
+        self._pubsub_channels: set[str] = set()
+        self._listener_task: asyncio.Task | None = None
+        self._listener_started = False
     
     async def publish(self, topic: str, data: dict, tenant_id: str,
                       message_type: MessageType = MessageType.RESULT_PUBLISH,
@@ -168,6 +173,10 @@ class RedisContextBus:
             json.dumps(data, ensure_ascii=False)
         )
         
+        # 发布到 Pub/Sub channel（跨进程通知）
+        channel = f"contextbus:{tenant_id}:{topic}"
+        await self.redis.publish(channel, json.dumps(entry, ensure_ascii=False))
+        
         # 本地订阅者推送 (同一进程)
         for callback in self._local_subs[topic]:
             try:
@@ -182,26 +191,127 @@ class RedisContextBus:
         return message
     
     async def subscribe(self, topic: str, callback: Callable, tenant_id: str = "") -> None:
-        """订阅主题 (Redis Pub/Sub)"""
-        self._local_subs[topic].append(callback)
+        """订阅主题 (Redis Pub/Sub + 本地回调)
         
+        创建独立的 Redis Pub/Sub 连接监听跨进程消息。
+        本地回调既接收跨进程 Pub/Sub 消息，也接收同进程 Stream 消息。
+        """
+        # 注册本地回调
+        self._local_subs[topic].append(callback)
+
+        # 确定 Pub/Sub channel
         if tenant_id:
             channel = f"contextbus:{tenant_id}:{topic}"
         else:
-            channel = f"contextbus:*:{topic}"  # 通配符
+            # 通配符：监听所有租户的该 topic
+            # Redis Pub/Sub 支持 glob pattern: contextbus:*:topic
+            channel = f"contextbus:*:{topic}"
+
+        if channel not in self._pubsub_channels:
+            self._pubsub_channels.add(channel)
+            logger.info(f"Subscribed to Redis channel '{channel}'")
+
+        # 启动后台监听任务（懒启动，整个实例只一个 task）
+        if not self._listener_started:
+            self._listener_started = True
+            self._listener_task = asyncio.create_task(
+                self._pubsub_listener(), name="context_bus_pubsub"
+            )
+            logger.info("ContextBus Pub/Sub listener started")
+    
+    async def _pubsub_listener(self):
+        """后台监听 Redis Pub/Sub 消息，分发到本地回调。
         
-        logger.info(f"Subscribed to Redis channel '{channel}'")
-        # TODO: 实际应创建独立的 Redis Pub/Sub connection
+        使用独立的 Redis 连接（从连接池获取）避免阻塞主连接。
+        当新 channel 加入时重新订阅（重连机制）。
+        """
+        import redis.asyncio as aioredis
+
+        while True:
+            try:
+                # 从已有 client 获取 Pub/Sub 对象
+                pubsub = self.redis.pubsub()
+
+                # 订阅当前所有 channel
+                channels = list(self._pubsub_channels)
+                if not channels:
+                    # 没有订阅，等待一会儿再检查
+                    await asyncio.sleep(0.5)
+                    continue
+
+                await pubsub.subscribe(*channels)
+                logger.debug(f"Pub/Sub subscribed to {len(channels)} channels")
+
+                async for raw_msg in pubsub.listen():
+                    if raw_msg["type"] != "message":
+                        continue
+
+                    try:
+                        channel = raw_msg["channel"]
+                        if isinstance(channel, bytes):
+                            channel = channel.decode("utf-8")
+
+                        # 解析 channel 格式: contextbus:{tenant_id}:{topic}
+                        # 或 contextbus:*:{topic} 的通配匹配
+                        parts = channel.split(":", 2)
+                        if len(parts) != 3:
+                            continue
+                        _, msg_tenant_id, topic = parts
+
+                        data_raw = raw_msg["data"]
+                        if isinstance(data_raw, bytes):
+                            data_raw = data_raw.decode("utf-8")
+                        entry = json.loads(data_raw)
+
+                        # 构造 ContextMessage
+                        message = ContextMessage(
+                            topic=topic,
+                            message_type=MessageType(entry.get("message_type", "event")),
+                            data=json.loads(entry.get("data", "{}")),
+                            tenant_id=msg_tenant_id,
+                            message_id=entry.get("message_id", ""),
+                            timestamp=float(entry.get("timestamp", time.time())),
+                        )
+
+                        # 分发到本地回调
+                        for cb in self._local_subs.get(topic, []):
+                            try:
+                                if asyncio.iscoroutinefunction(cb):
+                                    await cb(message)
+                                else:
+                                    cb(message)
+                            except Exception as e:
+                                logger.error(f"Pub/Sub callback failed: {e}", exc_info=True)
+
+                    except Exception as e:
+                        logger.error(f"Pub/Sub message dispatch failed: {e}", exc_info=True)
+
+            except asyncio.CancelledError:
+                logger.info("ContextBus Pub/Sub listener cancelled")
+                break
+            except Exception as e:
+                logger.error(f"ContextBus Pub/Sub listener error: {e}", exc_info=True)
+                await asyncio.sleep(1.0)  # 退避后重连
     
     async def unsubscribe(self, topic: str, callback: Callable, tenant_id: str = "") -> bool:
         """取消订阅"""
+        removed = False
         if topic in self._local_subs:
             try:
                 self._local_subs[topic].remove(callback)
-                return True
+                removed = True
             except ValueError:
-                return False
-        return False
+                pass
+
+        # 如果该 topic 已无任何本地订阅者，移除 channel
+        if topic in self._local_subs and not self._local_subs[topic]:
+            if tenant_id:
+                channel = f"contextbus:{tenant_id}:{topic}"
+            else:
+                channel = f"contextbus:*:{topic}"
+            self._pubsub_channels.discard(channel)
+
+        return removed
     
     async def query(self, topic: str, tenant_id: str, limit: int = 10) -> list[ContextMessage]:
         """查询历史消息 (从 Redis Stream)"""

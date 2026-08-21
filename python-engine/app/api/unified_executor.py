@@ -240,11 +240,62 @@ class UnifiedChatHandler:
         tenant_id: str,
         trace_id: str,
     ) -> dict:
-        """通过工作流工作台执行"""
-        # Fail loud: TracingWorkflowEngine 与节点执行函数的对接未完成
-        # (其从 engine 导入的节点函数并非模块级函数),直接调用只会得到全节点报错。
-        # 绝不返回伪造的"工作流执行结果",显式抛错让 submit_task 返回 success=False。
-        raise NotImplementedError("workflow execution not implemented")
+        """通过工作流工作台执行
+
+        构建单节点 LLM 工作流（input → llm → output）并执行，
+        复用 workflow/engine.run_workflow 的 DAG 执行能力。
+        """
+        from app.workflow.engine import run_workflow
+        from app.main import get_gateway
+
+        try:
+            gateway = await get_gateway()
+        except RuntimeError:
+            return {"status": "error", "output": {"error": "LLM gateway not initialized"}}
+
+        # 构建简单工作流图: input → llm → output
+        graph_json = {
+            "name": f"unified_chat_{trace_id}",
+            "nodes": [
+                {"id": "input_1", "node_type": "input", "label": "用户输入"},
+                {
+                    "id": "llm_1",
+                    "node_type": "llm",
+                    "label": "LLM 处理",
+                    "config": {
+                        "system_prompt": "你是一个多功能 AI 助手,请根据用户输入给出清晰、准确的回答。",
+                        "user_message": user_input,
+                    },
+                },
+                {"id": "output_1", "node_type": "output", "label": "输出"},
+            ],
+            "edges": [
+                {"source_id": "input_1", "target_id": "llm_1"},
+                {"source_id": "llm_1", "target_id": "output_1"},
+            ],
+        }
+
+        instance = await run_workflow(
+            graph_json=graph_json,
+            gateway=gateway,
+            initial_state={"input": user_input},
+            instance_id=f"wf_{trace_id}",
+        )
+
+        if instance.status == "error":
+            raise RuntimeError(f"Workflow execution failed: {instance.error}")
+
+        # 提取最终输出（output 节点的结果）
+        final_output = instance.state.get("__out_output_1__", "") or instance.state.get("__out_llm_1__", "")
+
+        return {
+            "status": "completed",
+            "output": {
+                "result": final_output,
+                "workflow_instance_id": instance.instance_id,
+            },
+            "total_duration_ms": int((instance.finished_at - instance.started_at) * 1000) if instance.finished_at else 0,
+        }
     
     def _extract_output(self, result: dict) -> str:
         """从执行结果中提取最终输出"""

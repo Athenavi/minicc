@@ -133,6 +133,8 @@ async def ensure_tables():
         # knowledge_documents: 文档内容（异步 RAG 构建时 worker 读取）
         "ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS content BYTEA",
         "ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS error_message TEXT",
+        # knowledge_documents: 租户隔离列 + 索引
+        "ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(32) NOT NULL DEFAULT 'default'",
     ]
     for sql in migrations:
         try:

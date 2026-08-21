@@ -189,13 +189,33 @@ class EnhancedKnowledgeBase:
         self,
         tenant_id: str,
     ) -> list[dict]:
-        """列出租户下的所有文档 (从 PG metadata)"""
-        # Fail loud: PG kb_documents 元数据表尚不存在。
-        # 返回空列表会让调用方误以为"该租户真的没有文档",
-        # 必须显式抛错,由调用方转成 "功能未实现" 语义 (如 HTTP 501)。
-        raise NotImplementedError(
-            "list_documents not implemented: kb_documents metadata table does not exist yet"
+        """列出租户下的所有文档 (从 PG knowledge_documents 表)"""
+        from app.db import get_pool
+
+        pool = get_pool()
+        rows = await pool.fetch(
+            """SELECT id, knowledge_base_id, name, file_type, file_size_bytes,
+                      file_url, status, chunk_count, created_at, updated_at
+               FROM knowledge_documents
+               WHERE tenant_id = $1
+               ORDER BY created_at DESC""",
+            tenant_id,
         )
+        return [
+            {
+                "document_id": r["id"],
+                "knowledge_base_id": r["knowledge_base_id"],
+                "name": r["name"],
+                "file_type": r["file_type"],
+                "file_size_bytes": r["file_size_bytes"],
+                "file_url": r["file_url"] or "",
+                "status": r["status"],
+                "chunk_count": r["chunk_count"],
+                "created_at": r["created_at"].isoformat() if r["created_at"] else "",
+                "updated_at": r["updated_at"].isoformat() if r["updated_at"] else "",
+            }
+            for r in rows
+        ]
     
     async def delete_document(
         self,
@@ -203,6 +223,8 @@ class EnhancedKnowledgeBase:
         document_id: str,
     ) -> bool:
         """删除文档 (Milvus + PG 双删)"""
+        from app.db import get_pool
+
         try:
             # 1. 删除 Milvus 中的 chunks
             collection = await self.retriever._get_collection()
@@ -210,12 +232,23 @@ class EnhancedKnowledgeBase:
                 delete_expr = f'document_id == "{document_id}" AND tenant_id == "{tenant_id}"'
                 await collection.delete(expr=delete_expr)
                 await collection.flush()
-                
-            # 2. 删除 PG 中的 metadata (TODO)
-            
-            logger.info(f"Document deleted (doc={document_id}, tenant={tenant_id})")
+
+            # 2. 删除 PG 中的 metadata (knowledge_documents)
+            pool = get_pool()
+            result = await pool.execute(
+                """DELETE FROM knowledge_documents
+                   WHERE id = $1 AND tenant_id = $2""",
+                document_id,
+                tenant_id,
+            )
+            deleted = result.endswith(" 1")  # "DELETE 1" → True; "DELETE 0" → False
+
+            logger.info(
+                "Document deleted (doc=%s, tenant=%s, pg=%s)",
+                document_id, tenant_id, deleted,
+            )
             return True
-            
+
         except Exception as e:
             logger.error(f"Document deletion failed: {e}")
             return False
@@ -224,14 +257,33 @@ class EnhancedKnowledgeBase:
         self,
         tenant_id: str,
     ) -> dict:
-        """获取租户知识库统计信息"""
-        # Fail loud: 不存在可查询的真实数据源 (PG kb_documents 表未建立,
-        # Milvus 侧也没有租户级统计)。绝不允许返回硬编码 0 伪装成真实统计,
-        # 否则调用方无法区分"真的 0 条"和"功能未实现"。
-        # 调用方应捕获此异常并转成 HTTP 501 / "功能未实现" 标记。
-        raise NotImplementedError(
-            "get_tenant_stats not implemented: no kb_documents stats source exists yet"
+        """获取租户知识库统计信息 (从 PG knowledge_documents 聚合)"""
+        from app.db import get_pool
+
+        pool = get_pool()
+        row = await pool.fetchrow(
+            """SELECT
+                   COUNT(*)                                   AS total_documents,
+                   COUNT(*) FILTER (WHERE status = 'indexed') AS indexed_documents,
+                   COUNT(*) FILTER (WHERE status = 'pending')  AS pending_documents,
+                   COUNT(*) FILTER (WHERE status = 'failed')   AS failed_documents,
+                   COALESCE(SUM(file_size_bytes), 0)           AS total_size_bytes,
+                   COALESCE(SUM(chunk_count), 0)               AS total_chunks,
+                   COUNT(DISTINCT knowledge_base_id)           AS knowledge_bases
+               FROM knowledge_documents
+               WHERE tenant_id = $1""",
+            tenant_id,
         )
+        return {
+            "tenant_id": tenant_id,
+            "total_documents": row["total_documents"] if row else 0,
+            "indexed_documents": row["indexed_documents"] if row else 0,
+            "pending_documents": row["pending_documents"] if row else 0,
+            "failed_documents": row["failed_documents"] if row else 0,
+            "total_size_bytes": row["total_size_bytes"] if row else 0,
+            "total_chunks": row["total_chunks"] if row else 0,
+            "knowledge_bases": row["knowledge_bases"] if row else 0,
+        }
 
 
 # ── API Handler ────────────────────────────────────────────────────

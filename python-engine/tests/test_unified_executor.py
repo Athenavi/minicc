@@ -216,19 +216,32 @@ async def test_agent_mode_llm_error_fails_loud(monkeypatch):
     assert session.messages[-1].get("error")
 
 
-# ── workflow 模式 (未实现,必须 fail loud) ───────────────────────────
+# ── workflow 模式 (已实现: 单节点 LLM 工作流) ──────────────────────
 
 
-async def test_workflow_mode_not_implemented_returns_error(monkeypatch):
-    """未实现的工作流路径必须返回错误,绝不返回伪造的完成结果。"""
-    _patch_gateway(monkeypatch, _FakeGateway())
+async def test_workflow_mode_returns_real_workflow_output(monkeypatch):
+    """workflow 模式必须真实执行工作流并返回 LLM 输出。
+
+    意图: 返回内容来自真实执行,而非硬编码占位文案。
+    """
+    _patch_gateway(monkeypatch, _FakeGateway(content="unique-workflow-answer-002"))
     handler = UnifiedChatHandler()
 
     res = await handler.submit_task(user_input="跑个工作流", tenant_id=TENANT, mode="workflow")
 
-    assert res["success"] is False, "未实现功能不得伪装成空成功"
-    assert "not implemented" in res["error"]
-    assert "工作流执行结果" not in json.dumps(res, ensure_ascii=False)
+    assert res["success"] is True
+    assert "unique-workflow-answer-002" in res["output"]
+
+
+async def test_workflow_mode_without_gateway_fails_loud(monkeypatch):
+    """gateway 未初始化时 workflow 模式必须返回明确失败。"""
+    _patch_gateway_unavailable(monkeypatch)
+    handler = UnifiedChatHandler()
+
+    res = await handler.submit_task(user_input="任意任务", tenant_id=TENANT, mode="workflow")
+
+    assert res["success"] is False
+    assert "gateway" in res["error"].lower()
 
 
 # ── 输出提取 ────────────────────────────────────────────────────────
