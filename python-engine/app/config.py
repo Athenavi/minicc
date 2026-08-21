@@ -75,6 +75,11 @@ class Settings(BaseSettings):
     # ── 记忆配置 ──
     short_term_ttl: int = 604800  # 7 天（秒）
     long_term_ttl: int = 0  # 0 = 永不过期
+    # L2 档案卡（用户长期记忆）容量与整理参数
+    memory_profile_max_items: int = 200      # 每用户条目软上限（超出按 置信度×新近度 淘汰 derived）
+    memory_archive_days: int = 180           # 超期未引用且低置信 → 归档
+    memory_dedup_threshold: float = 0.95     # cosine 超过该阈值判定近重复 → 整理时合并
+    memory_search_min_cosine: float = 0.30   # 语义检索召回下限
 
     # ── LLM Gateway 缓存 ──
     cache_l1_capacity: int = 2048

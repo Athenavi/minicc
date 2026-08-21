@@ -187,6 +187,20 @@ async def lifespan(app: FastAPI):
     llm_client.bind_gateway(_gateway)
     logger.info("Tool/Workflow gateways bound")
 
+    # ── 3.45 记忆服务（L2 档案卡：跨会话长期记忆 + 语义检索）──
+    # 依赖 PostgreSQL 连接池与嵌入链路；任一不可用则记忆服务不启用（API 返回 503 fail-loud）
+    try:
+        from app.db import get_pool
+        from app.memory.profile import ProfileStore
+        from app.memory.service import MemoryService, bind_service as bind_memory_service
+        bind_memory_service(MemoryService(
+            store=ProfileStore(get_pool()),
+            embedder=llm_client.embed,
+        ))
+        logger.info("Memory service initialized (L2 profile card)")
+    except Exception as e:
+        logger.warning("Memory service not available: %s", e)
+
     # ── 3.6. 六大工作台能力注册（互通基础：TaskRouter 依赖能力注册中心） ──
     from app.core.capabilities import preload_default_capabilities
     await preload_default_capabilities()
