@@ -52,7 +52,7 @@ async def dispatch_agent(body: AgentDispatchRequest) -> dict[str, Any]:
         from app.main import get_gateway
 
         try:
-            gateway = get_gateway()
+            gateway = await get_gateway()
         except RuntimeError:
             gateway = None
         if gateway is None:
