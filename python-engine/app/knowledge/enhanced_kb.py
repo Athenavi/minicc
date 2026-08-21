@@ -144,7 +144,20 @@ class EnhancedKnowledgeBase:
             )
             
             duration_ms = int((time.time() - start_time) * 1000)
-            
+
+            # 纵深防御：retriever 层已按 tenant 过滤（Milvus expr），
+            # 此处兜底剔除漏网的跨租户数据，绝不盲目把查询租户 ID
+            # 盖到归属不明的结果上
+            filtered_results = [
+                r for r in raw_results
+                if not r.get("tenant_id") or r.get("tenant_id") == tenant_id
+            ]
+            if len(filtered_results) < len(raw_results):
+                logger.warning(
+                    "kb.retrieve: dropped %d cross-tenant results (tenant=%s)",
+                    len(raw_results) - len(filtered_results), tenant_id,
+                )
+
             # 转换为 RetrieveResult
             results = [
                 RetrieveResult(
@@ -152,10 +165,10 @@ class EnhancedKnowledgeBase:
                     chunk_id=r["chunk_id"],
                     content=r["content"],
                     score=r["score"],
-                    tenant_id=tenant_id,
+                    tenant_id=r.get("tenant_id") or tenant_id,
                     trace_id=trace_id,
                 )
-                for r in raw_results
+                for r in filtered_results
             ]
             
             # 记录 span

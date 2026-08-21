@@ -40,13 +40,14 @@ class AgentRole(str, Enum):
 
 @dataclass
 class AgentSpec:
-    """Agent 规格定义"""
+    """Agent 角色规格定义"""
     role: AgentRole
     description: str
     system_prompt: str
     max_turns: int = 10
     model: str = "gpt-4o-mini"
-    compaction_config: Optional[CompactionConfig] = None
+    mode: str = "normal"  # 运行模式（normal/minimal/ptc/creative），见 app.agent.modes
+    compaction_config: Optional[CompactionConfig] = None  # 逐 agent 截断策略覆盖
 
 
 @dataclass
@@ -246,12 +247,13 @@ class AgentHub:
   }}
 ]"""
                 
-                async for event in planner_runtime.run_single_turn(
-                    task=type('obj', (object,), {
-                        'id': f"planning_{trace_id}",
-                        'content': planning_query,
-                        'tenant_id': tenant_id,
-                    })(),
+                async for event in planner_runtime.run(
+                    task=self._make_agent_task(
+                        spec=planner_spec,
+                        task_id=f"planning_{trace_id}",
+                        content=planning_query,
+                        tenant_id=tenant_id,
+                    ),
                 ):
                     event.trace_id = trace_id
                     yield event
@@ -287,12 +289,13 @@ class AgentHub:
                 trace_id=trace_id,
             )
             
-            async for event in orchestrator_runtime.run_single_turn(
-                task=type('obj', (object,), {
-                    'id': f"aggregation_{trace_id}",
-                    'content': aggregation_query,
-                    'tenant_id': tenant_id,
-                })(),
+            async for event in orchestrator_runtime.run(
+                task=self._make_agent_task(
+                    spec=orchestrator_spec,
+                    task_id=f"aggregation_{trace_id}",
+                    content=aggregation_query,
+                    tenant_id=tenant_id,
+                ),
             ):
                 event.trace_id = trace_id
                 yield event
@@ -452,12 +455,13 @@ class AgentHub:
         start_time = time.time()
 
         async with sem:
-            async for event in runtime.run_single_turn(
-                task=type('obj', (object,), {
-                    'id': f"subtask_{subtask_idx}_{trace_id}",
-                    'content': sub_query,
-                    'tenant_id': tenant_id,
-                })(),
+            async for event in runtime.run(
+                task=self._make_agent_task(
+                    spec=spec,
+                    task_id=f"subtask_{subtask_idx}_{trace_id}",
+                    content=sub_query,
+                    tenant_id=tenant_id,
+                ),
             ):
                 # 将输出写入共享上下文
                 if event.type == "text" and event.content:
@@ -484,15 +488,48 @@ class AgentHub:
         await event_queue.put(None)
 
     def _get_or_create_runtime(self, spec: AgentSpec) -> AgentRuntime:
-        """获取或创建指定角色的 Agent Runtime"""
+        """获取或创建指定角色的 Agent Runtime
+
+        mode/compaction 不在构造期注入——AgentRuntime.run() 按任务
+        从 task.llm_config 解析（见 runtime.py: get_mode_config），
+        由 _make_agent_task 负责把 spec 的 mode/model/compaction 装进任务。
+        """
         if spec.role not in self._runtime_pool:
             from app.agent.runtime import AgentRuntime
-            self._runtime_pool[spec.role] = AgentRuntime(
-                gateway=self.gateway,
-                mode_config=None,  # TODO: 从配置加载
-                compaction_config=spec.compaction_config,
-            )
+            self._runtime_pool[spec.role] = AgentRuntime(gateway=self.gateway)
         return self._runtime_pool[spec.role]
+
+    def _make_agent_task(
+        self,
+        spec: AgentSpec,
+        task_id: str,
+        content: str,
+        tenant_id: str,
+    ):
+        """按 spec 构造完整的 AgentTask（含 mode/model/compaction 配置注入）。
+
+        历史缺陷修复：此前用 type('obj', ...) 伪造任务对象，缺
+        llm_config/user_id/session_id 等属性，runtime.run() 一进入就
+        AttributeError；且调用过不存在的 run_single_turn。
+        """
+        from dataclasses import asdict
+        from app.agent.runtime import AgentTask
+
+        llm_config: dict = {"mode": spec.mode, "model": spec.model}
+        if spec.compaction_config is not None:
+            # 逐 agent 截断策略覆盖（runtime 侧按 llm_config["compaction"] 读取）
+            llm_config["compaction"] = asdict(spec.compaction_config)
+
+        return AgentTask(
+            id=task_id,
+            tenant_id=tenant_id,
+            user_id=f"collab:{tenant_id}",
+            session_id=f"collab:{task_id}",
+            content=content,
+            system_prompt=spec.system_prompt,
+            llm_config=llm_config,
+            max_turns=spec.max_turns,
+        )
     
     def _parse_planner_output(self, output: str) -> list[dict]:
         """解析 Planner 的 JSON 输出"""

@@ -372,6 +372,16 @@ class AgentRuntime:
         self._pending_approvals: dict[str, asyncio.Future] = {}
         # Trace writer 引用 (延迟初始化)
         self._trace_writer = None
+
+    @staticmethod
+    def _resolve_compaction(mode_cfg: ModeConfig, llm_config: dict) -> Optional[CompactionConfig]:
+        """解析截断策略：llm_config["compaction"]（逐任务覆盖）> mode_cfg.compaction（模式/租户配置）> 默认。"""
+        override = (llm_config or {}).get("compaction")
+        if isinstance(override, dict) and override:
+            return CompactionConfig(**override)
+        if mode_cfg.compaction:
+            return CompactionConfig(**mode_cfg.compaction)
+        return None
     
     async def run(self, task: AgentTask) -> AsyncIterator[AgentEvent]:
         """
@@ -447,10 +457,11 @@ class AgentRuntime:
                 tool_calls=m.get("tool_calls"),
             ) for m in messages]
             if mode_cfg.enable_compaction:
-                # SaaS：截断策略由模式/租户配置（mode_overrides.json 的 compaction 字段）
-                comp_cfg = CompactionConfig(**mode_cfg.compaction) if mode_cfg.compaction else None
+                # SaaS：截断策略由模式/租户配置（mode_overrides.json 的 compaction 字段）；
+                # 协同 Agent 可经 llm_config["compaction"] 做逐任务覆盖
+                comp_cfg = self._resolve_compaction(mode_cfg, llm_config)
                 messages = _compact_messages(messages, comp_cfg)
-            
+
             # 推理循环
             _thinking_last_flushed = 0  # 跨 turn 持久化，跟踪已向前端发送的 reasoning_content
             _last_reasoning = ""  # 保存最后轮次的思考内容，用于兜底输出
@@ -469,7 +480,7 @@ class AgentRuntime:
                 
                 # ── 分级压缩：根据 token 使用量选择压缩策略（SaaS：策略可配）──
                 if mode_cfg.enable_compaction:
-                    comp_cfg = CompactionConfig(**mode_cfg.compaction) if mode_cfg.compaction else None
+                    comp_cfg = self._resolve_compaction(mode_cfg, llm_config)
                     messages = _compact_messages(messages, comp_cfg)
                 
                 # ── 强制清理孤立的 tool 消息（确保 API 兼容性）──

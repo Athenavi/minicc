@@ -201,6 +201,7 @@ class TracingWorkflowEngine:
                         trace_id=trace_id,
                         node_index=node_idx,
                         node_fns=node_fns,
+                        tenant_id=tenant_id,
                     )
                     instance.results[node_id] = node_result
                     # node_result.output 是 JSON 字符串，解析回 dict 后合并进 state
@@ -315,11 +316,16 @@ class TracingWorkflowEngine:
         trace_id: str,
         node_index: int,
         node_fns: dict,
+        tenant_id: str = "",
     ) -> NodeResult:
         """执行单个节点 (带 trace)
 
         使用 _build_node_fns 构建的闭包函数（含 node_map / preds / gateway 上下文），
         而非直接导入 engine 模块的闭包局部函数。
+
+        注: 成功 span 由外层 run_workflow_with_trace 的 finally 统一记录
+        （带 tenant_id）；此处只记录节点级错误 span（内部捕获不外抛，
+        外层 except 不会触发）。
         """
         node_id = node["id"]
         node_type = node.get("node_type", node.get("type", "default"))
@@ -331,32 +337,18 @@ class TracingWorkflowEngine:
         executor = node_fns.get(node_id)
         if executor is None:
             raise ValueError(f"Unknown node type: {node_type} (id={node_id})")
-        
+
         try:
             # 节点函数签名: (state, node_id) -> 增量 dict
             output_dict = await executor(state, node_id)
 
-            node_result = NodeResult(
+            return NodeResult(
                 node_id=node_id,
                 status="completed",
                 output=json.dumps(output_dict, ensure_ascii=False),
                 duration_ms=int((time.time() - node_start) * 1000),
             )
-            
-            # 记录成功 span
-            await record_span(
-                trace_id=trace_id,
-                span_name=f"node:{node_label}",
-                duration_ms=node_result.duration_ms,
-                metadata={
-                    "node_type": node_type,
-                    "index": node_index,
-                    "output_length": len(output_dict),
-                },
-            )
-            
-            return node_result
-            
+
         except Exception as e:
             node_result = NodeResult(
                 node_id=node_id,
@@ -364,8 +356,8 @@ class TracingWorkflowEngine:
                 error=str(e),
                 duration_ms=int((time.time() - node_start) * 1000),
             )
-            
-            # 记录错误 span
+
+            # 记录错误 span（tenant 隔离：SaaS 安全，按租户分流）
             await record_span(
                 trace_id=trace_id,
                 span_name=f"error:{node_label}",
@@ -374,8 +366,9 @@ class TracingWorkflowEngine:
                     "node_type": node_type,
                     "error": str(e),
                 },
+                tenant_id=tenant_id,
             )
-            
+
             return node_result
     
     def _check_edit_commands(
