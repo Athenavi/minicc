@@ -35,7 +35,17 @@ type StatePayload struct {
 	ProviderID string `json:"p"`
 	Nonce      string `json:"n"`
 	ExpiresAt  int64  `json:"e"` // unix 秒
+	// Mode: "login"（默认，兼容旧令牌的空值）| "bind"（绑定已有账号）
+	Mode string `json:"m,omitempty"`
+	// UID 仅 bind 模式携带：发起绑定的已登录用户（state 由 authMW 保护的路由签发）
+	UID string `json:"u,omitempty"`
 }
+
+// State 双模式常量。
+const (
+	StateModeLogin = "login"
+	StateModeBind  = "bind"
+)
 
 // StateCodec 签发/校验 HMAC 签名的 SSO state 令牌。
 type StateCodec struct {
@@ -57,13 +67,30 @@ func NewStateCodecWithClock(key []byte, ttl time.Duration, now func() time.Time)
 
 // Issue 签发 state 令牌（payload JSON → base64url，附 HMAC-SHA256 签名）。
 func (c *StateCodec) Issue(providerID, nonce string) (string, error) {
+	return c.IssueMode(providerID, nonce, StateModeLogin, "")
+}
+
+// IssueMode 签发指定模式的 state（bind 模式须携带 uid）。
+func (c *StateCodec) IssueMode(providerID, nonce, mode, uid string) (string, error) {
 	if providerID == "" || nonce == "" {
 		return "", errors.New("state codec: providerID and nonce are required")
+	}
+	switch mode {
+	case StateModeLogin:
+		uid = "" // login 模式不携带 uid
+	case StateModeBind:
+		if uid == "" {
+			return "", errors.New("state codec: bind mode requires uid")
+		}
+	default:
+		return "", errors.New("state codec: unknown mode " + mode)
 	}
 	payload := StatePayload{
 		ProviderID: providerID,
 		Nonce:      nonce,
 		ExpiresAt:  c.now().Add(c.ttl).Unix(),
+		Mode:       mode,
+		UID:        uid,
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -127,20 +154,34 @@ func RandomNonce() (string, error) {
 // ── OIDC IdP 交互 ────────────────────────────────────────
 
 // OIDCProviderConfig 是发起 OIDC 流程所需的 provider 配置（secret 已解密）。
+// protocol=oauth2 时 Issuer 可为空，改用 AuthURL/TokenURL/UserinfoURL。
 type OIDCProviderConfig struct {
 	Issuer       string
 	ClientID     string
 	ClientSecret string
 	Scopes       []string
 	RedirectURL  string
+
+	// ── OAuth2 扩展（protocol=oauth2 时生效）──
+	Protocol     string            // "oidc" | "oauth2"；空视为 oidc
+	ProviderType string            // github/wechat/dingtalk/feishu/qq/custom
+	AuthURL      string            // 授权端点（模板缺省自动填充）
+	TokenURL     string            // token 端点
+	UserinfoURL  string            // userinfo 端点
+	Extra        map[string]string // provider 特有项（微信 mode=open|mp 等）
 }
 
-// IDTokenResult 是授权码换 token + id_token 校验后的结果。
+// IDTokenResult 是授权码换 token + 身份校验后的结果
+//（OIDC 来自 id_token claims；OAuth2 来自 userinfo 接口）。
 type IDTokenResult struct {
 	Subject string
 	Email   string
 	// Roles 来自 IdP 的可选 "roles" claim（字符串或字符串数组），用于 role_mapping 匹配
 	Roles []string
+	// Name / AvatarURL / Phone 为 userinfo 可选字段（OAuth2 家族填充）
+	Name      string
+	AvatarURL string
+	Phone     string
 }
 
 // OIDCExchanger 抽象与 IdP 的交互（发现/授权 URL/授权码交换/id_token 校验），

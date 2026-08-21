@@ -135,6 +135,33 @@ async def ensure_tables():
         "ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS error_message TEXT",
         # knowledge_documents: 租户隔离列 + 索引
         "ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS tenant_id VARCHAR(32) NOT NULL DEFAULT 'default'",
+        # ── 三方登录（与 migrations/20260821000001_oauth_login.up.sql 双轨同步）──
+        # ent_oidc_providers: OAuth2 协议 + 预设模板扩展列
+        "ALTER TABLE ent_oidc_providers ADD COLUMN IF NOT EXISTS protocol VARCHAR(16) NOT NULL DEFAULT 'oidc'",
+        "ALTER TABLE ent_oidc_providers ADD COLUMN IF NOT EXISTS provider_type VARCHAR(32) NOT NULL DEFAULT 'custom'",
+        "ALTER TABLE ent_oidc_providers ADD COLUMN IF NOT EXISTS display_name VARCHAR(64)",
+        "ALTER TABLE ent_oidc_providers ADD COLUMN IF NOT EXISTS icon VARCHAR(64)",
+        "ALTER TABLE ent_oidc_providers ADD COLUMN IF NOT EXISTS sort_order INT NOT NULL DEFAULT 100",
+        "ALTER TABLE ent_oidc_providers ADD COLUMN IF NOT EXISTS auth_url VARCHAR(512)",
+        "ALTER TABLE ent_oidc_providers ADD COLUMN IF NOT EXISTS token_url VARCHAR(512)",
+        "ALTER TABLE ent_oidc_providers ADD COLUMN IF NOT EXISTS userinfo_url VARCHAR(512)",
+        "ALTER TABLE ent_oidc_providers ADD COLUMN IF NOT EXISTS extra JSONB NOT NULL DEFAULT '{}'",
+        # users: 手机号 + 密码可用性标识（SSO 建号用户 password_set=false）
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(32)",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_set BOOLEAN NOT NULL DEFAULT TRUE",
+        # 人机验证配置表（幂等建表，主迁移在 Go 侧 SQL 文件）
+        """CREATE TABLE IF NOT EXISTS ent_captcha_config (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tenant_id UUID NOT NULL REFERENCES tenants(id),
+            provider VARCHAR(32) NOT NULL DEFAULT 'turnstile',
+            site_key VARCHAR(256) NOT NULL DEFAULT '',
+            secret_enc TEXT NOT NULL DEFAULT '',
+            verify_url VARCHAR(512),
+            enabled BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE(tenant_id)
+        )""",
     ]
     for sql in migrations:
         try:

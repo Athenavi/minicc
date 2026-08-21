@@ -20,8 +20,9 @@ const tokenCookieName = "minicc_token"
 const DefaultTenantID = db.DefaultTenantID
 
 type AuthHandler struct {
-	auth *auth.Authenticator
-	cfg  *config.Config
+	auth    *auth.Authenticator
+	cfg     *config.Config
+	captcha *CaptchaHandler // 可选：启用后人机验证 + 失败升级（nil = 跳过，单测用）
 }
 
 func NewAuthHandler(cfg *config.Config) *AuthHandler {
@@ -31,9 +32,16 @@ func NewAuthHandler(cfg *config.Config) *AuthHandler {
 	}
 }
 
+// SetCaptchaHandler 注入人机验证栅栏（网关装配时调用）。
+func (h *AuthHandler) SetCaptchaHandler(c *CaptchaHandler) {
+	h.captcha = c
+}
+
 type LoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email         string `json:"email"`
+	Password      string `json:"password"`
+	CaptchaToken  string `json:"captcha_token"`
+	CaptchaRandstr string `json:"captcha_randstr"`
 }
 
 type UserResponse struct {
@@ -87,6 +95,16 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 人机验证栅栏：启用/失败升级时强制校验；达到硬上限直接 429
+	if h.captcha != nil {
+		if err := h.captcha.Enforce(w, r, &auth.CaptchaToken{
+			Token:   req.CaptchaToken,
+			Randstr: req.CaptchaRandstr,
+		}); err != nil {
+			return
+		}
+	}
+
 	// No dev bypass — always validate against DB
 	ctx := r.Context()
 
@@ -114,14 +132,24 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Warn("login failed", "email", req.Email, "error", err)
 		db.AuditLog(r.Context(), "", "login_failed", "/v1/auth/login", "email="+req.Email, r.RemoteAddr, nil)
+		if h.captcha != nil {
+			h.captcha.RecordFailure(r.Context(), r)
+		}
 		Unauthorized(w, "invalid email or password")
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(req.Password)); err != nil {
 		db.AuditLog(r.Context(), "", "login_failed", "/v1/auth/login", "email="+req.Email, r.RemoteAddr, nil)
+		if h.captcha != nil {
+			h.captcha.RecordFailure(r.Context(), r)
+		}
 		Unauthorized(w, "invalid email or password")
 		return
+	}
+
+	if h.captcha != nil {
+		h.captcha.ClearFailures(r.Context(), r)
 	}
 
 	token, err := h.auth.GenerateToken(user.ID, user.Email, user.Role, auth.RolePermissions[user.Role])
@@ -139,9 +167,11 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 }
 
 type RegisterRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	Name     string `json:"name"`
+	Email          string `json:"email"`
+	Password       string `json:"password"`
+	Name           string `json:"name"`
+	CaptchaToken   string `json:"captcha_token"`
+	CaptchaRandstr string `json:"captcha_randstr"`
 }
 
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
@@ -154,6 +184,16 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	if err := DecodeJSON(w, r, &req); err != nil {
 		BadRequest(w, ErrInvalidReq)
 		return
+	}
+
+	// 注册接口防刷：人机验证栅栏
+	if h.captcha != nil {
+		if err := h.captcha.Enforce(w, r, &auth.CaptchaToken{
+			Token:   req.CaptchaToken,
+			Randstr: req.CaptchaRandstr,
+		}); err != nil {
+			return
+		}
 	}
 
 	if req.Email == "" || req.Password == "" || req.Name == "" {
@@ -320,6 +360,51 @@ func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 
 type RefreshRequest struct {
 	Token string `json:"token"`
+}
+
+// Session GET /v1/auth/session（公开，凭 httpOnly cookie）
+// SSO 回调只设置 JWT cookie；前端登录态基于 localStorage Bearer token。
+// 本端点把 cookie 会话引导为与 login 相同 shape 的 {token, user} 响应，
+// 供 SSO 登录回跳后前端建立本地会话。
+func (h *AuthHandler) Session(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie(tokenCookieName)
+	if err != nil || cookie.Value == "" {
+		Unauthorized(w, ErrAuthRequired)
+		return
+	}
+	claims, err := h.auth.ValidateToken(cookie.Value)
+	if err != nil || claims == nil {
+		Unauthorized(w, ErrAuthRequired)
+		return
+	}
+
+	ctx := r.Context()
+	tx, err := db.Pool.Begin(ctx)
+	if err != nil {
+		slog.Error("begin tx for tenant context", "error", err)
+		InternalError(w, "session lookup failed")
+		return
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, "SELECT set_config('app.current_tenant_id', $1, true)", DefaultTenantID); err != nil {
+		slog.Error("set tenant context", "error", err)
+		InternalError(w, "session lookup failed")
+		return
+	}
+
+	var user UserResponse
+	if err := tx.QueryRow(ctx,
+		`SELECT id, email, name, role FROM users WHERE id = $1 AND tenant_id = $2`,
+		claims.UserID, DefaultTenantID,
+	).Scan(&user.ID, &user.Email, &user.Name, &user.Role); err != nil {
+		Unauthorized(w, ErrAuthRequired)
+		return
+	}
+
+	OK(w, map[string]interface{}{
+		"token": cookie.Value,
+		"user":  user,
+	})
 }
 
 func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {

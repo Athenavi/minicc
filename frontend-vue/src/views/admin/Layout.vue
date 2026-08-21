@@ -25,6 +25,7 @@ import {
   LogoutOutlined,
   TeamOutlined,
   GlobalOutlined,
+  SafetyOutlined,
 } from '@ant-design/icons-vue'
 
 const router = useRouter()
@@ -45,6 +46,7 @@ const menuItems: any[] = [
   { key: '/admin/tenants', label: '租户管理', icon: () => h(TeamOutlined) },
   { key: '/admin/api-keys', label: 'API Key 管理', icon: () => h(KeyOutlined) },
   { key: '/admin/domains', label: '域名管理', icon: () => h(GlobalOutlined) },
+  { key: '/admin/oauth-providers', label: '三方登录', icon: () => h(SafetyOutlined) },
   { key: '/admin/redis', label: 'Redis 管理', icon: () => h(DatabaseOutlined) },
   { key: '/admin/database', label: '数据库管理', icon: () => h(DatabaseOutlined) },
   { key: '/admin/queue', label: '队列监控', icon: () => h(OrderedListOutlined) },

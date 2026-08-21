@@ -1,12 +1,16 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { Card, Form, FormItem, Input, Button, Alert, Space } from 'ant-design-vue'
 import { MailOutlined, LockOutlined } from '@ant-design/icons-vue'
 import { useAuthStore } from '../stores/auth'
+import { getCaptchaPublicConfig } from '../api/auth'
+import CaptchaWidget from '../components/CaptchaWidget.vue'
+import SsoLoginButtons from '../components/SsoLoginButtons.vue'
 import type { Rule } from 'ant-design-vue/es/form'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 
 const formRef = ref()
@@ -28,6 +32,42 @@ const rules: Record<string, Rule[]> = {
 
 const error = ref('')
 
+// ── 人机验证（管理员启用或同 IP 失败升级时要求）──
+const captchaConfig = ref({ enabled: false, provider: '', site_key: '', verify_url: '' })
+const captchaToken = ref('')
+const captchaRandstr = ref('')
+const captchaRef = ref<InstanceType<typeof CaptchaWidget>>()
+
+const needCaptcha = ref(false)
+
+function markCaptchaDirty() {
+  captchaToken.value = ''
+  captchaRandstr.value = ''
+}
+
+onMounted(async () => {
+  // SSO 登录回跳（successURL 带 ?sso=ok）：cookie 换 Bearer token 建立本地会话
+  if (route.query.sso === 'ok' && !authStore.token) {
+    const ok = await authStore.bootstrapSession()
+    if (ok) {
+      router.push('/chat')
+      return
+    }
+  }
+  try {
+    const cfg = await getCaptchaPublicConfig()
+    captchaConfig.value = {
+      enabled: !!cfg.enabled,
+      provider: cfg.provider || '',
+      site_key: cfg.site_key || '',
+      verify_url: cfg.verify_url || '',
+    }
+  } catch {
+    // 配置接口不可达时按无验证码处理（后端仍会兜底校验）
+  }
+  needCaptcha.value = captchaConfig.value.enabled
+})
+
 async function handleLogin() {
   error.value = ''
   try {
@@ -35,11 +75,34 @@ async function handleLogin() {
   } catch {
     return
   }
+  if (needCaptcha.value && captchaConfig.value.provider !== 'custom' && !captchaToken.value) {
+    error.value = '请先完成人机验证'
+    return
+  }
   try {
-    await authStore.login(form.value.email, form.value.password)
+    await authStore.login(form.value.email, form.value.password, {
+      token: captchaToken.value,
+      randstr: captchaRandstr.value,
+    })
     router.push('/chat')
   } catch (e: any) {
-    error.value = e.response?.data?.error || '登录失败'
+    const status = e.response?.status
+    const apiErr = e.response?.data?.error
+    if (status === 428 || apiErr === 'captcha_required') {
+      // 后端要求人机验证（同 IP 失败升级）→ 强制展示验证码组件
+      needCaptcha.value = true
+      error.value = '操作过于频繁，请完成人机验证后重试'
+      captchaRef.value?.reset()
+      markCaptchaDirty()
+      return
+    }
+    if (status === 403 && String(apiErr).includes('captcha')) {
+      error.value = '人机验证未通过，请重新验证'
+      captchaRef.value?.reset()
+      markCaptchaDirty()
+      return
+    }
+    error.value = apiErr || '登录失败'
   }
 }
 </script>
@@ -83,6 +146,17 @@ async function handleLogin() {
             </Input>
           </FormItem>
 
+          <FormItem v-if="needCaptcha" label="人机验证">
+            <CaptchaWidget
+              ref="captchaRef"
+              :provider="captchaConfig.provider"
+              :site-key="captchaConfig.site_key"
+              :verify-url="captchaConfig.verify_url"
+              @verified="(p: any) => { captchaToken = p.token; captchaRandstr = p.randstr || '' }"
+              @expired="markCaptchaDirty"
+            />
+          </FormItem>
+
           <FormItem>
             <Space direction="vertical" style="width: 100%">
               <Button type="primary" html-type="submit" block :loading="authStore.loading" size="large">
@@ -94,6 +168,8 @@ async function handleLogin() {
             </Space>
           </FormItem>
         </Form>
+
+        <SsoLoginButtons />
       </Card>
     </div>
   </div>

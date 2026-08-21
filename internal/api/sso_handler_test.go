@@ -14,6 +14,7 @@ import (
 	"github.com/athenavi/minicc/internal/auth"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // ── fake 基础设施 ───────────────────────────────────────
@@ -77,13 +78,15 @@ func newTestSSOHandler(store entQuerier, idp auth.OIDCExchanger) *SSOHandler {
 		cfg:        &config.Config{JWTExpiration: time.Hour},
 		db:         store,
 		exchanger:  idp,
+		oauth2:     idp, // 测试同样注入 fake
 		codec:      auth.NewStateCodec(testEncKey, time.Minute),
 		encKey:     testEncKey,
 		successURL: "/",
+		bindURL:    "/profile?bind=ok",
 	}
 }
 
-// providerScan 模拟 ent_oidc_providers 行扫描（列顺序与 ssoProviderColumns 一致）。
+// providerScan 模拟 ent_oidc_providers 行扫描（列顺序与 ssoProviderColumns 一致，21 列）。
 func providerScan(enabled, autoProvision bool) func(dest ...any) error {
 	secretEnc, _ := auth.EncryptAESGCM(testEncKey, "idp-secret")
 	return func(dest ...any) error {
@@ -97,8 +100,17 @@ func providerScan(enabled, autoProvision bool) func(dest ...any) error {
 		*dest[7].(*bool) = enabled
 		*dest[8].(*bool) = autoProvision
 		*dest[9].(*[]byte) = []byte(`{"idp-admin":"admin"}`)
-		*dest[10].(*time.Time) = time.Now()
-		*dest[11].(*time.Time) = time.Now()
+		*dest[10].(*string) = "oidc"
+		*dest[11].(*string) = "custom"
+		*dest[12].(*string) = "" // display_name
+		*dest[13].(*string) = "" // icon
+		*dest[14].(*int) = 100
+		*dest[15].(*string) = "" // auth_url
+		*dest[16].(*string) = "" // token_url
+		*dest[17].(*string) = "" // userinfo_url
+		*dest[18].(*[]byte) = []byte(`{}`)
+		*dest[19].(*time.Time) = time.Now()
+		*dest[20].(*time.Time) = time.Now()
 		return nil
 	}
 }
@@ -247,5 +259,324 @@ func TestResolveRole(t *testing.T) {
 	}
 	if got := resolveRole(nil, nil); got != "user" {
 		t.Fatalf("expected default user for nil mapping, got %q", got)
+	}
+}
+
+// ── normalizeProviderInput 协议校验与模板填充 ───────────
+
+func TestNormalizeProviderInput(t *testing.T) {
+	// 非法协议
+	if _, _, _, _, _, _, _, err := normalizeProviderInput("saml", "", "", "", "", "", nil); err == nil {
+		t.Fatal("expected error for unknown protocol")
+	}
+	// 未知 provider_type
+	if _, _, _, _, _, _, _, err := normalizeProviderInput("oidc", "myspace", "", "", "", "", nil); err == nil {
+		t.Fatal("expected error for unknown provider_type")
+	}
+	// github oauth2 模板端点自动填充 + 缺省 scopes
+	issuer, protocol, ptype, authURL, tokenURL, userinfoURL, scopes, err :=
+		normalizeProviderInput("", "github", "", "", "", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if protocol != auth.ProtocolOAuth2 || ptype != auth.ProviderGitHub {
+		t.Fatalf("protocol/type = %q/%q", protocol, ptype)
+	}
+	if issuer != "" || authURL == "" || tokenURL == "" || userinfoURL == "" {
+		t.Fatalf("github template endpoints not filled: %q %q %q", authURL, tokenURL, userinfoURL)
+	}
+	if len(scopes) == 0 {
+		t.Fatal("default scopes not filled")
+	}
+}
+
+// ── Login bind 模式登录态校验 ──────────────────────────
+
+// bind 模式无登录态（无 claims / 无 cookie）→ 401，不得签发 state。
+func TestSSOLogin_BindModeWithoutLogin_401(t *testing.T) {
+	store := &fakeQuerier{queryRow: func(sql string, args ...any) pgx.Row {
+		return &fakeRow{scan: providerScan(true, true)}
+	}}
+	h := newTestSSOHandler(store, &fakeExchanger{authURL: "https://idp.example.com/authorize"})
+
+	req := httptest.NewRequest("GET", "/v1/auth/sso/login/11111111-1111-1111-1111-111111111111?mode=bind", nil)
+	req.SetPathValue("providerID", "11111111-1111-1111-1111-111111111111")
+	w := httptest.NewRecorder()
+	h.Login(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for bind without login, got %d", w.Code)
+	}
+}
+
+// bind 模式携带登录态 → 302 到 IdP，state 携带 bind+uid。
+func TestSSOLogin_BindMode_Redirects(t *testing.T) {
+	store := &fakeQuerier{queryRow: func(sql string, args ...any) pgx.Row {
+		return &fakeRow{scan: providerScan(true, true)}
+	}}
+	h := newTestSSOHandler(store, &fakeExchanger{authURL: "https://idp.example.com/authorize"})
+
+	req := requestWithClaims("GET", "/v1/auth/sso/login/11111111-1111-1111-1111-111111111111?mode=bind", "", userClaims("user-1"))
+	req.SetPathValue("providerID", "11111111-1111-1111-1111-111111111111")
+	w := httptest.NewRecorder()
+	h.Login(w, req)
+
+	if w.Code != http.StatusFound {
+		t.Fatalf("expected 302, got %d", w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc != "https://idp.example.com/authorize" {
+		t.Fatalf("location = %q", loc)
+	}
+}
+
+// ── bind 回调分支 ──────────────────────────────────────
+
+// bindStore 按 SQL 分发 bind 回调各阶段行为。
+func bindStore(identityScan func(dest ...any) error, insertErr error) *fakeQuerier {
+	return &fakeQuerier{
+		queryRow: func(sql string, args ...any) pgx.Row {
+			switch {
+			case strings.Contains(sql, "ent_oidc_providers"):
+				return &fakeRow{scan: providerScan(true, true)}
+			case strings.Contains(sql, "ent_user_identities"):
+				return &fakeRow{scan: identityScan}
+			default:
+				return &fakeRow{}
+			}
+		},
+		exec: func(sql string, args ...any) (pgconn.CommandTag, error) {
+			if strings.Contains(sql, "INSERT INTO ent_user_identities") {
+				return pgconn.NewCommandTag("INSERT 0 1"), insertErr
+			}
+			return pgconn.NewCommandTag("UPDATE 1"), nil
+		},
+	}
+}
+
+func bindCallbackRequest(t *testing.T, h *SSOHandler, uid string) *httptest.ResponseRecorder {
+	t.Helper()
+	state, err := h.codec.IssueMode("11111111-1111-1111-1111-111111111111", "nonce-1", auth.StateModeBind, uid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest("GET", "/v1/auth/sso/callback?code=abc&state="+state, nil)
+	w := httptest.NewRecorder()
+	h.Callback(w, req)
+	return w
+}
+
+func identityScanRow(userID string) func(dest ...any) error {
+	return func(dest ...any) error {
+		*dest[0].(*string) = userID
+		*dest[1].(*string) = "bound@example.com"
+		*dest[2].(*string) = "Bound User"
+		*dest[3].(*string) = "user"
+		return nil
+	}
+}
+
+// 已绑定他人 → 409 中文提示。
+func TestSSOCallback_BindConflict_409(t *testing.T) {
+	store := bindStore(identityScanRow("user-2"), nil)
+	h := newTestSSOHandler(store, &fakeExchanger{result: &auth.IDTokenResult{Subject: "sub-1"}})
+
+	w := bindCallbackRequest(t, h, "user-1")
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d (body=%s)", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "已绑定其他用户") {
+		t.Fatalf("expected conflict message, got %s", w.Body.String())
+	}
+}
+
+// 已绑定本人 → 幂等 302 到 bindURL。
+func TestSSOCallback_BindSelf_Idempotent(t *testing.T) {
+	store := bindStore(identityScanRow("user-1"), nil)
+	h := newTestSSOHandler(store, &fakeExchanger{result: &auth.IDTokenResult{Subject: "sub-1"}})
+
+	w := bindCallbackRequest(t, h, "user-1")
+	if w.Code != http.StatusFound {
+		t.Fatalf("expected 302, got %d (body=%s)", w.Code, w.Body.String())
+	}
+	if loc := w.Header().Get("Location"); loc != h.bindURL {
+		t.Fatalf("location = %q", loc)
+	}
+}
+
+// 未绑定 → INSERT 成功 → 302 到 bindURL。
+func TestSSOCallback_BindSuccess(t *testing.T) {
+	inserted := false
+	store := bindStore(func(dest ...any) error { return pgx.ErrNoRows }, nil)
+	store.exec = func(sql string, args ...any) (pgconn.CommandTag, error) {
+		if strings.Contains(sql, "INSERT INTO ent_user_identities") {
+			inserted = true
+			if args[0] != "user-1" {
+				t.Errorf("insert user_id = %v, want user-1", args[0])
+			}
+		}
+		return pgconn.NewCommandTag("INSERT 0 1"), nil
+	}
+	h := newTestSSOHandler(store, &fakeExchanger{result: &auth.IDTokenResult{Subject: "sub-1"}})
+
+	w := bindCallbackRequest(t, h, "user-1")
+	if w.Code != http.StatusFound {
+		t.Fatalf("expected 302, got %d (body=%s)", w.Code, w.Body.String())
+	}
+	if !inserted {
+		t.Fatal("expected identity INSERT to be executed")
+	}
+}
+
+// INSERT 唯一冲突（并发绑定）→ 409。
+func TestSSOCallback_BindUniqueViolation_409(t *testing.T) {
+	store := bindStore(func(dest ...any) error { return pgx.ErrNoRows },
+		&pgconn.PgError{Code: "23505"})
+	h := newTestSSOHandler(store, &fakeExchanger{result: &auth.IDTokenResult{Subject: "sub-1"}})
+
+	w := bindCallbackRequest(t, h, "user-1")
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d", w.Code)
+	}
+}
+
+// ── DeleteIdentity 解绑守卫 ────────────────────────────
+
+func deleteIdentityRequest(h *SSOHandler, passwordSet bool, count int) *httptest.ResponseRecorder {
+	store := &fakeQuerier{
+		queryRow: func(sql string, args ...any) pgx.Row {
+			switch {
+			case strings.Contains(sql, "u.password_set"):
+				return &fakeRow{scan: func(dest ...any) error {
+					*dest[0].(*bool) = passwordSet
+					*dest[1].(*int) = count
+					return nil
+				}}
+			case strings.Contains(sql, "SELECT subject FROM ent_user_identities"):
+				return &fakeRow{scan: func(dest ...any) error {
+					*dest[0].(*string) = "sub-1"
+					return nil
+				}}
+			default:
+				return &fakeRow{}
+			}
+		},
+		exec: func(sql string, args ...any) (pgconn.CommandTag, error) {
+			return pgconn.NewCommandTag("DELETE 1"), nil
+		},
+	}
+	h.db = store
+	req := requestWithClaims("DELETE", "/v1/auth/sso/identities/22222222-2222-2222-2222-222222222222", "", userClaims("user-1"))
+	req.SetPathValue("id", "22222222-2222-2222-2222-222222222222")
+	w := httptest.NewRecorder()
+	h.DeleteIdentity(w, req)
+	return w
+}
+
+// 无密码且最后一个三方身份 → 403（保底至少一种登录方式）。
+func TestDeleteIdentity_LastIdentityNoPassword_403(t *testing.T) {
+	h := newTestSSOHandler(&fakeQuerier{}, &fakeExchanger{})
+	w := deleteIdentityRequest(h, false, 1)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d (body=%s)", w.Code, w.Body.String())
+	}
+}
+
+// 已设密码 → 允许解绑。
+func TestDeleteIdentity_WithPassword_OK(t *testing.T) {
+	h := newTestSSOHandler(&fakeQuerier{}, &fakeExchanger{})
+	w := deleteIdentityRequest(h, true, 1)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body=%s)", w.Code, w.Body.String())
+	}
+}
+
+// 多个三方身份 → 允许解绑。
+func TestDeleteIdentity_MultipleIdentities_OK(t *testing.T) {
+	h := newTestSSOHandler(&fakeQuerier{}, &fakeExchanger{})
+	w := deleteIdentityRequest(h, false, 2)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body=%s)", w.Code, w.Body.String())
+	}
+}
+
+// ── SetPassword ────────────────────────────────────────
+
+func passwordStore(t *testing.T, passwordHash string, passwordSet bool) *fakeQuerier {
+	t.Helper()
+	return &fakeQuerier{
+		queryRow: func(sql string, args ...any) pgx.Row {
+			if strings.Contains(sql, "password_hash, password_set") {
+				return &fakeRow{scan: func(dest ...any) error {
+					*dest[0].(*string) = passwordHash
+					*dest[1].(*bool) = passwordSet
+					return nil
+				}}
+			}
+			return &fakeRow{}
+		},
+		exec: func(sql string, args ...any) (pgconn.CommandTag, error) {
+			return pgconn.NewCommandTag("UPDATE 1"), nil
+		},
+	}
+}
+
+// SSO 建号用户首设密码：无需 current_password。
+func TestSetPassword_FirstSetNoCurrentRequired(t *testing.T) {
+	h := newTestSSOHandler(passwordStore(t, "", false), &fakeExchanger{})
+
+	body := `{"new_password":"new-strong-pass"}`
+	req := requestWithClaims("POST", "/v1/auth/password", body, userClaims("user-1"))
+	w := httptest.NewRecorder()
+	h.SetPassword(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body=%s)", w.Code, w.Body.String())
+	}
+}
+
+// 已设密码但旧密码错误 → 401。
+func TestSetPassword_WrongCurrent_401(t *testing.T) {
+	hash, err := bcrypt.GenerateFromPassword([]byte("correct-horse"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := newTestSSOHandler(passwordStore(t, string(hash), true), &fakeExchanger{})
+
+	body := `{"current_password":"wrong","new_password":"new-strong-pass"}`
+	req := requestWithClaims("POST", "/v1/auth/password", body, userClaims("user-1"))
+	w := httptest.NewRecorder()
+	h.SetPassword(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d (body=%s)", w.Code, w.Body.String())
+	}
+}
+
+// 已设密码但缺 current_password → 400。
+func TestSetPassword_MissingCurrent_400(t *testing.T) {
+	hash, _ := bcrypt.GenerateFromPassword([]byte("correct-horse"), bcrypt.MinCost)
+	h := newTestSSOHandler(passwordStore(t, string(hash), true), &fakeExchanger{})
+
+	body := `{"new_password":"new-strong-pass"}`
+	req := requestWithClaims("POST", "/v1/auth/password", body, userClaims("user-1"))
+	w := httptest.NewRecorder()
+	h.SetPassword(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+// 新密码长度不足 → 400。
+func TestSetPassword_TooShort_400(t *testing.T) {
+	h := newTestSSOHandler(passwordStore(t, "", false), &fakeExchanger{})
+
+	body := `{"new_password":"short"}`
+	req := requestWithClaims("POST", "/v1/auth/password", body, userClaims("user-1"))
+	w := httptest.NewRecorder()
+	h.SetPassword(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
 	}
 }

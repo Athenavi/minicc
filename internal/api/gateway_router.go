@@ -122,6 +122,11 @@ func NewGatewayRouter(
 	authHandler := NewAuthHandler(cfg)
 	authMW := AuthMiddleware(authenticator)
 
+	// SSO 三方登录 + 人机验证（防接口滥用）
+	ssoHandler := NewSSOHandler(authenticator, cfg)
+	captchaHandler := NewCaptchaHandler(cfg)
+	authHandler.SetCaptchaHandler(captchaHandler)
+
 	// Billing
 	billingStore := billing.NewPGStore()
 	billingStore.EnsureTables(context.Background())
@@ -198,6 +203,15 @@ func NewGatewayRouter(
 	registerPublicEndpoints(mux, authMW, rlMW, publicMW, searchHandler, shareHandler)
 	registerAgentRoutes(mux, authMW, rlMW, publicMW, sanitizeMW, submitHandler, billingMgr, agentSem, eventHub, sessionMgr, authenticator, rpaHub)
 	registerAuthRoutes(mux, authHandler, authMW, rlMW)
+
+	// ── SSO 三方登录（公开流程 rlMW；用户自助 authMW；管理 authMW + sso:manage）──
+	ssoHandler.RegisterPublicRoutes(mux, rlMW)
+	ssoHandler.RegisterUserRoutes(mux, authMW)
+	ssoHandler.RegisterAdminRoutes(mux, authMW)
+
+	// ── 人机验证：公开配置下发（登录页拉取）+ 管理配置 ──
+	captchaHandler.RegisterPublicRoutes(mux, rlMW)
+	captchaHandler.RegisterAdminRoutes(mux, authMW)
 	registerSystemRoutes(mux, authMW, rlMW, sanitizeMW, installHandler, editorHandler, toolHandler, systemHandler, traceHandler)
 	registerConversationRoutes(mux, conversationHandler, shareHandler, authMW, rlMW)
 	registerMediaRoutes(mux, mediaHandler, authMW, rlMW, cfg.StorageRoot)
@@ -364,6 +378,8 @@ func registerAuthRoutes(mux *http.ServeMux, authHandler *AuthHandler, authMW, rl
 	mux.Handle("POST /v1/auth/register", rlMW(http.HandlerFunc(authHandler.Register)))
 	mux.Handle("POST /v1/auth/refresh", rlMW(http.HandlerFunc(authHandler.Refresh)))
 	mux.Handle("POST /v1/auth/logout", rlMW(http.HandlerFunc(authHandler.Logout)))
+	// SSO cookie → Bearer token 会话引导（公开：httpOnly cookie 自带凭据）
+	mux.Handle("GET /v1/auth/session", rlMW(http.HandlerFunc(authHandler.Session)))
 	mux.Handle("GET /v1/auth/profile", authMW(rlMW(http.HandlerFunc(authHandler.Profile))))
 	mux.Handle("PUT /v1/auth/profile", authMW(rlMW(http.HandlerFunc(authHandler.UpdateProfile))))
 }

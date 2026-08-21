@@ -74,6 +74,7 @@ type Config struct {
 
 	// 支付（支付宝/微信）
 	PublicBaseURL     string // 公网可达的基础 URL，用于构造支付回调 notify_url
+	FrontendURL       string // 前端地址（如 http://localhost:5173）；SSO 回调 302 目标，空 = 同源 "/"
 	AlipayAppID       string
 	AlipayPrivateKey  string // 应用私钥（PEM）
 	AlipayPublicKey   string // 支付宝公钥（PEM）
@@ -155,6 +156,7 @@ func Load() *Config {
 
 		// 支付（支付宝/微信）
 		PublicBaseURL:      getEnv("PUBLIC_BASE_URL", ""),
+		FrontendURL:        getEnv("FRONTEND_URL", ""),
 		AlipayAppID:        getEnv("ALIPAY_APP_ID", ""),
 		AlipayPrivateKey:   getEnv("ALIPAY_PRIVATE_KEY", ""),
 		AlipayPublicKey:    getEnv("ALIPAY_PUBLIC_KEY", ""),

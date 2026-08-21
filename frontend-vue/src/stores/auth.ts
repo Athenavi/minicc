@@ -18,10 +18,15 @@ export const useAuthStore = defineStore('auth', () => {
   const isAuthenticated = computed(() => !!token.value)
   const isAdmin = computed(() => user.value?.role === 'admin')
 
-  async function login(email: string, password: string) {
+  async function login(email: string, password: string, captcha?: { token: string; randstr?: string }) {
     loading.value = true
     try {
-      const response = await api.post('/v1/auth/login', { email, password })
+      const response = await api.post('/v1/auth/login', {
+        email,
+        password,
+        captcha_token: captcha?.token || '',
+        captcha_randstr: captcha?.randstr || '',
+      })
       const d = response.data?.data
       if (!d) throw new Error('invalid login response')
       token.value = d.token
@@ -33,10 +38,16 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function register(email: string, password: string, name: string) {
+  async function register(email: string, password: string, name: string, captcha?: { token: string; randstr?: string }) {
     loading.value = true
     try {
-      const response = await api.post('/v1/auth/register', { email, password, name })
+      const response = await api.post('/v1/auth/register', {
+        email,
+        password,
+        name,
+        captcha_token: captcha?.token || '',
+        captcha_randstr: captcha?.randstr || '',
+      })
       const d = response.data?.data
       if (!d) throw new Error('invalid register response')
       token.value = d.token
@@ -67,6 +78,21 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /** SSO 回跳引导：用 httpOnly cookie 换取 Bearer token（SSO 登录后前端建立本地会话） */
+  async function bootstrapSession(): Promise<boolean> {
+    try {
+      const response = await api.get('/v1/auth/session', { withCredentials: true })
+      const d = response.data?.data
+      if (!d?.token) return false
+      token.value = d.token
+      user.value = d.user
+      localStorage.setItem('token', d.token)
+      return true
+    } catch {
+      return false
+    }
+  }
+
   function logout() {
     token.value = ''
     user.value = null
@@ -82,6 +108,7 @@ export const useAuthStore = defineStore('auth', () => {
     login,
     register,
     fetchProfile,
+    bootstrapSession,
     logout,
   }
 })

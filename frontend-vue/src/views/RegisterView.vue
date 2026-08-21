@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Card, Form, FormItem, Input, Button, Alert, Space } from 'ant-design-vue'
 import { MailOutlined, LockOutlined, UserOutlined } from '@ant-design/icons-vue'
 import { useAuthStore } from '../stores/auth'
+import { getCaptchaPublicConfig } from '../api/auth'
+import CaptchaWidget from '../components/CaptchaWidget.vue'
 import type { Rule } from 'ant-design-vue/es/form'
 
 const router = useRouter()
@@ -43,6 +45,33 @@ const rules: Record<string, Rule[]> = {
 
 const error = ref('')
 
+// ── 人机验证（注册接口防刷）──
+const captchaConfig = ref({ enabled: false, provider: '', site_key: '', verify_url: '' })
+const captchaRequired = ref(false)
+const captchaToken = ref('')
+const captchaRandstr = ref('')
+const captchaRef = ref<InstanceType<typeof CaptchaWidget>>()
+
+function markCaptchaDirty() {
+  captchaToken.value = ''
+  captchaRandstr.value = ''
+}
+
+onMounted(async () => {
+  try {
+    const cfg = await getCaptchaPublicConfig()
+    captchaConfig.value = {
+      enabled: !!cfg.enabled,
+      provider: cfg.provider || '',
+      site_key: cfg.site_key || '',
+      verify_url: cfg.verify_url || '',
+    }
+  } catch {
+    // 配置接口不可达时按无验证码处理（后端仍会兜底校验）
+  }
+  captchaRequired.value = captchaConfig.value.enabled
+})
+
 async function handleRegister() {
   error.value = ''
   try {
@@ -50,11 +79,33 @@ async function handleRegister() {
   } catch {
     return
   }
+  if (captchaRequired.value && captchaConfig.value.provider !== 'custom' && !captchaToken.value) {
+    error.value = '请先完成人机验证'
+    return
+  }
   try {
-    await authStore.register(form.value.email, form.value.password, form.value.name)
+    await authStore.register(form.value.email, form.value.password, form.value.name, {
+      token: captchaToken.value,
+      randstr: captchaRandstr.value,
+    })
     router.push('/chat')
   } catch (e: any) {
-    error.value = e.response?.data?.error || '注册失败'
+    const status = e.response?.status
+    const apiErr = e.response?.data?.error
+    if (status === 428 || apiErr === 'captcha_required') {
+      captchaRequired.value = true
+      error.value = '操作过于频繁，请完成人机验证后重试'
+      captchaRef.value?.reset()
+      markCaptchaDirty()
+      return
+    }
+    if (status === 403 && String(apiErr).includes('captcha')) {
+      error.value = '人机验证未通过，请重新验证'
+      captchaRef.value?.reset()
+      markCaptchaDirty()
+      return
+    }
+    error.value = apiErr || '注册失败'
   }
 }
 </script>
@@ -109,6 +160,17 @@ async function handleRegister() {
             >
               <template #prefix><LockOutlined /></template>
             </Input>
+          </FormItem>
+
+          <FormItem v-if="captchaRequired" label="人机验证">
+            <CaptchaWidget
+              ref="captchaRef"
+              :provider="captchaConfig.provider"
+              :site-key="captchaConfig.site_key"
+              :verify-url="captchaConfig.verify_url"
+              @verified="(p: any) => { captchaToken = p.token; captchaRandstr = p.randstr || '' }"
+              @expired="markCaptchaDirty"
+            />
           </FormItem>
 
           <FormItem>

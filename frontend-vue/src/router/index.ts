@@ -151,6 +151,12 @@ const routes = [
         component: () => import('../views/admin/DomainManagementView.vue'),
         meta: { title: '域名管理' },
       },
+      {
+        path: 'oauth-providers',
+        name: 'AdminOAuthProviders',
+        component: () => import('../views/admin/OAuthProvidersView.vue'),
+        meta: { title: '三方登录与人机验证' },
+      },
     ],
   },
 ]
