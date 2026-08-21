@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, h, onMounted } from 'vue'
 import { Card, Table, Button, Space, Tag, Input, Modal, Form, InputNumber, DatePicker, Select, Statistic, Tabs, TabPane } from 'ant-design-vue'
 import { PlusOutlined, EditOutlined, DeleteOutlined, StopOutlined, BarChartOutlined } from '@ant-design/icons-vue'
 import { api } from '../../api'
@@ -12,7 +12,7 @@ const usageData = ref<any[]>([])
 
 // Filters
 const searchText = ref('')
-const statusFilter = ref<string | null>(null)
+const statusFilter = ref<string | undefined>(undefined)
 
 // Load tenants（loader 闭包读取筛选状态，reload 时自动生效）
 const { data: tenants, loading, load: loadTenants } = useCrudResource<any[]>([], async () => {
@@ -42,6 +42,44 @@ const currentForm = ref({
   features: {} as any
 })
 
+// Table columns（customRender 用 h()，模板属性里不能写 JSX）
+const columns = [
+  { title: '租户 ID', dataIndex: 'tenant_id', key: 'tenant_id', width: 150, fixed: 'left' as const },
+  { title: '名称', dataIndex: 'name', key: 'name', ellipsis: true },
+  { title: '公司', dataIndex: 'company_name', key: 'company_name', ellipsis: true },
+  { title: '状态', key: 'status', width: 100,
+    customRender: ({ record }: any) =>
+      h(Tag, { color: getStatusColor(record.status) }, () => record.status) },
+  { title: 'API Keys', key: 'api_keys', width: 100,
+    customRender: ({ record }: any) => `${Object.keys(record.features || {}).length}/${record.max_api_keys}` },
+  { title: '月度配额', dataIndex: 'monthly_quota', key: 'monthly_quota', width: 120,
+    customRender: ({ record }: any) => record.monthly_quota === 0 ? '无限制' : record.monthly_quota.toLocaleString() },
+  { title: '并发会话', dataIndex: 'max_concurrent_sessions', key: 'max_concurrent_sessions', width: 100 },
+  { title: '过期时间', dataIndex: 'expires_at', key: 'expires_at', width: 160,
+    customRender: ({ record }: any) => formatDate(record.expires_at) },
+  { title: '操作', key: 'actions', width: 200, fixed: 'right' as const,
+    customRender: ({ record }: any) => h(Space, () => [
+      h(Button, { size: 'small', icon: h(BarChartOutlined), onClick: () => { selectedTenant.value = record; getUsage(record.tenant_id) } }, () => '用量'),
+      h(Button, { size: 'small', icon: h(EditOutlined), onClick: () => openEdit(record) }, () => '编辑'),
+      h(Button, { size: 'small', danger: true, icon: h(StopOutlined), onClick: () => suspendTenant(record.tenant_id) }, () => '暂停')
+    ]) }
+]
+
+const usageColumns = [
+  { title: '日期', dataIndex: 'stat_date', key: 'stat_date' },
+  { title: 'API 调用', dataIndex: 'api_calls', key: 'api_calls' },
+  { title: 'Token 使用', dataIndex: 'tokens_used', key: 'tokens_used' },
+  { title: 'Credits 消耗', dataIndex: 'credits_consumed', key: 'credits_consumed' },
+  { title: '存储空间 (MB)', dataIndex: 'storage_mb', key: 'storage_mb' }
+]
+
+// Open edit modal
+function openEdit(record: any) {
+  selectedTenant.value = record
+  currentForm.value = { ...currentForm.value, ...record }
+  editModalVisible.value = true
+}
+
 // Create tenant
 async function createTenant() {
   try {
@@ -67,7 +105,7 @@ async function updateTenant() {
 // Suspend tenant
 async function suspendTenant(tenantId: string) {
   if (!confirm('确定要暂停该租户吗?')) return
-  
+
   try {
     await api.post(`/admin/tenants/${tenantId}/suspend`)
     loadTenants()
@@ -143,57 +181,26 @@ onMounted(() => {
     <!-- Tenant List -->
     <Card>
       <Table
-        :columns="[
-          { title: '租户 ID', dataIndex: 'tenant_id', key: 'tenant_id', width: 150, fixed: 'left' },
-          { title: '名称', dataIndex: 'name', key: 'name', ellipsis: true },
-          { title: '公司', dataIndex: 'company_name', key: 'company_name', ellipsis: true },
-          { title: '状态', key: 'status', width: 100,
-            customRender: ({ record }: any) => (
-              <Tag color={getStatusColor(record.status)}>{record.status}</Tag>
-            )
-          },
-          { title: 'API Keys', key: 'api_keys', width: 100,
-            customRender: ({ record }: any) => `${Object.keys(record.features || {}).length}/${record.max_api_keys}` },
-          { title: '月度配额', dataIndex: 'monthly_quota', key: 'monthly_quota', width: 120,
-            customRender: ({ record }: any) => record.monthly_quota === 0 ? '无限制' : record.monthly_quota.toLocaleString() },
-          { title: '并发会话', dataIndex: 'max_concurrent_sessions', key: 'max_concurrent_sessions', width: 100 },
-          { title: '过期时间', dataIndex: 'expires_at', key: 'expires_at', width: 160,
-            customRender: ({ record }: any) => formatDate(record.expires_at) },
-          { title: '操作', key: 'actions', width: 200, fixed: 'right',
-            customRender: ({ record }: any) => (
-              <Space>
-                <Button size="small" icon={<BarChartOutlined />} onClick={() => { selectedTenant.value = record; getUsage(record.tenant_id) }}>用量</Button>
-                <Button size="small" icon={<EditOutlined />} onClick={() => { selectedTenant.value = record; currentForm.value = record; editModalVisible.value = true; }}>编辑</Button>
-                <Button size="small" danger icon={<StopOutlined />} onClick={() => suspendTenant(record.tenant_id)}>暂停</Button>
-              </Space>
-            )
-          }
-        ]"
+        :columns="columns"
         :data-source="tenants"
         :loading="loading"
         :pagination="{ pageSize: 20, total: totalTenants, showSizeChanger: true }"
-        scroll={{ x: 1200 }}
+        :scroll="{ x: 1200 }"
       />
     </Card>
 
     <!-- Usage Statistics Modal -->
     <Modal
-      v-model:open="selectedTenant !== null"
-      title={`📊 ${selectedTenant?.name} - 用量统计`}
-      footer={null}
-      width={800}
-      onClose={() => selectedTenant.value = null}
+      :open="selectedTenant !== null"
+      :title="`📊 ${selectedTenant?.name ?? ''} - 用量统计`"
+      :footer="null"
+      :width="800"
+      @cancel="selectedTenant = null"
     >
       <Tabs>
         <TabPane tab="日用量统计" key="daily">
           <Table
-            :columns="[
-              { title: '日期', dataIndex: 'stat_date', key: 'stat_date' },
-              { title: 'API 调用', dataIndex: 'api_calls', key: 'api_calls' },
-              { title: 'Token 使用', dataIndex: 'tokens_used', key: 'tokens_used' },
-              { title: 'Credits 消耗', dataIndex: 'credits_consumed', key: 'credits_consumed' },
-              { title: '存储空间 (MB)', dataIndex: 'storage_mb', key: 'storage_mb' }
-            ]"
+            :columns="usageColumns"
             :data-source="usageData"
             :pagination="false"
           />
@@ -205,51 +212,51 @@ onMounted(() => {
     <Modal
       v-model:open="modalVisible"
       title="创建新租户"
-      onOk={createTenant}
-      width={600}
+      :width="600"
+      @ok="createTenant"
     >
       <Form layout="vertical">
         <Form.Item label="租户 ID" required>
-          <Input v-model:value={currentForm.value.tenant_id} placeholder="例如: acme_corp" />
+          <Input v-model:value="currentForm.tenant_id" placeholder="例如: acme_corp" />
         </Form.Item>
-        
+
         <Form.Item label="租户名称" required>
-          <Input v-model:value={currentForm.value.name} placeholder="例如: ACME Corporation" />
+          <Input v-model:value="currentForm.name" placeholder="例如: ACME Corporation" />
         </Form.Item>
-        
+
         <Form.Item label="公司名称">
-          <Input v-model:value={currentForm.value.company_name} placeholder="可选" />
+          <Input v-model:value="currentForm.company_name" placeholder="可选" />
         </Form.Item>
-        
+
         <Form.Item label="联系邮箱">
-          <Input v-model:value={currentForm.value.contact_email} type="email" placeholder="admin@acme.com" />
+          <Input v-model:value="currentForm.contact_email" type="email" placeholder="admin@acme.com" />
         </Form.Item>
-        
+
         <Form.Item label="联系电话">
-          <Input v-model:value={currentForm.value.contact_phone} placeholder="+86-xxx-xxxx-xxxx" />
+          <Input v-model:value="currentForm.contact_phone" placeholder="+86-xxx-xxxx-xxxx" />
         </Form.Item>
-        
+
         <Form.Item label="最大 API Keys">
-          <InputNumber v-model:value={currentForm.value.max_api_keys} style={{ width: '100%' }} min={1} />
+          <InputNumber v-model:value="currentForm.max_api_keys" style="width: 100%" :min="1" />
         </Form.Item>
-        
+
         <Form.Item label="最大模型数">
-          <InputNumber v-model:value={currentForm.value.max_models} style={{ width: '100%' }} min={1} />
+          <InputNumber v-model:value="currentForm.max_models" style="width: 100%" :min="1" />
         </Form.Item>
-        
+
         <Form.Item label="月度 Credits 配额 (0=无限制)">
-          <InputNumber v-model:value={currentForm.value.monthly_quota} style={{ width: '100%' }} min={0} placeholder="100000" />
+          <InputNumber v-model:value="currentForm.monthly_quota" style="width: 100%" :min="0" placeholder="100000" />
         </Form.Item>
-        
+
         <Form.Item label="最大并发会话">
-          <InputNumber v-model:value={currentForm.value.max_concurrent_sessions} style={{ width: '100%' }} min={1} />
+          <InputNumber v-model:value="currentForm.max_concurrent_sessions" style="width: 100%" :min="1" />
         </Form.Item>
-        
+
         <Form.Item label="过期时间">
           <DatePicker
-            v-model:value={currentForm.value.expires_at}
-            style={{ width: '100%' }}
-            showTime
+            v-model:value="currentForm.expires_at"
+            style="width: 100%"
+            show-time
             placeholder="永久有效"
           />
         </Form.Item>
@@ -260,20 +267,20 @@ onMounted(() => {
     <Modal
       v-model:open="editModalVisible"
       title="编辑租户"
-      onOk={updateTenant}
-      width={600}
+      :width="600"
+      @ok="updateTenant"
     >
       <Form layout="vertical">
         <Form.Item label="租户名称">
-          <Input v-model:value={currentForm.value.name} />
+          <Input v-model:value="currentForm.name" />
         </Form.Item>
-        
+
         <Form.Item label="月度 Credits 配额">
-          <InputNumber v-model:value={currentForm.value.monthly_quota} style={{ width: '100%' }} min={0} />
+          <InputNumber v-model:value="currentForm.monthly_quota" style="width: 100%" :min="0" />
         </Form.Item>
-        
+
         <Form.Item label="最大并发会话">
-          <InputNumber v-model:value={currentForm.value.max_concurrent_sessions} style={{ width: '100%' }} min={1} />
+          <InputNumber v-model:value="currentForm.max_concurrent_sessions" style="width: 100%" :min="1" />
         </Form.Item>
       </Form>
     </Modal>

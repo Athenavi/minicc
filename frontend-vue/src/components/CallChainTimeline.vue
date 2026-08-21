@@ -1,6 +1,6 @@
 <!-- Unified CallChain Timeline — 聊天界面底部折叠面板 -->
 <template>
-  <div v-if="visible" class="callchain-timeline">
+  <div v-if="isVisible" class="callchain-timeline">
     <CollapseTransition>
       <div class="timeline-header" @click="toggle">
         <span class="header-title">
@@ -14,7 +14,7 @@
 
       <div v-if="isExpanded" class="timeline-body">
         <!-- 时间线渲染 -->
-        <div v-for="(span, idx) in spans" :key="idx" class="timeline-node">
+        <div v-for="(span, idx) in displaySpans" :key="idx" class="timeline-node">
           <div class="node-line" :class="getNodeClass(span)">
             <span class="node-icon">{{ getNodeIcon(span) }}</span>
             <div class="node-content">
@@ -46,9 +46,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { CheckCircleOutlined } from '@ant-design/icons-vue'
 import CollapseTransition from '@/components/CollapseTransition.vue'
+import { api } from '../api'
 
 interface TraceSpan {
   trace_id: string
@@ -61,13 +62,48 @@ interface TraceSpan {
 }
 
 const props = defineProps<{
-  visible: boolean
-  spans: TraceSpan[]
+  /** 兼容旧用法：直接传入 spans */
+  visible?: boolean
+  spans?: TraceSpan[]
+  /** 新用法：传 traceId 由组件自行拉取 GET /v1/traces/{trace_id} */
+  traceId?: string
+  tenantId?: string
 }>()
 
 const emit = defineEmits<{
   (e: 'select', span: TraceSpan): void
 }>()
+
+const fetchedSpans = ref<TraceSpan[]>([])
+const fetching = ref(false)
+
+// traceId 模式：拉取该 trace 的全部 span
+watch(() => props.traceId, async (id) => {
+  if (!id) {
+    fetchedSpans.value = []
+    return
+  }
+  fetching.value = true
+  try {
+    const response = await api.get(`/v1/traces/${encodeURIComponent(id)}`)
+    const payload = response.data?.data ?? response.data
+    fetchedSpans.value = (payload?.spans || []).map((s: any) => ({ ...s, showDetails: false }))
+  } catch (error) {
+    console.warn('CallChainTimeline: 获取 trace 失败:', error)
+    fetchedSpans.value = []
+  } finally {
+    fetching.value = false
+  }
+}, { immediate: true })
+
+// 展示用的 spans：traceId 模式用拉取结果，否则用传入的 spans
+const displaySpans = computed<TraceSpan[]>(() =>
+  props.traceId ? fetchedSpans.value : (props.spans || [])
+)
+
+const isVisible = computed(() =>
+  props.traceId ? displaySpans.value.length > 0 : !!props.visible
+)
 
 const isExpanded = ref(false)
 
@@ -75,8 +111,8 @@ function toggle() {
   isExpanded.value = !isExpanded.value
 }
 
-const spanCount = computed(() => props.spans.filter(s => s.span_name.startsWith('tool:')).length)
-const totalDurationMs = computed(() => props.spans.reduce((sum, s) => sum + s.duration_ms, 0))
+const spanCount = computed(() => displaySpans.value.filter(s => s.span_name.startsWith('tool:')).length)
+const totalDurationMs = computed(() => displaySpans.value.reduce((sum, s) => sum + s.duration_ms, 0))
 
 function getNodeClass(span: TraceSpan): string {
   if (span.span_name === 'llm_call') return 'type-llm'

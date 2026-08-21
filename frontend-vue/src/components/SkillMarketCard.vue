@@ -141,7 +141,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { Modal, message } from 'ant-design-vue'
-import { api } from '../../api'
+import { api } from '../api'
 
 interface CapabilityParam {
   name: string

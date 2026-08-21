@@ -43,7 +43,7 @@
         @click="switchWorkstation(ws.id)"
       >
         <div class="ws-icon" :style="{ backgroundColor: ws.color }">
-          <component :is="ws.icon" />
+          <component :is="iconMap[ws.icon] || MessageOutlined" />
         </div>
         <div class="ws-info">
           <div class="ws-name">{{ ws.name }}</div>
@@ -245,27 +245,17 @@ function viewActivityDetail(activity: any) {
   // TODO: 打开详情面板或跳转到相关页面
 }
 
-// 注册图标组件
-import ChatIcon from './icons/ChatIcon.vue'
-import AgentIcon from './icons/AgentIcon.vue'
-import WorkflowIcon from './icons/WorkflowIcon.vue'
-import SkillIcon from './icons/SkillIcon.vue'
-import KnowledgeIcon from './icons/KnowledgeIcon.vue'
-import PluginIcon from './icons/PluginIcon.vue'
+// 注册图标组件（原 ./icons/*..vue 组件不存在，改用 antd 图标映射）
+import { MessageOutlined, RobotOutlined, ApartmentOutlined, ThunderboltOutlined, BookOutlined, AppstoreOutlined } from '@ant-design/icons-vue'
 
-const iconComponents = {
-  ChatIcon,
-  AgentIcon,
-  WorkflowIcon,
-  SkillIcon,
-  KnowledgeIcon,
-  PluginIcon,
+const iconMap: Record<string, any> = {
+  ChatIcon: MessageOutlined,
+  AgentIcon: RobotOutlined,
+  WorkflowIcon: ApartmentOutlined,
+  SkillIcon: ThunderboltOutlined,
+  KnowledgeIcon: BookOutlined,
+  PluginIcon: AppstoreOutlined,
 }
-
-// 动态注册图标
-Object.entries(iconComponents).forEach(([name, component]) => {
-  // Vue 3 自动注册全局组件
-})
 
 onMounted(() => {
   // 加载最近活动

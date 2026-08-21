@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, h, onMounted } from 'vue'
 import { Card, Table, Button, Space, Tag, Input, Modal, Form, InputNumber, Statistic, Tabs, TabPane, Alert, Progress } from 'ant-design-vue'
 import { PlusOutlined, ReloadOutlined, DeleteOutlined, DatabaseOutlined, MonitorOutlined } from '@ant-design/icons-vue'
 import { api } from '../../api'
@@ -26,6 +26,52 @@ const currentForm = ref({
   password_hash: ''
 })
 
+// Table columns（customRender 用 h()，模板属性里不能写 JSX）
+const columns = [
+  { title: '名称', dataIndex: 'name', key: 'name', width: 150 },
+  { title: '地址', dataIndex: 'host', key: 'host', width: 200,
+    customRender: ({ record }: any) => `${record.host}:${record.port}` },
+  { title: 'DB', dataIndex: 'db_index', key: 'db_index', width: 60 },
+  { title: '状态', key: 'status', width: 100,
+    customRender: ({ record }: any) =>
+      h(Tag, { color: getStatusColor(record.status) }, () => record.status) },
+  { title: '连接池', key: 'pool', width: 100,
+    customRender: ({ record }: any) => `${record.pool_size}/${record.min_idle_connections}` },
+  { title: '内存使用', dataIndex: 'memory_used_mb', key: 'memory_used_mb', width: 120,
+    customRender: ({ record }: any) => `${record.memory_used_mb?.toFixed(2)} MB` },
+  { title: '操作', key: 'actions', width: 250, fixed: 'right' as const,
+    customRender: ({ record }: any) => h(Space, () => [
+      h(Button, { size: 'small', icon: h(MonitorOutlined), onClick: () => getStatus(record.id) }, () => '监控'),
+      h(Button, { size: 'small', icon: h(ReloadOutlined), onClick: () => getPoolStats(record.id) }, () => '连接池'),
+      h(Button, { size: 'small', danger: true, icon: h(DeleteOutlined), onClick: () => flushCache(record.id) }, () => '清缓存')
+    ]) }
+]
+
+const poolColumns = [
+  { title: '指标', dataIndex: 'metric', key: 'metric' },
+  { title: '值', dataIndex: 'value', key: 'value' },
+  { title: '说明', dataIndex: 'description', key: 'description' }
+]
+
+const poolDataSource = ref<any[]>([])
+
+function refreshPoolRows() {
+  poolDataSource.value = [
+    { metric: '池大小', value: poolData.value.pool_size || 0, description: '最大连接数' },
+    { metric: '空闲连接', value: poolData.value.idle_conns || 0, description: '当前空闲连接数' },
+    { metric: '等待请求', value: poolData.value.wait_count || 0, description: '等待获取连接的总次数' },
+    { metric: '等待时长', value: poolData.value.wait_duration || '0ms', description: '总等待时间' },
+    { metric: '最大空闲连接', value: poolData.value.max_idle_conns || 0, description: '配置的最大空闲连接数' }
+  ]
+}
+
+const slowLogColumns = [
+  { title: '序号', dataIndex: 'id', key: 'id', width: 80 },
+  { title: '命令', dataIndex: 'command', key: 'command' },
+  { title: '耗时 (μs)', dataIndex: 'duration_us', key: 'duration_us', width: 120 },
+  { title: '时间', dataIndex: 'timestamp', key: 'timestamp', width: 200 }
+]
+
 // Get status
 async function getStatus(id: string) {
   try {
@@ -42,6 +88,8 @@ async function getPoolStats(id: string) {
   try {
     const response = await api.get(`/admin/redis/${id}/pool`)
     poolData.value = response.data
+    refreshPoolRows()
+    selectedRedis.value = redisConfigs.value.find(r => r.id === id)
   } catch (error: any) {
     console.error('Failed to get pool stats:', error)
   }
@@ -50,7 +98,7 @@ async function getPoolStats(id: string) {
 // Flush cache
 async function flushCache(id: string) {
   if (!confirm('确定要清空该 Redis 实例的缓存吗?此操作不可恢复!')) return
-  
+
   try {
     await api.delete(`/admin/redis/${id}/cache`)
     alert('缓存已清空')
@@ -63,7 +111,7 @@ async function flushCache(id: string) {
 // Flush all
 async function flushAll(id: string) {
   if (!confirm('警告: 确定要执行 FLUSHALL 吗?这将删除所有数据!')) return
-  
+
   try {
     await api.post(`/admin/redis/${id}/flush-all`)
     alert('FLUSHALL 执行成功')
@@ -117,30 +165,7 @@ onMounted(() => {
     <!-- Redis Instance List -->
     <Card>
       <Table
-        :columns="[
-          { title: '名称', dataIndex: 'name', key: 'name', width: 150 },
-          { title: '地址', dataIndex: 'host', key: 'host', width: 200,
-            customRender: ({ record }: any) => `${record.host}:${record.port}` },
-          { title: 'DB', dataIndex: 'db_index', key: 'db_index', width: 60 },
-          { title: '状态', key: 'status', width: 100,
-            customRender: ({ record }: any) => (
-              <Tag color={getStatusColor(record.status)}>{record.status}</Tag>
-            )
-          },
-          { title: '连接池', key: 'pool', width: 100,
-            customRender: ({ record }: any) => `${record.pool_size}/${record.min_idle_connections}` },
-          { title: '内存使用', dataIndex: 'memory_used_mb', key: 'memory_used_mb', width: 120,
-            customRender: ({ record }: any) => `${record.memory_used_mb?.toFixed(2)} MB` },
-          { title: '操作', key: 'actions', width: 250, fixed: 'right',
-            customRender: ({ record }: any) => (
-              <Space>
-                <Button size="small" icon={<MonitorOutlined />} onClick={() => getStatus(record.id)}>监控</Button>
-                <Button size="small" icon={<ReloadOutlined />} onClick={() => getPoolStats(record.id)}>连接池</Button>
-                <Button size="small" danger icon={<DeleteOutlined />} onClick={() => flushCache(record.id)}>清缓存</Button>
-              </Space>
-            )
-          }
-        ]"
+        :columns="columns"
         :data-source="redisConfigs"
         :loading="loading"
         row-key="id"
@@ -149,11 +174,11 @@ onMounted(() => {
 
     <!-- Status Detail Modal -->
     <Modal
-      v-model:open="selectedRedis !== null"
-      title={`📊 ${selectedRedis?.name} - 实时监控`}
-      footer={null}
-      width={900}
-      onClose={() => selectedRedis.value = null}
+      :open="selectedRedis !== null"
+      :title="`📊 ${selectedRedis?.name ?? ''} - 实时监控`"
+      :footer="null"
+      :width="900"
+      @cancel="selectedRedis = null"
     >
       <Tabs>
         <!-- Overview Tab -->
@@ -161,7 +186,7 @@ onMounted(() => {
           <Space direction="vertical" style="width: 100%" size="large">
             <Card>
               <Space size="large">
-                <Statistic title="状态" :value="statusData.status" :valueStyle={{ color: getStatusColor(statusData.status) }} />
+                <Statistic title="状态" :value="statusData.status" :value-style="{ color: getStatusColor(statusData.status) }" />
                 <Statistic title="平均延迟" :value="statusData.avg_latency_ms" suffix="ms" />
                 <Statistic title="连接客户端" :value="statusData.clients" />
                 <Statistic title="命中率" :value="statusData.hit_rate" :precision="2" suffix="%">
@@ -188,20 +213,10 @@ onMounted(() => {
         <TabPane tab="连接池统计" key="pool">
           <Card>
             <Table
-              :columns="[
-                { title: '指标', dataIndex: 'metric', key: 'metric' },
-                { title: '值', dataIndex: 'value', key: 'value' },
-                { title: '说明', dataIndex: 'description', key: 'description' }
-              ]"
-              :data-source="[
-                { metric: '池大小', value: poolData.pool_size || 0, description: '最大连接数' },
-                { metric: '空闲连接', value: poolData.idle_conns || 0, description: '当前空闲连接数' },
-                { metric: '等待请求', value: poolData.wait_count || 0, description: '等待获取连接的总次数' },
-                { metric: '等待时长', value: poolData.wait_duration || '0ms', description: '总等待时间' },
-                { metric: '最大空闲连接', value: poolData.max_idle_conns || 0, description: '配置的最大空闲连接数' }
-              ]"
+              :columns="poolColumns"
+              :data-source="poolDataSource"
               row-key="metric"
-              pagination={false}
+              :pagination="false"
             />
           </Card>
         </TabPane>
@@ -209,16 +224,11 @@ onMounted(() => {
         <!-- Slow Log Tab -->
         <TabPane tab="慢查询日志" key="slowlog">
           <Card>
-            <Button type="primary" @click="getSlowLog(selectedRedis.id)" style="margin-bottom: 16px">
+            <Button type="primary" style="margin-bottom: 16px" @click="getSlowLog(selectedRedis.id)">
               <ReloadOutlined /> 刷新
             </Button>
             <Table
-              :columns="[
-                { title: '序号', dataIndex: 'id', key: 'id', width: 80 },
-                { title: '命令', dataIndex: 'command', key: 'command' },
-                { title: '耗时 (μs)', dataIndex: 'duration_us', key: 'duration_us', width: 120 },
-                { title: '时间', dataIndex: 'timestamp', key: 'timestamp', width: 200 }
-              ]"
+              :columns="slowLogColumns"
               :data-source="slowLogData"
               row-key="id"
               :pagination="{ pageSize: 10 }"

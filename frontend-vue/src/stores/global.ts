@@ -152,10 +152,14 @@ export const useGlobalStore = defineStore('global', () => {
     isAgentCollaborating.value = agents.some(a => a.status === 'running')
   }
   
-  function updateAgentLog(agentId: string, log: { timestamp: number; level: string; message: string }) {
+  function updateAgentLog(agentId: string, log: { timestamp: number; level: 'info' | 'warn' | 'error' | string; message: string }) {
     const agent = agentStatuses.value.find(a => a.id === agentId)
     if (agent) {
-      agent.logs.push(log)
+      agent.logs.push({
+        timestamp: log.timestamp,
+        level: (['info', 'warn', 'error'].includes(log.level) ? log.level : 'info') as 'info' | 'warn' | 'error',
+        message: log.message,
+      })
     }
   }
   

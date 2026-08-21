@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { ref, h, onMounted } from 'vue'
-import { Card, Table, Button, Space, Tag, Input, Modal, Form, InputNumber, Alert, Progress, Descriptions } from 'ant-design-vue'
-import { PlusOutlined, ReloadOutlined, DatabaseOutlined, DatabaseTwoTone, SearchOutlined } from '@ant-design/icons-vue'
+import { ref, computed, h, onMounted } from 'vue'
+import { Card, Table, Button, Space, Tag, Input, Modal, Form, InputNumber, Alert, Progress, Descriptions, Tabs, TabPane } from 'ant-design-vue'
+import { PlusOutlined, ReloadOutlined, DatabaseOutlined, DatabaseTwoTone, SearchOutlined, MonitorOutlined } from '@ant-design/icons-vue'
 import { api } from '../../api'
 import { useCrudResource, apiErrorMessage } from '../../composables/useCrudResource'
+
+const TextArea = Input.TextArea
 
 // State
 const { data: dbConfigs, loading, load: loadDBConfigs } = useCrudResource<any[]>(
@@ -32,6 +34,58 @@ const currentForm = ref({
   conn_max_lifetime: '30m'
 })
 
+// Table columns（customRender 用 h()，模板属性里不能写 JSX）
+const columns = [
+  { title: '名称', dataIndex: 'name', key: 'name', width: 150 },
+  { title: '地址', dataIndex: 'host', key: 'host', width: 200,
+    customRender: ({ record }: any) => `${record.host}:${record.port}/${record.dbname}` },
+  { title: '最大连接', dataIndex: 'max_open_connections', key: 'max_open_connections', width: 100 },
+  { title: '状态', key: 'status', width: 100,
+    customRender: ({ record }: any) =>
+      h(Tag, { color: getStatusColor(record.status) }, () => record.status) },
+  { title: '数据库大小', dataIndex: 'database_size_mb', key: 'database_size_mb', width: 120,
+    customRender: ({ record }: any) => `${record.database_size_mb?.toFixed(2)} MB` },
+  { title: '表数量', dataIndex: 'total_tables', key: 'total_tables', width: 80 },
+  { title: '操作', key: 'actions', width: 300, fixed: 'right' as const,
+    customRender: ({ record }: any) => h(Space, () => [
+      h(Button, { size: 'small', icon: h(MonitorOutlined), onClick: () => getStatus(record.id) }, () => '监控'),
+      h(Button, { size: 'small', icon: h(SearchOutlined), onClick: () => openQuery(record) }, () => '查询'),
+      h(Button, { size: 'small', icon: h(DatabaseTwoTone), onClick: () => createBackup(`手动备份 - ${record.name}`) }, () => '备份')
+    ]) }
+]
+
+const backupColumns = [
+  { title: '描述', dataIndex: 'description', key: 'description', ellipsis: true },
+  { title: '类型', dataIndex: 'backup_type', key: 'backup_type', width: 100,
+    customRender: ({ record }: any) =>
+      h(Tag, null, () => (record.backup_type === 'manual' ? '手动' : '自动')) },
+  { title: '状态', key: 'status', width: 100,
+    customRender: ({ record }: any) =>
+      h(Tag, { color: record.status === 'completed' ? 'green' : 'orange' }, () => record.status) },
+  { title: '大小', dataIndex: 'size_mb', key: 'size_mb', width: 100,
+    customRender: ({ record }: any) => `${record.size_mb?.toFixed(2)} MB` },
+  { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 180 },
+  { title: '操作', key: 'actions', width: 120,
+    customRender: ({ record }: any) =>
+      h(Button, { size: 'small', danger: true, disabled: record.status !== 'completed', onClick: () => restoreBackup(record.id) }, () => '恢复') }
+]
+
+const queryColumns = [
+  { title: '列名', dataIndex: 'key', key: 'key', width: 200 },
+  { title: '值', dataIndex: 'value', key: 'value' }
+]
+
+// 查询结果拍平为 key/value 行
+const queryRows = computed(() =>
+  queryResult.value.flatMap(row => Object.entries(row).map(([key, value]) => ({ key, value: String(value) })))
+)
+
+// Open query modal
+function openQuery(record: any) {
+  selectedDB.value = record
+  queryModalVisible.value = true
+}
+
 // Get status
 async function getStatus(id: string) {
   try {
@@ -56,7 +110,7 @@ async function createBackup(description: string) {
 // Restore backup
 async function restoreBackup(backupId: string) {
   if (!confirm('警告: 确定要从该备份恢复吗?当前数据将被覆盖!')) return
-  
+
   try {
     await api.post(`/admin/database/backups/${backupId}/restore`)
     alert('恢复已启动,请稍后查看状态')
@@ -71,7 +125,7 @@ async function executeQuery() {
     alert('请输入 SQL 查询')
     return
   }
-  
+
   try {
     const response = await api.post('/admin/database/query', {
       query: queryText.value
@@ -89,9 +143,9 @@ async function optimize(action: string) {
     analyze: 'ANALYZE',
     reindex: 'REINDEX'
   }
-  
+
   if (!confirm(`确定要执行 ${actionNames[action]} 吗?`)) return
-  
+
   try {
     await api.post(`/admin/database/optimize/${action}`)
     alert('优化操作已完成')
@@ -113,6 +167,12 @@ function getCacheHitRateColor(rate: number): string {
   if (rate >= 99) return 'green'
   if (rate >= 95) return 'orange'
   return 'red'
+}
+
+function percentOf(part: any, total: any): number {
+  const t = Number(total) || 0
+  if (t <= 0) return 0
+  return Number(((Number(part) / t) * 100).toFixed(1))
 }
 
 // Initialize
@@ -140,29 +200,7 @@ onMounted(() => {
     <!-- DB Instance List -->
     <Card style="margin-bottom: 16px">
       <Table
-        :columns="[
-          { title: '名称', dataIndex: 'name', key: 'name', width: 150 },
-          { title: '地址', dataIndex: 'host', key: 'host', width: 200,
-            customRender: ({ record }: any) => `${record.host}:${record.port}/${record.dbname}` },
-          { title: '最大连接', dataIndex: 'max_open_connections', key: 'max_open_connections', width: 100 },
-          { title: '状态', key: 'status', width: 100,
-            customRender: ({ record }: any) => (
-              <Tag color={getStatusColor(record.status)}>{record.status}</Tag>
-            )
-          },
-          { title: '数据库大小', dataIndex: 'database_size_mb', key: 'database_size_mb', width: 120,
-            customRender: ({ record }: any) => `${record.database_size_mb?.toFixed(2)} MB` },
-          { title: '表数量', dataIndex: 'total_tables', key: 'total_tables', width: 80 },
-          { title: '操作', key: 'actions', width: 300, fixed: 'right',
-            customRender: ({ record }: any) => (
-              <Space>
-                <Button size="small" icon={<MonitorOutlined />} onClick={() => getStatus(record.id)}>监控</Button>
-                <Button size="small" icon={h(SearchOutlined)} onClick={() => { selectedDB.value = record; queryModalVisible.value = true; }}>查询</Button>
-                <Button size="small" icon={h(DatabaseTwoTone)} onClick={() => createBackup(`手动备份 - ${record.name}`)}>备份</Button>
-              </Space>
-            )
-          }
-        ]"
+        :columns="columns"
         :data-source="dbConfigs"
         :loading="loading"
         row-key="id"
@@ -173,29 +211,7 @@ onMounted(() => {
     <Card style="margin-bottom: 16px">
       <h3 style="margin-top: 0">💾 备份记录</h3>
       <Table
-        :columns="[
-          { title: '描述', dataIndex: 'description', key: 'description', ellipsis: true },
-          { title: '类型', dataIndex: 'backup_type', key: 'backup_type', width: 100,
-            customRender: ({ record }: any) => (
-              <Tag>{record.backup_type === 'manual' ? '手动' : '自动'}</Tag>
-            )
-          },
-          { title: '状态', key: 'status', width: 100,
-            customRender: ({ record }: any) => (
-              <Tag color={record.status === 'completed' ? 'green' : 'orange'}>{record.status}</Tag>
-            )
-          },
-          { title: '大小', dataIndex: 'size_mb', key: 'size_mb', width: 100,
-            customRender: ({ record }: any) => `${record.size_mb?.toFixed(2)} MB` },
-          { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 180 },
-          { title: '操作', key: 'actions', width: 120,
-            customRender: ({ record }: any) => (
-              <Button size="small" danger disabled={record.status !== 'completed'} onClick={() => restoreBackup(record.id)}>
-                恢复
-              </Button>
-            )
-          }
-        ]"
+        :columns="backupColumns"
         :data-source="backups"
         row-key="id"
         :pagination="{ pageSize: 10 }"
@@ -204,109 +220,110 @@ onMounted(() => {
 
     <!-- Status Detail Modal -->
     <Modal
-      v-model:open="selectedDB !== null"
-      title={`📊 ${selectedDB?.name} - 实时监控`}
-      footer={null}
-      width={900}
-      onClose={() => selectedDB.value = null}
+      :open="selectedDB !== null"
+      :title="`📊 ${selectedDB?.name ?? ''} - 实时监控`"
+      :footer="null"
+      :width="900"
+      @cancel="selectedDB = null"
     >
       <div v-if="selectedDB">
         <Tabs default-active-key="overview">
           <!-- Overview Tab -->
           <TabPane tab="概览" key="overview">
-          <Space direction="vertical" style="width: 100%" size="large">
-            <Card>
-              <Descriptions column="2" bordered>
-                <Descriptions.Item label="版本">{statusData.version || 'N/A'}</Descriptions.Item>
-                <Descriptions.Item label="运行状态">
-                  <Tag color={getStatusColor(statusData.status)}>{statusData.status || 'unknown'}</Tag>
-                </Descriptions.Item>
-                <Descriptions.Item label="活跃连接数">{statusData.active_connections || 0}</Descriptions.Item>
-                <Descriptions.Item label="最大连接数">{statusData.max_connections || 100}</Descriptions.Item>
-                <Descriptions.Item label="数据库大小">{statusData.disk_usage?.total_size_mb || 0} MB</Descriptions.Item>
-                <Descriptions.Item label="总表数">{statusData.disk_usage?.table_count || 0}</Descriptions.Item>
-              </Descriptions>
-            </Card>
+            <Space direction="vertical" style="width: 100%" size="large">
+              <Card>
+                <Descriptions :column="2" bordered>
+                  <Descriptions.Item label="版本">{{ statusData.version || 'N/A' }}</Descriptions.Item>
+                  <Descriptions.Item label="运行状态">
+                    <Tag :color="getStatusColor(statusData.status)">{{ statusData.status || 'unknown' }}</Tag>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="活跃连接数">{{ statusData.active_connections || 0 }}</Descriptions.Item>
+                  <Descriptions.Item label="最大连接数">{{ statusData.max_connections || 100 }}</Descriptions.Item>
+                  <Descriptions.Item label="数据库大小">{{ statusData.disk_usage?.total_size_mb || 0 }} MB</Descriptions.Item>
+                  <Descriptions.Item label="总表数">{{ statusData.disk_usage?.table_count || 0 }}</Descriptions.Item>
+                </Descriptions>
+              </Card>
 
-            <Card title="磁盘使用情况">
-              <Space direction="vertical" style="width: 100%">
-                <div>
-                  <p>数据大小: {{ statusData.disk_usage?.data_size_mb || 0 }} MB</p>
-                  <Progress percent={(statusData.disk_usage?.data_size_mb / statusData.disk_usage?.total_size_mb * 100).toFixed(1)} />
-                </div>
-                <div>
-                  <p>索引大小: {{ statusData.disk_usage?.index_size_mb || 0 }} MB</p>
-                  <Progress percent={(statusData.disk_usage?.index_size_mb / statusData.disk_usage?.total_size_mb * 100).toFixed(1)} />
-                </div>
-                <div>
-                  <p>TOAST 大小: {{ statusData.disk_usage?.toast_size_mb || 0 }} MB</p>
-                  <Progress percent={(statusData.disk_usage?.toast_size_mb / statusData.disk_usage?.total_size_mb * 100).toFixed(1)} />
-                </div>
-              </Space>
-            </Card>
-          </Space>
+              <Card title="磁盘使用情况">
+                <Space direction="vertical" style="width: 100%">
+                  <div>
+                    <p>数据大小: {{ statusData.disk_usage?.data_size_mb || 0 }} MB</p>
+                    <Progress :percent="percentOf(statusData.disk_usage?.data_size_mb, statusData.disk_usage?.total_size_mb)" />
+                  </div>
+                  <div>
+                    <p>索引大小: {{ statusData.disk_usage?.index_size_mb || 0 }} MB</p>
+                    <Progress :percent="percentOf(statusData.disk_usage?.index_size_mb, statusData.disk_usage?.total_size_mb)" />
+                  </div>
+                  <div>
+                    <p>TOAST 大小: {{ statusData.disk_usage?.toast_size_mb || 0 }} MB</p>
+                    <Progress :percent="percentOf(statusData.disk_usage?.toast_size_mb, statusData.disk_usage?.total_size_mb)" />
+                  </div>
+                </Space>
+              </Card>
+            </Space>
           </TabPane>
 
           <!-- Performance Tab -->
           <TabPane tab="性能指标" key="performance">
-          <Space direction="vertical" style="width: 100%" size="large">
-            <Card title="查询统计">
-              <Descriptions column="2" bordered>
-                <Descriptions.Item label="平均查询时间">{statusData.query_stats?.avg_query_time_ms || 0} ms</Descriptions.Item>
-                <Descriptions.Item label="慢查询数">{statusData.query_stats?.slow_queries || 0}</Descriptions.Item>
-                <Descriptions.Item label="总查询数">{statusData.query_stats?.total_queries || 0}</Descriptions.Item>
-                <Descriptions.Item label="查询失败数">{statusData.query_stats?.failures || 0}</Descriptions.Item>
-              </Descriptions>
-            </Card>
+            <Space direction="vertical" style="width: 100%" size="large">
+              <Card title="查询统计">
+                <Descriptions :column="2" bordered>
+                  <Descriptions.Item label="平均查询时间">{{ statusData.query_stats?.avg_query_time_ms || 0 }} ms</Descriptions.Item>
+                  <Descriptions.Item label="慢查询数">{{ statusData.query_stats?.slow_queries || 0 }}</Descriptions.Item>
+                  <Descriptions.Item label="总查询数">{{ statusData.query_stats?.total_queries || 0 }}</Descriptions.Item>
+                  <Descriptions.Item label="查询失败数">{{ statusData.query_stats?.failures || 0 }}</Descriptions.Item>
+                </Descriptions>
+              </Card>
 
-            <Card title="缓存命中率">
-              <Space direction="vertical" style="width: 100%">
-                <Progress
-                  type="circle"
-                  :percent="(statusData.performance?.cache_hit_rate || 0).toFixed(2)"
-                  format={(percent: number) => `${percent}%`}
-                />
-                <p style="text-align: center; color: getCacheHitRateColor(statusData.performance?.cache_hit_rate) + '>'">
-                  缓存命中率
-                </p>
-              </Space>
-            </Card>
+              <Card title="缓存命中率">
+                <Space direction="vertical" style="width: 100%">
+                  <Progress
+                    type="circle"
+                    :percent="Number((statusData.performance?.cache_hit_rate || 0).toFixed(2))"
+                    :format="(p?: number) => `${p ?? 0}%`"
+                  />
+                  <p style="text-align: center" :style="{ color: getCacheHitRateColor(statusData.performance?.cache_hit_rate) }">
+                    缓存命中率
+                  </p>
+                </Space>
+              </Card>
 
-            <Card title="操作速率">
-              <Descriptions column="3" bordered>
-                <Descriptions.Item label="元组读取/秒">{statusData.performance?.tuple_read_per_sec || 0}</Descriptions.Item>
-                <Descriptions.Item label="元组插入/秒">{statusData.performance?.tuple_insert_per_sec || 0}</Descriptions.Item>
-                <Descriptions.Item label="缓冲区命中率">{statusData.performance?.buffer_hit_rate || 0}%</Descriptions.Item>
-              </Descriptions>
-            </Card>
-          </Space>
+              <Card title="操作速率">
+                <Descriptions :column="3" bordered>
+                  <Descriptions.Item label="元组读取/秒">{{ statusData.performance?.tuple_read_per_sec || 0 }}</Descriptions.Item>
+                  <Descriptions.Item label="元组插入/秒">{{ statusData.performance?.tuple_insert_per_sec || 0 }}</Descriptions.Item>
+                  <Descriptions.Item label="缓冲区命中率">{{ statusData.performance?.buffer_hit_rate || 0 }}%</Descriptions.Item>
+                </Descriptions>
+              </Card>
+            </Space>
           </TabPane>
 
           <!-- Optimization Tab -->
           <TabPane tab="优化操作" key="optimization">
-          <Alert message="以下操作将直接影响数据库性能,请谨慎使用" type="warning" showIcon style="margin-bottom: 16px" />
-          <Space direction="vertical" style="width: 100%">
-            <Button block @click="optimize('vacuum')">
-              VACUUM ANALYZE - 回收存储空间并更新统计信息
-            </Button>
-            <Button block @click="optimize('analyze')">
-              ANALYZE - 更新查询优化器统计信息
-            </Button>
-            <Button block @click="optimize('reindex')">
-              REINDEX - 重建所有索引
-            </Button>
-          </Space>
-        </TabPane>
-            </Tabs>
+            <Alert message="以下操作将直接影响数据库性能,请谨慎使用" type="warning" showIcon style="margin-bottom: 16px" />
+            <Space direction="vertical" style="width: 100%">
+              <Button block @click="optimize('vacuum')">
+                VACUUM ANALYZE - 回收存储空间并更新统计信息
+              </Button>
+              <Button block @click="optimize('analyze')">
+                ANALYZE - 更新查询优化器统计信息
+              </Button>
+              <Button block @click="optimize('reindex')">
+                REINDEX - 重建所有索引
+              </Button>
+            </Space>
+          </TabPane>
+        </Tabs>
+      </div>
     </Modal>
 
     <!-- Query Modal -->
     <Modal
       v-model:open="queryModalVisible"
       title="🔍 SQL 查询 (只读)"
-      footer={null}
-      width={1000}
-      onCancel={() => { queryModalVisible.value = false; queryResult.value = [] }}
+      :footer="null"
+      :width="1000"
+      @cancel="queryModalVisible = false; queryResult = []"
     >
       <Space direction="vertical" style="width: 100%">
         <TextArea
@@ -318,13 +335,10 @@ onMounted(() => {
         <Button type="primary" @click="executeQuery">
           <SearchOutlined /> 执行查询
         </Button>
-        
+
         <Table
-          :columns="[
-            { title: '列名', dataIndex: 'key', key: 'key', width: 200 },
-            { title: '值', dataIndex: 'value', key: 'value' }
-          ]"
-          :data-source="queryResult.flatMap((row: any) => Object.entries(row).map(([key, value]) => ({ key, value })))"
+          :columns="queryColumns"
+          :data-source="queryRows"
           row-key="key"
           :scroll="{ x: 800 }"
           :pagination="{ pageSize: 20 }"
