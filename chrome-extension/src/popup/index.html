@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MiniCC RPA Bridge</title>
+    <link rel="stylesheet" href="./popup.css" />
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>MiniCC RPA Bridge</h1>
+      </div>
+      <div class="status">
+        <span id="status-dot" class="dot disconnected"></span>
+        <span id="status-text">Disconnected</span>
+      </div>
+      <div class="form-group">
+        <label for="ws-url">WebSocket URL</label>
+        <input type="text" id="ws-url" placeholder="ws://localhost:8080/ws/rpa" />
+      </div>
+      <div class="actions">
+        <button id="btn-reconnect" class="btn btn-primary">Reconnect</button>
+        <button id="btn-disconnect" class="btn btn-danger">Disconnect</button>
+      </div>
+      <div class="info">
+        <p>Client ID: <span id="client-id">-</span></p>
+      </div>
+    </div>
+    <script type="module" src="./popup.ts"></script>
+  </body>
+</html>
