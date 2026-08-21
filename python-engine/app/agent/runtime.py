@@ -358,11 +358,13 @@ class AgentRuntime:
         tool_executor=None,
         sse_producer=None,
         session_store=None,
+        memory=None,
     ):
         self._gateway = gateway
         self._tool_executor = tool_executor
         self._sse = sse_producer
         self._session_store = session_store
+        self._memory = memory  # MemoryService | None（None 时行为不变）
         # 三栅栏（S 安全修复：输入/工具/输出）
         from app.agent.guards import InputGuard, OutputGuard, ToolGuard
         self._input_guard = InputGuard()
@@ -421,6 +423,31 @@ class AgentRuntime:
                 gateway=self._gateway,
                 subagent_depth=task.subagent_depth,
             )
+
+            # ── 0.6 记忆召回（L2 档案卡 + L3 摘要，注入系统提示） ──
+            if self._memory is not None and task.user_id and task.content:
+                try:
+                    recalled = await self._memory.recall(
+                        task.tenant_id or "default", task.user_id, task.content,
+                    )
+                    if recalled.has_content:
+                        mem_parts: list[str] = []
+                        if recalled.profile_block:
+                            mem_parts.append(f"## 用户档案\n{recalled.profile_block}")
+                        if recalled.summary_items:
+                            sum_lines = []
+                            for s in recalled.summary_items[:5]:
+                                score = s.get("score", 0)
+                                content = (s.get("content") or "")[:300]
+                                mem_parts.append(f"- (score {score:.2f}) {content}")
+                            mem_parts.insert(-1 if not recalled.profile_block else -1, "## 相关历史")
+                        mem_block = "\n\n".join(mem_parts)
+                        if task.system_prompt:
+                            task.system_prompt = f"{task.system_prompt}\n\n## 记忆上下文\n{mem_block}"
+                        else:
+                            task.system_prompt = f"## 记忆上下文\n{mem_block}"
+                except Exception as e:
+                    logger.warning("Memory recall failed (non-blocking): %s", e)
 
             # ── 1. 从 session cache 加载或初始化消息列表 ──
             if self._session_store and task.session_id:
@@ -706,6 +733,25 @@ class AgentRuntime:
                 await self._session_store.append(task.session_id, messages)
                 _cache_saved = True
                 logger.info("Session cache saved: %s (%d messages)", task.session_id, len(messages))
+
+            # ── 记忆巩固（异步、非阻塞）：本轮对话消息 → L3 摘要 ──
+            if self._memory is not None and task.user_id and task.session_id:
+                try:
+                    # 只巩固 user+assistant 对（跳过 system/tool 纯工具消息）
+                    convo_msgs = [
+                        m for m in messages
+                        if m.get("role") in ("user", "assistant") and m.get("content")
+                    ]
+                    if len(convo_msgs) >= 4:  # 至少 2 轮对话才值得巩固
+                        asyncio.create_task(
+                            self._memory.save_summary(
+                                task.tenant_id or "default", task.user_id,
+                                task.session_id, convo_msgs,
+                                turn_start=0, turn_end=len(convo_msgs),
+                            )
+                        )
+                except Exception as e:
+                    logger.warning("Memory consolidation trigger failed (non-blocking): %s", e)
             
             # 发送完成事件 (含完整链路 trace_id)
             total_duration = int((time.time() - start_time) * 1000)

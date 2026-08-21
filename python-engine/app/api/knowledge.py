@@ -552,7 +552,30 @@ async def query_knowledge_base(
             for row in rows
         ]
     else:
-        results = [{"message": "RAG query not yet implemented"}]
+        # RAG 向量检索
+        try:
+            from app.rag.retriever import RAGRetriever
+            retriever = RAGRetriever()
+            # 从 KB 获取 tenant_id
+            tenant_row = await pool.fetchrow(
+                "SELECT tenant_id FROM knowledge_bases WHERE id = $1", kb_id,
+            )
+            tenant_id = tenant_row["tenant_id"] if tenant_row else "default"
+            hits = await retriever.retrieve(
+                tenant_id=tenant_id, query=query, top_k=top_k, threshold=0.45,
+            )
+            results = [
+                {
+                    "document_id": h.get("document_id", ""),
+                    "chunk_id": h.get("chunk_id", ""),
+                    "content": h.get("content", "")[:500],
+                    "score": round(h.get("score", 0.0), 4),
+                }
+                for h in hits
+            ]
+        except Exception as e:
+            logger.warning("RAG query failed (kb_id=%s): %s", kb_id, e)
+            results = []
 
     return {"type": kb_type, "results": results}
 

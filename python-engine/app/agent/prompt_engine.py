@@ -24,6 +24,19 @@ from app.skill.store import SkillStore
 
 logger = logging.getLogger(__name__)
 
+# L2+L3 MemoryService（可选注入，优先于 MemoryManager）
+_memory_service = None
+
+
+def bind_memory_service(svc) -> None:
+    """注入 MemoryService（L2 档案卡 + L3 摘要），由 main.py lifespan 调用。"""
+    global _memory_service
+    _memory_service = svc
+
+
+def get_memory_service():
+    return _memory_service
+
 # ---------------------------------------------------------------------------
 # Default system prompt template
 # ---------------------------------------------------------------------------
@@ -183,7 +196,42 @@ class PromptEngine:
         return "\n\n".join(parts)
 
     async def _get_memory_context(self, user_id: str, query: str) -> str:
-        """Retrieve relevant memories for the given *query*."""
+        """Retrieve relevant memories for the given *query*.
+
+        优先使用 MemoryService（L2 档案卡 + L3 摘要），降级到 MemoryManager。
+        """
+        # L2+L3 路径（新）
+        svc = _memory_service
+        if svc is not None and user_id:
+            try:
+                tenant_id = "default"
+                # 尝试从工具上下文获取 tenant_id
+                try:
+                    from app.tools.context import get_tenant_id
+                    tid = get_tenant_id()
+                    if tid:
+                        tenant_id = tid
+                except Exception:
+                    pass
+                result = await svc.recall(tenant_id, user_id, query)
+                if result.has_content:
+                    parts: list[str] = []
+                    if result.profile_block:
+                        parts.append(f"## 用户档案\n{result.profile_block}")
+                    if result.summary_items:
+                        lines = []
+                        for s in result.summary_items[:5]:
+                            score = s.get("score", 0)
+                            content = s.get("content", "")[:300]
+                            topics = s.get("topics", [])
+                            t_str = f" [{', '.join(topics[:3])}]" if topics else ""
+                            lines.append(f"- (score {score:.2f}){t_str} {content}")
+                        parts.append(f"## 相关历史\n" + "\n".join(lines))
+                    return "\n\n".join(parts)
+            except Exception as exc:
+                logger.warning("MemoryService recall failed: %s", exc)
+
+        # L2 降级路径（旧 MemoryManager）
         if self._memory_manager is None:
             return ""
 

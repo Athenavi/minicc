@@ -73,6 +73,95 @@ class MemoryEntry:
 
 
 @dataclass
+class SummaryEntry:
+    """L3 近期对话摘要（memory_summaries 表的一行 + Milvus 向量）。"""
+
+    id: str
+    tenant_id: str
+    user_id: str
+    session_id: str
+    content: str
+    topics: list[str] = field(default_factory=list)
+    entities: dict[str, list[str]] = field(default_factory=dict)
+    turn_start: int = 0
+    turn_end: int = 0
+    content_hash: str = ""
+    embedding: Optional[list[float]] = None
+    access_count: int = 0
+    last_accessed_at: Optional[datetime] = None
+    status: str = "active"
+    created_at: Optional[datetime] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "session_id": self.session_id,
+            "content": self.content,
+            "topics": self.topics,
+            "entities": self.entities,
+            "turn_range": [self.turn_start, self.turn_end],
+            "has_embedding": self.embedding is not None and len(self.embedding) > 0,
+            "access_count": self.access_count,
+            "last_accessed_at": self.last_accessed_at.isoformat() if self.last_accessed_at else None,
+            "status": self.status,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+    @property
+    def embed_text(self) -> str:
+        """嵌入用文本 = 摘要正文（可加 topics 前缀增强语义匹配）。"""
+        prefix = ", ".join(self.topics) if self.topics else ""
+        return f"{prefix}: {self.content}" if prefix else self.content
+
+
+@dataclass
+class RecallResult:
+    """一次记忆召回的结果（L2 档案卡 + L3 摘要）。"""
+
+    profile_block: str = ""
+    summary_items: list[dict[str, Any]] = field(default_factory=list)
+
+    @property
+    def has_content(self) -> bool:
+        return bool(self.profile_block) or bool(self.summary_items)
+
+
+@dataclass
+class MemoryConflict:
+    """记忆冲突（新旧值不一致且旧值 user_confirmed）。"""
+
+    conflict_id: str
+    tenant_id: str
+    user_id: str
+    slot: str
+    item_key: str
+    old_value: str
+    new_value: str
+    old_source: str
+    new_source: str
+    status: str = "pending"  # pending / resolved
+    resolution: str = ""     # keep_old / adopt_new / manual
+    resolved_value: str = ""
+    created_at: Optional[datetime] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "conflict_id": self.conflict_id,
+            "slot": self.slot,
+            "slot_label": SLOT_LABELS.get(self.slot, self.slot),
+            "key": self.item_key,
+            "old_value": self.old_value,
+            "new_value": self.new_value,
+            "old_source": self.old_source,
+            "new_source": self.new_source,
+            "status": self.status,
+            "resolution": self.resolution or None,
+            "resolved_value": self.resolved_value or None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+@dataclass
 class OrganizeResult:
     """一次「智能整理」的产出统计。"""
 

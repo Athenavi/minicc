@@ -182,6 +182,25 @@ async def ensure_tables():
         )""",
         "CREATE INDEX IF NOT EXISTS idx_ume_lookup ON user_memory_entries(tenant_id, user_id, status)",
         "CREATE INDEX IF NOT EXISTS idx_ume_access ON user_memory_entries(tenant_id, user_id, last_accessed_at)",
+        # ── L3 近期对话摘要（与 migrations/20260821000004 双轨同步）──
+        """CREATE TABLE IF NOT EXISTS memory_summaries (
+            id              VARCHAR(64) PRIMARY KEY,
+            tenant_id       VARCHAR(64) NOT NULL,
+            user_id         VARCHAR(64) NOT NULL,
+            session_id      VARCHAR(64) NOT NULL,
+            content         TEXT NOT NULL,
+            topics          JSONB NOT NULL DEFAULT '[]',
+            entities        JSONB NOT NULL DEFAULT '{}',
+            turn_start      INTEGER NOT NULL DEFAULT 0,
+            turn_end        INTEGER NOT NULL DEFAULT 0,
+            content_hash    VARCHAR(80) NOT NULL,
+            access_count    INTEGER NOT NULL DEFAULT 0,
+            last_accessed_at TIMESTAMPTZ,
+            status          VARCHAR(16) NOT NULL DEFAULT 'active',
+            created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_ms_lookup ON memory_summaries(tenant_id, user_id, status, created_at DESC)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_ms_hash ON memory_summaries(tenant_id, user_id, content_hash)",
     ]
     for sql in migrations:
         try:

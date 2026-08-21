@@ -87,14 +87,12 @@ async def kb_search(kb_id: str, query: str, top_k: int = 5) -> dict[str, Any]:
         return {"error": "not authorized to query this knowledge base"}
 
     kb_type = kb_row["type"]
-    if kb_type != "wiki":
-        return {"type": kb_type, "results": [], "message": "RAG query not yet implemented"}
-
-    try:
-        rows = await pool.fetch(
-            """SELECT id, name, file_type,
-                      ts_rank(to_tsvector('chinese', COALESCE(convert_from(content, 'UTF8'), '')),
-                              plainto_tsquery('chinese', $1)) AS rank
+    if kb_type == "wiki":
+        try:
+            rows = await pool.fetch(
+                """SELECT id, name, file_type,
+                          ts_rank(to_tsvector('chinese', COALESCE(convert_from(content, 'UTF8'), '')),
+                                  plainto_tsquery('chinese', $1)) AS rank
                FROM knowledge_documents
                WHERE knowledge_base_id = $2
                  AND status = 'completed'
@@ -102,18 +100,38 @@ async def kb_search(kb_id: str, query: str, top_k: int = 5) -> dict[str, Any]:
                      @@ plainto_tsquery('chinese', $1)
                ORDER BY rank DESC
                LIMIT $3""",
-            query, kb_id, top_k,
-        )
-    except Exception as e:  # noqa: BLE001 — 全文检索失败降级返回空结果
-        logger.warning("kb_search full-text failed (kb_id=%s): %s", kb_id, e)
-        rows = []
-    results = [{
-        "id": r["id"],
-        "name": r["name"],
-        "file_type": r["file_type"],
-        "rank": float(r["rank"]),
-    } for r in rows]
-    return {"type": kb_type, "results": results}
+                query, kb_id, top_k,
+            )
+        except Exception as e:  # noqa: BLE001 — 全文检索失败降级返回空结果
+            logger.warning("kb_search full-text failed (kb_id=%s): %s", kb_id, e)
+            rows = []
+        results = [{
+            "id": r["id"],
+            "name": r["name"],
+            "file_type": r["file_type"],
+            "rank": float(r["rank"]),
+        } for r in rows]
+        return {"type": kb_type, "results": results}
+    else:
+        # RAG 向量检索
+        try:
+            from app.rag.retriever import RAGRetriever
+            from app.tools.context import get_tenant_id
+            retriever = RAGRetriever()
+            tenant_id = get_tenant_id() or "default"
+            hits = await retriever.retrieve(
+                tenant_id=tenant_id, query=query, top_k=top_k, threshold=0.45,
+            )
+            results = [{
+                "document_id": h.get("document_id", ""),
+                "chunk_id": h.get("chunk_id", ""),
+                "content": h.get("content", "")[:500],
+                "score": round(h.get("score", 0.0), 4),
+            } for h in hits]
+            return {"type": kb_type, "results": results}
+        except Exception as e:
+            logger.warning("kb_search RAG failed (kb_id=%s): %s", kb_id, e)
+            return {"type": kb_type, "results": [], "error": str(e)}
 
 
 registry.register(

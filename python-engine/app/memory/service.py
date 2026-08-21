@@ -21,14 +21,20 @@ from typing import Any, Awaitable, Callable, Optional
 
 from app.config import settings
 from app.memory.layers import (
+    MemoryConflict,
     MemoryEntry,
     OrganizeResult,
+    RecallResult,
     SLOTS,
     SOURCES,
+    SummaryEntry,
     cosine_similarity,
+    recency_decay,
     rerank_score,
 )
 from app.memory.profile import ProfileStore, new_entry_id
+from app.memory.summaries import SummaryStore, compute_hash as compute_summary_hash
+from app.memory.consolidator import Consolidator, ConsolidateResult
 
 logger = logging.getLogger(__name__)
 
@@ -70,13 +76,22 @@ class _OrganizeState:
 
 
 class MemoryService:
-    """L2 档案卡服务。"""
+    """L2 档案卡 + L3 摘要服务。"""
 
-    def __init__(self, store: ProfileStore, embedder: Optional[Embedder] = None) -> None:
+    def __init__(
+        self,
+        store: ProfileStore,
+        embedder: Optional[Embedder] = None,
+        summary_store: Optional[SummaryStore] = None,
+        consolidator: Optional[Consolidator] = None,
+    ) -> None:
         self._store = store
         self._embedder = embedder
+        self._summary_store = summary_store
+        self._consolidator = consolidator
         self._organize_states: dict[str, _OrganizeState] = {}
         self._organize_locks: dict[str, asyncio.Lock] = {}
+        self._conflicts: dict[str, MemoryConflict] = {}  # PR-4: 进程内冲突暂存
 
     # ── 嵌入（尽力而为）────────────────────────────────
 
@@ -131,6 +146,31 @@ class MemoryService:
 
         embedding = await self._embed(self._embed_text(key, value))
         if existing is not None:
+            # 冲突检测：旧值 user_confirmed 且新值不同 → 挂起冲突，不自动覆盖
+            if (
+                existing.source == "user_confirmed"
+                and source != "user_confirmed"
+                and existing.item_value != value
+            ):
+                import uuid as _uuid
+                conflict = MemoryConflict(
+                    conflict_id=f"cfl_{_uuid.uuid4().hex[:16]}",
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    slot=slot,
+                    item_key=key,
+                    old_value=existing.item_value,
+                    new_value=value,
+                    old_source=existing.source,
+                    new_source=source,
+                )
+                self._conflicts[conflict.conflict_id] = conflict
+                result: dict[str, Any] = {
+                    "entry": existing.to_dict(),
+                    "created": False,
+                    "conflict": conflict.to_dict(),
+                }
+                return result
             entry = await self._store.update(
                 tenant_id, user_id, existing.id,
                 item_value=value, confidence=confidence, source=source,
@@ -402,6 +442,159 @@ class MemoryService:
                     result.archived += 1
 
         return result
+
+    # ── L3 摘要：巩固 + 语义检索 ──────────────────────
+
+    async def save_summary(
+        self,
+        tenant_id: str,
+        user_id: str,
+        session_id: str,
+        messages: list[dict],
+        turn_start: int = 0,
+        turn_end: int = 0,
+    ) -> dict[str, Any]:
+        """巩固一批消息为 L3 摘要（consolidator pipeline）。"""
+        if self._consolidator is None:
+            raise RuntimeError("consolidator not bound (summary_store/consolidator missing)")
+        result = await self._consolidator.consolidate(
+            tenant_id, user_id, session_id, messages, turn_start, turn_end,
+        )
+        return result.to_dict()
+
+    async def recall_summaries(
+        self,
+        tenant_id: str,
+        user_id: str,
+        query: str,
+        top_k: int = 0,
+    ) -> dict[str, Any]:
+        """L3 语义检索：query 嵌入 → 进程内 cosine → 重排序。"""
+        if self._summary_store is None:
+            return {"query": query, "mode": "unavailable", "count": 0, "results": []}
+        top_k = top_k or settings.memory_summary_top_k
+        query = (query or "").strip()
+        if not query:
+            return {"query": "", "mode": "empty", "count": 0, "results": []}
+
+        entries = await self._summary_store.list_active(tenant_id, user_id, limit=100)
+        if not entries:
+            return {"query": query, "mode": "empty", "count": 0, "results": []}
+
+        qvec = await self._embed(query)
+        hits: list[dict[str, Any]] = []
+        for e in entries:
+            sim = 0.0
+            if qvec and e.embedding:
+                sim = cosine_similarity(qvec, e.embedding)
+            elif qvec is None:
+                # 嵌入不可用：降级关键词
+                if query.lower() not in e.content.lower():
+                    continue
+                sim = 0.5
+            else:
+                continue
+            if qvec is not None and sim < settings.memory_summary_min_cosine:
+                continue
+            decay = recency_decay(e.last_accessed_at or e.created_at, half_life_days=30.0)
+            score = sim * decay * (1 + 0.1 * min(e.access_count, 10))
+            hits.append({**e.to_dict(), "similarity": round(sim, 4), "score": round(score, 4)})
+
+        hits.sort(key=lambda h: h["score"], reverse=True)
+        top = hits[:top_k]
+        # touch 命中条目
+        for h in top:
+            await self._summary_store.touch(h["id"])
+        return {
+            "query": query,
+            "mode": "semantic" if qvec is not None else "keyword",
+            "count": len(top),
+            "results": top,
+        }
+
+    async def recall(
+        self,
+        tenant_id: str,
+        user_id: str,
+        query: str,
+    ) -> RecallResult:
+        """每回合记忆召回：L2 档案卡紧凑块 + L3 相关摘要。"""
+        profile_block = ""
+        summary_items: list[dict[str, Any]] = []
+
+        # L2：整卡序列化（confidence >= 50 的 active 条目）
+        try:
+            entries = await self._store.list(tenant_id, user_id)
+            lines: list[str] = []
+            for e in entries:
+                if e.status != "active" or e.confidence < 50:
+                    continue
+                lines.append(f"- [{e.slot}] {e.item_key}: {e.item_value}")
+            if lines:
+                profile_block = "\n".join(lines[:50])  # ≤1.5KB
+        except Exception as e:
+            logger.warning("recall L2 failed: %s", e)
+
+        # L3：语义检索 top_k
+        try:
+            sr = await self.recall_summaries(tenant_id, user_id, query)
+            summary_items = sr.get("results", [])
+        except Exception as e:
+            logger.warning("recall L3 failed: %s", e)
+
+        return RecallResult(profile_block=profile_block, summary_items=summary_items)
+
+    async def list_summaries(
+        self, tenant_id: str, user_id: str, limit: int = 50
+    ) -> dict[str, Any]:
+        """管理端审计：列出摘要记忆。"""
+        if self._summary_store is None:
+            return {"summaries": [], "count": 0}
+        entries = await self._summary_store.list_active(tenant_id, user_id, limit)
+        return {"summaries": [e.to_dict() for e in entries], "count": len(entries)}
+
+    # ── 冲突裁决（PR-4）────────────────────────────────
+
+    def list_conflicts(self, tenant_id: str, user_id: str) -> list[dict[str, Any]]:
+        """列出待裁决的冲突。"""
+        return [
+            c.to_dict() for c in self._conflicts.values()
+            if c.tenant_id == tenant_id and c.user_id == user_id and c.status == "pending"
+        ]
+
+    async def resolve_conflict(
+        self, conflict_id: str, resolution: str, manual_value: str = ""
+    ) -> dict[str, Any]:
+        """裁决冲突：keep_old / adopt_new / manual。"""
+        conflict = self._conflicts.get(conflict_id)
+        if conflict is None:
+            raise ValueError(f"conflict not found: {conflict_id}")
+        if resolution not in ("keep_old", "adopt_new", "manual"):
+            raise ValueError(f"invalid resolution: {resolution}")
+
+        if resolution == "keep_old":
+            final_value = conflict.old_value
+        elif resolution == "adopt_new":
+            final_value = conflict.new_value
+        else:
+            final_value = manual_value or conflict.new_value
+
+        # 写入裁决后的值（source=user_confirmed, confidence=100）
+        embedding = await self._embed(self._embed_text(conflict.item_key, final_value))
+        existing = await self._store.get_by_key(
+            conflict.tenant_id, conflict.user_id, conflict.slot, conflict.item_key,
+        )
+        if existing is not None:
+            await self._store.update(
+                conflict.tenant_id, conflict.user_id, existing.id,
+                item_value=final_value, confidence=100, source="user_confirmed",
+                embedding=embedding, embedding_set=embedding is not None,
+            )
+
+        conflict.status = "resolved"
+        conflict.resolution = resolution
+        conflict.resolved_value = final_value
+        return conflict.to_dict()
 
 
 def _keep_rank(e: MemoryEntry) -> tuple[int, float]:

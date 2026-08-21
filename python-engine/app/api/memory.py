@@ -185,3 +185,55 @@ async def organize_status(request: Request):
     if not user_id:
         return _bad_request("user_id is required")
     return {"success": True, "status": svc.organize_status(tenant_id, user_id)}
+
+
+# ── L3 摘要管理 ──────────────────────────────────────
+
+@router.get("/v1/memory/summaries")
+async def list_summaries(request: Request):
+    """列出摘要记忆（管理端审计）。"""
+    svc = get_service()
+    if svc is None:
+        return _unavailable()
+    tenant_id, user_id = _scope(request)
+    if not user_id:
+        return _bad_request("user_id is required")
+    limit = int(request.query_params.get("limit", "50"))
+    data = await svc.list_summaries(tenant_id, user_id, limit)
+    return {"success": True, **data}
+
+
+# ── 冲突裁决 ─────────────────────────────────────────
+
+@router.get("/v1/memory/conflicts")
+async def list_conflicts(request: Request):
+    """列出待裁决的记忆冲突。"""
+    svc = get_service()
+    if svc is None:
+        return _unavailable()
+    tenant_id, user_id = _scope(request)
+    if not user_id:
+        return _bad_request("user_id is required")
+    conflicts = svc.list_conflicts(tenant_id, user_id)
+    return {"success": True, "conflicts": conflicts, "count": len(conflicts)}
+
+
+@router.post("/v1/memory/conflicts/{conflict_id}/resolve")
+async def resolve_conflict(conflict_id: str, request: Request):
+    """裁决冲突：keep_old / adopt_new / manual。"""
+    svc = get_service()
+    if svc is None:
+        return _unavailable()
+    tenant_id, user_id = _scope(request)
+    if not user_id:
+        return _bad_request("user_id is required")
+    body = await request.json()
+    resolution = body.get("resolution", "")
+    manual_value = body.get("manual_value", "")
+    if resolution not in ("keep_old", "adopt_new", "manual"):
+        return _bad_request("resolution must be one of: keep_old, adopt_new, manual")
+    try:
+        result = await svc.resolve_conflict(conflict_id, resolution, manual_value)
+    except ValueError as e:
+        return JSONResponse(status_code=404, content={"error": str(e)})
+    return {"success": True, "conflict": result}

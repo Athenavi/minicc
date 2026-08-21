@@ -73,9 +73,12 @@ func (rl *TenantRateLimiter) Allow(resource, tenantID string) (bool, float64) {
 
 // ClearExpired removes stale buckets (cleanup every 5 minutes).
 func (rl *TenantRateLimiter) ClearExpired() {
-	// This would be called periodically by a background goroutine
-	// For now, just log
-	slog.Debug("TenantRateLimiter: cleanup not yet implemented")
+	cutoff := time.Now().Add(-10 * time.Minute)
+	for key, bucket := range rl.tokens {
+		if bucket.lastRefill.Before(cutoff) {
+			delete(rl.tokens, key)
+		}
+	}
 }
 
 // Middleware returns an HTTP middleware that enforces per-tenant rate limits.

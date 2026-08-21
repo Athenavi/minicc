@@ -80,6 +80,12 @@ class Settings(BaseSettings):
     memory_archive_days: int = 180           # 超期未引用且低置信 → 归档
     memory_dedup_threshold: float = 0.95     # cosine 超过该阈值判定近重复 → 整理时合并
     memory_search_min_cosine: float = 0.30   # 语义检索召回下限
+    # L3 近期对话摘要（语义检索层）
+    memory_summary_top_k: int = 5            # 每回合召回的摘要条数
+    memory_summary_retention_days: int = 90  # 超期未命中 → archived
+    memory_summary_min_cosine: float = 0.45  # 摘要语义检索召回下限
+    memory_recall_token_budget: int = 8000   # L2+L3 总注入预算（tokens）
+    memory_consolidate_batch: int = 32       # 巩固攒批大小
 
     # ── LLM Gateway 缓存 ──
     cache_l1_capacity: int = 2048

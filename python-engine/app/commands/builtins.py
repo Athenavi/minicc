@@ -110,13 +110,51 @@ async def _skill(args: str, ctx: CommandContext | None) -> str:
 # ── /memory <query> ─────────────────────────────────────────────
 
 async def _memory(args: str, ctx: CommandContext | None) -> str:
-    """Search memories."""
+    """Search memories and show user profile.
+
+    Usage:
+        /memory <query>  — semantic search across memory entries
+        /memory           — show all stored memories
+    """
     query = args.strip()
+    from app.memory.service import get_service
+
+    svc = get_service()
+    if svc is None:
+        return "Memory service not available (database not connected)."
+
+    tenant_id = ""
+    user_id = ""
+    if ctx is not None:
+        tenant_id = ctx.metadata.get("tenant_id", "")
+        user_id = ctx.metadata.get("user_id", "")
+    if not tenant_id:
+        tenant_id = "default"
+    if not user_id:
+        return "User context missing — cannot access memory."
+
     if not query:
-        return "Usage: /memory <query>"
-    # Real implementation would talk to the memory manager.
-    # Placeholder for built-in command registration.
-    return f"Memory search for: '{query}' (no memory backend attached)."
+        # 列出全部档案
+        data = await svc.list_entries(tenant_id, user_id)
+        if data["total"] == 0:
+            return "No memories stored yet."
+        lines = [f"Stored memories ({data['total']} entries):"]
+        counts = data.get("counts", {})
+        for slot, cnt in counts.items():
+            if cnt:
+                lines.append(f"  {slot}: {cnt}")
+        for e in data["entries"][:20]:
+            lines.append(f"  [{e['slot']}] {e['key']}: {e['value']}")
+        return "\n".join(lines)
+
+    # 语义搜索
+    data = await svc.search(tenant_id, user_id, query=query)
+    if data["count"] == 0:
+        return f"No memories found for '{query}'."
+    lines = [f"Memory search '{query}' ({data['count']} hits, {data['mode']} mode):"]
+    for r in data["results"]:
+        lines.append(f"  [{r['slot']}] {r['key']}: {r['value']} (score={r.get('score', 0):.2f})")
+    return "\n".join(lines)
 
 
 # ── /context ────────────────────────────────────────────────────
@@ -179,7 +217,7 @@ _BUILTINS: list[tuple[str, str, Any]] = [
     ("think",       "Enter thinking/plan mode",                _think),
     ("act",         "Exit thinking mode, start acting",        _act),
     ("skill",       "Load a skill (/skill <name>)",            _skill),
-    ("memory",      "Search memories (/memory <query>)",       _memory),
+    ("memory",      "Search or list memories (/memory [query])",  _memory),
     ("context",     "Show current context",                    _context),
     ("cost",        "Show token usage and cost",               _cost),
     ("undo",        "Undo last file edit",                     _undo),

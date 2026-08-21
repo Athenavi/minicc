@@ -192,11 +192,25 @@ async def lifespan(app: FastAPI):
     try:
         from app.db import get_pool
         from app.memory.profile import ProfileStore
+        from app.memory.summaries import SummaryStore
+        from app.memory.consolidator import Consolidator
         from app.memory.service import MemoryService, bind_service as bind_memory_service
-        bind_memory_service(MemoryService(
-            store=ProfileStore(get_pool()),
+        from app.agent.prompt_engine import bind_memory_service as bind_prompt_memory
+        pool = get_pool()
+        summary_store = SummaryStore(pool)
+        consolidator = Consolidator(
+            store=summary_store,
             embedder=llm_client.embed,
-        ))
+        )
+        mem_svc = MemoryService(
+            store=ProfileStore(pool),
+            embedder=llm_client.embed,
+            summary_store=summary_store,
+            consolidator=consolidator,
+        )
+        bind_memory_service(mem_svc)
+        bind_prompt_memory(mem_svc)
+        logger.info("Memory service initialized (L2 profile card + L3 summaries)")
         logger.info("Memory service initialized (L2 profile card)")
     except Exception as e:
         logger.warning("Memory service not available: %s", e)
@@ -590,7 +604,12 @@ async def agent_submit(
     if mode:
         task.llm_config = {**task.llm_config, "mode": mode}
 
-    runtime = AgentRuntime(gateway=gateway, session_store=_session_cache)
+    # 注入记忆服务（L2 档案卡 + L3 摘要），不可用时 None（行为不变）
+    from app.memory.service import get_service as get_memory_service
+    runtime = AgentRuntime(
+        gateway=gateway, session_store=_session_cache,
+        memory=get_memory_service(),
+    )
     session_id = task.session_id
     if session_id:
         _ACTIVE_RUNTIMES[session_id] = runtime
