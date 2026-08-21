@@ -232,7 +232,7 @@ class TestServiceUpsert:
         vec = [1.0, 0.0]
         emb = FakeEmbedder()
         emb.set("city: 上海", vec)
-        emb.set("city: 上海（中国）", [0.99, 0.02])
+        emb.set("city2: 上海（中国）", [0.99, 0.02])
         svc = _service(embedder=emb)
         await svc.upsert("t1", "u1", "fact", "city", "上海")
         r = await svc.upsert("t1", "u1", "fact", "city2", "上海（中国）")
@@ -290,11 +290,11 @@ class TestServiceOrganize:
         emb = FakeEmbedder()
         emb.set("city: 上海", [1.0, 0.0])
         emb.set("city2: 上海市", [0.99, 0.01])  # 近重复（cosine>0.95）
-        emb.set("lang: Python", [0.0, 1.0])
         svc = _service(embedder=emb)
         await svc.upsert("t1", "u1", "fact", "city", "上海", confidence=90)
         await svc.upsert("t1", "u1", "fact", "city2", "上海市", confidence=30)
-        # lang 不给嵌入文本映射 → 走 fail-soft 存 NULL；整理时 mapping 已就绪则补齐
+        # lang 此时未映射嵌入文本 → upsert 走 fail-soft 存 NULL；整理时 mapping 已就绪则补齐
+        await svc.upsert("t1", "u1", "fact", "lang", "Python", confidence=50)
         emb.set("lang: Python", [0.0, 1.0])
         # 构造衰退条目：低置信 + 200 天未引用
         stale = await svc._store.get_by_key("t1", "u1", "fact", "city2")
@@ -325,10 +325,10 @@ class TestServiceOrganize:
         await svc.upsert("t1", "u1", "fact", "k", "v")
         r = await svc.start_organize("t1", "u1")
         assert r["started"] is True
-        # 等待后台任务完成
-        for _ in range(50):
+        # 等待后台任务完成（以 finished_at 判定，avoid running=False 在「未启动」与「已完成」二义）
+        for _ in range(100):
             status = svc.organize_status("t1", "u1")
-            if not status["running"]:
+            if status["finished_at"] or status["result"] or status["error"]:
                 break
             await asyncio.sleep(0.01)
         status = svc.organize_status("t1", "u1")
@@ -459,9 +459,16 @@ class TestMemoryAPI:
             await c.post("/v1/memory/profile?user_id=u1", json={"slot": "fact", "key": "k", "value": "v"})
             r = await c.post("/v1/memory/organize?user_id=u1")
             assert r.json()["success"] is True
-            r = await c.get("/v1/memory/organize/status?user_id=u1")
-            assert r.json()["status"]["running"] is False
-            assert r.json()["status"]["result"] is not None
+            # 轮询直到任务完成（finished_at 判定）
+            status = None
+            for _ in range(100):
+                r = await c.get("/v1/memory/organize/status?user_id=u1")
+                status = r.json()["status"]
+                if status["finished_at"] or status["result"] or status["error"]:
+                    break
+                await asyncio.sleep(0.01)
+            assert status["running"] is False
+            assert status["result"] is not None
 
 
 # ── 工具层（remember/recall/forget 接入 MemoryService）────

@@ -27,6 +27,7 @@ import {
   UserSwitchOutlined,
   BulbOutlined,
   DownOutlined,
+  HistoryOutlined,
 } from '@ant-design/icons-vue'
 
 const router = useRouter()
@@ -66,6 +67,7 @@ const menuItems = computed<MenuItem[]>(() => {
     { key: '/skills', label: '技能', icon: () => h(BlockOutlined) },
     { key: '/media', label: '媒体库', icon: () => h(PictureOutlined) },
     { key: '/knowledge', label: '知识库', icon: () => h(BookOutlined) },
+    { key: '/memory', label: '记忆', icon: () => h(HistoryOutlined) },
     { key: '/plugins', label: '插件', icon: () => h(ThunderboltOutlined) },
     { key: '/billing', label: '计费', icon: () => h(CreditCardOutlined) },
     ...(authStore.isAdmin
