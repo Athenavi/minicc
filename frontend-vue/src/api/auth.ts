@@ -126,3 +126,104 @@ export function ssoLoginURL(providerId: string, mode?: 'bind'): string {
   const u = `${base}/v1/auth/sso/login/${encodeURIComponent(providerId)}`
   return mode === 'bind' ? `${u}?mode=bind` : u
 }
+
+// ── 短信验证码登录（公开流程 + 用户自助绑定 + 管理端配置） ──
+
+export interface SmsStatus {
+  enabled: boolean
+  login_enabled: boolean
+}
+
+/** 登录页据此决定是否展示"短信登录"标签页 */
+export async function getSmsStatus(): Promise<SmsStatus> {
+  const { data } = await api.get('/v1/auth/sms/status')
+  return data?.data ?? { enabled: false, login_enabled: false }
+}
+
+export interface SendSmsCodeResult {
+  status: string
+  expire_seconds: number
+  interval: number
+}
+
+/** 发送验证码（防滥用：人机验证 + 发送冷却 + 每日上限） */
+export async function sendSmsCode(body: {
+  phone: string
+  purpose?: 'login' | 'bind'
+  captcha_token?: string
+  captcha_randstr?: string
+}): Promise<SendSmsCodeResult> {
+  const { data } = await api.post('/v1/auth/sms/code', body)
+  return data?.data
+}
+
+export async function smsLogin(body: {
+  phone: string
+  code: string
+  captcha_token?: string
+  captcha_randstr?: string
+}): Promise<{ token: string; user: any }> {
+  const { data } = await api.post('/v1/auth/sms/login', body)
+  return data?.data
+}
+
+/** 当前绑定手机号 */
+export async function getSmsBind(): Promise<{ phone: string; bound: boolean }> {
+  const { data } = await api.get('/v1/auth/sms/bind')
+  return data?.data
+}
+
+export async function bindPhone(body: { phone: string; code: string }): Promise<void> {
+  await api.post('/v1/auth/sms/bind', body)
+}
+
+export async function unbindPhone(): Promise<void> {
+  await api.delete('/v1/auth/sms/bind')
+}
+
+export interface SmsAdminConfig {
+  provider: string
+  sign_name: string
+  template_id: string
+  access_key_id: string
+  secret: string
+  endpoint: string
+  code_ttl_seconds: number
+  send_interval_seconds: number
+  daily_limit: number
+  login_enabled: boolean
+  auto_register: boolean
+  enabled: boolean
+  exists?: boolean
+}
+
+export async function getSmsAdminConfig(): Promise<SmsAdminConfig> {
+  const { data } = await api.get('/v1/ent/sms/config')
+  return data?.data
+}
+
+export async function updateSmsConfig(body: Partial<{
+  provider: string
+  sign_name: string
+  template_id: string
+  access_key_id: string
+  secret: string
+  endpoint: string
+  code_ttl_seconds: number
+  send_interval_seconds: number
+  daily_limit: number
+  login_enabled: boolean
+  auto_register: boolean
+  enabled: boolean
+}>): Promise<SmsAdminConfig> {
+  const { data } = await api.put('/v1/ent/sms/config', body)
+  return data?.data
+}
+
+/** 手机号校验：可选 + 前缀 + 5-20 位数字（与后端 ValidateSmsPhone 一致） */
+export function isValidPhone(phone: string): boolean {
+  const p = (phone || '').trim()
+  if (!p || p.length > 21) return false
+  const digits = p.startsWith('+') ? p.slice(1) : p
+  return /^\d{5,20}$/.test(digits)
+}

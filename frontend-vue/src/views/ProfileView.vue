@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { Card, Button, Input, Form, FormItem, message, Popconfirm, Tag, Empty, Spin } from 'ant-design-vue'
-import { UserOutlined, SafetyOutlined } from '@ant-design/icons-vue'
+import { UserOutlined, SafetyOutlined, MobileOutlined } from '@ant-design/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { api } from '../api'
 import {
@@ -11,9 +11,15 @@ import {
   setPassword,
   listPublicSsoProviders,
   ssoLoginURL,
+  getSmsBind,
+  bindPhone,
+  unbindPhone,
+  sendSmsCode,
+  isValidPhone,
   type UserIdentity,
   type SsoPublicProvider,
 } from '../api/auth'
+import { useSmsCountdown } from '../composables/useSmsCountdown'
 
 const route = useRoute()
 const authStore = useAuthStore()
@@ -33,6 +39,7 @@ onMounted(async () => {
     message.success('三方账号绑定成功')
   }
   loadBindings()
+  loadPhone()
 })
 
 async function handleUpdateProfile() {
@@ -88,6 +95,95 @@ async function handleUnbind(id: string) {
     message.error(e.response?.data?.error || '解绑失败')
   } finally {
     unbinding.value = ''
+  }
+}
+
+// ── 手机号绑定（短信验证码）──
+
+const phone = ref('')
+const phoneBound = ref(false)
+const phoneLoading = ref(false)
+const phoneForm = ref({ phone: '', code: '' })
+const phoneBinding = ref(false)
+const unbindingPhone = ref(false)
+const { remaining: phoneCountdown, start: startPhoneCountdown } = useSmsCountdown(60)
+const sendingCode = ref(false)
+
+async function loadPhone() {
+  phoneLoading.value = true
+  try {
+    const res = await getSmsBind()
+    phone.value = res.phone || ''
+    phoneBound.value = !!res.bound
+  } catch {
+    // 短信服务未配置/不可达时静默隐藏绑定表单
+    phoneBound.value = false
+  } finally {
+    phoneLoading.value = false
+  }
+}
+
+async function handleSendBindCode() {
+  const p = phoneForm.value.phone.trim()
+  if (!isValidPhone(p)) {
+    message.warning('请输入正确的手机号')
+    return
+  }
+  sendingCode.value = true
+  try {
+    const res = await sendSmsCode({ phone: p, purpose: 'bind' })
+    startPhoneCountdown(res.interval || 60)
+    message.success('验证码已发送')
+  } catch (e: any) {
+    const status = e.response?.status
+    const apiErr = e.response?.data?.error
+    if (status === 429) {
+      message.error('发送过于频繁，请稍后再试')
+    } else if (status === 403) {
+      message.error(apiErr || '短信服务未启用')
+    } else {
+      message.error(apiErr || '验证码发送失败')
+    }
+  } finally {
+    sendingCode.value = false
+  }
+}
+
+async function handleBindPhone() {
+  const { phone: p, code } = phoneForm.value
+  if (!isValidPhone(p) || !code.trim()) {
+    message.warning('请填写手机号与验证码')
+    return
+  }
+  phoneBinding.value = true
+  try {
+    await bindPhone({ phone: p.trim(), code: code.trim() })
+    message.success('手机号绑定成功')
+    phoneForm.value = { phone: '', code: '' }
+    await loadPhone()
+  } catch (e: any) {
+    const status = e.response?.status
+    const apiErr = e.response?.data?.error
+    if (status === 409) {
+      message.error('该手机号已绑定其他账号')
+    } else {
+      message.error(apiErr || '绑定失败')
+    }
+  } finally {
+    phoneBinding.value = false
+  }
+}
+
+async function handleUnbindPhone() {
+  unbindingPhone.value = true
+  try {
+    await unbindPhone()
+    message.success('已解绑手机号')
+    await loadPhone()
+  } catch (e: any) {
+    message.error(e.response?.data?.error || '解绑失败')
+  } finally {
+    unbindingPhone.value = false
   }
 }
 
@@ -183,6 +279,59 @@ async function handleSetPassword() {
           </div>
         </template>
       </Spin>
+    </Card>
+
+    <Card class="profile-card" title="手机号" style="margin-top: 16px" :loading="phoneLoading">
+      <template v-if="phoneBound">
+        <div class="identity-row">
+          <div class="identity-info">
+            <Tag color="green"><MobileOutlined /></Tag>
+            <span class="identity-name">{{ phone }}</span>
+            <span class="identity-meta">可用于短信验证码登录</span>
+          </div>
+          <Popconfirm
+            title="确定解绑该手机号？"
+            ok-text="解绑"
+            cancel-text="取消"
+            @confirm="handleUnbindPhone"
+          >
+            <Button danger size="small" :loading="unbindingPhone">解绑</Button>
+          </Popconfirm>
+        </div>
+      </template>
+      <template v-else>
+        <Form :model="phoneForm" layout="vertical" style="max-width: 360px">
+          <FormItem label="手机号">
+            <Input
+              v-model:value="phoneForm.phone"
+              placeholder="请输入手机号"
+              :maxlength="21"
+            >
+              <template #prefix><MobileOutlined /></template>
+            </Input>
+          </FormItem>
+          <FormItem label="验证码">
+            <Input v-model:value="phoneForm.code" placeholder="短信验证码" :maxlength="6">
+              <template #suffix>
+                <Button
+                  size="small"
+                  type="link"
+                  :disabled="phoneCountdown > 0 || sendingCode"
+                  :loading="sendingCode"
+                  @click="handleSendBindCode"
+                >
+                  {{ phoneCountdown > 0 ? `${phoneCountdown}s 后重发` : '获取验证码' }}
+                </Button>
+              </template>
+            </Input>
+          </FormItem>
+          <FormItem>
+            <Button type="primary" :loading="phoneBinding" @click="handleBindPhone">
+              绑定手机号
+            </Button>
+          </FormItem>
+        </Form>
+      </template>
     </Card>
 
     <Card class="profile-card" title="设置密码" style="margin-top: 16px">

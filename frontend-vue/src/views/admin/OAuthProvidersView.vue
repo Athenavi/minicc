@@ -1,9 +1,10 @@
 <script setup lang="ts">
 /**
- * OAuthProvidersView — 管理端：三方登录 Provider 管理 + 人机验证配置
+ * OAuthProvidersView — 管理端：三方登录 Provider 管理 + 人机验证配置 + 短信服务配置
  *
  * - Provider CRUD：/v1/ent/sso/providers（协议 OIDC/OAuth2、模板类型、端点覆盖）
  * - 人机验证：/v1/ent/captcha/config（turnstile/recaptcha/hcaptcha/tencent/custom）
+ * - 短信服务：/v1/ent/sms/config（aliyun/tencent/custom，验证码登录）
  */
 import { ref, reactive, onMounted } from 'vue'
 import {
@@ -13,6 +14,7 @@ import {
 import {
   listSsoProviders, createSsoProvider, updateSsoProvider, deleteSsoProvider,
   getCaptchaAdminConfig, updateCaptchaConfig,
+  getSmsAdminConfig, updateSmsConfig,
   type SsoProvider,
 } from '../../api/auth'
 
@@ -236,9 +238,101 @@ async function handleSaveCaptcha() {
   }
 }
 
+// ── 短信服务配置 ──
+
+const sms = reactive({
+  provider: 'aliyun',
+  sign_name: '',
+  template_id: '',
+  access_key_id: '',
+  secret: '',
+  endpoint: '',
+  code_ttl_seconds: 300,
+  send_interval_seconds: 60,
+  daily_limit: 10,
+  login_enabled: false,
+  auto_register: false,
+  enabled: false,
+})
+const smsLoading = ref(false)
+const smsSaving = ref(false)
+
+const smsProviders = [
+  { value: 'aliyun', label: '阿里云短信' },
+  { value: 'tencent', label: '腾讯云短信' },
+  { value: 'custom', label: '自定义（HTTP 端点）' },
+]
+
+async function loadSms() {
+  smsLoading.value = true
+  try {
+    const cfg = await getSmsAdminConfig()
+    sms.provider = cfg.provider || 'aliyun'
+    sms.sign_name = cfg.sign_name || ''
+    sms.template_id = cfg.template_id || ''
+    sms.access_key_id = cfg.access_key_id || ''
+    sms.secret = '' // 密文不回显；空 = 保留原值
+    sms.endpoint = cfg.endpoint || ''
+    sms.code_ttl_seconds = cfg.code_ttl_seconds || 300
+    sms.send_interval_seconds = cfg.send_interval_seconds ?? 60
+    sms.daily_limit = cfg.daily_limit || 10
+    sms.login_enabled = !!cfg.login_enabled
+    sms.auto_register = !!cfg.auto_register
+    sms.enabled = !!cfg.enabled
+  } catch (e: any) {
+    message.error(e.response?.data?.error || '短信配置加载失败')
+  } finally {
+    smsLoading.value = false
+  }
+}
+
+async function handleSaveSms() {
+  if (sms.enabled) {
+    if (sms.provider !== 'custom') {
+      if (!sms.sign_name) { message.warning('启用前必须填写短信签名'); return }
+      if (!sms.template_id) { message.warning('启用前必须填写模板 ID'); return }
+    }
+    if (sms.provider === 'custom' && !sms.endpoint) {
+      message.warning('custom 类型必须填写发送端点 URL')
+      return
+    }
+  }
+  if (sms.login_enabled && !sms.enabled) {
+    message.warning('短信登录依赖发送能力，请同时启用短信服务')
+    return
+  }
+  const body: any = {
+    provider: sms.provider,
+    sign_name: sms.sign_name,
+    template_id: sms.template_id,
+    access_key_id: sms.access_key_id,
+    endpoint: sms.endpoint,
+    code_ttl_seconds: sms.code_ttl_seconds,
+    send_interval_seconds: sms.send_interval_seconds,
+    daily_limit: sms.daily_limit,
+    login_enabled: sms.login_enabled,
+    auto_register: sms.auto_register,
+    enabled: sms.enabled,
+  }
+  if (sms.secret) body.secret = sms.secret
+
+  smsSaving.value = true
+  try {
+    await updateSmsConfig(body)
+    message.success('短信配置已保存')
+    sms.secret = ''
+    await loadSms()
+  } catch (e: any) {
+    message.error(e.response?.data?.error || '保存失败')
+  } finally {
+    smsSaving.value = false
+  }
+}
+
 onMounted(() => {
   loadProviders()
   loadCaptcha()
+  loadSms()
 })
 </script>
 
@@ -308,6 +402,62 @@ onMounted(() => {
         </FormItem>
         <FormItem>
           <Button type="primary" :loading="captchaSaving" @click="handleSaveCaptcha">保存配置</Button>
+        </FormItem>
+      </Form>
+    </Card>
+
+    <Card title="短信服务（验证码登录）" style="margin-top: 16px" :loading="smsLoading">
+      <Alert
+        type="info"
+        show-icon
+        style="margin-bottom: 16px"
+        message="启用后登录页出现「短信登录」标签页，个人中心可绑定手机号；验证码发送有冷却与每日上限防滥用。AccessKeySecret 加密存储、回显脱敏。"
+      />
+      <Form layout="vertical" style="max-width: 520px">
+        <FormItem label="短信服务商">
+          <Select v-model:value="sms.provider" :options="smsProviders" />
+        </FormItem>
+        <template v-if="sms.provider !== 'custom'">
+          <FormItem label="短信签名（SignName）">
+            <Input v-model:value="sms.sign_name" placeholder="如 MiniCC" />
+          </FormItem>
+          <FormItem label="模板 ID（阿里云 TemplateCode / 腾讯云 TemplateId）">
+            <Input v-model:value="sms.template_id" placeholder="如 SMS_12345678（模板参数需含 code）" />
+          </FormItem>
+          <FormItem label="AccessKeyID（腾讯云填 SmsSdkAppId）">
+            <Input v-model:value="sms.access_key_id" />
+          </FormItem>
+        </template>
+        <FormItem v-if="sms.provider === 'custom'" label="发送端点 URL">
+          <Input v-model:value="sms.endpoint" placeholder="https://your-sms.example.com/send" />
+        </FormItem>
+        <FormItem label="AccessKeySecret（留空保留原值）">
+          <Input v-model:value="sms.secret" type="password" placeholder="AES-GCM 加密存储" />
+        </FormItem>
+        <div class="form-grid">
+          <FormItem label="验证码有效期（秒）">
+            <InputNumber v-model:value="sms.code_ttl_seconds" :min="60" :max="900" style="width: 100%" />
+          </FormItem>
+          <FormItem label="发送冷却（秒）">
+            <InputNumber v-model:value="sms.send_interval_seconds" :min="0" :max="3600" style="width: 100%" />
+          </FormItem>
+        </div>
+        <FormItem label="同一手机号每日发送上限">
+          <InputNumber v-model:value="sms.daily_limit" :min="1" :max="100" style="width: 100%" />
+        </FormItem>
+        <div class="switch-row">
+          <FormItem label="启用短信服务">
+            <Switch v-model:checked="sms.enabled" />
+          </FormItem>
+          <FormItem label="短信登录入口">
+            <Switch v-model:checked="sms.login_enabled" />
+          </FormItem>
+          <FormItem label="未注册自动建号">
+            <Switch v-model:checked="sms.auto_register" />
+          </FormItem>
+        </div>
+        <FormItem>
+          <Button type="primary" :loading="smsSaving" @click="handleSaveSms">保存配置</Button>
         </FormItem>
       </Form>
     </Card>

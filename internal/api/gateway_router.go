@@ -122,10 +122,11 @@ func NewGatewayRouter(
 	authHandler := NewAuthHandler(cfg)
 	authMW := AuthMiddleware(authenticator)
 
-	// SSO 三方登录 + 人机验证（防接口滥用）
+	// SSO 三方登录 + 人机验证（防接口滥用）+ 短信验证码登录
 	ssoHandler := NewSSOHandler(authenticator, cfg)
 	captchaHandler := NewCaptchaHandler(cfg)
 	authHandler.SetCaptchaHandler(captchaHandler)
+	smsHandler := NewSmsHandler(authenticator, cfg, captchaHandler)
 
 	// Billing
 	billingStore := billing.NewPGStore()
@@ -212,6 +213,11 @@ func NewGatewayRouter(
 	// ── 人机验证：公开配置下发（登录页拉取）+ 管理配置 ──
 	captchaHandler.RegisterPublicRoutes(mux, rlMW)
 	captchaHandler.RegisterAdminRoutes(mux, authMW)
+
+	// ── 短信验证码登录（公开流程 rlMW；用户自助 authMW；管理 authMW + sso:manage）──
+	smsHandler.RegisterPublicRoutes(mux, rlMW)
+	smsHandler.RegisterUserRoutes(mux, authMW)
+	smsHandler.RegisterAdminRoutes(mux, authMW)
 	registerSystemRoutes(mux, authMW, rlMW, sanitizeMW, installHandler, editorHandler, toolHandler, systemHandler, traceHandler)
 	registerConversationRoutes(mux, conversationHandler, shareHandler, authMW, rlMW)
 	registerMediaRoutes(mux, mediaHandler, authMW, rlMW, cfg.StorageRoot)

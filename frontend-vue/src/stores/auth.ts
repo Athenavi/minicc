@@ -114,6 +114,15 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /** 建立/覆盖本地会话（短信登录等直接拿到 {token, user} 的入口复用） */
+  function applySession(t: string, u: User) {
+    if (!t) throw new Error('invalid session: empty token')
+    token.value = t
+    user.value = u
+    localStorage.setItem('token', t)
+    persistUserToStorage(u)
+  }
+
   function logout() {
     token.value = ''
     user.value = null
@@ -131,6 +140,7 @@ export const useAuthStore = defineStore('auth', () => {
     register,
     fetchProfile,
     bootstrapSession,
+    applySession,
     logout,
   }
 })
