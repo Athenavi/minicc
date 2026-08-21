@@ -187,6 +187,10 @@ async def lifespan(app: FastAPI):
     llm_client.bind_gateway(_gateway)
     logger.info("Tool/Workflow gateways bound")
 
+    # ── 3.6. 六大工作台能力注册（互通基础：TaskRouter 依赖能力注册中心） ──
+    from app.core.capabilities import preload_default_capabilities
+    await preload_default_capabilities()
+
     # ── 3.5. SmartAPIKeyPool ──
     from app.gateway.smart_key_pool import SmartAPIKeyPool
     _key_pool = SmartAPIKeyPool()

@@ -119,7 +119,7 @@ class TaskRouter:
             intent = await self._understand_intent(user_input, context or {})
             
             # ── 阶段 2: 任务拆解 ─────────────────────────────────────
-            subtasks = await self._decompose_task(intent, tenant_id)
+            subtasks = await self._decompose_task(intent, tenant_id, user_input)
             
             if not subtasks:
                 return {
@@ -215,11 +215,9 @@ class TaskRouter:
         context: dict,
     ) -> dict[str, Any]:
         """使用 LLM 理解用户意图 (生产级实现)"""
-        from app.gateway.router import get_gateway
-        
-        gateway = get_gateway()
-        if not gateway:
-            raise RuntimeError("Gateway not available for LLM intent recognition")
+        from app.main import get_gateway
+
+        gateway = await get_gateway()
         
         prompt = f"""Analyze the user's intent and return a structured JSON response.
 
@@ -269,154 +267,174 @@ Return ONLY valid JSON without markdown formatting."""
         self,
         intent: dict,
         tenant_id: str,
+        user_input: str,
     ) -> list[SubTask]:
         """将意图拆解为子任务
-        
+
         策略:
-        1. 如果使用 LLM (fallback=False),直接使用推荐的分解
+        1. LLM 意图识别成功 (fallback=False) 且给出推荐工作台 → 按推荐站台编排跨工作台流水线
         2. 否则降级到基于动作的规则分解
         """
         action = intent.get("action", "")
         keywords = intent.get("keywords", [])
         complexity = intent.get("complexity", "simple")
         fallback = intent.get("fallback", True)
-        
+
         # 如果是简单任务,直接单任务处理
         if complexity == "simple":
             return [
                 SubTask(
-                    subtask_id=f"sub_0_default",
-                    description=user_input if 'user_input' in locals() else intent.get("description", ""),
+                    subtask_id="sub_0_default",
+                    description=user_input or intent.get("description", ""),
                     capability_id="",
                     tags=keywords,
                 )
             ]
-        
+
         if fallback:
             # 降级到基于动作的分解
-            return await self._rule_based_decomposition(action, keywords)
-        
-        # LLM 提供了推荐的工作台,可以在这里做更细粒度的分解
+            return await self._rule_based_decomposition(action, keywords, user_input)
+
+        # LLM 提供了推荐的工作台 → 跨工作台流水线编排
         recommended_workstations = intent.get("recommended_workstations", [])
-        
-        # TODO: 根据 LLM 推荐的站台做高级编排
-        # 简化版: 仍然使用动作判断,但可以考虑站台偏好
-        return await self._rule_based_decomposition(action, keywords)
-    
+        subtasks = await self._decompose_by_recommendation(
+            recommended_workstations, tenant_id, user_input, keywords,
+        )
+        if subtasks:
+            return subtasks
+
+        # 推荐站台无可用能力,回退规则分解
+        return await self._rule_based_decomposition(action, keywords, user_input)
+
+    async def _decompose_by_recommendation(
+        self,
+        recommended_workstations: list,
+        tenant_id: str,
+        user_input: str,
+        keywords: list[str],
+    ) -> list[SubTask]:
+        """按 LLM 推荐的工作台编排跨工作台流水线
+
+        每个推荐站台匹配一个能力，子任务线性串联（后序依赖前序输出），
+        形成真正的跨工作台协同（如 agent 分析 → knowledge 检索 → skill 执行）。
+        """
+        subtasks: list[SubTask] = []
+        for ws in recommended_workstations:
+            try:
+                wst = WorkstationType(ws)
+            except ValueError:
+                logger.warning("Unknown recommended workstation: %r", ws)
+                continue
+
+            caps = await self.registry.list_by_workstation(wst, tenant_id)
+            if not caps:
+                logger.warning("No capability available on recommended workstation: %s", ws)
+                continue
+
+            cap = caps[0]
+            param_names = {p.name for p in cap.input_schema}
+            parameters: dict[str, Any] = {}
+            if "task" in param_names:
+                parameters["task"] = user_input
+            elif "query" in param_names:
+                parameters["query"] = user_input
+
+            subtask_id = f"sub_{len(subtasks)}_{wst.value}"
+            subtasks.append(SubTask(
+                subtask_id=subtask_id,
+                description=user_input,
+                capability_id=cap.capability_id,
+                parameters=parameters,
+                dependencies=[subtasks[-1].subtask_id] if subtasks else [],
+                tags=keywords,
+                workstation_type=wst,
+            ))
+
+        if len(subtasks) >= 2:
+            logger.info(
+                "Cross-workstation pipeline planned: %s",
+                " -> ".join(t.capability_id for t in subtasks),
+            )
+        return subtasks
+
     async def _rule_based_decomposition(
         self,
         action: str,
         keywords: list[str],
+        user_input: str = "",
     ) -> list[SubTask]:
-        """基于动作的任务分解 (降级策略)"""
-        user_input = intent.get("description", "") if isinstance(intent, dict) else ""
-        
+        """基于动作的任务分解 (降级策略)
+
+        search 动作编排两步知识库链路：kb_list（发现知识库）→ kb_search（检索），
+        kb_id 通过依赖输出模板 ${sub_0_list.knowledge_bases.0.id} 注入。
+        """
         # 基于动作拆解
         if action == "analyze":
             return [
                 SubTask(
-                    subtask_id=f"sub_0_read",
+                    subtask_id="sub_0_read",
                     description="读取文件内容",
                     capability_id="skill:read_file",
+                    parameters={"path": " ".join(keywords) if keywords else ""},
                     tags=keywords,
                 ),
                 SubTask(
-                    subtask_id=f"sub_1_analyze",
+                    subtask_id="sub_1_analyze",
                     description="分析内容并提取关键信息",
-                    capability_id="agent:analyzer",  # 需要注册
+                    capability_id="agent:analyzer",
+                    parameters={"task": user_input},
                     dependencies=["sub_0_read"],
                     tags=keywords,
                 ),
             ]
-        
+
         elif action == "generate_code":
             return [
                 SubTask(
-                    subtask_id=f"sub_0_parse",
+                    subtask_id="sub_0_parse",
                     description="解析需求",
                     capability_id="agent:requirement_parser",
+                    parameters={"task": user_input},
                     tags=keywords,
                 ),
                 SubTask(
-                    subtask_id=f"sub_1_write",
+                    subtask_id="sub_1_write",
                     description="编写代码",
                     capability_id="skill:execute_python",
+                    parameters={"code": "${sub_0_parse.result}"},
                     dependencies=["sub_0_parse"],
                     tags=keywords,
                 ),
             ]
-        
-        else:
-            # 默认: 单任务
-            return [
-                SubTask(
-                    subtask_id=f"sub_0_default",
-                    description=user_input,
-                    capability_id="",  # 待匹配
-                    tags=keywords,
-                )
-            ]
-    
-    async def _rule_based_decomposition(
-        self,
-        action: str,
-        keywords: list[str],
-    ) -> list[SubTask]:
-        """基于动作的任务分解 (降级策略)"""
-        # 找到 user_input 从上下文中
-        user_input = "Execute task"
-        
-        # 基于动作拆解
-        if action == "analyze":
-            return [
-                SubTask(
-                    subtask_id=f"sub_0_read",
-                    description="读取文件内容",
-                    capability_id="skill:read_file",
-                    tags=keywords,
-                ),
-                SubTask(
-                    subtask_id=f"sub_1_analyze",
-                    description="分析内容并提取关键信息",
-                    capability_id="agent:analyzer",  # 需要注册
-                    dependencies=["sub_0_read"],
-                    tags=keywords,
-                ),
-            ]
-        
-        elif action == "generate_code":
-            return [
-                SubTask(
-                    subtask_id=f"sub_0_parse",
-                    description="解析需求",
-                    capability_id="agent:requirement_parser",
-                    tags=keywords,
-                ),
-                SubTask(
-                    subtask_id=f"sub_1_write",
-                    description="编写代码",
-                    capability_id="skill:execute_python",
-                    dependencies=["sub_0_parse"],
-                    tags=keywords,
-                ),
-            ]
-        
+
         elif action == "search":
             return [
                 SubTask(
-                    subtask_id=f"sub_0_search",
-                    description="搜索相关信息",
+                    subtask_id="sub_0_list",
+                    description="查找可用知识库",
+                    capability_id="knowledge:kb_list",
+                    parameters={"query": ""},
+                    tags=keywords,
+                ),
+                SubTask(
+                    subtask_id="sub_1_search",
+                    description="在知识库中检索相关信息",
                     capability_id="knowledge:kb_search",
+                    parameters={
+                        "kb_id": "${sub_0_list.knowledge_bases.0.id}",
+                        "query": user_input,
+                    },
+                    dependencies=["sub_0_list"],
                     tags=keywords,
                 ),
             ]
-        
+
         else:
             # 默认: 单任务
             return [
                 SubTask(
-                    subtask_id=f"sub_0_default",
-                    description=user_input,
+                    subtask_id="sub_0_default",
+                    description=user_input or "Execute task",
                     capability_id="",  # 待匹配
                     tags=keywords,
                 )
@@ -459,7 +477,19 @@ Return ONLY valid JSON without markdown formatting."""
                 )
             else:
                 logger.warning(f"No capability matched for subtask: {subtask.description}")
-        
+                # 兜底：未匹配到能力时路由到通用 Agent 对话能力，
+                # 保证任务链路不失联（能力缺失会导致整个任务 no_match）。
+                fallback_cap = await self.registry.get_by_id("agent:general_chat", tenant_id)
+                if fallback_cap:
+                    subtask.capability_id = fallback_cap.capability_id
+                    subtask.workstation_type = fallback_cap.workstation_type
+                    subtask.parameters = {"task": subtask.description}
+                    matched.append(subtask)
+                    logger.info(
+                        "Falling back to %s for subtask %s",
+                        fallback_cap.capability_id, subtask.subtask_id,
+                    )
+
         return matched
     
     def _topological_sort(self, tasks: list[SubTask]) -> list[SubTask]:
@@ -549,6 +579,35 @@ Return ONLY valid JSON without markdown formatting."""
         
         return grouped
     
+    def _resolve_params(
+        self,
+        params: dict[str, Any],
+        completed_tasks: dict[str, "ExecutedTask"],
+    ) -> dict[str, Any]:
+        """解析依赖输出模板 "${dep_id.field.subfield...}"
+
+        允许后序子任务引用前序子任务的输出（跨工作台数据流），
+        路径不存在时解析为空串（由能力的参数校验显式报错）。
+        """
+        resolved: dict[str, Any] = {}
+        for key, value in params.items():
+            if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
+                path = value[2:-1].split(".")
+                dep_id, fields = path[0], path[1:]
+                node = completed_tasks[dep_id].output if dep_id in completed_tasks else None
+                for f in fields:
+                    if isinstance(node, dict) and f in node:
+                        node = node[f]
+                    elif isinstance(node, list) and f.isdigit() and int(f) < len(node):
+                        node = node[int(f)]
+                    else:
+                        node = None
+                        break
+                resolved[key] = node if node is not None else ""
+            else:
+                resolved[key] = value
+        return resolved
+
     async def _execute_single_task(
         self,
         task: SubTask,
@@ -567,7 +626,7 @@ Return ONLY valid JSON without markdown formatting."""
                 error=f"Capability not found: {task.capability_id}",
                 status="failed",
             )
-        
+
         executor = cap._executor
         if not executor:
             return ExecutedTask(
@@ -578,23 +637,34 @@ Return ONLY valid JSON without markdown formatting."""
                 error=f"No executor registered for: {task.capability_id}",
                 status="failed",
             )
-        
-        # 注入依赖任务的输出
-        input_params = task.parameters.copy()
-        for dep_id in task.dependencies:
-            if dep_id in completed_tasks and completed_tasks[dep_id].output:
-                input_params["$previous_output"] = completed_tasks[dep_id].output
-        
+
+        # 注入依赖任务的输出（依赖输出模板 ${dep.field} 解析）
+        input_params = self._resolve_params(task.parameters, completed_tasks)
+
+        # 设置工具上下文：kb 等工具依赖 user_id 做归属校验（跨工作台调用必须携带）
+        from app.tools.context import set_tool_context
+        set_tool_context(
+            session_id=f"task_{trace_id}" if trace_id else task.subtask_id,
+            user_id=tenant_id,
+            tenant_id=tenant_id,
+        )
+
         # 执行
         start_time = time.time()
         try:
+            import asyncio
+
             if asyncio.iscoroutinefunction(executor):
                 output = await executor(**input_params)
             else:
                 output = executor(**input_params)
-            
+
             duration_ms = int((time.time() - start_time) * 1000)
-            
+
+            # 工具型输出约定 {"error": ...} 即失败（fail loud，不当作成功结果聚合）
+            failed = isinstance(output, dict) and "error" in output
+            error_msg = str(output.get("error")) if failed else ""
+
             # 记录 span
             from app.trace import record_span
             await record_span(
@@ -605,28 +675,44 @@ Return ONLY valid JSON without markdown formatting."""
                     "subtask_id": task.subtask_id,
                     "workstation": cap.workstation_type.value,
                     "tenant_id": tenant_id,
+                    "status": "failed" if failed else "completed",
                 },
                 tenant_id=tenant_id,
             )
-            
+
+            # 发布子任务状态到 ContextBus（跨工作台事件流，供其他工作台订阅）
+            from app.core.context_bus import publish_state_change
+            await publish_state_change(
+                topic=f"task.{trace_id}.{task.subtask_id}" if trace_id else f"task.{task.subtask_id}",
+                data={
+                    "subtask_id": task.subtask_id,
+                    "capability_id": cap.capability_id,
+                    "workstation": cap.workstation_type.value,
+                    "status": "failed" if failed else "completed",
+                    "duration_ms": duration_ms,
+                },
+                tenant_id=tenant_id,
+            )
+
             # 更新能力统计
-            cap.record_call(duration_ms, success=True)
-            
+            cap.record_call(duration_ms, success=not failed)
+
             return ExecutedTask(
                 task_id="",
                 subtask_id=task.subtask_id,
                 capability_id=cap.capability_id,
                 input_params=input_params,
-                output=output,
+                output=None if failed else output,
+                error=error_msg,
                 duration_ms=duration_ms,
-                status="completed",
+                status="failed" if failed else "completed",
             )
-            
+
         except Exception as e:
             duration_ms = int((time.time() - start_time) * 1000)
-            
+
             cap.record_call(duration_ms, success=False)
-            
+
             return ExecutedTask(
                 task_id="",
                 subtask_id=task.subtask_id,

@@ -575,6 +575,18 @@ func registerProxyRoutes(
 	mux.Handle("GET /v1/kb/{id}/documents", authMW(kbRateMW(kbP(pathParamSuffix("/v1/kb", "/documents")))))
 	mux.Handle("POST /v1/kb/{id}/build", authMW(kbRateMW(kbP(pathParamSuffix("/v1/kb", "/build")))))
 	mux.Handle("POST /v1/kb/{id}/query", authMW(kbRateMW(kbP(pathParamSuffix("/v1/kb", "/query")))))
+
+	// Unified chat / quick-execute (六大工作台统一入口, proxies to Python TaskRouter)
+	chatP := newProxy("", proxyOpt{logTag: "chat"})
+	mux.Handle("POST /v1/chat/submit", authMW(rlMW(chatP(pathFn("/v1/chat/submit")))))
+	mux.Handle("GET /v1/chat/sessions/{id}/messages", authMW(rlMW(chatP(pathParamSuffix("/v1/chat/sessions", "/messages")))))
+	// quick-execute 为 chat/submit 的语义别名（前端快捷执行入口）
+	mux.Handle("POST /v1/quick-execute", authMW(rlMW(chatP(pathFn("/v1/chat/submit")))))
+
+	// Capabilities discovery (能力注册中心: 六大工作台能力发现)
+	capP := newProxy("", proxyOpt{logTag: "capabilities"})
+	mux.Handle("GET /v1/capabilities", authMW(rlMW(capP(pathFn("/v1/capabilities")))))
+	mux.Handle("POST /v1/capabilities/search", authMW(rlMW(capP(pathFn("/v1/capabilities/search")))))
 }
 
 // ── Admin ──

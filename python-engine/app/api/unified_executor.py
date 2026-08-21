@@ -168,6 +168,7 @@ class UnifiedChatHandler:
                     "task_id": result.get("task_id"),
                     "duration_ms": result.get("total_duration_ms"),
                     "subtasks_completed": result.get("output", {}).get("subtasks_completed", 0),
+                    "subtasks": result.get("subtasks", []),
                 }
             }
             
@@ -347,24 +348,39 @@ def get_chat_handler() -> UnifiedChatHandler:
     return _global_chat_handler
 
 
-# ── FastAPI 路由示例 ────────────────────────────────────────────────
-"""
-from fastapi import APIRouter
+# ── FastAPI 路由（六大工作台统一对话入口） ──────────────────────────
+from fastapi import APIRouter, Request  # noqa: E402
 
 router = APIRouter(tags=["chat"])
 
+
 @router.post("/v1/chat/submit")
-async def submit_chat(body: dict):
+async def submit_chat(request: Request):
+    """统一任务提交入口：TaskRouter 自动编排六大工作台能力
+
+    Body: {message/user_input, tenant_id?, session_id?, mode?}
+    Go 网关代理时追加 ?user_id=<claims.UserID>，作为 tenant_id 兜底。
+    """
+    body = await request.json()
+    user_input = str(body.get("message") or body.get("user_input") or "")
+    if not user_input.strip():
+        return {"success": False, "error": "message is required"}
+
+    tenant_id = str(body.get("tenant_id") or request.query_params.get("user_id") or "")
+    if not tenant_id:
+        return {"success": False, "error": "tenant_id is required"}
+
     handler = get_chat_handler()
     return await handler.submit_task(
-        user_input=body.get("message", ""),
-        tenant_id=body.get("tenant_id", ""),
+        user_input=user_input,
+        tenant_id=tenant_id,
         session_id=body.get("session_id"),
-        mode=body.get("mode", "auto"),
+        mode=str(body.get("mode", "auto")),
     )
 
+
 @router.get("/v1/chat/sessions/{session_id}/messages")
-async def get_messages(session_id: str):
+async def get_messages(session_id: str, limit: int = 50):
+    """获取会话消息历史（含跨工作台共享上下文）"""
     handler = get_chat_handler()
-    return await handler.get_session_messages(session_id)
-"""
+    return await handler.get_session_messages(session_id, limit=limit)

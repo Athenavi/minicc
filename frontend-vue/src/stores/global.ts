@@ -3,6 +3,7 @@
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { quickExecute as quickExecuteApi } from '@/api'
 
 // ── 类型定义 ──
 
@@ -266,35 +267,80 @@ export const useGlobalStore = defineStore('global', () => {
     try {
       // 切换到对话工作台
       switchWorkstation('dialogue')
-      
+
       // 显示调用链
       isCallChainVisible.value = true
-      
+
       // 添加用户消息
       addChatMessage({
         role: 'user',
         content: userInput,
         timestamp: Date.now(),
       })
-      
-      // TODO: 调用 /v1/quick-execute API
-      console.log(`[GlobalStore] 快捷执行: ${userInput}`)
-      
-      // 模拟响应 (实际应从 API 获取)
-      addChatMessage({
-        role: 'assistant',
-        content: '任务正在后台执行中...',
-        timestamp: Date.now(),
-      })
-      
+
       addNotification({
         type: 'success',
         message: '任务已提交,正在执行...',
       })
-      
-      return { success: true }
+
+      // 调用六大工作台统一入口（Go 网关 → Python TaskRouter 自动编排）
+      const result = await quickExecuteApi({ message: userInput, mode: 'auto' })
+
+      if (result.trace_id) {
+        setCurrentTrace(result.trace_id)
+      }
+
+      if (result.success) {
+        // 将跨工作台子任务渲染到调用链
+        const subtasks = (result.metadata as any)?.subtasks ?? []
+        for (const st of subtasks) {
+          appendCallChainSpan({
+            trace_id: result.trace_id ?? '',
+            span_name: `task:${st.capability_id}`,
+            duration_ms: st.duration_ms ?? 0,
+            timestamp: new Date().toISOString(),
+            tenant_id: '',
+            metadata: {
+              subtask_id: st.subtask_id,
+              status: st.status,
+            },
+          })
+        }
+
+        addChatMessage({
+          role: 'assistant',
+          content: result.output || '(无输出)',
+          timestamp: Date.now(),
+          metadata: {
+            task_id: result.metadata?.task_id,
+            duration_ms: result.metadata?.duration_ms,
+          },
+        })
+
+        addNotification({
+          type: 'success',
+          message: `任务完成 (${result.metadata?.duration_ms ?? 0}ms)`,
+        })
+      } else {
+        addChatMessage({
+          role: 'assistant',
+          content: `执行失败: ${result.error ?? '未知错误'}`,
+          timestamp: Date.now(),
+        })
+        addNotification({
+          type: 'error',
+          message: `执行失败: ${result.error ?? '未知错误'}`,
+        })
+      }
+
+      return result
     } catch (error) {
       console.error('[GlobalStore] 快捷执行失败:', error)
+      addChatMessage({
+        role: 'assistant',
+        content: `执行失败: ${(error as Error).message}`,
+        timestamp: Date.now(),
+      })
       addNotification({
         type: 'error',
         message: `执行失败: ${(error as Error).message}`,

@@ -88,6 +88,36 @@ export async function getAgentSession(id: string): Promise<AgentSession> {
   return data?.data
 }
 
+// ── 六大工作台统一入口（quick-execute = chat/submit 的语义别名）──
+export interface QuickExecuteResult {
+  success: boolean
+  session_id?: string
+  trace_id?: string
+  output?: string
+  error?: string
+  metadata?: {
+    task_id?: string
+    duration_ms?: number
+    subtasks_completed?: number
+  }
+}
+
+/** 快捷执行：自然语言任务 → TaskRouter 跨工作台自动编排 */
+export async function quickExecute(body: {
+  message: string
+  session_id?: string
+  mode?: 'auto' | 'agent' | 'workflow'
+}): Promise<QuickExecuteResult> {
+  const { data } = await api.post('/v1/quick-execute', body)
+  return data
+}
+
+/** 获取统一会话消息历史（含跨工作台共享上下文） */
+export async function getChatSessionMessages(sessionId: string) {
+  const { data } = await api.get(`/v1/chat/sessions/${encodeURIComponent(sessionId)}/messages`)
+  return data
+}
+
 // ── 会话分享（chat.deepseek.com/share/{id} 风格）──
 export interface ShareInfo {
   share_id: string
