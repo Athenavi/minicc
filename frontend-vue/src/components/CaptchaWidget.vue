@@ -46,7 +46,7 @@ const loadedScripts = new Set<string>()
 function loadScript(src: string): Promise<void> {
   return new Promise((resolve, reject) => {
     if (loadedScripts.has(src)) return resolve()
-    const existing = document.querySelector(`script[src="${src}"]`)
+    const existing = document.querySelector(`script[src="${src}"]`) as HTMLScriptElement | null
     if (existing) {
       if (existing.dataset.loaded === '1') return resolve()
       existing.addEventListener('load', () => resolve())

@@ -707,30 +707,48 @@ async def admin_update_api_key(
     request: Request,
     pool=Depends(get_key_pool),
 ):
-    """更新 API Key 状态"""
+    """更新 API Key 状态（按稳定 ID 定位，active/rate_limited/circuit_open）"""
+    from fastapi.responses import JSONResponse
+
     key_id = request.path_params.get("key_id", "")
     body = await request.json()
     status_val = body.get("status", "")
-    # SmartKeyPool 无按 ID 更新接口，暂返回 success
-    return {"status": "updated", "id": key_id}
+    if not key_id or not status_val:
+        return JSONResponse(
+            {"status": "error", "error": "key id and status are required", "id": key_id},
+            status_code=400,
+        )
+    updated = await pool.update_key_status(key_id, status_val)
+    if not updated:
+        return JSONResponse(
+            {"status": "not_found", "error": f"API key not found or invalid status: {status_val}", "id": key_id},
+            status_code=404,
+        )
+    return {"status": "updated", "id": key_id, "key_status": status_val}
 
 
 async def admin_delete_api_key(
     request: Request,
     pool=Depends(get_key_pool),
 ):
-    """删除 API Key"""
+    """删除 API Key（按路径 ID；兼容请求体 provider+key 定位）"""
     key_id = request.path_params.get("key_id", "")
     try:
-        body = await request.json()
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
         provider = body.get("provider", "")
         key_full = body.get("key", "")
-        if not provider or not key_full:
+        if key_id:
+            removed = await pool.remove_key_by_id(key_id)
+        elif provider and key_full:
+            removed = await pool.remove_key(provider, key_full)
+        else:
             return JSONResponse(
-                {"status": "error", "error": "provider and key are required in request body", "id": key_id},
+                {"status": "error", "error": "key id (path) or provider+key (body) required", "id": key_id},
                 status_code=400,
             )
-        removed = await pool.remove_key(provider, key_full)
         if not removed:
             return JSONResponse(
                 {"status": "not_found", "error": "API key not found", "id": key_id},

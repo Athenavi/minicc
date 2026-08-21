@@ -196,6 +196,7 @@ async function handleCommandSubmit() {
         title: command.substring(0, 50),
         wsName: '对话',
         wsColor: '#10b981',
+        route: '/chat',
         status: 'completed',
         statusText: '完成',
         timestamp: Date.now(),
@@ -239,10 +240,14 @@ function clearCommand() {
   commandInput.value = ''
 }
 
-// 查看活动详情
+// 查看活动详情：跳转到活动关联的工作台路由
+// 活动带 route（如快捷命令产生的活动）直接跳；否则按 wsName 匹配工作台；兜底 /chat
 function viewActivityDetail(activity: any) {
-  console.log('View activity detail:', activity)
-  // TODO: 打开详情面板或跳转到相关页面
+  const route =
+    activity?.route ||
+    workstations.find(w => w.name === activity?.wsName)?.route ||
+    '/chat'
+  window.location.hash = route
 }
 
 // 注册图标组件（原 ./icons/*..vue 组件不存在，改用 antd 图标映射）

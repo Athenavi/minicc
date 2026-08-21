@@ -41,6 +41,10 @@ function handleApiError(e: Event) {
 }
 onMounted(() => {
   window.addEventListener('api:error', handleApiError)
+  // 刷新用户信息（角色可能已变更；fetchProfile 失败时 token 无效会自动登出）
+  if (authStore.token) {
+    authStore.fetchProfile()
+  }
 })
 onUnmounted(() => {
   window.removeEventListener('api:error', handleApiError)

@@ -10,8 +10,25 @@ export interface User {
   tenant_id: string
 }
 
+function loadUserFromStorage(): User | null {
+  try {
+    const raw = localStorage.getItem('user')
+    return raw ? JSON.parse(raw) as User : null
+  } catch {
+    return null
+  }
+}
+
+function persistUserToStorage(u: User | null) {
+  if (u) {
+    localStorage.setItem('user', JSON.stringify(u))
+  } else {
+    localStorage.removeItem('user')
+  }
+}
+
 export const useAuthStore = defineStore('auth', () => {
-  const user = ref<User | null>(null)
+  const user = ref<User | null>(loadUserFromStorage())
   const token = ref<string>(localStorage.getItem('token') || '')
   const loading = ref(false)
 
@@ -32,6 +49,7 @@ export const useAuthStore = defineStore('auth', () => {
       token.value = d.token
       user.value = d.user
       localStorage.setItem('token', token.value)
+      persistUserToStorage(d.user)
       return d
     } finally {
       loading.value = false
@@ -53,6 +71,7 @@ export const useAuthStore = defineStore('auth', () => {
       token.value = d.token
       user.value = d.user
       localStorage.setItem('token', token.value)
+      persistUserToStorage(d.user)
       return d
     } finally {
       loading.value = false
@@ -72,6 +91,7 @@ export const useAuthStore = defineStore('auth', () => {
         role: data.role,
         tenant_id: data.tenant_id || '',
       }
+      persistUserToStorage(user.value)
     } catch (error) {
       // Token 无效，清除
       logout()
@@ -87,6 +107,7 @@ export const useAuthStore = defineStore('auth', () => {
       token.value = d.token
       user.value = d.user
       localStorage.setItem('token', d.token)
+      persistUserToStorage(d.user)
       return true
     } catch {
       return false
@@ -97,6 +118,7 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = ''
     user.value = null
     localStorage.removeItem('token')
+    persistUserToStorage(null)
   }
 
   return {

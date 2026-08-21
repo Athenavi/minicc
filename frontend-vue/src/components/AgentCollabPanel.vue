@@ -97,6 +97,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   collapse: []
+  /** 请求父组件清空日志数据（logs 是 prop，单向数据流由父组件管理） */
+  clearLogs: []
 }>()
 
 const isCollapsed = ref(false)
@@ -124,7 +126,7 @@ function truncateOutput(output: string): string {
 }
 
 function clearLog() {
-  // TODO: 清空日志
+  emit('clearLogs')
 }
 
 function formatTime(timestamp: number): string {

@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { authGuard } from './guard'
 
 const routes = [
   {
@@ -166,15 +167,7 @@ const router = createRouter({
   routes,
 })
 
-// 路由守卫
-router.beforeEach((to, _from, next) => {
-  const token = localStorage.getItem('token')
-
-  if (to.meta.requiresAuth && !token) {
-    next('/login')
-  } else {
-    next()
-  }
-})
+// 路由守卫（逻辑在 guard.ts，独立可测）
+router.beforeEach(authGuard)
 
 export default router

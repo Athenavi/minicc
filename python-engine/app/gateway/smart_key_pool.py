@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import random
 import time
@@ -247,6 +248,46 @@ class SmartAPIKeyPool:
                     pool.pop(i)
                     return True
         return False
+
+    @staticmethod
+    def key_id(provider: str, key: str) -> str:
+        """稳定 ID：provider + key 指纹（不泄露完整 key，可用于管理端按 ID 定位）"""
+        digest = hashlib.sha256(f"{provider}:{key}".encode()).hexdigest()[:12]
+        return f"{provider}-{digest}"
+
+    async def update_key_status(self, key_id: str, status: str) -> bool:
+        """
+        按 ID 更新 Key 状态（active / rate_limited / circuit_open）
+
+        Returns:
+            是否找到并更新（非法状态值或 ID 不存在返回 False）
+        """
+        try:
+            new_status = KeyStatus(status)
+        except ValueError:
+            return False
+        async with self._lock:
+            for pool in self._pools.values():
+                for k in pool:
+                    if self.key_id(k.provider, k.key) == key_id:
+                        k.status = new_status
+                        # 手动恢复为 active 时重置熔断器，否则下次 get_key 仍被熔断拦截
+                        if new_status == KeyStatus.ACTIVE and k.circuit_breaker:
+                            k.circuit_breaker.record_success()
+                        return True
+        return False
+
+    async def remove_key_by_id(self, key_id: str) -> bool:
+        """按 ID 删除 Key（管理端路径删除，无需请求体携带完整 key）"""
+        async with self._lock:
+            for provider, pool in self._pools.items():
+                for i, k in enumerate(pool):
+                    if self.key_id(k.provider, k.key) == key_id:
+                        pool.pop(i)
+                        if not pool:
+                            del self._pools[provider]
+                        return True
+        return False
     
     def get_stats(self) -> dict:
         """获取统计信息"""
@@ -284,11 +325,12 @@ class SmartAPIKeyPool:
         return stats
     
     def get_all_keys(self) -> list[dict]:
-        """获取所有 Key 信息"""
+        """获取所有 Key 信息（含稳定 id，供管理端更新/删除定位）"""
         keys = []
         for provider, pool in self._pools.items():
             for k in pool:
                 keys.append({
+                    "id": self.key_id(k.provider, k.key),
                     "provider": k.provider,
                     "key": k.key[:20] + "...",
                     "weight": k.weight,

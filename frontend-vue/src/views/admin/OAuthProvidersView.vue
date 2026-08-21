@@ -274,8 +274,8 @@ onMounted(() => {
             <Tag :color="record.protocol === 'oauth2' ? 'purple' : 'cyan'">{{ record.protocol }}</Tag>
           </template>
           <template v-else-if="column.key === 'actions'">
-            <Button size="small" style="margin-right: 8px" @click="openEdit(record)">编辑</Button>
-            <Popconfirm title="确定删除该 Provider？" ok-text="删除" cancel-text="取消" @confirm="handleDelete(record)">
+            <Button size="small" style="margin-right: 8px" @click="openEdit(record as SsoProvider)">编辑</Button>
+            <Popconfirm title="确定删除该 Provider？" ok-text="删除" cancel-text="取消" @confirm="handleDelete(record as SsoProvider)">
               <Button size="small" danger>删除</Button>
             </Popconfirm>
           </template>
