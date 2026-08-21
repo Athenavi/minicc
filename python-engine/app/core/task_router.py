@@ -235,12 +235,16 @@ Please provide:
 
 Return ONLY valid JSON without markdown formatting."""
         
+        # 注意：gateway 缓存层要求 ChatMessage 对象（m.to_dict()），裸 dict 会在
+        # _exact_key 处抛 AttributeError（冒烟测试 2026-08-21 实测踩坑）
+        from app.gateway.provider import ChatMessage
+
         messages = [
-            {
-                "role": "system",
-                "content": "You are a task intent analyzer. Your job is to understand user requests and structure them for automated processing. Return only JSON, no explanations."
-            },
-            {"role": "user", "content": prompt}
+            ChatMessage(
+                role="system",
+                content="You are a task intent analyzer. Your job is to understand user requests and structure them for automated processing. Return only JSON, no explanations."
+            ),
+            ChatMessage(role="user", content=prompt)
         ]
         
         # 调用 LLM
@@ -280,7 +284,13 @@ Return ONLY valid JSON without markdown formatting."""
         complexity = intent.get("complexity", "simple")
         fallback = intent.get("fallback", True)
 
-        # 如果是简单任务,直接单任务处理
+        # 降级意图必须先走规则分解：降级 dict 无 complexity 字段，若先判
+        # complexity 会拿到默认值 "simple" 而短路成单任务 —— 搜索/分析等
+        # 具体动作的 kb 链编排将永远不触发（冒烟测试 2026-08-21 实测踩坑）
+        if fallback:
+            return await self._rule_based_decomposition(action, keywords, user_input)
+
+        # LLM 意图识别成功且判定为简单任务 → 直接单任务处理
         if complexity == "simple":
             return [
                 SubTask(
@@ -290,10 +300,6 @@ Return ONLY valid JSON without markdown formatting."""
                     tags=keywords,
                 )
             ]
-
-        if fallback:
-            # 降级到基于动作的分解
-            return await self._rule_based_decomposition(action, keywords, user_input)
 
         # LLM 提供了推荐的工作台 → 跨工作台流水线编排
         recommended_workstations = intent.get("recommended_workstations", [])

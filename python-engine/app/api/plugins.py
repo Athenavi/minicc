@@ -15,9 +15,11 @@ S 安全修复：插件沙箱隔离（2026-08-17 生产安全检查）
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import time
+from pathlib import Path
 
 try:
     import resource
@@ -83,71 +85,106 @@ async def run_plugin_in_sandbox(
     plugin_code: str,
     input_data: dict[str, Any],
 ) -> dict[str, Any]:
-    """在沙箱中运行插件代码（未来实现）
-    
-    TODO: 实现完整的 subprocess 隔离
-    当前返回占位符，后续升级为容器化执行
-    
+    """在独立 subprocess 沙箱中运行插件代码。
+
+    隔离层次（S 安全修复 2026-08-21 落地）：
+    - B 层：独立进程（plugin_runner.py），超时 kill、输出截断、崩溃不影响宿主；
+      POSIX 下子进程内 setrlimit 限内存/CPU。
+    - A 层：静态 AST 检查 + 受控 builtins（app/tools/code_guard.py 单一事实来源）。
+    - 审计：所有执行记录 JSONL 落盘（audit_log_enabled 时）。
+
     Returns:
         {"success": True/False, "output": ..., "error": ...}
     """
-    logger.warning(
-        f"Plugin sandbox not yet implemented: {plugin_name}. "
-        f"Running in process (DANGEROUS - future enhancement)."
-    )
-    
-    # 占位符：当前直接在进程中执行
-    # 后续应使用 subprocess + seccomp + cgroup 隔离
+    import asyncio
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    runner_path = _Path(__file__).resolve().parents[2] / "plugin_runner.py"
+    payload = {
+        "plugin_name": plugin_name,
+        "code": plugin_code,
+        "input": input_data,
+        "max_memory_mb": SANDBOX_CONFIG.max_memory_mb,
+        "max_cpu_seconds": SANDBOX_CONFIG.max_cpu_seconds,
+    }
+
+    started = time.time()
+    proc: asyncio.subprocess.Process | None = None
     try:
-        # 安全限制：禁用危险内置函数
-        safe_globals = {
-            "__builtins__": {
-                "str": str,
-                "int": int,
-                "float": float,
-                "bool": bool,
-                "list": list,
-                "dict": dict,
-                "tuple": tuple,
-                "set": set,
-                "len": len,
-                "range": range,
-                "enumerate": enumerate,
-                "zip": zip,
-                "map": map,
-                "filter": filter,
-                "sorted": sorted,
-                "abs": abs,
-                "min": min,
-                "max": max,
-                "sum": sum,
-                "round": round,
-                "isinstance": isinstance,
-                "issubclass": issubclass,
-                "any": any,
-                "all": all,
-                "Exception": Exception,
-                "ValueError": ValueError,
-                "TypeError": TypeError,
-                "KeyError": KeyError,
-            },
-            "__file__": f"/plugins/{plugin_name}/main.py",
+        proc = await asyncio.create_subprocess_exec(
+            _sys.executable,
+            str(runner_path),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(runner_path.parent),
+        )
+        payload_bytes = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(payload_bytes),
+            timeout=SANDBOX_CONFIG.timeout_seconds,
+        )
+    except asyncio.TimeoutError:
+        if proc is not None:
+            proc.kill()
+            with contextlib.suppress(ProcessLookupError):
+                await proc.wait()
+        result = {
+            "success": False,
+            "error": f"Plugin execution timed out after {SANDBOX_CONFIG.timeout_seconds}s",
         }
-        
-        local_ns = {}
-        exec(plugin_code, safe_globals, local_ns)
-        
-        # 假设插件导出 main(input) 函数
-        if "main" in local_ns:
-            output = local_ns["main"](input_data)
-            return {"success": True, "output": output}
-        else:
-            return {
-                "success": False,
-                "error": "Plugin must export 'main(input)' function",
-            }
-    except TimeoutError:
-        return {"success": False, "error": "Plugin execution timed out"}
-    except Exception as e:
-        logger.error(f"Plugin {plugin_name} execution error: {e}", exc_info=True)
-        return {"success": False, "error": str(e)}
+        _audit(plugin_name, user_id, input_data, result, started)
+        return result
+    except OSError as e:
+        result = {"success": False, "error": f"failed to start plugin sandbox: {e}"}
+        _audit(plugin_name, user_id, input_data, result, started)
+        return result
+
+    if len(stdout) > SANDBOX_CONFIG.max_output_bytes:
+        result = {
+            "success": False,
+            "error": (
+                f"plugin output exceeds limit "
+                f"({len(stdout)} > {SANDBOX_CONFIG.max_output_bytes} bytes)"
+            ),
+        }
+        _audit(plugin_name, user_id, input_data, result, started)
+        return result
+
+    try:
+        result = json.loads(stdout.decode("utf-8", errors="replace"))
+    except json.JSONDecodeError:
+        # runner 崩溃（未输出 JSON）— fail loud，附 stderr 供排查
+        err_text = stderr.decode("utf-8", errors="replace")[-2000:] if stderr else ""
+        result = {
+            "success": False,
+            "error": f"plugin sandbox crashed (exit={proc.returncode}): {err_text or 'no stderr'}",
+        }
+
+    _audit(plugin_name, user_id, input_data, result, started)
+    return result
+
+
+def _audit(plugin_name: str, user_id: str, input_data: dict, result: dict, started: float) -> None:
+    """审计日志：每次插件执行一条 JSONL（失败不阻断主流程）。"""
+    if not SANDBOX_CONFIG.audit_log_enabled:
+        return
+    try:
+        from app.config import settings
+
+        log_dir = Path(settings.log_dir) if getattr(settings, "log_dir", "") else Path("logs")
+        log_dir.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "plugin": plugin_name,
+            "user": user_id,
+            "duration_ms": int((time.time() - started) * 1000),
+            "success": bool(result.get("success")),
+            "error": result.get("error"),
+            "input_keys": sorted(input_data.keys()) if isinstance(input_data, dict) else str(type(input_data)),
+        }
+        with (log_dir / "plugin_audit.jsonl").open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:  # noqa: BLE001 — 审计失败不影响插件执行结果
+        logger.warning("plugin audit log write failed", exc_info=True)

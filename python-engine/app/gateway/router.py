@@ -20,6 +20,30 @@ from app.gateway.ratelimit import TenantRateLimiter
 logger = logging.getLogger(__name__)
 
 
+def normalize_messages(messages: list) -> list[ChatMessage]:
+    """将裸 dict 消息统一规范化为 ChatMessage。
+
+    历史上多处调用方（task_router/skill 工具/workflow 引擎等）直接传
+    ``[{"role": ..., "content": ...}]``，而缓存层 ``_exact_key`` 调用
+    ``m.to_dict()``、语义层访问 ``m.role/m.content`` — dict 会在入口处
+    抛 AttributeError。网关入口统一转换，调用方无需感知。
+    （冒烟测试 2026-08-21 实测踩坑后引入）
+    """
+    normalized: list[ChatMessage] = []
+    for m in messages:
+        if isinstance(m, ChatMessage):
+            normalized.append(m)
+        elif isinstance(m, dict):
+            normalized.append(ChatMessage(
+                role=str(m.get("role", "user")),
+                content=m.get("content") or "",
+                tool_call_id=str(m.get("tool_call_id", "") or ""),
+            ))
+        else:
+            raise TypeError(f"unsupported message type: {type(m).__name__}")
+    return normalized
+
+
 class GatewayRouter:
     """
     核心路由器 — 所有 LLM 调用的统一入口。
@@ -77,6 +101,7 @@ class GatewayRouter:
         tools: list[dict] | None = None,
     ) -> AsyncIterator[ChatResponse]:
         """流式推理 — 前置缓存检查 + 预算扣减"""
+        messages = normalize_messages(messages)
         # ── 缓存查找（仅无工具时） ──
         if self._cache and not tools:
             cached = await self._cache.lookup(model, messages, tools, temperature)
@@ -178,6 +203,7 @@ class GatewayRouter:
         tools: list[dict] | None = None,
     ) -> ChatResponse:
         """非流式推理 — 自动缓存 + 预算扣减"""
+        messages = normalize_messages(messages)
         # 缓存查找
         if self._cache and not tools:
             cached = await self._cache.lookup(model, messages, tools, temperature)

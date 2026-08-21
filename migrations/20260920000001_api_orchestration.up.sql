@@ -194,7 +194,7 @@ CREATE INDEX idx_api_logs_key ON admin_api_call_logs(api_key_id) WHERE api_key_i
 CREATE INDEX idx_api_logs_model ON admin_api_call_logs(model_id) WHERE model_id IS NOT NULL;
 CREATE INDEX idx_api_logs_workflow ON admin_api_call_logs(workflow_id) WHERE workflow_id IS NOT NULL;
 CREATE INDEX idx_api_logs_created ON admin_api_call_logs(created_at DESC);
-CREATE INDEX idx_api_logs_date ON admin_api_call_logs(DATE(created_at));
+CREATE INDEX idx_api_logs_date ON admin_api_call_logs(((created_at AT TIME ZONE 'UTC')::date));
 
 COMMENT ON TABLE admin_api_call_logs IS 'API call audit log with performance and cost metrics';
 

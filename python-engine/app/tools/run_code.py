@@ -21,6 +21,13 @@ import logging
 import types
 from typing import Any
 
+from app.tools.code_guard import (  # noqa: F401 — 向后兼容再导出（tests 直接从本模块导入 _check_static）
+    BLOCKED_BUILTINS as _BLOCKED_BUILTINS,
+    DANGEROUS_CALLS,
+    DANGEROUS_MODULES,
+    check_static as _check_static,
+    safe_builtins as _safe_builtins,
+)
 from app.tools.registry import registry
 
 logger = logging.getLogger(__name__)
@@ -28,112 +35,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_TIMEOUT_SECONDS = 60
 MAX_LOG_CHARS = 20_000
 
-# ── 静态安全检查：禁止模型代码直接访问宿主（S 安全修复） ────────────────
-# 文件/命令/网络操作必须通过 tools.* 命名空间（工具层有沙箱栅栏）。
-# 说明：这是 A 层（代码层）约束——提高绕过门槛；完整隔离仍需部署侧 B 层（容器/低权限）。
-DANGEROUS_MODULES = {
-    "os", "subprocess", "sys", "ctypes", "socket", "importlib",
-    "pathlib", "shutil", "tempfile", "glob", "atexit", "signal", "multiprocessing",
-    "pickle", "marshal", "dbm", "shelve",  # 防止序列化攻击
-    "asyncio.tasks", "http.client", "urllib", "requests",  # 防止网络请求
-    "telnetlib", "ftplib", "smtplib", "imaplib", "poplib",  # 防止协议攻击
-}
-DANGEROUS_CALLS = {"open", "exec", "eval", "compile", "__import__", "input", "breakpoint"}
+# 历史别名：run_code 曾自带守卫常量（2026-08-21 抽取到 code_guard.py 单一事实来源）
 DANGEROUS_ATTRS = ("os.", "subprocess.", "sys.", "socket.", "ctypes.")
-# 注意：getattr/setattr 等反射函数不在静态层封杀 —— 静态层无法识别动态构造的
-# 混淆调用，这类攻击由运行时守卫（_safe_builtins stub）兜底拦截（纵深防御）。
-
-
-def _check_static(code: str) -> str | None:
-    """AST 静态检查模型代码：命中危险模块导入/危险调用返回原因，否则 None。"""
-    import ast as _ast
-
-    try:
-        tree = _ast.parse(code)
-    except SyntaxError:
-        return None  # 语法错误由执行阶段结构化返回
-
-    for node in _ast.walk(tree):
-        # import os / import pathlib / from X import Y
-        if isinstance(node, _ast.Import):
-            for alias in node.names:
-                if alias.name.split(".")[0] in DANGEROUS_MODULES:
-                    return f"module '{alias.name}' is not allowed — use tools.* instead"
-        if isinstance(node, _ast.ImportFrom):
-            if node.module and node.module.split(".")[0] in DANGEROUS_MODULES:
-                return f"module '{node.module}' is not allowed — use tools.* instead"
-        
-        # open(...) / exec(...) / eval(...) / __import__(...) 等危险调用
-        if isinstance(node, _ast.Call):
-            fn = node.func
-            if isinstance(fn, _ast.Name) and fn.id in DANGEROUS_CALLS:
-                return f"call '{fn.id}()' is not allowed — use tools.* instead"
-            # os.system / subprocess.run / sys.exit / socket.* 属性调用
-            if isinstance(fn, _ast.Attribute) and isinstance(fn.value, _ast.Name):
-                attr_path = f"{fn.value.id}.{fn.attr}"
-                dangerous_paths = (
-                    "os.system", "os.popen", "os.startfile", "os.remove",
-                    "os.rename", "os.chdir", "os.mkdir", "os.makedirs",
-                    "sys.exit", "subprocess.run", "subprocess.Popen",
-                    "subprocess.call", "socket.socket", "shutil.rmtree",
-                    "shutil.copy", "shutil.move", "pathlib.Path",
-                )
-                if attr_path in dangerous_paths:
-                    return f"call '{attr_path}()' is not allowed — use tools.* instead"
-
-    # 注意：__builtins__/__class__ 等混淆访问不在静态层封杀（字符串匹配易误判），
-    # 由运行时守卫的受控 builtins 兜底拦截（纵深防御）。
-    return None
-
-
-# ── 运行时守卫（SaaS 安全：堵静态守卫绕过，如 __builtins__['ope'+'n'] 动态构造） ──
-# 方案：替换 exec 命名空间的 builtins —— open/exec/eval 等 builtin 全被 stub（raise），
-# __import__ 白名单化（仅安全标准库）。模型代码无法拿到 os/subprocess 模块，
-# 动态构造 builtin 调用也被 stub 拦截。（settrace/monitoring 对 asyncio 协程与
-# builtin 调用均不可靠，实测弃用。）
-_SAFE_IMPORTS = frozenset({
-    "json", "math", "random", "datetime", "re", "collections",
-    "itertools", "asyncio", "typing", "time", "functools", "decimal",
-    "string", "io", "copy", "operator", "enum",
-})
-_BLOCKED_BUILTINS = frozenset({"open", "exec", "eval", "compile", "input", "breakpoint"})
-# 新增: 阻止反射攻击函数
-_BLOCKED_REFLECTIVE = frozenset({"getattr", "setattr", "delattr", "dir", "vars", "locals", "globals"})
-
-
-def _make_blocked_builtin(name: str):
-    def _blocked(*_args, **_kwargs):  # noqa: ANN002, ANN003 — 桩函数
-        raise RuntimeError(f"blocked by runtime guard: {name}()")
-    return _blocked
-
-
-def _safe_builtins() -> dict:
-    """构造受控 builtins：安全库白名单导入 + 危险 builtin 全部 stub。"""
-    import builtins as _b
-    orig = vars(_b).copy()
-    real_import = orig["__import__"]
-
-    def _guarded_import(name, globals=None, locals=None, fromlist=(), level=0):  # noqa: A002
-        root = (name or "").split(".")[0]
-        if root in _SAFE_IMPORTS:
-            return real_import(name, globals, locals, fromlist, level)
-        raise RuntimeError(f"blocked by runtime guard: import '{name}'")
-
-    # 阻塞危险内置函数
-    for name in _BLOCKED_BUILTINS:
-        orig[name] = _make_blocked_builtin(name)
-    
-    # 阻塞反射攻击函数
-    for name in _BLOCKED_REFLECTIVE:
-        orig[name] = _make_blocked_builtin(name)
-    
-    # 替换 __import__ 为安全版本
-    orig["__import__"] = _guarded_import
-    
-    # 移除潜在的危险属性访问
-    orig.pop("__builtins__", None)  # 防止通过 __builtins__ 访问内置函数
-    
-    return orig
 
 
 class ToolCallError(Exception):

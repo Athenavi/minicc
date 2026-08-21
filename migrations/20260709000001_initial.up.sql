@@ -257,7 +257,7 @@ created_at timestamp with time zone DEFAULT now() NOT NULL,
 updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
-CREATE TABLE schema_migrations (
+CREATE TABLE IF NOT EXISTS schema_migrations (
 version bigint NOT NULL,
 name character varying(255) NOT NULL,
 checksum character varying(128),
@@ -430,8 +430,16 @@ ADD CONSTRAINT messages_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY okrs
 ADD CONSTRAINT okrs_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY schema_migrations
-ADD CONSTRAINT schema_migrations_pkey PRIMARY KEY (version);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'schema_migrations_pkey'
+    ) THEN
+        ALTER TABLE ONLY schema_migrations
+        ADD CONSTRAINT schema_migrations_pkey PRIMARY KEY (version);
+    END IF;
+END
+$$;
 
 ALTER TABLE ONLY sessions
 ADD CONSTRAINT sessions_pkey PRIMARY KEY (id);

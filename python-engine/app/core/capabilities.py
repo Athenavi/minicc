@@ -390,13 +390,16 @@ def _llm_executor(system_prompt: str):
 
     async def _execute(task: str, **kwargs):
         from app.main import get_gateway
+        from app.gateway.provider import ChatMessage
 
         gateway = await get_gateway()
 
         response_text = ""
+        # 注意：gateway 缓存层要求 ChatMessage 对象（m.to_dict()），裸 dict 会在
+        # _exact_key 处抛 AttributeError（冒烟测试 2026-08-21 实测踩坑）
         messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": task},
+            ChatMessage(role="system", content=system_prompt),
+            ChatMessage(role="user", content=task),
         ]
         async for chunk in gateway.chat_stream(messages=messages, model=kwargs.get("model", "")):
             if getattr(chunk, "content", ""):
