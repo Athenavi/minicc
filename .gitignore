@@ -288,3 +288,7 @@ reasonix.toml
 .cowork-temp/
 **/.cowork-temp/
 frontend-vue/-1)
+
+# Runtime audit logs (never commit)
+*.jsonl
+logs/
