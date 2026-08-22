@@ -294,7 +294,7 @@ func NewGatewayRouter(
 	registerProxyRoutes(mux, authMW, rlMW, kbRateMW, pythonClient)
 
 	// Agents (auth + rate limited; DB 驱动 CRUD + 运行会话)
-	agentHandler := NewAgentHandler(authenticator, pythonClient)
+	agentHandler := NewAgentHandler(authenticator, pythonClient, agentSem)
 	mux.Handle("GET /v1/agents", authMW(rlMW(http.HandlerFunc(agentHandler.List))))
 	mux.Handle("POST /v1/agents", authMW(rlMW(http.HandlerFunc(agentHandler.Create))))
 	mux.Handle("GET /v1/agents/{id}", authMW(rlMW(http.HandlerFunc(agentHandler.Get))))

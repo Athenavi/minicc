@@ -22,10 +22,11 @@ import (
 type AgentHandler struct {
 	authenticator *auth.Authenticator
 	pythonClient  *engine.PythonClient
+	sem           chan struct{} // 并发执行上限（与 /submit 的 agentSem 同源）
 }
 
-func NewAgentHandler(a *auth.Authenticator, pc *engine.PythonClient) *AgentHandler {
-	h := &AgentHandler{authenticator: a, pythonClient: pc}
+func NewAgentHandler(a *auth.Authenticator, pc *engine.PythonClient, sem chan struct{}) *AgentHandler {
+	h := &AgentHandler{authenticator: a, pythonClient: pc, sem: sem}
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -251,7 +252,18 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "id is required")
 		return
 	}
-	var body Agent
+	// P1 修复：改用指针字段按需更新——原实现 description/system_prompt 成对覆盖
+	// （只传其一清空另一个），且 enabled 无条件写入（不传即被重置为 false）。
+	var body struct {
+		Name           *string         `json:"name"`
+		Description    *string         `json:"description"`
+		SystemPrompt   *string         `json:"system_prompt"`
+		Tools          json.RawMessage `json:"tools"`
+		LLMConfig      json.RawMessage `json:"llm_config"`
+		MaxTurns       *int            `json:"max_turns"`
+		TimeoutSeconds *int            `json:"timeout_seconds"`
+		Enabled        *bool           `json:"enabled"`
+	}
 	if err := DecodeJSON(w, r, &body); err != nil {
 		BadRequest(w, ErrInvalidReq)
 		return
@@ -264,12 +276,14 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		sets = append(sets, expr)
 		args = append(args, v)
 	}
-	if body.Name != "" {
-		push("name = $"+itoa(len(args)+1), body.Name)
+	if body.Name != nil {
+		push("name = $"+itoa(len(args)+1), *body.Name)
 	}
-	if body.Description != "" || body.SystemPrompt != "" {
-		push("description = $"+itoa(len(args)+1), body.Description)
-		push("system_prompt = $"+itoa(len(args)+1), body.SystemPrompt)
+	if body.Description != nil {
+		push("description = $"+itoa(len(args)+1), *body.Description)
+	}
+	if body.SystemPrompt != nil {
+		push("system_prompt = $"+itoa(len(args)+1), *body.SystemPrompt)
 	}
 	if len(body.Tools) > 0 && string(body.Tools) != "null" {
 		push("tools = $"+itoa(len(args)+1), string(body.Tools))
@@ -277,13 +291,15 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if len(body.LLMConfig) > 0 && string(body.LLMConfig) != "null" {
 		push("llm_config = $"+itoa(len(args)+1), string(body.LLMConfig))
 	}
-	if body.MaxTurns > 0 {
-		push("max_turns = $"+itoa(len(args)+1), body.MaxTurns)
+	if body.MaxTurns != nil {
+		push("max_turns = $"+itoa(len(args)+1), *body.MaxTurns)
 	}
-	if body.TimeoutSeconds > 0 {
-		push("timeout_seconds = $"+itoa(len(args)+1), body.TimeoutSeconds)
+	if body.TimeoutSeconds != nil {
+		push("timeout_seconds = $"+itoa(len(args)+1), *body.TimeoutSeconds)
 	}
-	push("enabled = $"+itoa(len(args)+1), body.Enabled)
+	if body.Enabled != nil {
+		push("enabled = $"+itoa(len(args)+1), *body.Enabled)
+	}
 	// WHERE tenant_id = $N+1 AND id = $N+2 —— 双重校验防跨租户
 	args = append(args, claims.TenantID, agentID)
 
@@ -370,7 +386,16 @@ func (h *AgentHandler) Run(w http.ResponseWriter, r *http.Request) {
 	if timeout <= 0 {
 		timeout = 120 * time.Second
 	}
-	go h.executeAgent(agent, body.Task, sessionID, claims.UserID, claims.TenantID, timeout)
+	// P1 修复：执行前获取并发信号量，防止无上限并发打爆引擎
+	if h.sem != nil {
+		h.sem <- struct{}{}
+	}
+	go func() {
+		if h.sem != nil {
+			defer func() { <-h.sem }()
+		}
+		h.executeAgent(agent, body.Task, sessionID, claims.UserID, claims.TenantID, timeout)
+	}()
 
 	OK(w, AgentSession{
 		ID:        sessionID,

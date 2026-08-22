@@ -83,10 +83,11 @@ func (h *ToolHandler) ExecuteTool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req := struct {
-		Name   string                 `json:"name"`
-		Input  map[string]interface{} `json:"input"`
-		UserID string                 `json:"user_id"`
-	}{Name: body.Name, Input: body.Input, UserID: claims.UserID}
+		Name     string                 `json:"name"`
+		Input    map[string]interface{} `json:"input"`
+		UserID   string                 `json:"user_id"`
+		TenantID string                 `json:"tenant_id"`
+	}{Name: body.Name, Input: body.Input, UserID: claims.UserID, TenantID: claims.TenantID}
 	var pyResult map[string]interface{}
 	if err := h.python.PostJSON(r.Context(), "/v1/tools/execute", req, &pyResult); err != nil {
 		slog.Warn("tool execute: python proxy failed", "tool", body.Name, "error", err)

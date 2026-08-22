@@ -1,17 +1,17 @@
 version: "3.9"
 
 services:
-  # 鈹€鈹€ 鍩虹璁炬柦 鈹€鈹€
+  # 閳光偓閳光偓 閸╄櫣顢呯拋鐐煢 閳光偓閳光偓
 
   postgres:
     image: pgvector/pgvector:pg16-alpine
     environment:
       POSTGRES_USER: minicc
-      # 鐢熶骇閮ㄧ讲璇峰姟蹇呮浛鎹负寮哄瘑鐮侊紙S 瀹夊叏鍔犲浐锛?
+      # 閻㈢喍楠囬柈銊ц鐠囧嘲濮熻箛鍛禌閹诡澀璐熷鍝勭槕閻緤绱橲 鐎瑰鍙忛崝鐘叉祼閿?
       POSTGRES_PASSWORD: minicc
       POSTGRES_DB: minicc
     ports:
-      # 浠呯粦瀹氭湰鏈哄洖鐜紝閬垮厤鍩虹璁炬柦鐩存帴鏆撮湶鍏綉锛圫 瀹夊叏鍔犲浐锛?
+      # 娴犲懐绮︾€规碍婀伴張鍝勬礀閻滎垽绱濋柆鍨帳閸╄櫣顢呯拋鐐煢閻╁瓨甯撮弳鎾苟閸忣剛缍夐敍鍦?鐎瑰鍙忛崝鐘叉祼閿?
       - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -23,6 +23,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-}"]
     ports:
       - "127.0.0.1:6379:6379"
     volumes:
@@ -37,12 +38,12 @@ services:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
     ports:
-      # 浠呯粦瀹氭湰鏈哄洖鐜紙S 瀹夊叏鍔犲浐锛?
+      # 娴犲懐绮︾€规碍婀伴張鍝勬礀閻滎垽绱橲 鐎瑰鍙忛崝鐘叉祼閿?
       - "127.0.0.1:9000:9000"
       - "127.0.0.1:9001:9001"
     environment:
       MINIO_ROOT_USER: minioadmin
-      # 鐢熶骇閮ㄧ讲璇峰姟蹇呮浛鎹负寮哄瘑鐮侊紙S 瀹夊叏鍔犲浐锛?
+      # 閻㈢喍楠囬柈銊ц鐠囧嘲濮熻箛鍛禌閹诡澀璐熷鍝勭槕閻緤绱橲 鐎瑰鍙忛崝鐘叉祼閿?
       MINIO_ROOT_PASSWORD: minioadmin123
     volumes:
       - miniodata:/data
@@ -52,12 +53,12 @@ services:
       timeout: 3s
       retries: 5
 
-  # 鈹€鈹€ Temporal 宸ヤ綔娴佸紩鎿?鈹€鈹€
+  # 閳光偓閳光偓 Temporal 瀹搞儰缍斿ù浣哥穿閹?閳光偓閳光偓
 
   temporal:
     image: temporalio/auto-setup:latest
     ports:
-      # 浠呯粦瀹氭湰鏈哄洖鐜紙S 瀹夊叏鍔犲浐锛?
+      # 娴犲懐绮︾€规碍婀伴張鍝勬礀閻滎垽绱橲 鐎瑰鍙忛崝鐘叉祼閿?
       - "127.0.0.1:7233:7233"
       - "127.0.0.1:8233:8233"
     environment:
@@ -70,7 +71,7 @@ services:
       postgres:
         condition: service_healthy
 
-  # 鈹€鈹€ 鏁版嵁搴撹縼绉伙紙鍒濆鍖?+ 鍚姩鏃舵墽琛岋級鈹€鈹€
+  # 閳光偓閳光偓 閺佺増宓佹惔鎾圭讣缁変紮绱欓崚婵嗩潗閸?+ 閸氼垰濮╅弮鑸靛⒔鐞涘矉绱氶埞鈧埞鈧?
 
   migrate:
     build:
@@ -81,11 +82,11 @@ services:
         condition: service_healthy
     environment:
       POSTGRES_DSN: "postgres://minicc:minicc@postgres:5432/minicc?sslmode=disable"
-    # 杩佺Щ瀹屾垚鍚庨€€鍑猴紝gateway 渚濊禆 migrate 鎴愬姛
+    # 鏉╀胶些鐎瑰本鍨氶崥搴ㄢ偓鈧崙鐚寸礉gateway 娓氭繆绂?migrate 閹存劕濮?
     command: ["./migrate", "up"]
     restart: "no"
 
-  # 鈹€鈹€ Go 鏈嶅姟锛堢綉鍏?+ 涓氬姟锛?鈹€鈹€
+  # 閳光偓閳光偓 Go 閺堝秴濮熼敍鍫㈢秹閸?+ 娑撴艾濮熼敍?閳光偓閳光偓
 
   gateway:
     build:
@@ -108,6 +109,7 @@ services:
       PORT: "8080"
       POSTGRES_DSN: "postgres://minicc:minicc@postgres:5432/minicc?sslmode=disable"
       REDIS_ADDR: "redis:6379"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
       STORAGE_BACKEND: "s3"
       S3_ENDPOINT: "minio:9000"
       S3_BUCKET: "minicc-media"
@@ -115,11 +117,11 @@ services:
       S3_SECRET_KEY: "minioadmin123"
       JWT_SECRET: "${JWT_SECRET:?JWT_SECRET must be set in .env (openssl rand -base64 48)}"
       COOKIE_SECURE: "${COOKIE_SECURE:-false}"
-      # Python AI 寮曟搸鍦板潃
+      # Python AI 瀵洘鎼搁崷鏉挎絻
       PYTHON_ENGINE_ADDRESS: "python-engine:8000"
-      # Temporal 鍦板潃
+      # Temporal 閸︽澘娼?
       TEMPORAL_ADDRESS: "temporal:7233"
-      # LLM Provider Keys锛圙o 渚х洿杩炵敤锛?
+      # LLM Provider Keys閿涘湙o 娓氀呮纯鏉╃偟鏁ら敍?
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       # Stripe
@@ -135,7 +137,7 @@ services:
       retries: 5
       start_period: 15s
 
-  # 鈹€鈹€ Python AI 寮曟搸锛堣嚜鐮?LLM Gateway锛?鈹€鈹€
+  # 閳光偓閳光偓 Python AI 瀵洘鎼搁敍鍫ｅ殰閻?LLM Gateway閿?閳光偓閳光偓
 
   python-engine:
     build:
@@ -152,14 +154,14 @@ services:
         condition: service_healthy
     environment:
       HTTP_PORT: "8000"
-      REDIS_URL: "redis://redis:6379"
+      REDIS_URL: "redis://:${REDIS_PASSWORD:-}@redis:6379"
       POSTGRES_DSN: "postgres://minicc:minicc@postgres:5432/minicc?sslmode=disable"
       MILVUS_ADDRESS: "milvus-standalone:19530"
       # LLM Provider Keys
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY:-}"
-      # 鍙娴嬫€?
+      # 閸欘垵顫囧ù瀣偓?
       LOG_LEVEL: "INFO"
       OTEL_ENDPOINT: ""
     restart: unless-stopped
@@ -170,7 +172,7 @@ services:
       retries: 5
       start_period: 20s
 
-  # 鈹€鈹€ Milvus 鍚戦噺鏁版嵁搴?鈹€鈹€
+  # 閳光偓閳光偓 Milvus 閸氭垿鍣洪弫鐗堝祦鎼?閳光偓閳光偓
 
   etcd:
     image: quay.io/coreos/etcd:v3.5.18
@@ -217,7 +219,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # 鈹€鈹€ 鍓嶇锛圴ue 3锛?鈹€鈹€
+  # 閳光偓閳光偓 閸撳秶顏敍鍦磚e 3閿?閳光偓閳光偓
 
   frontend:
     build:
@@ -235,7 +237,7 @@ services:
       VITE_WS_URL: "ws://localhost:8080"
     restart: unless-stopped
 
-  # 鈹€鈹€ Prometheus 鐩戞帶 鈹€鈹€
+  # 閳光偓閳光偓 Prometheus 閻╂垶甯?閳光偓閳光偓
 
   prometheus:
     image: prom/prometheus:latest

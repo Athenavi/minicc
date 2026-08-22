@@ -12,6 +12,10 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+// slowSubSem 限制慢订阅者重试 goroutine 数量（P1 修复：事件风暴下防止
+// goroutine 无界堆积导致 DoS）。超出上限时直接丢弃事件（SSE 可重连补发）。
+var slowSubSem = make(chan struct{}, 512)
+
 // Event is a generic event for SSE broadcasting.
 type Event struct {
 	Type      string      `json:"type"`
@@ -86,22 +90,26 @@ func (h *Hub) Publish(event Event) {
 	for _, ch := range h.subs {
 		select {
 		case ch <- event:
-		default:
+				default:
 			// Slow subscriber: spawn goroutine so fast subscribers aren't blocked
-			go func(c chan Event) {
-				// S 并发安全：Unsubscribe/Subscribe 可能 close channel，
-				// 向 closed channel 发送会 panic，recover 防止进程崩溃
-				defer func() {
-					if r := recover(); r != nil {
-						// channel 已关闭，丢弃事件即可
+			select {
+			case slowSubSem <- struct{}{}:
+				go func(c chan Event) {
+					defer func() {
+						if r := recover(); r != nil {
+							// channel 已关闭，丢弃事件即可
+						}
+						<-slowSubSem
+					}()
+					select {
+					case c <- event:
+					case <-time.After(3 * time.Second):
+						slog.Warn("subscriber too slow, dropping event after 3s timeout")
 					}
-				}()
-				select {
-				case c <- event:
-				case <-time.After(3 * time.Second):
-					slog.Warn("subscriber too slow, dropping event after 3s timeout")
-				}
-			}(ch)
+				}(ch)
+			default:
+				slog.Warn("too many slow subscribers, dropping event")
+			}
 		}
 	}
 	h.mu.RUnlock()

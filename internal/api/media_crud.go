@@ -423,6 +423,37 @@ func (h *MediaHandler) assetObjectKey(r *http.Request, id string) (string, error
 	return fmt.Sprintf("media/%s/%s_%s", dir, shortAssetID(id), fileName), nil
 }
 
+// assetObjectKeys 批量解析资产对象存储 key（单次查询，修复逐资产 N+1）。
+func (h *MediaHandler) assetObjectKeys(ctx context.Context, ids []string) (map[string]string, error) {
+	if len(ids) == 0 {
+		return map[string]string{}, nil
+	}
+	rows, err := db.ReadPool().Query(ctx,
+		`SELECT id::text, COALESCE(name,''), COALESCE(file_path,''), COALESCE(user_id,'')
+		 FROM media_assets WHERE id = ANY($1)`, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	keys := make(map[string]string, len(ids))
+	for rows.Next() {
+		var id, fileName, filePath, userID string
+		if err := rows.Scan(&id, &fileName, &filePath, &userID); err != nil {
+			continue
+		}
+		if filePath != "" {
+			keys[id] = filePath
+			continue
+		}
+		dir := "anonymous"
+		if userID != "" {
+			dir = "u_" + userID
+		}
+		keys[id] = fmt.Sprintf("media/%s/%s_%s", dir, shortAssetID(id), fileName)
+	}
+	return keys, rows.Err()
+}
+
 // 鈹€鈹€ Delete (recursive for folders) 鈹€鈹€
 
 func (h *MediaHandler) Delete(w http.ResponseWriter, r *http.Request) {
@@ -458,10 +489,15 @@ func (h *MediaHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 鍒犻櫎瀛樺偍瀵硅薄锛圖B 涓哄噯锛屽け璐ヤ粎璁版棩蹇楋級
+	keys, err := h.assetObjectKeys(ctx, ids)
+	if err != nil {
+		logAndRespond(w, err, http.StatusInternalServerError, "resolve media keys failed")
+		return
+	}
 	for _, aid := range ids {
-		if key, err := h.assetObjectKey(r, aid); err == nil && key != "" {
+		if key, ok := keys[aid]; ok && key != "" {
 			if err := h.store.Delete(ctx, key); err != nil {
-				slog.Warn("failed to delete media object", "key", key, "error", err)
+			slog.Warn("failed to delete media object", "key", key, "error", err)
 			}
 		}
 	}
@@ -506,10 +542,15 @@ func (h *MediaHandler) BatchDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 鍒犻櫎瀛樺偍瀵硅薄锛圖B 涓哄噯锛屽け璐ヤ粎璁版棩蹇楋級
+	keys, err := h.assetObjectKeys(r.Context(), allIDs)
+	if err != nil {
+		logAndRespond(w, err, http.StatusInternalServerError, "resolve media keys failed")
+		return
+	}
 	for _, id := range allIDs {
-		if key, err := h.assetObjectKey(r, id); err == nil && key != "" {
+		if key, ok := keys[id]; ok && key != "" {
 			if err := h.store.Delete(r.Context(), key); err != nil {
-				slog.Warn("failed to delete media object", "key", key, "error", err)
+			slog.Warn("failed to delete media object", "key", key, "error", err)
 			}
 		}
 	}
