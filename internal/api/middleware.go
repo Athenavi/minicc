@@ -2,6 +2,7 @@ package api
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -24,6 +25,52 @@ type responseWriter struct {
 	bytes   int
 	flusher http.Flusher
 }
+// ── JWT 黑名单本地 TTL 缓存（P1 优化：减少热路径每次请求的 Redis 往返）──
+// 正缓存（已拉黑）15 分钟有效；负缓存（未拉黑）仅 30 秒，确保登出撤销
+// 在 ≤30s 内全局生效（多副本仍以 Redis 为最终事实源）。
+type jwtBlacklistEntry struct {
+	blacklisted bool
+	checkedAt   time.Time
+}
+
+var jwtBlacklistCache sync.Map // jti -> jwtBlacklistEntry
+
+const (
+	jwtBlacklistHitTTL  = 15 * time.Minute
+	jwtBlacklistMissTTL = 30 * time.Second
+)
+
+// checkJWTBlacklisted 优先查本地缓存，miss 时回源 Redis 并回填。
+func checkJWTBlacklisted(ctx context.Context, jti string) (bool, error) {
+	if v, ok := jwtBlacklistCache.Load(jti); ok {
+		e := v.(jwtBlacklistEntry)
+		ttl := jwtBlacklistMissTTL
+		if e.blacklisted {
+			ttl = jwtBlacklistHitTTL
+		}
+		if time.Since(e.checkedAt) < ttl {
+			return e.blacklisted, nil
+		}
+	}
+	if db.Redis == nil {
+		return false, nil
+	}
+	n, err := db.Redis.Exists(ctx, "jwt:blacklist:"+jti).Result()
+	if err != nil {
+		return false, err
+	}
+	jwtBlacklistCache.Store(jti, jwtBlacklistEntry{blacklisted: n > 0, checkedAt: time.Now()})
+	return n > 0, nil
+}
+
+// markJWTBlacklisted 登出时同步本地正缓存（配合 Redis 写入）。
+func markJWTBlacklisted(jti string) {
+	if jti == "" {
+		return
+	}
+	jwtBlacklistCache.Store(jti, jwtBlacklistEntry{blacklisted: true, checkedAt: time.Now()})
+}
+
 
 func (rw *responseWriter) WriteHeader(status int) {
 	rw.status = status
@@ -234,12 +281,12 @@ func AuthMiddleware(a *auth.Authenticator) func(http.Handler) http.Handler {
 			}
 
 			// ── JWT 黑名单检查（登出后的 token 立即失效）──
-			if claims.ID != "" && db.Redis != nil {
-				blacklisted, err := db.Redis.Exists(r.Context(), "jwt:blacklist:"+claims.ID).Result()
+			if claims.ID != "" {
+				blacklisted, err := checkJWTBlacklisted(r.Context(), claims.ID)
 				if err != nil {
 					slog.Warn("jwt blacklist check failed", "error", err)
 				}
-				if blacklisted > 0 {
+				if blacklisted {
 					Unauthorized(w, "token has been revoked")
 					return
 				}

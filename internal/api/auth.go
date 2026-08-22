@@ -302,6 +302,10 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 			db.Redis.Set(r.Context(), "jwt:blacklist:"+claims.ID, "1", remaining)
 		}
 	}
+	// 同步本地正缓存，确保本实例后续请求立即拒绝该 token（P1 优化）
+	if claims := auth.GetClaims(r.Context()); claims != nil {
+		markJWTBlacklisted(claims.ID)
+	}
 	ClearTokenCookie(w, h.cfg.CookieSecure)
 	OK(w, map[string]string{"message": "logged out"})
 }

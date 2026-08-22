@@ -21,7 +21,9 @@ type PythonClient struct {
 	counter       uint64
 	client        *http.Client
 	internalToken string // Go↔Python 共享内部 token，用于网关代理身份校验
-}
+
+	// 熔断：每个地址的冷却截止时间（Unix 秒），0 = 正常
+	cooldownUntil []int64}
 
 // NewPythonClient creates a client for the Python engine HTTP API.
 // Accepts one or more base URLs (comma-separated or variadic).
@@ -59,13 +61,57 @@ func (c *PythonClient) injectInternalToken(req *http.Request) {
 	}
 }
 
+// pythonCooldown 单个地址失败后的冷却时长：暂时跳过，避免每 N 个请求必败一个
+const pythonCooldown = 5 * time.Second
+
+// markFailure 记录地址失败，进入冷却
+func (c *PythonClient) markFailure(addr string) {
+	until := time.Now().Add(pythonCooldown).Unix()
+	for i, a := range c.addresses {
+		if a == addr {
+			atomic.StoreInt64(&c.cooldownUntil[i], until)
+			return
+		}
+	}
+}
+
+// markSuccess 清除地址冷却
+func (c *PythonClient) markSuccess(addr string) {
+	for i, a := range c.addresses {
+		if a == addr {
+			atomic.StoreInt64(&c.cooldownUntil[i], 0)
+			return
+		}
+	}
+}
+
+// do 统一请求出口：记录成功/失败并更新熔断状态
+func (c *PythonClient) do(req *http.Request) (*http.Response, error) {
+	addr := req.URL.Scheme + "://" + req.URL.Host
+	resp, err := c.do(req)
+	if err != nil {
+		c.markFailure(addr)
+		return nil, err
+	}
+	c.markSuccess(addr)
+	return resp, nil
+}
+
 // pickAddress returns the next address using round-robin.
 func (c *PythonClient) pickAddress() string {
 	if len(c.addresses) == 0 {
 		return "http://localhost:8000"
 	}
-	idx := atomic.AddUint64(&c.counter, 1)
-	return c.addresses[idx%uint64(len(c.addresses))]
+	now := time.Now().Unix()
+	start := int(atomic.AddUint64(&c.counter, 1)) % len(c.addresses)
+	for i := 0; i < len(c.addresses); i++ {
+		idx := (start + i) % len(c.addresses)
+		if atomic.LoadInt64(&c.cooldownUntil[idx]) <= now {
+			return c.addresses[idx]
+		}
+	}
+	// 全部地址冷却中：退化为 round-robin
+	return c.addresses[start]
 }
 
 // PythonRunRequest matches the Python engine's Pydantic RunRequest model.
@@ -127,7 +173,7 @@ func (c *PythonClient) Run(ctx context.Context, req PythonRunRequest) (<-chan Py
 	httpReq.Header.Set("Accept", "text/event-stream")
 	c.injectInternalToken(httpReq)
 
-	resp, err := c.client.Do(httpReq)
+	resp, err := c.do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("call python engine: %w", err)
 	}
@@ -148,6 +194,7 @@ func (c *PythonClient) Run(ctx context.Context, req PythonRunRequest) (<-chan Py
 		defer resp.Body.Close()
 
 		scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 1024*1024), 16*1024*1024) // P1: 提升行上限，防长文档 data: 行被截断
 		for scanner.Scan() {
 			line := scanner.Text()
 			if !strings.HasPrefix(line, "data: ") {
@@ -181,7 +228,7 @@ func (c *PythonClient) IsConnected() bool {
 	if err != nil {
 		return false
 	}
-	resp, err := c.client.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return false
 	}
@@ -196,7 +243,7 @@ func (c *PythonClient) GetJSON(ctx context.Context, path string, out any) error 
 		return err
 	}
 	c.injectInternalToken(req)
-	resp, err := c.client.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return err
 	}
@@ -220,7 +267,7 @@ func (c *PythonClient) PostJSON(ctx context.Context, path string, in any, out an
 	}
 	req.Header.Set("Content-Type", "application/json")
 	c.injectInternalToken(req)
-	resp, err := c.client.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return err
 	}
@@ -244,7 +291,7 @@ func (c *PythonClient) PutJSON(ctx context.Context, path string, in any, out any
 	}
 	req.Header.Set("Content-Type", "application/json")
 	c.injectInternalToken(req)
-	resp, err := c.client.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return err
 	}
@@ -278,7 +325,7 @@ func (c *PythonClient) ForwardRequest(w http.ResponseWriter, r *http.Request, pa
 	}
 	// 注入 Go↔Python 内部 token，Python 侧据此接受 ?tenant_id= 透传身份
 	c.injectInternalToken(req)
-	resp, err := c.client.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		// S 安全：不向客户端泄露后端连接细节
 		slog.Error("forward to python engine", "path", path, "error", err)
@@ -303,7 +350,7 @@ func (c *PythonClient) DeleteJSON(ctx context.Context, path string, out any) err
 		return err
 	}
 	c.injectInternalToken(req)
-	resp, err := c.client.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return err
 	}
@@ -339,7 +386,7 @@ func (c *PythonClient) RunSSE(ctx context.Context, path string, body any, extraH
 		}
 	}
 
-	resp, err := c.client.Do(httpReq)
+	resp, err := c.do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("call python engine: %w", err)
 	}
@@ -360,6 +407,7 @@ func (c *PythonClient) RunSSE(ctx context.Context, path string, body any, extraH
 		defer resp.Body.Close()
 
 		scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 1024*1024), 16*1024*1024) // P1: 提升行上限，防长文档 data: 行被截断
 		for scanner.Scan() {
 			line := scanner.Text()
 			if !strings.HasPrefix(line, "data: ") {

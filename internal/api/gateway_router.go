@@ -315,6 +315,12 @@ func NewGatewayRouter(
 			BadRequest(w, "invalid request")
 			return
 		}
+		// 身份注入（P1）：引擎无鉴权，必须用 JWT claims 覆盖透传的租户/用户身份，
+		// 防止客户端伪造 tenant_id/user_id 冒充他人。
+		if claims := auth.GetClaims(r.Context()); claims != nil {
+			body["tenant_id"] = claims.TenantID
+			body["user_id"] = claims.UserID
+		}
 		var resp map[string]interface{}
 		if err := pythonClient.PostJSON(r.Context(), "/v1/agents/dispatch", body, &resp); err != nil {
 			InternalError(w, "python agent dispatch failed")
