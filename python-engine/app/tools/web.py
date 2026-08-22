@@ -71,7 +71,7 @@ class DuckDuckGoProvider(WebProvider):
     async def fetch(self, url: str, max_chars: int = FETCH_MAX_CHARS) -> dict[str, Any]:
         assert_safe_url(url)  # SSRF 防护（S4）
         async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-            resp = await client.get(url)
+            resp = await fetch_url_safe(client, url)
         content_type = resp.headers.get("content-type", "")
         body = resp.text
         if "html" in content_type.lower() or body.lstrip().startswith("<"):

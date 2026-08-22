@@ -400,22 +400,22 @@ func (h *AgentHandler) executeAgent(agent *Agent, task, sessionID, userID, tenan
 	}
 
 	body := map[string]any{
-		"task":         task,
-		"name":         agent.Name,
-		"description":  agent.Description,
+		"task":          task,
+		"name":          agent.Name,
+		"description":   agent.Description,
 		"system_prompt": agent.SystemPrompt,
-		"tools":        tools,
-		"model":        llmString(llm, "model", "deepseek-chat"),
-		"max_turns":    agent.MaxTurns,
-		"max_tokens":   llmInt(llm, "max_tokens", 4096),
-		"temperature":  llmFloat(llm, "temperature", 0.6),
-		"tenant_id":    tenantID, // S 多租户隔离:用 JWT claims 的 TenantID,不能用 userID
-		"user_id":      userID,
-		"session_id":   sessionID,
+		"tools":         tools,
+		"model":         llmString(llm, "model", "deepseek-chat"),
+		"max_turns":     agent.MaxTurns,
+		"max_tokens":    llmInt(llm, "max_tokens", 4096),
+		"temperature":   llmFloat(llm, "temperature", 0.6),
+		"tenant_id":     tenantID, // S 多租户隔离:用 JWT claims 的 TenantID,不能用 userID
+		"user_id":       userID,
+		"session_id":    sessionID,
 	}
 
 	var result any
-	if h.pythonClient == nil || !h.pythonClient.IsConnected() {
+	if h.pythonClient == nil {
 		result = map[string]any{"success": false, "error": "python engine not available", "output": ""}
 	} else if err := h.pythonClient.PostJSON(ctx, "/v1/agents/dispatch", body, &result); err != nil {
 		result = map[string]any{"success": false, "error": err.Error(), "output": ""}

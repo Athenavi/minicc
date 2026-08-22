@@ -2,17 +2,28 @@ package billing
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 )
 
-type mockStore struct{}
+// mockStore 模拟 PG 原子余额语义：AtomicDeduct/Add 直接修改内存余额，
+// 与生产 PGStore 的 UPDATE ... RETURNING 行为一致。
+type mockStore struct {
+	mu      sync.Mutex
+	balance int
+}
 
 func (m *mockStore) GetBalance(ctx context.Context, userID string) (int, error) {
-	return 0, nil
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.balance, nil
 }
 func (m *mockStore) SetBalance(ctx context.Context, userID string, balance int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.balance = balance
 	return nil
 }
 func (m *mockStore) AddTransaction(ctx context.Context, tx *CreditChange) error { return nil }
@@ -24,10 +35,19 @@ func (m *mockStore) DailyFreeCount(ctx context.Context, userID string) (int, err
 }
 func (m *mockStore) MarkFreeUsage(ctx context.Context, userID string) error { return nil }
 func (m *mockStore) AtomicDeductBalance(ctx context.Context, userID string, amount int) (int, error) {
-	return 0, nil
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.balance < amount {
+		return 0, fmt.Errorf("insufficient credits")
+	}
+	m.balance -= amount
+	return m.balance, nil
 }
 func (m *mockStore) AtomicAddBalance(ctx context.Context, userID string, amount int) (int, error) {
-	return 0, nil
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.balance += amount
+	return m.balance, nil
 }
 
 // ── PaymentStore（测试空实现） ──

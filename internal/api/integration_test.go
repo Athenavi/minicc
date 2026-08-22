@@ -48,7 +48,6 @@ func testToken(t *testing.T) string {
 	return token
 }
 
-
 // ── Health & Readiness ──
 
 func TestIntegration_Health(t *testing.T) {
@@ -80,14 +79,18 @@ func TestIntegration_Ready(t *testing.T) {
 // ── SSE & Events ──
 
 func TestIntegration_SSE(t *testing.T) {
-	router := testRouter(t)
+	// 该测试无数据库：sessionMgr 传 nil 跳过归属校验，聚焦流式行为本身。
+	os.Setenv("JWT_SECRET", "test-secret-that-is-at-least-32-bytes-long!")
+	cfg := config.Load()
+	eventHub := broadcast.NewHub(nil)
+	router := NewGatewayRouter(cfg, nil, eventHub, nil, nil, nil, nil)
 
 	// Use a cancellable context so the SSE handler exits
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// S1: /events now requires auth — Authorization header（S 安全修复：不再支持 ?token= 查询参数）
-	req := httptest.NewRequest("GET", "/events?client_id=test-client", nil)
+	req := httptest.NewRequest("GET", "/events?client_id=test-client&session_id=test-session", nil)
 	req.Header.Set("Authorization", "Bearer "+testToken(t))
 	req = req.WithContext(ctx)
 	w := httptest.NewRecorder()

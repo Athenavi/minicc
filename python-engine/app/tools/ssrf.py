@@ -11,10 +11,13 @@ web_fetch/web_search/skill_install 等出站 HTTP 的目标 host 解析后，
 """
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import logging
 import socket
 from urllib.parse import urlparse
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -106,3 +109,42 @@ def assert_safe_ip(ip_str: str) -> None:
         raise ValueError(f"invalid ip for rebinding check: {ip_str}") from e
     if _is_blocked(ip):
         raise ValueError(f"blocked address at connect time (DNS rebinding?): {ip_str}")
+
+
+async def fetch_url_safe(
+    client: httpx.AsyncClient,
+    url: str,
+    max_redirects: int = 5,
+    **kwargs,
+) -> httpx.Response:
+    """SSRF 安全的 HTTP GET：每次重定向跳转前重新执行 assert_safe_url，
+    防止攻击者用公开 URL 302 到内网/云元数据地址（重定向绕过）。
+    客户端应使用 follow_redirects=False 的 AsyncClient 调用本函数。
+    """
+    current = url
+    for _ in range(max_redirects + 1):
+        assert_safe_url(current)
+        resp = await client.get(current, follow_redirects=False, **kwargs)
+        if resp.status_code in (301, 302, 303, 307, 308):
+            location = resp.headers.get("location")
+            if not location:
+                return resp
+            current = str(httpx.URL(current).join(location))
+            continue
+        return resp
+    raise ValueError(f"too many redirects: {url}")
+
+
+def command_allowed(command: str) -> bool:
+    """插件命令白名单（与 Go 网关 PLUGIN_COMMAND_ALLOWLIST 保持一致）：
+    仅允许白名单内的可执行文件 basename 被拉起为 MCP 插件进程；
+    未配置（空）时禁止所有自定义插件命令（安全默认，防任意命令执行）。
+    """
+    import os
+
+    raw = os.getenv("PLUGIN_COMMAND_ALLOWLIST", "").strip()
+    if not raw:
+        return False
+    allowed = {part.strip() for part in raw.split(",") if part.strip()}
+    base = os.path.basename(command)
+    return base in allowed

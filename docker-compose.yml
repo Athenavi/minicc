@@ -1,17 +1,17 @@
 version: "3.9"
 
 services:
-  # ── 基础设施 ──
+  # 鈹€鈹€ 鍩虹璁炬柦 鈹€鈹€
 
   postgres:
     image: pgvector/pgvector:pg16-alpine
     environment:
       POSTGRES_USER: minicc
-      # 生产部署请务必替换为强密码（S 安全加固）
+      # 鐢熶骇閮ㄧ讲璇峰姟蹇呮浛鎹负寮哄瘑鐮侊紙S 瀹夊叏鍔犲浐锛?
       POSTGRES_PASSWORD: minicc
       POSTGRES_DB: minicc
     ports:
-      # 仅绑定本机回环，避免基础设施直接暴露公网（S 安全加固）
+      # 浠呯粦瀹氭湰鏈哄洖鐜紝閬垮厤鍩虹璁炬柦鐩存帴鏆撮湶鍏綉锛圫 瀹夊叏鍔犲浐锛?
       - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -37,12 +37,12 @@ services:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
     ports:
-      # 仅绑定本机回环（S 安全加固）
+      # 浠呯粦瀹氭湰鏈哄洖鐜紙S 瀹夊叏鍔犲浐锛?
       - "127.0.0.1:9000:9000"
       - "127.0.0.1:9001:9001"
     environment:
       MINIO_ROOT_USER: minioadmin
-      # 生产部署请务必替换为强密码（S 安全加固）
+      # 鐢熶骇閮ㄧ讲璇峰姟蹇呮浛鎹负寮哄瘑鐮侊紙S 瀹夊叏鍔犲浐锛?
       MINIO_ROOT_PASSWORD: minioadmin123
     volumes:
       - miniodata:/data
@@ -52,12 +52,12 @@ services:
       timeout: 3s
       retries: 5
 
-  # ── Temporal 工作流引擎 ──
+  # 鈹€鈹€ Temporal 宸ヤ綔娴佸紩鎿?鈹€鈹€
 
   temporal:
     image: temporalio/auto-setup:latest
     ports:
-      # 仅绑定本机回环（S 安全加固）
+      # 浠呯粦瀹氭湰鏈哄洖鐜紙S 瀹夊叏鍔犲浐锛?
       - "127.0.0.1:7233:7233"
       - "127.0.0.1:8233:8233"
     environment:
@@ -70,7 +70,7 @@ services:
       postgres:
         condition: service_healthy
 
-  # ── 数据库迁移（初始化 + 启动时执行）──
+  # 鈹€鈹€ 鏁版嵁搴撹縼绉伙紙鍒濆鍖?+ 鍚姩鏃舵墽琛岋級鈹€鈹€
 
   migrate:
     build:
@@ -81,16 +81,18 @@ services:
         condition: service_healthy
     environment:
       POSTGRES_DSN: "postgres://minicc:minicc@postgres:5432/minicc?sslmode=disable"
-    # 迁移完成后退出，gateway 依赖 migrate 成功
+    # 杩佺Щ瀹屾垚鍚庨€€鍑猴紝gateway 渚濊禆 migrate 鎴愬姛
     command: ["./migrate", "up"]
     restart: "no"
 
-  # ── Go 服务（网关 + 业务） ──
+  # 鈹€鈹€ Go 鏈嶅姟锛堢綉鍏?+ 涓氬姟锛?鈹€鈹€
 
   gateway:
     build:
       context: .
       dockerfile: Dockerfile
+    mem_limit: 1g
+    cpus: 2.0
     ports:
       - "8080:8080"
     depends_on:
@@ -111,13 +113,13 @@ services:
       S3_BUCKET: "minicc-media"
       S3_ACCESS_KEY: "minioadmin"
       S3_SECRET_KEY: "minioadmin123"
-      JWT_SECRET: "${JWT_SECRET:-minicc-dev-jwt-secret-2026}"
+      JWT_SECRET: "${JWT_SECRET:?JWT_SECRET must be set in .env (openssl rand -base64 48)}"
       COOKIE_SECURE: "${COOKIE_SECURE:-false}"
-      # Python AI 引擎地址
+      # Python AI 寮曟搸鍦板潃
       PYTHON_ENGINE_ADDRESS: "python-engine:8000"
-      # Temporal 地址
+      # Temporal 鍦板潃
       TEMPORAL_ADDRESS: "temporal:7233"
-      # LLM Provider Keys（Go 侧直连用）
+      # LLM Provider Keys锛圙o 渚х洿杩炵敤锛?
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       # Stripe
@@ -133,14 +135,16 @@ services:
       retries: 5
       start_period: 15s
 
-  # ── Python AI 引擎（自研 LLM Gateway） ──
+  # 鈹€鈹€ Python AI 寮曟搸锛堣嚜鐮?LLM Gateway锛?鈹€鈹€
 
   python-engine:
     build:
       context: python-engine
       dockerfile: Dockerfile
+    mem_limit: 2g
+    cpus: 2.0
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       redis:
         condition: service_healthy
@@ -155,7 +159,7 @@ services:
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY:-}"
-      # 可观测性
+      # 鍙娴嬫€?
       LOG_LEVEL: "INFO"
       OTEL_ENDPOINT: ""
     restart: unless-stopped
@@ -166,7 +170,7 @@ services:
       retries: 5
       start_period: 20s
 
-  # ── Milvus 向量数据库 ──
+  # 鈹€鈹€ Milvus 鍚戦噺鏁版嵁搴?鈹€鈹€
 
   etcd:
     image: quay.io/coreos/etcd:v3.5.18
@@ -184,9 +188,11 @@ services:
     depends_on:
       minio:
         condition: service_healthy
+    environment:
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
     entrypoint: >
       /bin/sh -c "
-      mc alias set myminio http://minio:9000 minioadmin minioadmin123;
+      mc alias set myminio http://minio:9000 minioadmin $MINIO_ROOT_PASSWORD;
       mc mb --ignore-existing myminio/minicc-media;
       "
     restart: "no"
@@ -198,8 +204,8 @@ services:
       ETCD_ENDPOINTS: etcd:2379
       MINIO_ADDRESS: minio:9000
     ports:
-      - "19530:19530"
-      - "9091:9091"
+      - "127.0.0.1:19530:19530"
+      - "127.0.0.1:9091:9091"
     volumes:
       - milvusdata:/var/lib/milvus
     depends_on:
@@ -211,12 +217,14 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── 前端（Vue 3） ──
+  # 鈹€鈹€ 鍓嶇锛圴ue 3锛?鈹€鈹€
 
   frontend:
     build:
       context: frontend-vue
       dockerfile: Dockerfile
+    mem_limit: 512m
+    cpus: 1.0
     ports:
       - "3000:80"
     depends_on:
@@ -227,7 +235,7 @@ services:
       VITE_WS_URL: "ws://localhost:8080"
     restart: unless-stopped
 
-  # ── Prometheus 监控 ──
+  # 鈹€鈹€ Prometheus 鐩戞帶 鈹€鈹€
 
   prometheus:
     image: prom/prometheus:latest

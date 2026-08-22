@@ -13,27 +13,27 @@ import (
 
 // CreditChange records a credit transaction.
 type CreditChange struct {
-	ID        string `json:"id"`
-	UserID    string `json:"user_id"`
-	Amount    int    `json:"amount"`   // positive = credit, negative = debit
-	Balance   int    `json:"balance"`  // balance after transaction
-	Reason    string `json:"reason"`   // "llm_call", "image_gen", "recharge", "admin"
+	ID        string    `json:"id"`
+	UserID    string    `json:"user_id"`
+	Amount    int       `json:"amount"`  // positive = credit, negative = debit
+	Balance   int       `json:"balance"` // balance after transaction
+	Reason    string    `json:"reason"`  // "llm_call", "image_gen", "recharge", "admin"
 	CreatedAt time.Time `json:"created_at"`
 }
 
 // BillingConfig holds pricing and limits.
 type BillingConfig struct {
-	FreeCredits      int            `json:"free_credits"`       // credits given on registration
-	LLMCostPerToken  int            `json:"llm_cost_per_token"` // cost per token (input)
-	LLMCostPerOutput int            `json:"llm_cost_per_output"`
-	ImageCost        int            `json:"image_cost"`         // per image generation
+	FreeCredits      int `json:"free_credits"`       // credits given on registration
+	LLMCostPerToken  int `json:"llm_cost_per_token"` // cost per token (input)
+	LLMCostPerOutput int `json:"llm_cost_per_output"`
+	ImageCost        int `json:"image_cost"` // per image generation
 }
 
 var DefaultConfig = BillingConfig{
 	FreeCredits:      1000,
-	LLMCostPerToken:  1,   // 1 credit per 1000 input tokens
-	LLMCostPerOutput: 2,   // 2 credits per 1000 output tokens
-	ImageCost:        50,  // 50 credits per image
+	LLMCostPerToken:  1,  // 1 credit per 1000 input tokens
+	LLMCostPerOutput: 2,  // 2 credits per 1000 output tokens
+	ImageCost:        50, // 50 credits per image
 }
 
 // DailyFreeLimit is the number of free conversations per user per day.
@@ -42,8 +42,8 @@ const DailyFreeLimit = 5
 // CreditEvent represents a credit balance change event.
 type CreditEvent struct {
 	UserID    string
-	Amount    int       // positive = credit, negative = debit
-	Balance   int       // balance after this change
+	Amount    int // positive = credit, negative = debit
+	Balance   int // balance after this change
 	Reason    string
 	Timestamp time.Time
 }
@@ -174,58 +174,55 @@ func (m *Manager) GetBalance(userID string) (int, error) {
 
 // Deduct deducts credits from a user's balance. Returns the new balance.
 // Returns an error if insufficient credits.
-// Entirely in-memory (atomic CAS); DB persistence is async via observers.
+// P0-P1 修复：改为 PG 单语句原子扣费（UPDATE ... RETURNING），数据库为唯一
+// 事实源，多副本部署下不会超扣/重复扣费；内存仅作读缓存。
 func (m *Manager) Deduct(userID, reason string, amount int) (int, error) {
 	if amount <= 0 {
 		return 0, fmt.Errorf("invalid deduction amount: %d", amount)
 	}
 
-	ptr, err := m.getOrLoadBalance(userID)
+	newBalance, err := m.store.AtomicDeductBalance(context.Background(), userID, amount)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("insufficient credits or user not found: %w", err)
 	}
-
-	for {
-		current := atomic.LoadInt64(ptr)
-		if int(current) < amount {
-			return int(current), fmt.Errorf("insufficient credits: have %d, need %d", current, amount)
-		}
-		newVal := current - int64(amount)
-		if atomic.CompareAndSwapInt64(ptr, current, newVal) {
-			m.publish(CreditEvent{
-				UserID:    userID,
-				Amount:    -amount,
-				Balance:   int(newVal),
-				Reason:    reason,
-				Timestamp: time.Now(),
-			})
-			return int(newVal), nil
-		}
-		// CAS failed (concurrent deduction), retry
-	}
+	m.setBalanceCache(userID, newBalance)
+	m.publish(CreditEvent{
+		UserID:    userID,
+		Amount:    -amount,
+		Balance:   newBalance,
+		Reason:    reason,
+		Timestamp: time.Now(),
+	})
+	return newBalance, nil
 }
 
 // AddCredits adds credits to a user's balance (for recharge or admin grants).
-// Entirely in-memory (atomic add); DB persistence is async via observers.
+// P0-P1 修复：改为 PG 单语句原子充值，数据库为唯一事实源。
 func (m *Manager) AddCredits(userID, reason string, amount int) (int, error) {
 	if amount <= 0 {
 		return 0, fmt.Errorf("invalid credit amount: %d", amount)
 	}
 
-	ptr, err := m.getOrLoadBalance(userID)
+	newBalance, err := m.store.AtomicAddBalance(context.Background(), userID, amount)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("add credits failed: %w", err)
 	}
-
-	newVal := atomic.AddInt64(ptr, int64(amount))
+	m.setBalanceCache(userID, newBalance)
 	m.publish(CreditEvent{
 		UserID:    userID,
 		Amount:    amount,
-		Balance:   int(newVal),
+		Balance:   newBalance,
 		Reason:    reason,
 		Timestamp: time.Now(),
 	})
-	return int(newVal), nil
+	return newBalance, nil
+}
+
+// setBalanceCache 更新内存读缓存（不改变 DB 事实源）。
+func (m *Manager) setBalanceCache(userID string, balance int) {
+	ptr := new(int64)
+	*ptr = int64(balance)
+	m.balances.Store(userID, ptr)
 }
 
 // GetHistory returns the user's credit transaction history.

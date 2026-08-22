@@ -68,9 +68,22 @@ func (h *InstallHandler) Setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ensure no admin exists (idempotent)
+	// P1 修复：用事务 + 咨询锁保证初始化原子性，避免并发/读副本滞后重复初始化
+	tx, err := db.Pool.Begin(r.Context())
+	if err != nil {
+		InternalError(w, "setup failed")
+		return
+	}
+	defer tx.Rollback(r.Context())
+	if _, err := tx.Exec(r.Context(), `SELECT pg_advisory_xact_lock(hashtext('minicc_install'))`); err != nil {
+		InternalError(w, "setup failed")
+		return
+	}
 	var count int
-	db.ReadPool().QueryRow(r.Context(), `SELECT COUNT(*) FROM users WHERE role = 'owner'`).Scan(&count)
+	if err := tx.QueryRow(r.Context(), `SELECT COUNT(*) FROM users WHERE role = 'owner'`).Scan(&count); err != nil {
+		InternalError(w, "setup failed")
+		return
+	}
 	if count > 0 {
 		BadRequest(w, "system already initialized")
 		return
@@ -85,7 +98,7 @@ func (h *InstallHandler) Setup(w http.ResponseWriter, r *http.Request) {
 
 	// Create owner user using PostgreSQL's gen_random_uuid()
 	var userID string
-	err = db.Pool.QueryRow(r.Context(),
+	err = tx.QueryRow(r.Context(),
 		`INSERT INTO users (id, tenant_id, email, name, password_hash, role, created_at, updated_at)
 		 VALUES (gen_random_uuid(), $1, $2, $3, $4, 'owner', NOW(), NOW())
 		 RETURNING id`,
@@ -93,6 +106,10 @@ func (h *InstallHandler) Setup(w http.ResponseWriter, r *http.Request) {
 	).Scan(&userID)
 	if err != nil {
 		InternalError(w, "failed to create admin user")
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		InternalError(w, "setup failed")
 		return
 	}
 

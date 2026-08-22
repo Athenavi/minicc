@@ -266,9 +266,9 @@ func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 
 func (h *AdminHandler) SystemInfo(w http.ResponseWriter, r *http.Request) {
 	info := map[string]interface{}{
-		"version":   "2.0.0",
-		"uptime":    time.Since(monitor.Global.StartTime).String(),
-		"db":        map[string]interface{}{
+		"version": "2.0.0",
+		"uptime":  time.Since(monitor.Global.StartTime).String(),
+		"db": map[string]interface{}{
 			"postgres": true,
 			"redis":    db.Redis != nil,
 		},
@@ -357,14 +357,25 @@ func dbNameFromDSN() string {
 // 鈹€鈹€ Backup & Restore 鈹€鈹€
 
 func (h *AdminHandler) CreateBackup(w http.ResponseWriter, r *http.Request) {
-	output, err := exec.Command("pg_dump", "--dbname="+extractDSN()).Output()
+	// P0-P4 修复：pg_dump 输出流式转发，避免整库缓冲入内存导致 OOM
+	cmd := exec.CommandContext(r.Context(), "pg_dump", "--dbname="+extractDSN())
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		logAndRespond(w, err, http.StatusInternalServerError, "backup failed")
+		return
+	}
+	if err := cmd.Start(); err != nil {
 		logAndRespond(w, err, http.StatusInternalServerError, "backup failed")
 		return
 	}
 	w.Header().Set("Content-Type", "application/sql")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=minicc_backup_%s.sql", time.Now().Format("20060102_150405")))
-	w.Write(output)
+	if _, err := io.Copy(w, stdout); err != nil {
+		slog.Warn("backup stream failed", "error", err)
+	}
+	if err := cmd.Wait(); err != nil {
+		slog.Warn("pg_dump failed", "error", err)
+	}
 }
 
 func (h *AdminHandler) RestoreBackup(w http.ResponseWriter, r *http.Request) {
@@ -374,9 +385,14 @@ func (h *AdminHandler) RestoreBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
-	sqlData, err := io.ReadAll(file)
+	// P0-P4 防护：限制恢复文件大小，避免整文件读入内存
+	sqlData, err := io.ReadAll(io.LimitReader(file, 512<<20))
 	if err != nil {
 		logAndRespond(w, err, http.StatusInternalServerError, "read file failed")
+		return
+	}
+	if len(sqlData) >= 512<<20 {
+		BadRequest(w, "backup file too large (max 512MB)")
 		return
 	}
 	tx, err := db.Pool.Begin(r.Context())

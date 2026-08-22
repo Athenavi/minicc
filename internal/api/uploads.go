@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -34,6 +35,34 @@ func NewUploadHandler(a *auth.Authenticator, storageRoot string) *UploadHandler 
 }
 
 const defaultChunkSize = 2 << 20 // 2MB
+
+// maxKBDocSize 限制 kb_doc 文档大小（防 finalizeKBDoc 整文件读入内存导致 OOM）。
+const maxKBDocSize int64 = 64 << 20 // 64MB
+
+// validUploadNameRe 用于文件名净化：拒绝路径分隔符与目录穿越序列。
+// 仅允许字母数字、中文等常规字符、点、下划线、连字符、空格。
+var validUploadNameRe = regexp.MustCompile(`^[^\x00-\x1f/\\]+$`)
+
+// sanitizeUploadName 净化上传文件名（P0-S3 路径穿越修复）：
+// 拒绝包含路径分隔符或空白的名字；剥离潜在遍历；限制长度。
+func sanitizeUploadName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > 255 {
+		return ""
+	}
+	if !validUploadNameRe.MatchString(name) {
+		return ""
+	}
+	if name == "." || name == ".." {
+		return ""
+	}
+	// 防御：仅保留文件名部分（杜绝任何残余分隔符场景）
+	name = filepath.Base(filepath.Clean(name))
+	if name == "." || name == ".." {
+		return ""
+	}
+	return name
+}
 
 // chunkDir 返回 upload_id 的临时分片目录（自动创建）。
 func (h *UploadHandler) chunkDir(uploadID string) (string, error) {
@@ -73,8 +102,8 @@ func (h *UploadHandler) Init(w http.ResponseWriter, r *http.Request) {
 		Name      string `json:"name"`
 		Size      int64  `json:"size"`
 		MimeType  string `json:"mime_type"`
-		Purpose   string `json:"purpose"`    // media / kb_doc / generic
-		ParentID  string `json:"parent_id"`  // media 文件夹 id；kb_doc 时传 kb_id
+		Purpose   string `json:"purpose"`   // media / kb_doc / generic
+		ParentID  string `json:"parent_id"` // media 文件夹 id；kb_doc 时传 kb_id
 		Category  string `json:"category"`
 		ChunkSize int    `json:"chunk_size"` // 可选，默认 2MB
 	}
@@ -87,11 +116,22 @@ func (h *UploadHandler) Init(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "name and size are required")
 		return
 	}
+	// P0-S3 路径穿越修复：文件名必须净化，拒绝 / \ .. 等
+	body.Name = sanitizeUploadName(body.Name)
+	if body.Name == "" {
+		BadRequest(w, "invalid file name")
+		return
+	}
 	if body.Purpose == "" {
 		body.Purpose = "generic"
 	}
 	if body.Purpose != "media" && body.Purpose != "kb_doc" && body.Purpose != "generic" {
 		BadRequest(w, "purpose must be media / kb_doc / generic")
+		return
+	}
+	// P0-P3 防护：kb_doc 会整文件读入内存（知识文档 content 列），限制大小
+	if body.Purpose == "kb_doc" && body.Size > maxKBDocSize {
+		BadRequest(w, "kb_doc upload too large (max 64MB)")
 		return
 	}
 	chunkSize := body.ChunkSize
@@ -326,11 +366,24 @@ func (h *UploadHandler) mergeChunks(dir string, count int) (*os.File, error) {
 
 // finalizeMedia 合并文件写入 media 存储区并落 media_assets（按当前租户）。
 func (h *UploadHandler) finalizeMedia(r *http.Request, tenantID string, up struct {
-	ID string; UserID string; Name string; Size int64; MimeType string; Purpose string
-	ParentID string; Category string; ChunkSize int; ChunkCnt int; Received []string
+	ID        string
+	UserID    string
+	Name      string
+	Size      int64
+	MimeType  string
+	Purpose   string
+	ParentID  string
+	Category  string
+	ChunkSize int
+	ChunkCnt  int
+	Received  []string
 }, merged *os.File) (string, error) {
 	dir := "u_" + up.UserID
-	objectKey := fmt.Sprintf("media/%s/%s_%s", dir, shortAssetID(up.ID), up.Name)
+	name := sanitizeUploadName(up.Name)
+	if name == "" {
+		return "", fmt.Errorf("invalid upload name")
+	}
+	objectKey := fmt.Sprintf("media/%s/%s_%s", dir, shortAssetID(up.ID), name)
 	dest := filepath.Join(h.storageRoot, objectKey)
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return "", err
@@ -361,8 +414,17 @@ func (h *UploadHandler) finalizeMedia(r *http.Request, tenantID string, up struc
 
 // finalizeKBDoc 合并文件内容落 knowledge_documents（content bytea 供 RAG 构建，按当前租户）。
 func (h *UploadHandler) finalizeKBDoc(r *http.Request, tenantID string, up struct {
-	ID string; UserID string; Name string; Size int64; MimeType string; Purpose string
-	ParentID string; Category string; ChunkSize int; ChunkCnt int; Received []string
+	ID        string
+	UserID    string
+	Name      string
+	Size      int64
+	MimeType  string
+	Purpose   string
+	ParentID  string
+	Category  string
+	ChunkSize int
+	ChunkCnt  int
+	Received  []string
 }, merged *os.File) (string, error) {
 	if up.ParentID == "" {
 		return "", fmt.Errorf("kb_doc upload requires parent_id (kb_id)")
@@ -373,9 +435,12 @@ func (h *UploadHandler) finalizeKBDoc(r *http.Request, tenantID string, up struc
 		`SELECT user_id FROM knowledge_bases WHERE id = $1 AND tenant_id = $2`, up.ParentID, tenantID).Scan(&owner); err != nil || owner != up.UserID {
 		return "", fmt.Errorf("knowledge base not found or not owned")
 	}
-	content, err := io.ReadAll(merged)
+	content, err := io.ReadAll(io.LimitReader(merged, maxKBDocSize+1))
 	if err != nil {
 		return "", err
+	}
+	if int64(len(content)) > maxKBDocSize {
+		return "", fmt.Errorf("kb_doc content exceeds 64MB limit")
 	}
 	ext := strings.TrimPrefix(filepath.Ext(up.Name), ".")
 	if ext == "" {
@@ -403,10 +468,23 @@ func (h *UploadHandler) finalizeKBDoc(r *http.Request, tenantID string, up struc
 
 // finalizeGeneric 合并文件写入通用目录并返回可访问 URL。
 func (h *UploadHandler) finalizeGeneric(up struct {
-	ID string; UserID string; Name string; Size int64; MimeType string; Purpose string
-	ParentID string; Category string; ChunkSize int; ChunkCnt int; Received []string
+	ID        string
+	UserID    string
+	Name      string
+	Size      int64
+	MimeType  string
+	Purpose   string
+	ParentID  string
+	Category  string
+	ChunkSize int
+	ChunkCnt  int
+	Received  []string
 }, merged *os.File) (string, error) {
-	objectKey := fmt.Sprintf("uploads/final/%s_%s", shortAssetID(up.ID), up.Name)
+	name := sanitizeUploadName(up.Name)
+	if name == "" {
+		return "", fmt.Errorf("invalid upload name")
+	}
+	objectKey := fmt.Sprintf("uploads/final/%s_%s", shortAssetID(up.ID), name)
 	dest := filepath.Join(h.storageRoot, objectKey)
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return "", err

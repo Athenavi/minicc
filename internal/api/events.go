@@ -27,6 +27,12 @@ func handleSSE(w http.ResponseWriter, r *http.Request, hub *broadcast.Hub, subID
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 
+	// P1 修复：SSE 长连接豁免服务器 WriteTimeout（默认 60s 会切断流）。
+	// 客户端断开仍由 r.Context().Done() 检测。
+	if rc := http.NewResponseController(w); rc != nil {
+		_ = rc.SetWriteDeadline(time.Time{})
+	}
+
 	ch := hub.Subscribe(subID)
 	defer hub.Unsubscribe(subID)
 
@@ -80,26 +86,29 @@ func SSEHandler(hub *broadcast.Hub, sessionMgr *session.Manager) http.HandlerFun
 			subID = "anon-" + hex.EncodeToString(buf[:])
 		}
 		sessionID := r.URL.Query().Get("session_id")
-		if sessionID != "" {
-			claims := auth.GetClaims(r.Context())
-			if claims == nil {
-				Unauthorized(w, ErrAuthRequired)
-				return
-			}
-			if sessionMgr != nil {
-				s, err := sessionMgr.GetSession(r.Context(), sessionID)
-				if err != nil {
-					// 新会话：前端先建立 SSE 连接，/submit 才会创建 session。
-					// 此时会话尚不存在、无历史事件可泄露，放行连接等待创建；
-					// 其他错误（DB 故障等）拒绝。
-					if !errors.Is(err, session.ErrSessionNotFound) {
-						InternalError(w, "session check failed")
-						return
-					}
-				} else if s == nil || s.UserID != claims.UserID {
-					Forbidden(w, "session does not belong to the current user")
+		// P0-S5: 必须显式指定 session_id，否则订阅到全站事件流（含其他用户对话内容）
+		if sessionID == "" {
+			BadRequest(w, "session_id is required")
+			return
+		}
+		claims := auth.GetClaims(r.Context())
+		if claims == nil {
+			Unauthorized(w, ErrAuthRequired)
+			return
+		}
+		if sessionMgr != nil {
+			s, err := sessionMgr.GetSession(r.Context(), sessionID)
+			if err != nil {
+				// 新会话：前端先建立 SSE 连接，/submit 才会创建 session。
+				// 此时会话尚不存在、无历史事件可泄露，放行连接等待创建；
+				// 其他错误（DB 故障等）拒绝。
+				if !errors.Is(err, session.ErrSessionNotFound) {
+					InternalError(w, "session check failed")
 					return
 				}
+			} else if s == nil || s.UserID != claims.UserID {
+				Forbidden(w, "session does not belong to the current user")
+				return
 			}
 		}
 		handleSSE(w, r, hub, subID, sessionID)

@@ -1,13 +1,15 @@
 package api
 
 import (
-	"sync"
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/athenavi/minicc/config"
@@ -19,6 +21,22 @@ import (
 	"github.com/athenavi/minicc/internal/session"
 	"github.com/athenavi/minicc/internal/storage"
 )
+
+// metricsAuthMW 允许两种鉴权方式抓取 /metrics：
+// 1. METRICS_TOKEN 配置的 Bearer token（Prometheus 抓取，常量时间比较）；
+// 2. JWT admin 权限（PermAdminRead）。
+func metricsAuthMW(cfg *config.Config, authMW routeMiddleware, h http.HandlerFunc) http.Handler {
+	if cfg == nil || cfg.MetricsToken == "" {
+		return authMW(RequirePermission(auth.PermAdminRead)(h))
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+cfg.MetricsToken)) == 1 {
+			h(w, r)
+			return
+		}
+		authMW(RequirePermission(auth.PermAdminRead)(h)).ServeHTTP(w, r)
+	})
+}
 
 var startTime = time.Now()
 
@@ -54,20 +72,51 @@ func requestIDHeader(next http.Handler) http.Handler {
 	})
 }
 
-// realIPHeader extracts the real IP from X-Forwarded-For or X-Real-IP.
-func realIPHeader(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-			if idx := strings.Index(fwd, ","); idx >= 0 {
-				r.RemoteAddr = strings.TrimSpace(fwd[:idx])
-			} else {
-				r.RemoteAddr = strings.TrimSpace(fwd)
-			}
-		} else if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
-			r.RemoteAddr = realIP
+// realIPHeader extracts the real IP from X-Forwarded-For / X-Real-IP,
+// but ONLY when the direct peer is a trusted reverse proxy (P1 修复)：
+// 无条件信任客户端可伪造的 XFF 会绕过按 IP 的限流与验证码失败升级。
+func realIPHeader(trustedCIDRs []string) func(http.Handler) http.Handler {
+	var trusted []*net.IPNet
+	for _, c := range trustedCIDRs {
+		if _, n, err := net.ParseCIDR(strings.TrimSpace(c)); err == nil {
+			trusted = append(trusted, n)
 		}
-		next.ServeHTTP(w, r)
-	})
+	}
+	peerTrusted := func(remoteAddr string) bool {
+		if len(trusted) == 0 {
+			return false
+		}
+		host, _, err := net.SplitHostPort(remoteAddr)
+		if err != nil {
+			host = remoteAddr
+		}
+		ip := net.ParseIP(strings.TrimSpace(host))
+		if ip == nil {
+			return false
+		}
+		for _, n := range trusted {
+			if n.Contains(ip) {
+				return true
+			}
+		}
+		return false
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if peerTrusted(r.RemoteAddr) {
+				if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+					if idx := strings.Index(fwd, ","); idx >= 0 {
+						r.RemoteAddr = strings.TrimSpace(fwd[:idx])
+					} else {
+						r.RemoteAddr = strings.TrimSpace(fwd)
+					}
+				} else if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
+					r.RemoteAddr = realIP
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // NewGatewayRouter creates a pure gateway router that proxies all business logic to Python.
@@ -92,9 +141,9 @@ func NewGatewayRouter(
 	if atomicRedis != nil {
 		distLimiter := NewDistributedRateLimiter(
 			atomicRedis.LoadRaw(),
-			cfg.RateLimitRPM*10,    // 全局：单实例限制 × 10
-			cfg.RateLimitRPM*5,     // 租户：单实例限制 × 5
-			cfg.RateLimitRPM,       // 用户：单实例限制
+			cfg.RateLimitRPM*10, // 全局：单实例限制 × 10
+			cfg.RateLimitRPM*5,  // 租户：单实例限制 × 5
+			cfg.RateLimitRPM,    // 用户：单实例限制
 		)
 		rlMW = DistributedRateLimitMiddleware(distLimiter)
 		slog.Info("distributed rate limiter enabled", "global", cfg.RateLimitRPM*10)
@@ -131,7 +180,7 @@ func NewGatewayRouter(
 			CORSMiddleware(cfg.CORSOrigins),
 			MonitoringMiddleware,
 			requestIDHeader,
-			realIPHeader,
+			realIPHeader(cfg.TrustedProxyCIDRs),
 		)
 	}
 
@@ -151,7 +200,8 @@ func NewGatewayRouter(
 	billingStore.EnsureTables(context.Background())
 	billingMgr := billing.NewManager(billingStore)
 	billingMgr.Subscribe(billing.NewTransactionRecorder(billingStore))
-	billingMgr.Subscribe(billing.NewBalanceSyncer(billingStore, 5*time.Second))
+	// P0-P1 修复：余额已由 Deduct/AddCredits 同步写库（PG 原子 UPDATE），
+	// 移除 BalanceSyncer 异步落库订阅，避免多副本 split-brain 与重复扣费。
 
 	// Agent execution semaphore
 	agentSem := make(chan struct{}, 20)
@@ -219,7 +269,7 @@ func NewGatewayRouter(
 
 	// ── Route registration by functional domain ──
 
-	registerPublicEndpoints(mux, authMW, rlMW, publicMW, searchHandler, shareHandler, systemHandler)
+	registerPublicEndpoints(mux, authMW, rlMW, publicMW, searchHandler, shareHandler, systemHandler, cfg)
 	registerAgentRoutes(mux, authMW, rlMW, publicMW, sanitizeMW, submitHandler, billingMgr, agentSem, eventHub, sessionMgr, authenticator, rpaHub)
 	registerAuthRoutes(mux, authHandler, authMW, rlMW)
 
@@ -256,7 +306,7 @@ func NewGatewayRouter(
 	// dispatch 保留 Python 代理（agent 工具链内部调用，非页面主链路）
 	// 安全：必须经过 authMW，否则未认证可触发工具执行
 	mux.Handle("POST /v1/agents/dispatch", authMW(rlMW(sanitizeMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if pythonClient == nil || !pythonClient.IsConnected() {
+		if pythonClient == nil {
 			InternalError(w, "python engine not available")
 			return
 		}
@@ -273,8 +323,8 @@ func NewGatewayRouter(
 		OK(w, resp)
 	})))))
 
-	// Skills (rate limited, proxies to Python)
-	skillHandler.RegisterRoutes(mux)
+	// Skills (auth + rate limited + prompt sanitized, proxies to Python)
+	skillHandler.RegisterRoutes(mux, authMW, rlMW, sanitizeMW)
 
 	// Enterprise audit (auth + RequireEntPerm("audit:read"))
 	NewEntAuditHandler().RegisterRoutes(mux, authMW)
@@ -311,18 +361,21 @@ func registerPublicEndpoints(
 	searchHandler *SearchHandler,
 	shareHandler *ShareHandler,
 	systemHandler *SystemHandler,
+	cfg *config.Config,
 ) {
 	mux.Handle("GET /search", authMW(rlMW(http.HandlerFunc(searchHandler.Search))))
 
 	// Public share view (no auth; revoked shares return 410 Gone)
-	mux.Handle("GET /share/{id}", rlMW(publicMW(http.HandlerFunc(shareHandler.PublicGet))))
+	// 修复 P1：移除内层 publicMW 重复包裹（外层 publicMW(mux) 已包含日志/审计/追踪），
+	// 避免审计 XAdd 双写、请求 ID 被内层重新生成。
+	mux.Handle("GET /share/{id}", rlMW(http.HandlerFunc(shareHandler.PublicGet)))
 
-	mux.Handle("GET /health", rlMW(publicMW(http.HandlerFunc(handleHealth))))
+	mux.Handle("GET /health", rlMW(http.HandlerFunc(handleHealth)))
 	// Prometheus 指标端点：生产收敛为需要 PermAdminRead 权限，避免泄漏业务指标
-	mux.Handle("GET /metrics", rlMW(authMW(RequirePermission(auth.PermAdminRead)(http.HandlerFunc(systemHandler.PrometheusMetrics)))))
+	mux.Handle("GET /metrics", rlMW(metricsAuthMW(cfg, authMW, systemHandler.PrometheusMetrics)))
 	// API 文档（OpenAPI spec，公开，供 Swagger/Redoc 展示）
-	mux.Handle("GET /docs/", publicMW(http.StripPrefix("/docs/", http.FileServer(http.Dir("docs")))))
-	mux.Handle("GET /ready", rlMW(publicMW(http.HandlerFunc(handleReadiness))))
+	mux.Handle("GET /docs/", http.StripPrefix("/docs/", http.FileServer(http.Dir("docs"))))
+	mux.Handle("GET /ready", rlMW(http.HandlerFunc(handleReadiness)))
 }
 
 // ── Agent submit/cancel/events ──
@@ -557,17 +610,17 @@ func registerProxyRoutes(
 	newProxy := func(prefix string, opt proxyOpt) func(func(*http.Request) string) http.HandlerFunc {
 		return func(buildPath func(*http.Request) string) http.HandlerFunc {
 			return func(w http.ResponseWriter, r *http.Request) {
-				if pythonClient == nil || !pythonClient.IsConnected() {
+				if pythonClient == nil {
 					InternalError(w, "python engine not available")
 					return
 				}
 				claims := auth.GetClaims(r.Context())
-			if claims == nil || claims.TenantID == "" {
-				Unauthorized(w, "missing tenant context")
-				return
-			}
-			// 多租户隔离：透传 tenant_id 给 Python 引擎（query 参数兼容，header 见 pythonClient.WithTenant）
-			proxiedPath := buildPath(r) + "?user_id=" + claims.UserID + "&tenant_id=" + claims.TenantID
+				if claims == nil || claims.TenantID == "" {
+					Unauthorized(w, "missing tenant context")
+					return
+				}
+				// 多租户隔离：透传 tenant_id 给 Python 引擎（query 参数兼容，header 见 pythonClient.WithTenant）
+				proxiedPath := buildPath(r) + "?user_id=" + claims.UserID + "&tenant_id=" + claims.TenantID
 				var resp interface{}
 				var err error
 				switch r.Method {
@@ -610,6 +663,12 @@ func registerProxyRoutes(
 			return prefix + "/" + r.PathValue("id") + suffix
 		}
 	}
+	// pathParamNamed 支持自定义路径参数名（如 {conflict_id}），用于修复参数丢失的代理路由。
+	pathParamNamed := func(prefix, param, suffix string) func(*http.Request) string {
+		return func(r *http.Request) string {
+			return prefix + "/" + r.PathValue(param) + suffix
+		}
+	}
 
 	// Graphs (auth + rate limited, proxies to Python)
 	graphP := newProxy("", proxyOpt{logTag: "graph"})
@@ -631,7 +690,7 @@ func registerProxyRoutes(
 	mux.Handle("PUT /v1/kb/{id}", authMW(kbRateMW(kbP(pathParam("/v1/kb")))))
 	mux.Handle("DELETE /v1/kb/{id}", authMW(kbRateMW(kbP(pathParam("/v1/kb")))))
 	mux.Handle("POST /v1/kb/{id}/documents", authMW(kbRateMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if pythonClient == nil || !pythonClient.IsConnected() {
+		if pythonClient == nil {
 			InternalError(w, "python engine not available")
 			return
 		}
@@ -666,7 +725,7 @@ func registerProxyRoutes(
 	mux.Handle("GET /v1/memory/organize/status", authMW(rlMW(memP(pathFn("/v1/memory/organize/status")))))
 	mux.Handle("GET /v1/memory/summaries", authMW(rlMW(memP(pathFn("/v1/memory/summaries")))))
 	mux.Handle("GET /v1/memory/conflicts", authMW(rlMW(memP(pathFn("/v1/memory/conflicts")))))
-	mux.Handle("POST /v1/memory/conflicts/{conflict_id}/resolve", authMW(rlMW(memP(pathFn("/v1/memory/conflicts")))))
+	mux.Handle("POST /v1/memory/conflicts/{conflict_id}/resolve", authMW(rlMW(memP(pathParamNamed("/v1/memory/conflicts", "conflict_id", "/resolve")))))
 }
 
 // ── Admin ──

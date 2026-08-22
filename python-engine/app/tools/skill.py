@@ -40,7 +40,7 @@ async def skill_install(url: str = "", file: str = "", inline: str = "") -> dict
                 return {"error": "skill file too large (max 1MB)"}
             data = json.loads(safe_file.read_text(encoding="utf-8"))
         else:
-            from app.tools.ssrf import assert_safe_url
+            from app.tools.ssrf import assert_safe_url, fetch_url_safe
             assert_safe_url(url)  # S4: SSRF 防护
             import httpx
             async with httpx.AsyncClient(timeout=20) as client:
@@ -253,16 +253,15 @@ async def _run_shell_skill(skill: SkillDef, params: dict[str, Any]) -> str:
 
 async def _run_http_skill(skill: SkillDef, params: dict[str, Any]) -> str:
     """http 技能：渲染 URL 后经 SSRF 防护抓取内容。"""
-    from app.tools.ssrf import assert_safe_url
+    from app.tools.ssrf import assert_safe_url, fetch_url_safe
 
     url = _render_template(skill.source, params, skill.parameters).strip()
     if not url.startswith(("http://", "https://")):
         return f"error: invalid url: {url}"
-    assert_safe_url(url)
     import httpx
 
-    async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
-        resp = await client.get(url)
+    async with httpx.AsyncClient(timeout=20) as client:
+        resp = await fetch_url_safe(client, url)
         text = resp.text[:20000]
     return f"[HTTP {resp.status_code}]\n{text}"
 

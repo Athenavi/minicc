@@ -96,6 +96,14 @@ class MCPClient:
 
     async def _connect_server(self, server: ServerDef):
         """Connect to a single MCP server and discover its tools."""
+        # 安全修复（P0-S7）：仅允许 PLUGIN_COMMAND_ALLOWLIST 白名单内的命令被拉起
+        from app.tools.ssrf import command_allowed
+
+        if not command_allowed(server.command):
+            raise PermissionError(
+                f"MCP server command {server.command!r} not allowed: "
+                "set PLUGIN_COMMAND_ALLOWLIST (comma-separated basenames) to enable"
+            )
         env = None
         if server.env:
             import os

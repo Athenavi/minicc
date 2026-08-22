@@ -156,7 +156,6 @@ func (m *Manager) ListSessions(ctx context.Context, userID string) ([]model.Sess
 			continue
 		}
 		sessions = append(sessions, s)
-		m.cacheSession(ctx, &s)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate sessions: %w", err)

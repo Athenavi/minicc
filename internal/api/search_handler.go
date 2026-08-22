@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 
+	"github.com/athenavi/minicc/internal/auth"
 	"github.com/athenavi/minicc/internal/db"
 )
 
@@ -15,13 +16,13 @@ func NewSearchHandler() *SearchHandler {
 
 // SearchResult holds a single search hit.
 type SearchResult struct {
-	Type      string `json:"type"` // message, file, media
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	Snippet   string `json:"snippet"`
-	SessionID string `json:"session_id,omitempty"`
-	Path      string `json:"path,omitempty"`
-	URL       string `json:"url,omitempty"`
+	Type      string  `json:"type"` // message, file, media
+	ID        string  `json:"id"`
+	Title     string  `json:"title"`
+	Snippet   string  `json:"snippet"`
+	SessionID string  `json:"session_id,omitempty"`
+	Path      string  `json:"path,omitempty"`
+	URL       string  `json:"url,omitempty"`
 	Score     float64 `json:"score"`
 }
 
@@ -29,6 +30,12 @@ func (h *SearchHandler) Search(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	if q == "" {
 		OK(w, map[string]interface{}{"results": []interface{}{}})
+		return
+	}
+	// 多租户隔离修复（P0-S4）：必须按当前租户+用户过滤，否则任一租户用户可全文搜索全库。
+	claims := auth.GetClaims(r.Context())
+	if claims == nil || claims.TenantID == "" {
+		Unauthorized(w, "missing tenant context")
 		return
 	}
 
@@ -41,7 +48,8 @@ func (h *SearchHandler) Search(w http.ResponseWriter, r *http.Request) {
 		 FROM messages m
 		 LEFT JOIN sessions s ON s.id = m.session_id
 		 WHERE to_tsvector('simple', m.content) @@ plainto_tsquery('simple', $1)
-		 ORDER BY rank DESC LIMIT 20`, q)
+		   AND s.tenant_id = $2 AND s.user_id = $3
+		 ORDER BY rank DESC LIMIT 20`, q, claims.TenantID, claims.UserID)
 	if err == nil {
 		defer msgRows.Close()
 		for msgRows.Next() {
@@ -69,7 +77,8 @@ func (h *SearchHandler) Search(w http.ResponseWriter, r *http.Request) {
 			ts_rank(to_tsvector('simple', COALESCE(name,'')), plainto_tsquery('simple', $1)) as rank
 		 FROM media_assets
 		 WHERE to_tsvector('simple', COALESCE(name,'')) @@ plainto_tsquery('simple', $1)
-		 ORDER BY rank DESC LIMIT 10`, q)
+		   AND tenant_id = $2 AND user_id = $3
+		 ORDER BY rank DESC LIMIT 10`, q, claims.TenantID, claims.UserID)
 	if err == nil {
 		defer fileRows.Close()
 		for fileRows.Next() {

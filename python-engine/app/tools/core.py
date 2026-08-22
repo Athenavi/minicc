@@ -132,10 +132,10 @@ async def execute_python(code: str, timeout: int = 30) -> dict[str, Any]:
 
 
 async def web_fetch(url: str, max_chars: int = 12000, follow_redirects: bool = True) -> dict[str, Any]:
-    from app.tools.ssrf import assert_safe_url
-    assert_safe_url(url)  # SSRF 防护（S4）
-    async with httpx.AsyncClient(timeout=15, follow_redirects=follow_redirects) as client:
-        resp = await client.get(url)
+    from app.tools.ssrf import assert_safe_url, fetch_url_safe
+    assert_safe_url(url)
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await fetch_url_safe(client, url)
         text = resp.text[:max_chars]
         return {
             "url": str(resp.url),

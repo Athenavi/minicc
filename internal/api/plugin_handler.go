@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -17,6 +18,49 @@ import (
 	"github.com/athenavi/minicc/config"
 	"github.com/athenavi/minicc/internal/auth"
 )
+
+// allowedPluginCommands 返回 PLUGIN_COMMAND_ALLOWLIST 环境变量配置的命令白名单
+// （以逗号分隔的可执行文件 basename）。空列表 = 默认禁用自定义插件命令
+// （安全默认：防止任意登录用户配置任意命令并在网关/引擎主机执行）。
+func allowedPluginCommands() map[string]bool {
+	raw := strings.TrimSpace(os.Getenv("PLUGIN_COMMAND_ALLOWLIST"))
+	if raw == "" {
+		return nil
+	}
+	allowed := make(map[string]bool)
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			allowed[part] = true
+		}
+	}
+	return allowed
+}
+
+// checkPluginCommandAllowed 校验命令 basename 是否在白名单内。
+func checkPluginCommandAllowed(command string) error {
+	if strings.TrimSpace(command) == "" {
+		return fmt.Errorf("command is required")
+	}
+	allowed := allowedPluginCommands()
+	if allowed == nil {
+		return fmt.Errorf("plugin command execution is disabled: set PLUGIN_COMMAND_ALLOWLIST to enable specific commands")
+	}
+	base := filepath.Base(command)
+	if !allowed[base] {
+		return fmt.Errorf("plugin command %q not in allowlist (PLUGIN_COMMAND_ALLOWLIST)", base)
+	}
+	return nil
+}
+
+// isAdminRole 判断当前请求是否为 owner/admin（插件命令执行敏感操作）。
+func isAdminRole(r *http.Request) bool {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		return false
+	}
+	return claims.Role == "owner" || claims.Role == "admin"
+}
 
 // PluginHandler manages per-user MCP plugin configurations.
 // 配置存储：{PluginDataDir}/{user_id}/plugins.json（用户级隔离，S 安全修复：
@@ -182,6 +226,11 @@ func (h *PluginHandler) Install(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "command is required")
 		return
 	}
+	// P0-S7 修复：命令必须命中白名单（默认禁用），防任意命令执行
+	if err := checkPluginCommandAllowed(body.Command); err != nil {
+		Forbidden(w, err.Error())
+		return
+	}
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -285,12 +334,12 @@ func (h *PluginHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Command     *string           `json:"command"`
-		Args        *[]string         `json:"args,omitempty"`
+		Command     *string            `json:"command"`
+		Args        *[]string          `json:"args,omitempty"`
 		Env         *map[string]string `json:"env,omitempty"`
-		Description *string           `json:"description,omitempty"`
-		Version     *string           `json:"version,omitempty"`
-		Status      *string           `json:"status,omitempty"`
+		Description *string            `json:"description,omitempty"`
+		Version     *string            `json:"version,omitempty"`
+		Status      *string            `json:"status,omitempty"`
 	}
 	if err := DecodeJSON(w, r, &body); err != nil {
 		BadRequest(w, ErrInvalidReq)
@@ -322,6 +371,11 @@ func (h *PluginHandler) Update(w http.ResponseWriter, r *http.Request) {
 		if body.Command != nil {
 			if strings.TrimSpace(*body.Command) == "" {
 				BadRequest(w, "command must not be empty")
+				return
+			}
+			// P0-S7 修复：命令必须命中白名单（默认禁用）
+			if err := checkPluginCommandAllowed(*body.Command); err != nil {
+				Forbidden(w, err.Error())
 				return
 			}
 			plugins[i].Command = *body.Command
@@ -364,6 +418,11 @@ func (h *PluginHandler) Update(w http.ResponseWriter, r *http.Request) {
 // ── Test ──
 
 func (h *PluginHandler) Test(w http.ResponseWriter, r *http.Request) {
+	// P0-S7 修复：执行用户自定义命令的测试端点仅限 owner/admin
+	if !isAdminRole(r) {
+		Forbidden(w, "plugin test requires admin role")
+		return
+	}
 	userID := h.resolveUser(r)
 	if userID == "" {
 		Unauthorized(w, ErrAuthRequired)

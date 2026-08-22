@@ -23,12 +23,12 @@ type Config struct {
 	PostgresReadDSNs []string // read-replica DSNs (comma-separated)
 
 	// Redis
-	RedisMode        string   // "single", "cluster", "sentinel"
-	RedisAddr        string
-	RedisPassword    string
-	RedisDB          int
-	RedisAddrs       []string // for cluster mode
-	RedisMasterName  string   // for sentinel mode
+	RedisMode          string // "single", "cluster", "sentinel"
+	RedisAddr          string
+	RedisPassword      string
+	RedisDB            int
+	RedisAddrs         []string // for cluster mode
+	RedisMasterName    string   // for sentinel mode
 	RedisSentinelAddrs []string // for sentinel mode
 	RedisPoolSize      int
 
@@ -50,10 +50,10 @@ type Config struct {
 	CORSOrigins string
 
 	// LLM
-	LLMProvider    string
-	LLMAPIKey      string
-	LLMModel       string
-	LLMBaseURL     string
+	LLMProvider string
+	LLMAPIKey   string
+	LLMModel    string
+	LLMBaseURL  string
 
 	// Storage
 	StorageBackend string // "local" or "s3"
@@ -62,31 +62,40 @@ type Config struct {
 	S3Bucket       string
 	S3AccessKey    string
 	S3SecretKey    string
-	S3UseSSL       bool   // S3/MinIO use SSL
+	S3UseSSL       bool // S3/MinIO use SSL
 
 	// Rate Limit
-	RateLimitRPM        int  // requests per minute per user
-	RateLimitFailClose  bool // P1-2: Redis 不可用时是否拒绝写操作（生产=true，开发=false）
-	RateLimitGlobal int // global requests per minute
+	RateLimitRPM       int  // requests per minute per user
+	RateLimitFailClose bool // P1-2: Redis 不可用时是否拒绝写操作（生产=true，开发=false）
+	RateLimitGlobal    int  // global requests per minute
+
+	// TrustedProxyCIDRs trusted reverse-proxy CIDRs (comma separated).
+	// X-Forwarded-For / X-Real-IP are only honored when the direct peer
+	// matches one of these CIDRs; otherwise clients could spoof IP-based limits.
+	TrustedProxyCIDRs []string
+
+	// MetricsToken shared bearer token for Prometheus to scrape /metrics.
+	// When empty, /metrics still requires JWT admin permission.
+	MetricsToken string
 
 	// Log
 	LogLevel string // debug / info / warn / error
 
 	// Stripe
-	StripeSecretKey    string
+	StripeSecretKey     string
 	StripeWebhookSecret string
-	StripePriceID      string
+	StripePriceID       string
 
 	// 支付（支付宝/微信）
-	PublicBaseURL     string // 公网可达的基础 URL，用于构造支付回调 notify_url
-	FrontendURL       string // 前端地址（如 http://localhost:5173）；SSO 回调 302 目标，空 = 同源 "/"
-	AlipayAppID       string
-	AlipayPrivateKey  string // 应用私钥（PEM）
-	AlipayPublicKey   string // 支付宝公钥（PEM）
-	AlipayGateway     string // 默认生产网关；沙箱用 https://openapi-sandbox.dl.alipaydev.com/gateway.do
-	WechatMchID       string
-	WechatAppID       string
-	WechatAPIv3Key    string // APIv3 密钥（32 位）
+	PublicBaseURL         string // 公网可达的基础 URL，用于构造支付回调 notify_url
+	FrontendURL           string // 前端地址（如 http://localhost:5173）；SSO 回调 302 目标，空 = 同源 "/"
+	AlipayAppID           string
+	AlipayPrivateKey      string // 应用私钥（PEM）
+	AlipayPublicKey       string // 支付宝公钥（PEM）
+	AlipayGateway         string // 默认生产网关；沙箱用 https://openapi-sandbox.dl.alipaydev.com/gateway.do
+	WechatMchID           string
+	WechatAppID           string
+	WechatAPIv3Key        string // APIv3 密钥（32 位）
 	WechatMchCertSerialNo string // 商户 API 证书序列号
 	WechatMchPrivateKey   string // 商户 API 证书私钥（PEM）
 
@@ -100,8 +109,8 @@ type Config struct {
 	PythonEngineTimeout time.Duration
 
 	// LLM Gateway（Python 引擎内置）
-	LLMGatewayURL  string // Python 引擎 LLM Gateway 地址，如 "http://localhost:8000"
-	LLMGatewayKey  string // LLM Gateway API Key（可选）
+	LLMGatewayURL string // Python 引擎 LLM Gateway 地址，如 "http://localhost:8000"
+	LLMGatewayKey string // LLM Gateway API Key（可选）
 
 	// Temporal
 	TemporalAddress string // Temporal Server 地址，如 "localhost:7233"
@@ -120,63 +129,65 @@ func Load() *Config {
 	loadDotEnv()     // .env file overrides config file
 	loadConfigFile() // JSON config file (lowest priority)
 	cfg := &Config{
-		Port:            getEnv("PORT", "8080"),
-		ReadTimeout:     getDuration("READ_TIMEOUT", 10*time.Second),
-		WriteTimeout:    getDuration("WRITE_TIMEOUT", 60*time.Second),
-		IdleTimeout:     getDuration("IDLE_TIMEOUT", 120*time.Second),
+		Port:         getEnv("PORT", "8080"),
+		ReadTimeout:  getDuration("READ_TIMEOUT", 10*time.Second),
+		WriteTimeout: getDuration("WRITE_TIMEOUT", 60*time.Second),
+		IdleTimeout:  getDuration("IDLE_TIMEOUT", 120*time.Second),
 		// P2-4: 默认空，强制通过 env 提供；与 Python 端 config.py 保持一致
-		PostgresDSN:      getEnv("POSTGRES_DSN", ""),
-		PostgresMaxConn:  getInt("POSTGRES_MAX_CONN", 20),
-		PostgresMinConn:  getInt("POSTGRES_MIN_CONN", 2),
-		PostgresReadDSNs: getStringSlice("POSTGRES_READ_DSNS", []string{}),
-		RedisMode:         getEnv("REDIS_MODE", "single"),
-		RedisAddr:         getEnv("REDIS_ADDR", "localhost:6379"),
-		RedisPassword:     getEnv("REDIS_PASSWORD", ""),
-		RedisDB:           getInt("REDIS_DB", 0),
-		RedisAddrs:        getStringSlice("REDIS_ADDRS", []string{}),
-		RedisMasterName:   getEnv("REDIS_MASTER_NAME", ""),
-		RedisSentinelAddrs: getStringSlice("REDIS_SENTINEL_ADDRS", []string{}),
-		RedisPoolSize:      getInt("REDIS_POOL_SIZE", 50),
-		JWTSecret:       getEnv("JWT_SECRET", ""),
-		JWTExpiration:   getDuration("JWT_EXPIRATION", 24*time.Hour),
-		InternalToken:   getEnv("INTERNAL_TOKEN", ""),
+		PostgresDSN:         getEnv("POSTGRES_DSN", ""),
+		PostgresMaxConn:     getInt("POSTGRES_MAX_CONN", 20),
+		PostgresMinConn:     getInt("POSTGRES_MIN_CONN", 2),
+		PostgresReadDSNs:    getStringSlice("POSTGRES_READ_DSNS", []string{}),
+		RedisMode:           getEnv("REDIS_MODE", "single"),
+		RedisAddr:           getEnv("REDIS_ADDR", "localhost:6379"),
+		RedisPassword:       getEnv("REDIS_PASSWORD", ""),
+		RedisDB:             getInt("REDIS_DB", 0),
+		RedisAddrs:          getStringSlice("REDIS_ADDRS", []string{}),
+		RedisMasterName:     getEnv("REDIS_MASTER_NAME", ""),
+		RedisSentinelAddrs:  getStringSlice("REDIS_SENTINEL_ADDRS", []string{}),
+		RedisPoolSize:       getInt("REDIS_POOL_SIZE", 50),
+		JWTSecret:           getEnv("JWT_SECRET", ""),
+		JWTExpiration:       getDuration("JWT_EXPIRATION", 24*time.Hour),
+		InternalToken:       getEnv("INTERNAL_TOKEN", ""),
 		DisableRegistration: isTruthy(getEnv("DISABLE_REGISTRATION", "")),
-		CookieSecure:    isTruthy(getEnv("COOKIE_SECURE", "")),
-		CORSOrigins:     getEnv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173"),
-		LLMProvider:     getEnv("LLM_PROVIDER", "openai"),
-		LLMAPIKey:       getEnv("LLM_API_KEY", ""),
-		LLMModel:        getEnv("LLM_MODEL", "gpt-4o"),
-		LLMBaseURL:      getEnv("LLM_BASE_URL", ""),
-		StorageBackend:  getEnv("STORAGE_BACKEND", "local"),
-		StorageRoot:     getEnv("STORAGE_ROOT", "./workspace"),
-		S3Endpoint:      getEnv("S3_ENDPOINT", ""),
-		S3Bucket:        getEnv("S3_BUCKET", "minicc"),
-		S3AccessKey:     getEnv("S3_ACCESS_KEY", ""),
-		S3SecretKey:     getEnv("S3_SECRET_KEY", ""),
-		S3UseSSL:        isTruthy(getEnv("S3_USE_SSL", "")),
-		RateLimitRPM:       getInt("RATE_LIMIT_RPM", 100),
-		RateLimitFailClose: isTruthy(getEnv("RATE_LIMIT_FAIL_CLOSE", "")),
-		RateLimitGlobal: getInt("RATE_LIMIT_GLOBAL", 10000),
-		LogLevel:        getEnv("LOG_LEVEL", "info"),
-		StripeSecretKey:   getEnv("STRIPE_SECRET_KEY", ""),
+		CookieSecure:        isTruthy(getEnv("COOKIE_SECURE", "")),
+		CORSOrigins:         getEnv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173"),
+		LLMProvider:         getEnv("LLM_PROVIDER", "openai"),
+		LLMAPIKey:           getEnv("LLM_API_KEY", ""),
+		LLMModel:            getEnv("LLM_MODEL", "gpt-4o"),
+		LLMBaseURL:          getEnv("LLM_BASE_URL", ""),
+		StorageBackend:      getEnv("STORAGE_BACKEND", "local"),
+		StorageRoot:         getEnv("STORAGE_ROOT", "./workspace"),
+		S3Endpoint:          getEnv("S3_ENDPOINT", ""),
+		S3Bucket:            getEnv("S3_BUCKET", "minicc"),
+		S3AccessKey:         getEnv("S3_ACCESS_KEY", ""),
+		S3SecretKey:         getEnv("S3_SECRET_KEY", ""),
+		S3UseSSL:            isTruthy(getEnv("S3_USE_SSL", "")),
+		RateLimitRPM:        getInt("RATE_LIMIT_RPM", 100),
+		RateLimitFailClose:  isTruthy(getEnv("RATE_LIMIT_FAIL_CLOSE", "")),
+		RateLimitGlobal:     getInt("RATE_LIMIT_GLOBAL", 10000),
+		TrustedProxyCIDRs:   getStringSlice("TRUSTED_PROXY_CIDRS", []string{}),
+		MetricsToken:        getEnv("METRICS_TOKEN", ""),
+		LogLevel:            getEnv("LOG_LEVEL", "info"),
+		StripeSecretKey:     getEnv("STRIPE_SECRET_KEY", ""),
 		StripeWebhookSecret: getEnv("STRIPE_WEBHOOK_SECRET", ""),
-		StripePriceID:     getEnv("STRIPE_PRICE_ID", "price_1000_credits"),
+		StripePriceID:       getEnv("STRIPE_PRICE_ID", "price_1000_credits"),
 
 		// 支付（支付宝/微信）
-		PublicBaseURL:      getEnv("PUBLIC_BASE_URL", ""),
-		FrontendURL:        getEnv("FRONTEND_URL", ""),
-		AlipayAppID:        getEnv("ALIPAY_APP_ID", ""),
-		AlipayPrivateKey:   getEnv("ALIPAY_PRIVATE_KEY", ""),
-		AlipayPublicKey:    getEnv("ALIPAY_PUBLIC_KEY", ""),
-		AlipayGateway:      getEnv("ALIPAY_GATEWAY", ""),
-		WechatMchID:        getEnv("WXPAY_MCH_ID", ""),
-		WechatAppID:        getEnv("WXPAY_APP_ID", ""),
-		WechatAPIv3Key:     getEnv("WXPAY_API_V3_KEY", ""),
+		PublicBaseURL:         getEnv("PUBLIC_BASE_URL", ""),
+		FrontendURL:           getEnv("FRONTEND_URL", ""),
+		AlipayAppID:           getEnv("ALIPAY_APP_ID", ""),
+		AlipayPrivateKey:      getEnv("ALIPAY_PRIVATE_KEY", ""),
+		AlipayPublicKey:       getEnv("ALIPAY_PUBLIC_KEY", ""),
+		AlipayGateway:         getEnv("ALIPAY_GATEWAY", ""),
+		WechatMchID:           getEnv("WXPAY_MCH_ID", ""),
+		WechatAppID:           getEnv("WXPAY_APP_ID", ""),
+		WechatAPIv3Key:        getEnv("WXPAY_API_V3_KEY", ""),
 		WechatMchCertSerialNo: getEnv("WXPAY_MCH_CERT_SERIAL_NO", ""),
 		WechatMchPrivateKey:   getEnv("WXPAY_MCH_PRIVATE_KEY", ""),
-		AgentMaxTurns:     getInt("AGENT_MAX_TURNS", 10),
-		AgentMaxTokens:    getInt("AGENT_MAX_TOKENS", 8192),
-		AgentContextLimit: getInt("AGENT_CONTEXT_LIMIT", 20),
+		AgentMaxTurns:         getInt("AGENT_MAX_TURNS", 10),
+		AgentMaxTokens:        getInt("AGENT_MAX_TOKENS", 8192),
+		AgentContextLimit:     getInt("AGENT_CONTEXT_LIMIT", 20),
 
 		// Python AI 引擎（连接池配置）
 
@@ -191,9 +202,9 @@ func Load() *Config {
 		// Temporal
 		TemporalAddress: getEnv("TEMPORAL_ADDRESS", "localhost:7233"),
 
-		PayPalClientID:    getEnv("PAYPAL_CLIENT_ID", ""),
-		PayPalSecret:      getEnv("PAYPAL_SECRET", ""),
-		PayPalSandbox:     isTruthy(getEnv("PAYPAL_SANDBOX", "")),
+		PayPalClientID: getEnv("PAYPAL_CLIENT_ID", ""),
+		PayPalSecret:   getEnv("PAYPAL_SECRET", ""),
+		PayPalSandbox:  isTruthy(getEnv("PAYPAL_SANDBOX", "")),
 
 		PluginsConfigPath: getEnv("PLUGINS_CONFIG_PATH", "./plugins.json"),
 		PluginDataDir:     getEnv("PLUGIN_DATA_DIR", "./data/plugins"),

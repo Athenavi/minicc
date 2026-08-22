@@ -1,26 +1,29 @@
-# Prometheus 抓取配置
+# Prometheus 鎶撳彇閰嶇疆
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
 scrape_configs:
-  # MiniCC Go 网关
+  # MiniCC Go 缃戝叧
   - job_name: 'minicc-gateway'
     metrics_path: '/metrics'
+    # P1 修复：网关 /metrics 需 PermAdminRead 或 METRICS_TOKEN（Bearer）。
+    # 部署时请将 REPLACE_WITH_METRICS_TOKEN 替换为 gateway 的 METRICS_TOKEN 环境变量值。
+    authorization:
+      type: Bearer
+      credentials: REPLACE_WITH_METRICS_TOKEN
     static_configs:
       - targets: ['gateway:8080']
         labels:
           service: 'gateway'
 
-  # Python AI 引擎（如有 /metrics 端点）
-  - job_name: 'minicc-python-engine'
+  # Python AI 寮曟搸锛堝鏈?/metrics 绔偣锛?  - job_name: 'minicc-python-engine'
     metrics_path: '/metrics'
     static_configs:
       - targets: ['python-engine:8000']
         labels:
           service: 'python-engine'
 
-  # Prometheus 自监控
-  - job_name: 'prometheus'
+  # Prometheus 鑷洃鎺?  - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']

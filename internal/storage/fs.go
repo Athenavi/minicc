@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 )
 
 // FileStore is the abstraction for file storage.
@@ -26,7 +25,6 @@ type FileInfo struct {
 
 // LocalStore implements FileStore on the local filesystem.
 type LocalStore struct {
-	mu   sync.Mutex
 	Root string
 }
 
@@ -39,8 +37,6 @@ func (s *LocalStore) Read(ctx context.Context, path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	return os.ReadFile(fullPath)
 }
 
@@ -52,8 +48,6 @@ func (s *LocalStore) Write(ctx context.Context, path string, data []byte) error 
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
 		return err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	f, err := os.OpenFile(fullPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
 		return err
@@ -70,8 +64,6 @@ func (s *LocalStore) Delete(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	return os.Remove(fullPath)
 }
 
@@ -80,8 +72,6 @@ func (s *LocalStore) List(ctx context.Context, prefix string) ([]FileInfo, error
 	if err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	entries, err := os.ReadDir(fullPath)
 	if err != nil {
 		return nil, err

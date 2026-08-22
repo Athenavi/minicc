@@ -251,7 +251,7 @@ type ApiKey struct {
 }
 
 func (h *AdminHandler) ListApiKeys(w http.ResponseWriter, r *http.Request) {
-	if h.pythonClient == nil || !h.pythonClient.IsConnected() {
+	if h.pythonClient == nil {
 		OK(w, map[string]interface{}{"keys": []ApiKey{}, "stats": map[string]interface{}{"total": 0, "active": 0, "rate_limited": 0, "circuit_open": 0}})
 		return
 	}
@@ -274,7 +274,7 @@ func (h *AdminHandler) AddApiKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.pythonClient == nil || !h.pythonClient.IsConnected() {
+	if h.pythonClient == nil {
 		InternalError(w, "python engine not available")
 		return
 	}
@@ -293,7 +293,7 @@ func (h *AdminHandler) UpdateApiKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.pythonClient == nil || !h.pythonClient.IsConnected() {
+	if h.pythonClient == nil {
 		InternalError(w, "python engine not available")
 		return
 	}
@@ -307,7 +307,7 @@ func (h *AdminHandler) DeleteApiKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.pythonClient == nil || !h.pythonClient.IsConnected() {
+	if h.pythonClient == nil {
 		InternalError(w, "python engine not available")
 		return
 	}

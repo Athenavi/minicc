@@ -1,4 +1,4 @@
-﻿package api
+package api
 
 import (
 	"context"
@@ -22,23 +22,25 @@ func NewSkillHandler(python *engine.PythonClient) *SkillHandler {
 
 var validSkillName = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
 
-func (h *SkillHandler) RegisterRoutes(mux *http.ServeMux) {
+// RegisterRoutes 注册技能路由。安全修复（P0-S2）：所有路由必须经过 authMW
+// （技能即代码，未认证可 install/run = 未认证 RCE），并挂 rlMW 与 sanitizeMW。
+func (h *SkillHandler) RegisterRoutes(mux *http.ServeMux, authMW, rlMW, sanitizeMW routeMiddleware) {
 	// 同时注册精确和尾斜杠变体：Go ServeMux 中 "/v1/skills/" 只匹配子树（不匹配 "/v1/skills"），
 	// 而前端调用的是 GET /v1/skills，Python 端注册的也是 /v1/skills。
-	mux.HandleFunc("GET /v1/skills", h.proxy)
-	mux.HandleFunc("GET /v1/skills/", h.proxy)
-	mux.HandleFunc("POST /v1/skills/install", h.proxy)
-	mux.HandleFunc("POST /v1/skills/generate", h.proxy)
-	mux.HandleFunc("DELETE /v1/skills/{name}", h.proxyDelete)
-	mux.HandleFunc("GET /v1/skills/discover", h.proxy)
+	mux.Handle("GET /v1/skills", authMW(rlMW(http.HandlerFunc(h.proxy))))
+	mux.Handle("GET /v1/skills/", authMW(rlMW(http.HandlerFunc(h.proxy))))
+	mux.Handle("POST /v1/skills/install", authMW(rlMW(sanitizeMW(http.HandlerFunc(h.proxy)))))
+	mux.Handle("POST /v1/skills/generate", authMW(rlMW(sanitizeMW(http.HandlerFunc(h.proxy)))))
+	mux.Handle("DELETE /v1/skills/{name}", authMW(rlMW(http.HandlerFunc(h.proxyDelete))))
+	mux.Handle("GET /v1/skills/discover", authMW(rlMW(http.HandlerFunc(h.proxy))))
 	// 启停（PUT）与运行（POST run）——技能工作台主链路
-	mux.HandleFunc("PUT /v1/skills/{name}", h.proxy)
-	mux.HandleFunc("POST /v1/skills/{name}/run", h.proxy)
+	mux.Handle("PUT /v1/skills/{name}", authMW(rlMW(sanitizeMW(http.HandlerFunc(h.proxy)))))
+	mux.Handle("POST /v1/skills/{name}/run", authMW(rlMW(sanitizeMW(http.HandlerFunc(h.proxy)))))
 }
 
 // proxy forwards the request to the Python engine.
 func (h *SkillHandler) proxy(w http.ResponseWriter, r *http.Request) {
-	if h.python == nil || !h.python.IsConnected() {
+	if h.python == nil {
 		InternalError(w, "python engine not available")
 		return
 	}
@@ -60,6 +62,13 @@ func (h *SkillHandler) proxy(w http.ResponseWriter, r *http.Request) {
 			BadRequest(w, ErrInvalidReq)
 			return
 		}
+		// 身份注入（网关为唯一可信边界）：引擎无鉴权，必须由网关注入租户/用户身份。
+		if tid := skillTenantID(r); tid != "" {
+			body["tenant_id"] = tid
+		}
+		if uid := auth.GetClaims(r.Context()); uid != nil && uid.UserID != "" {
+			body["user_id"] = uid.UserID
+		}
 		if r.Method == "PUT" {
 			err = h.python.PutJSON(r.Context(), r.URL.Path, body, &result)
 		} else {
@@ -79,7 +88,7 @@ func (h *SkillHandler) proxy(w http.ResponseWriter, r *http.Request) {
 
 // proxyDelete forwards DELETE requests to the Python engine.
 func (h *SkillHandler) proxyDelete(w http.ResponseWriter, r *http.Request) {
-	if h.python == nil || !h.python.IsConnected() {
+	if h.python == nil {
 		InternalError(w, "python engine not available")
 		return
 	}
@@ -103,7 +112,6 @@ func (h *SkillHandler) proxyDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 // skillTenantID 取当前租户 ID：claims 优先，缺省回退默认租户。
-// （/v1/skills 路由未强制 authMW，claims 可能为 nil）
 func skillTenantID(r *http.Request) string {
 	if claims := auth.GetClaims(r.Context()); claims != nil && claims.TenantID != "" {
 		return claims.TenantID

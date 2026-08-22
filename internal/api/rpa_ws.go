@@ -1,10 +1,10 @@
-﻿package api
+package api
 
 import (
-	"github.com/athenavi/minicc/internal/auth"
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/athenavi/minicc/internal/auth"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -26,14 +26,14 @@ const (
 
 // RPAMessage 是所有 RPA WebSocket 消息的统一 envelope
 type RPAMessage struct {
-	Type   RPAMessageType       `json:"type"`
-	ID     string               `json:"id"`
-	Method string               `json:"method,omitempty"`
+	Type   RPAMessageType         `json:"type"`
+	ID     string                 `json:"id"`
+	Method string                 `json:"method,omitempty"`
 	Params map[string]interface{} `json:"params,omitempty"`
 	Result map[string]interface{} `json:"result,omitempty"`
-	Error  *RPAError            `json:"error,omitempty"`
-	TabID  int                  `json:"tabId,omitempty"`
-	TS     int64                `json:"ts"`
+	Error  *RPAError              `json:"error,omitempty"`
+	TabID  int                    `json:"tabId,omitempty"`
+	TS     int64                  `json:"ts"`
 }
 
 type RPAError struct {
@@ -85,6 +85,8 @@ func (c *RPAClient) SendMessage(msg RPAMessage) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	msg.TS = time.Now().UnixMilli()
+	// P1 修复：写超时，防止死客户端无限阻塞广播 goroutine
+	_ = c.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	return c.Conn.WriteJSON(msg)
 }
 
@@ -92,8 +94,8 @@ func (c *RPAClient) SendMessage(msg RPAMessage) error {
 
 type RPAHub struct {
 	mu      sync.RWMutex
-	clients map[string]*RPAClient       // clientID → client
-	pending map[string]chan *RPAResult   // msgID → result channel
+	clients map[string]*RPAClient      // clientID → client
+	pending map[string]chan *RPAResult // msgID → result channel
 }
 
 func NewRPAHub() *RPAHub {
