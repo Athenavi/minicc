@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -69,8 +70,13 @@ func TestIntegration_Ready(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	resp := w.Result()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	// 新契约(2026-08-22)：/ready 反映真实依赖状态；测试环境无 DB/Redis → 503 + deps down
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 (deps missing), got %d", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "redis\":\"down") || !strings.Contains(string(body), "postgres\":\"down") {
+		t.Fatalf("expected deps down payload, got %s", string(body))
 	}
 }
 
