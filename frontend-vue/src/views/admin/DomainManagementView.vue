@@ -1,112 +1,147 @@
 <script setup lang="ts">
-import { ref, h, onMounted } from 'vue'
-import { Card, Table, Button, Space, Tag, Input, Modal, Form, InputNumber, Switch, Alert, Select, Descriptions } from 'ant-design-vue'
-import { PlusOutlined, ReloadOutlined, CheckCircleOutlined, SyncOutlined } from '@ant-design/icons-vue'
+import { ref, onMounted } from 'vue'
+import {
+  Card, Table, Button, Space, Tag, Input, Modal, Form, Alert,
+  Descriptions, Popconfirm, Spin, message,
+} from 'ant-design-vue'
+import {
+  PlusOutlined, EditOutlined, DeleteOutlined, CheckCircleOutlined,
+  SyncOutlined, ReloadOutlined,
+} from '@ant-design/icons-vue'
 import { api } from '../../api'
-import { useCrudResource, apiErrorMessage } from '../../composables/useCrudResource'
-// 后端接口开发中（前端先行）：跳过真实请求，展示降级横幅
-const backendMissing = true
+import { apiErrorMessage } from '../../composables/useCrudResource'
+import EmptyState from '../../components/common/EmptyState.vue'
 
-// State
-const { data: domains, loading, load: loadDomains } = useCrudResource<any[]>(
-  [],
-  async () => (await api.get('/admin/domains')).data?.data || []
-)
-const selectedDomain = ref<any>(null)
+// ── 域名列表 ──
+// GET /v1/admin/domains → { domains: [{ id, domain, ssl_status, verified, created_at }] }
+const domains = ref<any[]>([])
+const loading = ref(false)
+
+async function loadDomains() {
+  loading.value = true
+  try {
+    const resp = await api.get('/v1/admin/domains')
+    domains.value = resp.data?.data?.domains || []
+  } catch (e: any) {
+    message.error(apiErrorMessage(e, '加载域名列表失败'))
+  } finally {
+    loading.value = false
+  }
+}
+
+// ── 新建 / 编辑 ──
+// POST /v1/admin/domains { domain }; PUT /v1/admin/domains/{id} { domain }
 const modalVisible = ref(false)
-const dnsResult = ref<any>(null)
-const currentForm = ref({
-  domain: '',
-  tenant_id: 'default',
-  dns_provider: 'cloudflare',
-  cname_target: '',
-  auto_renew: true
-})
+const submitting = ref(false)
+const editingId = ref<string | null>(null)
+const form = ref({ domain: '' })
 
-// Table columns（customRender 用 h()，模板属性里不能写 JSX）
-const columns = [
-  { title: '域名', dataIndex: 'domain', key: 'domain', width: 250, ellipsis: true },
-  { title: '租户 ID', dataIndex: 'tenant_id', key: 'tenant_id', width: 150 },
-  { title: 'DNS 提供商', dataIndex: 'dns_provider', key: 'dns_provider', width: 120,
-    customRender: ({ record }: any) => record.dns_provider || '未设置' },
-  { title: 'SSL 状态', key: 'ssl_status', width: 120,
-    customRender: ({ record }: any) => {
-      const label = record.ssl_status === 'active' ? '有效'
-        : record.ssl_status === 'pending' ? '待签发'
-        : record.ssl_status === 'expired' ? '已过期' : '失败'
-      return h(Tag, { color: getSSLStatusColor(record.ssl_status) }, () => label)
-    } },
-  { title: 'SSL 过期时间', dataIndex: 'ssl_expires_at', key: 'ssl_expires_at', width: 180,
-    customRender: ({ record }: any) => formatDate(record.ssl_expires_at) },
-  { title: '自动续期', key: 'auto_renew', width: 100,
-    customRender: ({ record }: any) =>
-      h(Tag, { color: record.auto_renew ? 'green' : 'default' }, () => (record.auto_renew ? '开启' : '关闭')) },
-  { title: '状态', key: 'status', width: 100,
-    customRender: ({ record }: any) =>
-      h(Tag, { color: getDomainStatusColor(record.status) }, () => record.status) },
-  { title: '操作', key: 'actions', width: 280, fixed: 'right' as const,
-    customRender: ({ record }: any) => h(Space, () => [
-      h(Button, { size: 'small', icon: h(CheckCircleOutlined), onClick: () => verifyDNS(record.id) }, () => '验证 DNS'),
-      h(Button, { size: 'small', icon: h(SyncOutlined), onClick: () => renewSSL(record.id) }, () => '续期 SSL'),
-      h(Button, { size: 'small', icon: h(ReloadOutlined), onClick: () => openEdit(record) }, () => '编辑')
-    ]) }
-]
-
-// Open edit modal
-function openEdit(record: any) {
-  selectedDomain.value = record
-  currentForm.value = { ...record }
+function openCreate() {
+  editingId.value = null
+  form.value = { domain: '' }
   modalVisible.value = true
 }
 
-// Create domain
-async function createDomain() {
+function openEdit(record: any) {
+  editingId.value = record.id
+  form.value = { domain: record.domain || '' }
+  modalVisible.value = true
+}
+
+async function submitForm() {
+  if (!form.value.domain.trim()) {
+    message.warning('请输入域名')
+    return
+  }
+  submitting.value = true
   try {
-    await api.post('/admin/domains', currentForm.value)
+    if (editingId.value) {
+      await api.put(`/v1/admin/domains/${editingId.value}`, { domain: form.value.domain.trim() })
+      message.success('域名已更新')
+    } else {
+      await api.post('/v1/admin/domains', { domain: form.value.domain.trim() })
+      message.success('域名已添加')
+    }
     modalVisible.value = false
-    loadDomains()
-  } catch (error: any) {
-    alert(apiErrorMessage(error, '创建失败'))
+    await loadDomains()
+  } catch (e: any) {
+    message.error(apiErrorMessage(e, editingId.value ? '更新域名失败' : '添加域名失败'))
+  } finally {
+    submitting.value = false
   }
 }
 
-// Update domain
-async function updateDomain() {
+// ── 验证 ──
+// POST /v1/admin/domains/{id}/verify → { verified, addresses?, reason? }
+const verifyVisible = ref(false)
+const verifyResult = ref<any>(null)
+const verifyingId = ref<string | null>(null)
+
+async function verifyDomain(record: any) {
+  verifyingId.value = record.id
   try {
-    await api.put(`/admin/domains/${selectedDomain.value.id}`, currentForm.value)
-    modalVisible.value = false
-    loadDomains()
-  } catch (error: any) {
-    alert(apiErrorMessage(error, '更新失败'))
+    const resp = await api.post(`/v1/admin/domains/${record.id}/verify`)
+    verifyResult.value = resp.data?.data || {}
+    verifyVisible.value = true
+    await loadDomains()
+  } catch (e: any) {
+    message.error(apiErrorMessage(e, '域名验证失败'))
+  } finally {
+    verifyingId.value = null
   }
 }
 
-// Verify DNS
-async function verifyDNS(id: string) {
+// ── SSL 续期 ──
+// POST /v1/admin/domains/{id}/renew-ssl → { ssl_status, note? }
+const renewingId = ref<string | null>(null)
+
+async function renewSSL(record: any) {
+  renewingId.value = record.id
   try {
-    const response = await api.post(`/admin/domains/${id}/verify`)
-    dnsResult.value = response.data
-    loadDomains()
-  } catch (error: any) {
-    alert(apiErrorMessage(error, 'DNS 验证失败'))
+    const resp = await api.post(`/v1/admin/domains/${record.id}/renew-ssl`)
+    const d = resp.data?.data || {}
+    message.success(d.note ? `SSL 续期完成（${d.ssl_status || 'ok'}）：${d.note}` : `SSL 续期完成（${d.ssl_status || 'ok'}）`)
+    await loadDomains()
+  } catch (e: any) {
+    message.error(apiErrorMessage(e, 'SSL 续期失败'))
+  } finally {
+    renewingId.value = null
   }
 }
 
-// Renew SSL
-async function renewSSL(id: string) {
-  if (!confirm('确定要续期 SSL 证书吗?')) return
-
+// ── 删除 ──
+// DELETE /v1/admin/domains/{id}
+async function removeDomain(record: any) {
   try {
-    const response = await api.post(`/admin/domains/${id}/renew-ssl`)
-    alert(response.data?.message || 'SSL 证书续期已启动')
-    loadDomains()
-  } catch (error: any) {
-    alert(apiErrorMessage(error, 'SSL 续期失败'))
+    await api.delete(`/v1/admin/domains/${record.id}`)
+    message.success('域名已删除')
+    await loadDomains()
+  } catch (e: any) {
+    message.error(apiErrorMessage(e, '删除域名失败'))
   }
 }
 
-// Helper functions
-function getSSLStatusColor(status: string): string {
+// ── 表格列 ──
+const columns = [
+  { title: '域名', dataIndex: 'domain', key: 'domain', ellipsis: true },
+  { title: '验证状态', key: 'verified', width: 110 },
+  { title: 'SSL 状态', key: 'ssl_status', width: 120 },
+  { title: '创建时间', key: 'created_at', width: 180 },
+  { title: '操作', key: 'actions', width: 280, fixed: 'right' as const },
+]
+
+// ── 工具函数 ──
+function sslStatusText(status: string): string {
+  switch (status) {
+    case 'active': return '有效'
+    case 'pending': return '签发中'
+    case 'expired': return '已过期'
+    case 'failed': return '失败'
+    default: return status || '-'
+  }
+}
+
+function sslStatusColor(status: string): string {
   switch (status) {
     case 'active': return 'green'
     case 'pending': return 'orange'
@@ -116,175 +151,158 @@ function getSSLStatusColor(status: string): string {
   }
 }
 
-function getDomainStatusColor(status: string): string {
-  switch (status) {
-    case 'active': return 'green'
-    case 'verifying': return 'blue'
-    case 'inactive': return 'gray'
-    default: return 'default'
-  }
+function formatDate(d: any): string {
+  return d ? new Date(d).toLocaleString('zh-CN') : '-'
 }
 
-function formatDate(date: any): string {
-  return date ? new Date(date).toLocaleString('zh-CN') : '未设置'
+function formatAddresses(a: any): string {
+  if (a == null) return '-'
+  if (Array.isArray(a)) return a.join('；')
+  if (typeof a === 'object') return Object.entries(a).map(([k, v]) => `${k}: ${v}`).join('；')
+  return String(a)
 }
 
-// Initialize
-onMounted(() => {
-    if (backendMissing) return
-  loadDomains()
-})
+onMounted(loadDomains)
 </script>
 
 <template>
-<a-alert v-if="backendMissing" type="warning" show-icon message="该管理能力后端接口开发中（前端界面先行），暂不可用" style="margin: 16px" />
   <div class="domain-management">
-    <!-- Header -->
     <div class="page-header">
       <h1>🌐 域名管理</h1>
-      <Button type="primary" @click="modalVisible = true">
-        <PlusOutlined /> 添加域名
-      </Button>
+      <Space>
+        <Button @click="loadDomains">
+          <template #icon><ReloadOutlined /></template>
+          刷新
+        </Button>
+        <Button type="primary" @click="openCreate">
+          <template #icon><PlusOutlined /></template>
+          添加域名
+        </Button>
+      </Space>
     </div>
 
-    <!-- DNS Verification Notice -->
     <Alert
-      message="DNS 验证说明"
-      description="添加域名后,需要在 DNS 服务商处配置 CNAME 记录指向系统提供的目标地址,然后点击下方'验证 DNS'按钮进行验证。"
+      message="域名接入说明"
+      description="添加域名后，先点击「验证」获取需要配置的解析地址；在 DNS 服务商处完成解析后再次点击「验证」即可确认接入。证书到期前可点击「续期」刷新 SSL 证书。"
       type="info"
-      showIcon
+      show-icon
       style="margin-bottom: 16px"
     />
 
-    <!-- Domain List -->
-    <Card>
-      <Table
-        :columns="columns"
-        :data-source="domains"
-        :loading="loading"
-        row-key="id"
-        :scroll="{ x: 1400 }"
-      >
-        <template #emptyText>
-          <div class="empty-block"><span class="empty-icon">📭</span><span class="empty-text">暂无数据</span></div>
-        </template>
-      </Table>
-    </Card>
+    <Spin :spinning="loading">
+      <Card>
+        <Table
+          :columns="columns"
+          :data-source="domains"
+          row-key="id"
+          :pagination="{ pageSize: 20, showSizeChanger: true }"
+          :scroll="{ x: 900 }"
+        >
+          <template #emptyText>
+            <EmptyState description="暂无域名" hint="点击右上角「添加域名」接入第一个域名" />
+          </template>
 
-    <!-- DNS Result Modal -->
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'verified'">
+              <Tag :color="record.verified ? 'green' : 'orange'">
+                {{ record.verified ? '已验证' : '未验证' }}
+              </Tag>
+            </template>
+
+            <template v-else-if="column.key === 'ssl_status'">
+              <Tag :color="sslStatusColor(record.ssl_status)">{{ sslStatusText(record.ssl_status) }}</Tag>
+            </template>
+
+            <template v-else-if="column.key === 'created_at'">
+              {{ formatDate(record.created_at) }}
+            </template>
+
+            <template v-else-if="column.key === 'actions'">
+              <Space :size="4" wrap>
+                <Button size="small" :loading="verifyingId === record.id" @click="verifyDomain(record)">
+                  <template #icon><CheckCircleOutlined /></template>
+                  验证
+                </Button>
+                <Button size="small" :loading="renewingId === record.id" @click="renewSSL(record)">
+                  <template #icon><SyncOutlined /></template>
+                  续期 SSL
+                </Button>
+                <Button size="small" @click="openEdit(record)">
+                  <template #icon><EditOutlined /></template>
+                  编辑
+                </Button>
+                <Popconfirm
+                  title="确定删除该域名吗？删除后其 SSL 证书与接入配置将一并移除。"
+                  ok-text="删除"
+                  cancel-text="取消"
+                  @confirm="removeDomain(record)"
+                >
+                  <Button size="small" danger>
+                    <template #icon><DeleteOutlined /></template>
+                    删除
+                  </Button>
+                </Popconfirm>
+              </Space>
+            </template>
+          </template>
+        </Table>
+      </Card>
+    </Spin>
+
+    <!-- 验证结果 -->
     <Modal
-      :open="dnsResult !== null"
-      title="DNS 验证结果"
-      ok-text="确定"
-      cancel-text="取消"
-      @ok="dnsResult = null"
-      @cancel="dnsResult = null"
+      v-model:open="verifyVisible"
+      title="域名验证结果"
+      :footer="null"
+      :width="560"
+      @cancel="verifyResult = null"
     >
-      <Alert
-        :type="dnsResult?.success ? 'success' : 'error'"
-        :message="dnsResult?.success ? '验证成功' : '验证失败'"
-        :description="dnsResult?.message || ''"
-        showIcon
-        style="margin-bottom: 16px"
-      />
-
-      <Descriptions v-if="dnsResult?.details" :column="2" bordered>
-        <Descriptions.Item label="记录类型">{{ dnsResult.details.record_type }}</Descriptions.Item>
-        <Descriptions.Item label="记录名称">{{ dnsResult.details.record_name }}</Descriptions.Item>
-        <Descriptions.Item label="记录值">{{ dnsResult.details.record_value }}</Descriptions.Item>
-        <Descriptions.Item label="期望值">{{ dnsResult.expected_value }}</Descriptions.Item>
-      </Descriptions>
+      <template v-if="verifyResult">
+        <Alert
+          :type="verifyResult.verified ? 'success' : 'error'"
+          :message="verifyResult.verified ? '验证成功，域名已接入' : '验证失败'"
+          show-icon
+          style="margin-bottom: 16px"
+        />
+        <Descriptions v-if="verifyResult.verified" :column="1" bordered size="small">
+          <Descriptions.Item label="解析地址">
+            {{ formatAddresses(verifyResult.addresses) }}
+          </Descriptions.Item>
+        </Descriptions>
+        <Alert
+          v-else-if="verifyResult.reason"
+          type="warning"
+          :message="String(verifyResult.reason)"
+          show-icon
+        />
+      </template>
     </Modal>
 
-    <!-- Add/Edit Modal -->
+    <!-- 新建 / 编辑域名 -->
     <Modal
       v-model:open="modalVisible"
-      :title="selectedDomain ? '编辑域名' : '添加域名'"
-      ok-text="确定"
+      :title="editingId ? '编辑域名' : '添加域名'"
+      ok-text="保存"
       cancel-text="取消"
-      @ok="selectedDomain ? updateDomain() : createDomain()"
+      :confirm-loading="submitting"
+      @ok="submitForm"
     >
       <Form layout="vertical">
         <Form.Item label="域名" required>
-          <Input v-model:value="currentForm.domain" placeholder="example.com" />
+          <Input v-model:value="form.domain" placeholder="example.com" @press-enter="submitForm" />
         </Form.Item>
-
-        <Form.Item label="租户 ID" required>
-          <Input v-model:value="currentForm.tenant_id" placeholder="default" />
-        </Form.Item>
-
-        <Form.Item label="DNS 提供商">
-          <Select v-model:value="currentForm.dns_provider" placeholder="选择 DNS 提供商">
-            <Select.Option value="cloudflare">Cloudflare</Select.Option>
-            <Select.Option value="aliyun">阿里云</Select.Option>
-            <Select.Option value="tencent">腾讯云</Select.Option>
-            <Select.Option value="manual">手动配置</Select.Option>
-          </Select>
-        </Form.Item>
-
-        <Form.Item label="CNAME 目标地址" required>
-          <Input v-model:value="currentForm.cname_target" placeholder="cname.minicc.com" />
-          <template #extra>
-            <span class="hint">需要将域名 CNAME 记录指向此地址</span>
-          </template>
-        </Form.Item>
-
-        <Form.Item label="启用自动续期">
-          <Switch v-model:checked="currentForm.auto_renew" />
-          <template #extra>
-            <span class="hint">到期前自动续期 SSL 证书</span>
-          </template>
-        </Form.Item>
-
-        <Alert
-          message="SSL 证书说明"
-          description="系统将使用 Let's Encrypt 为域名自动签发和续期免费 SSL 证书。"
-          type="info"
-          showIcon
-        />
       </Form>
     </Modal>
   </div>
 </template>
 
 <style scoped>
-.domain-management {
-  padding: 24px;
-}
+.domain-management { padding: 24px; }
+.page-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+.page-header h1 { margin: 0; font-size: 24px; font-weight: 600; }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-}
-
-.page-header h1 {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 600;
-}
-
-.hint { color: var(--text-secondary); font-size: 12px; }
-
-/* 空状态统一 */
-.empty-block {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 28px 0;
-  color: var(--text-tertiary);
-}
-.empty-icon { font-size: 26px; line-height: 1; opacity: 0.8; }
-.empty-text { font-size: 13px; }
-
-/* 窄屏:页头换行、触控目标 ≥ 40px */
 @media (max-width: 768px) {
-  .domain-management .page-header {
-    flex-wrap: wrap;
-    row-gap: 12px;
-  }
+  .domain-management .page-header { row-gap: 12px; }
   .domain-management .page-header .ant-btn { min-height: 40px; }
 }
 </style>

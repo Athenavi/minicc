@@ -1,447 +1,400 @@
 <script setup lang="ts">
-import { ref, computed, h, onMounted } from 'vue'
-import { Card, Table, Button, Space, Tag, Input, Modal, Form, InputNumber, Alert, Progress, Descriptions, Tabs, TabPane } from 'ant-design-vue'
-import { PlusOutlined, ReloadOutlined, DatabaseOutlined, DatabaseTwoTone, SearchOutlined, MonitorOutlined } from '@ant-design/icons-vue'
+import { ref, computed, onMounted } from 'vue'
+import {
+  Card, Table, Button, Space, Tag, Input, Popconfirm, Alert,
+  Statistic, Descriptions, Spin, message,
+} from 'ant-design-vue'
+import {
+  ReloadOutlined, PlusOutlined, SearchOutlined, ThunderboltOutlined,
+  DatabaseOutlined,
+} from '@ant-design/icons-vue'
 import { api } from '../../api'
-import { useCrudResource, apiErrorMessage } from '../../composables/useCrudResource'
-// 后端接口开发中（前端先行）：跳过真实请求，展示降级横幅
-const backendMissing = true
+import { apiErrorMessage } from '../../composables/useCrudResource'
+import EmptyState from '../../components/common/EmptyState.vue'
 
 const TextArea = Input.TextArea
 
-// State
-const { data: dbConfigs, loading, load: loadDBConfigs } = useCrudResource<any[]>(
-  [],
-  async () => (await api.get('/admin/database/configs')).data || []
-)
-const { data: backups, load: listBackups } = useCrudResource<any[]>(
-  [],
-  async () => (await api.get('/admin/database/backups')).data || []
-)
-const selectedDB = ref<any>(null)
-const statusData = ref<any>({})
-const queryResult = ref<any[]>([])
-const modalVisible = ref(false)
-const queryModalVisible = ref(false)
-const queryText = ref('SELECT * FROM information_schema.tables LIMIT 10;')
-const currentForm = ref({
-  name: '',
-  host: 'localhost',
-  port: 5432,
-  dbname: 'minicc',
-  username: 'postgres',
-  password_hash: '',
-  max_open_connections: 25,
-  max_idle_connections: 5,
-  conn_max_lifetime: '30m'
-})
+const initialLoading = ref(true)
 
-// Table columns（customRender 用 h()，模板属性里不能写 JSX）
-const columns = [
-  { title: '名称', dataIndex: 'name', key: 'name', width: 150 },
-  { title: '地址', dataIndex: 'host', key: 'host', width: 200,
-    customRender: ({ record }: any) => `${record.host}:${record.port}/${record.dbname}` },
-  { title: '最大连接', dataIndex: 'max_open_connections', key: 'max_open_connections', width: 100 },
-  { title: '状态', key: 'status', width: 100,
-    customRender: ({ record }: any) =>
-      h(Tag, { color: getStatusColor(record.status) }, () => record.status) },
-  { title: '数据库大小', dataIndex: 'database_size_mb', key: 'database_size_mb', width: 120,
-    customRender: ({ record }: any) => `${record.database_size_mb?.toFixed(2)} MB` },
-  { title: '表数量', dataIndex: 'total_tables', key: 'total_tables', width: 80 },
-  { title: '操作', key: 'actions', width: 300, fixed: 'right' as const,
-    customRender: ({ record }: any) => h(Space, () => [
-      h(Button, { size: 'small', icon: h(MonitorOutlined), onClick: () => getStatus(record.id) }, () => '监控'),
-      h(Button, { size: 'small', icon: h(SearchOutlined), onClick: () => openQuery(record) }, () => '查询'),
-      h(Button, { size: 'small', icon: h(DatabaseTwoTone), onClick: () => createBackup(`手动备份 - ${record.name}`) }, () => '备份')
-    ]) }
+// ── 数据库状态 ──
+// GET /v1/admin/database/status → { version, connected }
+const statusData = ref<any>(null)
+const statusLoading = ref(false)
+
+async function loadStatus() {
+  statusLoading.value = true
+  try {
+    const resp = await api.get('/v1/admin/database/status')
+    statusData.value = resp.data?.data || {}
+  } catch (e: any) {
+    message.error(apiErrorMessage(e, '获取数据库状态失败'))
+  } finally {
+    statusLoading.value = false
+  }
+}
+
+// ── 配置 ──
+// GET /v1/admin/database/configs → { configs: { k: v } }
+const configs = ref<Record<string, any>>({})
+const configLoading = ref(false)
+
+const configRows = computed(() =>
+  Object.entries(configs.value || {}).map(([key, value]) => ({
+    key,
+    value: value && typeof value === 'object' ? JSON.stringify(value) : String(value ?? ''),
+  }))
+)
+
+const configColumns = [
+  { title: '配置项', dataIndex: 'key', key: 'key', ellipsis: true },
+  { title: '值', dataIndex: 'value', key: 'value', ellipsis: true },
 ]
+
+async function loadConfigs() {
+  configLoading.value = true
+  try {
+    const resp = await api.get('/v1/admin/database/configs')
+    configs.value = resp.data?.data?.configs || {}
+  } catch (e: any) {
+    message.error(apiErrorMessage(e, '获取数据库配置失败'))
+  } finally {
+    configLoading.value = false
+  }
+}
+
+// ── 备份 ──
+// GET /v1/admin/database/backups → { backups: [{ name, size, time }] }
+// POST /v1/admin/database/backups → { name, status }
+// POST /v1/admin/database/backups/{name}/restore
+const backups = ref<any[]>([])
+const backupsLoading = ref(false)
+const creatingBackup = ref(false)
+const restoringName = ref<string | null>(null)
 
 const backupColumns = [
-  { title: '描述', dataIndex: 'description', key: 'description', ellipsis: true },
-  { title: '类型', dataIndex: 'backup_type', key: 'backup_type', width: 100,
-    customRender: ({ record }: any) =>
-      h(Tag, null, () => (record.backup_type === 'manual' ? '手动' : '自动')) },
-  { title: '状态', key: 'status', width: 100,
-    customRender: ({ record }: any) =>
-      h(Tag, { color: record.status === 'completed' ? 'green' : 'orange' }, () => record.status) },
-  { title: '大小', dataIndex: 'size_mb', key: 'size_mb', width: 100,
-    customRender: ({ record }: any) => `${record.size_mb?.toFixed(2)} MB` },
-  { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 180 },
-  { title: '操作', key: 'actions', width: 120,
-    customRender: ({ record }: any) =>
-      h(Button, { size: 'small', danger: true, disabled: record.status !== 'completed', onClick: () => restoreBackup(record.id) }, () => '恢复') }
+  { title: '名称', dataIndex: 'name', key: 'name', ellipsis: true },
+  { title: '大小', key: 'size', width: 120 },
+  { title: '时间', key: 'time', width: 190 },
+  { title: '操作', key: 'actions', width: 110, fixed: 'right' as const },
 ]
 
-const queryColumns = [
-  { title: '列名', dataIndex: 'key', key: 'key', width: 200 },
-  { title: '值', dataIndex: 'value', key: 'value' }
-]
-
-// 查询结果拍平为 key/value 行
-const queryRows = computed(() =>
-  queryResult.value.flatMap(row => Object.entries(row).map(([key, value]) => ({ key, value: String(value) })))
-)
-
-// Open query modal
-function openQuery(record: any) {
-  selectedDB.value = record
-  queryModalVisible.value = true
-}
-
-// Get status
-async function getStatus(id: string) {
+async function loadBackups() {
+  backupsLoading.value = true
   try {
-    const response = await api.get(`/admin/database/${id}/status`)
-    statusData.value = response.data
-    selectedDB.value = dbConfigs.value.find(d => d.id === id)
-  } catch (error: any) {
-    alert(apiErrorMessage(error, '获取状态失败'))
+    const resp = await api.get('/v1/admin/database/backups')
+    backups.value = resp.data?.data?.backups || []
+  } catch (e: any) {
+    message.error(apiErrorMessage(e, '获取备份列表失败'))
+  } finally {
+    backupsLoading.value = false
   }
 }
 
-// Create backup
-async function createBackup(description: string) {
+async function createBackup() {
+  creatingBackup.value = true
   try {
-    await api.post('/admin/database/backups', { description })
-    alert('备份已开始,请稍后查看状态')
-  } catch (error: any) {
-    alert(apiErrorMessage(error, '创建备份失败'))
+    const resp = await api.post('/v1/admin/database/backups')
+    const d = resp.data?.data || {}
+    message.success(`备份已创建（${d.name || '—'}，状态：${d.status || 'pending'}）`)
+    await loadBackups()
+  } catch (e: any) {
+    message.error(apiErrorMessage(e, '创建备份失败'))
+  } finally {
+    creatingBackup.value = false
   }
 }
 
-// Restore backup
-async function restoreBackup(backupId: string) {
-  if (!confirm('警告: 确定要从该备份恢复吗?当前数据将被覆盖!')) return
-
+async function restoreBackup(record: any) {
+  restoringName.value = record.name
   try {
-    await api.post(`/admin/database/backups/${backupId}/restore`)
-    alert('恢复已启动,请稍后查看状态')
-  } catch (error: any) {
-    alert(apiErrorMessage(error, '恢复失败'))
+    await api.post(`/v1/admin/database/backups/${encodeURIComponent(record.name)}/restore`)
+    message.success(`正在从备份「${record.name}」恢复，请稍后刷新查看结果`)
+  } catch (e: any) {
+    message.error(apiErrorMessage(e, '恢复失败'))
+  } finally {
+    restoringName.value = null
   }
 }
 
-// Execute query
+// ── SQL 查询器（只读）──
+// POST /v1/admin/database/query { query } → { columns, rows, count, truncated }
+const queryText = ref('')
+const querying = ref(false)
+const queryResult = ref<any>(null)
+
+const queryColumns = computed(() => {
+  const cols = queryResult.value?.columns || []
+  return cols.map((c: any, i: number) => ({
+    title: typeof c === 'string' ? c : (c?.name || `列 ${i + 1}`),
+    dataIndex: typeof c === 'string' ? c : (c?.name || `col_${i}`),
+    ellipsis: true,
+  }))
+})
+
+const queryRows = computed(() => {
+  const cols = queryResult.value?.columns || []
+  const rows = queryResult.value?.rows || []
+  return rows.map((r: any, i: number) => {
+    if (Array.isArray(r)) {
+      const obj: Record<string, any> = {}
+      cols.forEach((c: any, j: number) => {
+        const k = typeof c === 'string' ? c : (c?.name || `col_${j}`)
+        obj[k] = r[j]
+      })
+      obj.__row = i
+      return obj
+    }
+    return { ...r, __row: i }
+  })
+})
+
 async function executeQuery() {
-  if (!queryText.value.trim()) {
-    alert('请输入 SQL 查询')
+  const sql = queryText.value.trim()
+  if (!sql) {
+    message.warning('请输入 SQL 查询语句')
     return
   }
-
+  querying.value = true
   try {
-    const response = await api.post('/admin/database/query', {
-      query: queryText.value
-    })
-    queryResult.value = response.data || []
-  } catch (error: any) {
-    alert(apiErrorMessage(error, '查询执行失败'))
+    const resp = await api.post('/v1/admin/database/query', { query: sql })
+    queryResult.value = resp.data?.data || null
+  } catch (e: any) {
+    message.error(apiErrorMessage(e, '查询执行失败'))
+  } finally {
+    querying.value = false
   }
 }
 
-// Optimize database
-async function optimize(action: string) {
-  const actionNames: Record<string, string> = {
-    vacuum: 'VACUUM ANALYZE',
-    analyze: 'ANALYZE',
-    reindex: 'REINDEX'
+// ── 优化 ──
+// POST /v1/admin/database/optimize/{action: analyze|vacuum} { table }
+const optimizeTable = ref('')
+const optimizing = ref(false)
+
+async function runOptimize(action: 'analyze' | 'vacuum') {
+  const table = optimizeTable.value.trim()
+  if (!table) {
+    message.warning('请输入要优化的表名')
+    return
   }
-
-  if (!confirm(`确定要执行 ${actionNames[action]} 吗?`)) return
-
+  optimizing.value = true
   try {
-    await api.post(`/admin/database/optimize/${action}`)
-    alert('优化操作已完成')
-  } catch (error: any) {
-    alert(apiErrorMessage(error, '优化失败'))
+    const resp = await api.post(`/v1/admin/database/optimize/${action}`, { table })
+    const d = resp.data?.data || {}
+    message.success(`优化完成：${d.action || action} ${d.table || table}（${d.status || 'ok'}）`)
+  } catch (e: any) {
+    message.error(apiErrorMessage(e, '优化失败'))
+  } finally {
+    optimizing.value = false
   }
 }
 
-// Helper functions
-function getStatusColor(status: string): string {
-  switch (status) {
-    case 'active': return 'green'
-    case 'inactive': return 'red'
-    default: return 'default'
+// ── 工具函数 ──
+function formatSize(s: any): string {
+  if (s == null || s === '') return '-'
+  if (typeof s === 'number') {
+    if (s >= 1024 * 1024 * 1024) return `${(s / (1024 * 1024 * 1024)).toFixed(2)} GB`
+    if (s >= 1024 * 1024) return `${(s / (1024 * 1024)).toFixed(2)} MB`
+    if (s >= 1024) return `${(s / 1024).toFixed(2)} KB`
+    return `${s} B`
   }
+  return String(s)
 }
 
-function getCacheHitRateColor(rate: number): string {
-  if (rate >= 99) return 'green'
-  if (rate >= 95) return 'orange'
-  return 'red'
+function formatTime(t: any): string {
+  return t ? new Date(t).toLocaleString('zh-CN') : '-'
 }
 
-function percentOf(part: any, total: any): number {
-  const t = Number(total) || 0
-  if (t <= 0) return 0
-  return Number(((Number(part) / t) * 100).toFixed(1))
+function cellText(v: any): string {
+  if (v == null) return ''
+  if (typeof v === 'object') return JSON.stringify(v)
+  return String(v)
 }
 
-// Initialize
-onMounted(() => {
-    if (backendMissing) return
-  loadDBConfigs()
-  listBackups()
+onMounted(async () => {
+  await Promise.allSettled([loadStatus(), loadConfigs(), loadBackups()])
+  initialLoading.value = false
 })
 </script>
 
 <template>
-<a-alert v-if="backendMissing" type="warning" show-icon message="该管理能力后端接口开发中（前端界面先行），暂不可用" style="margin: 16px" />
   <div class="database-management">
-    <!-- Header -->
     <div class="page-header">
       <h1>🗄️ 数据库管理</h1>
       <Space>
-        <Button @click="listBackups">
-          <ReloadOutlined /> 刷新备份
-        </Button>
-        <Button type="primary" @click="modalVisible = true">
-          <PlusOutlined /> 添加数据库实例
+        <Button @click="loadStatus">刷新状态</Button>
+        <Button @click="loadBackups">
+          <template #icon><ReloadOutlined /></template>
+          刷新备份
         </Button>
       </Space>
     </div>
 
-    <!-- DB Instance List -->
-    <Card style="margin-bottom: 16px">
-      <Table
-        :columns="columns"
-        :data-source="dbConfigs"
-        :loading="loading"
-        row-key="id"
-        :scroll="{ x: 1100 }"
-      >
-        <template #emptyText>
-          <div class="empty-block"><span class="empty-icon">📭</span><span class="empty-text">暂无数据</span></div>
+    <Spin :spinning="initialLoading">
+      <!-- 状态卡 -->
+      <Card title="数据库状态" style="margin-bottom: 16px" :loading="statusLoading">
+        <Descriptions :column="2" bordered size="small">
+          <Descriptions.Item label="版本">
+            <Space>
+              <DatabaseOutlined />
+              {{ statusData?.version || '-' }}
+            </Space>
+          </Descriptions.Item>
+          <Descriptions.Item label="连接状态">
+            <Tag :color="statusData?.connected ? 'green' : 'red'">
+              {{ statusData?.connected ? '已连接' : '未连接' }}
+            </Tag>
+          </Descriptions.Item>
+        </Descriptions>
+      </Card>
+
+      <!-- 配置表 -->
+      <Card title="数据库配置" style="margin-bottom: 16px">
+        <Table
+          :columns="configColumns"
+          :data-source="configRows"
+          :loading="configLoading"
+          row-key="key"
+          :pagination="false"
+          :scroll="{ x: 600 }"
+          size="small"
+        >
+          <template #emptyText>
+            <EmptyState description="暂无配置项" />
+          </template>
+        </Table>
+      </Card>
+
+      <!-- 备份列表 -->
+      <Card style="margin-bottom: 16px">
+        <template #title>
+          <Space>💾 备份列表</Space>
         </template>
-      </Table>
-    </Card>
-
-    <!-- Backups List -->
-    <Card style="margin-bottom: 16px">
-      <h3 style="margin-top: 0">💾 备份记录</h3>
-      <Table
-        :columns="backupColumns"
-        :data-source="backups"
-        row-key="id"
-        :scroll="{ x: 800 }"
-        :pagination="{ pageSize: 10 }"
-      >
-        <template #emptyText>
-          <div class="empty-block"><span class="empty-icon">📭</span><span class="empty-text">暂无数据</span></div>
+        <template #extra>
+          <Button type="primary" :loading="creatingBackup" @click="createBackup">
+            <template #icon><PlusOutlined /></template>
+            创建备份
+          </Button>
         </template>
-      </Table>
-    </Card>
+        <Table
+          :columns="backupColumns"
+          :data-source="backups"
+          :loading="backupsLoading"
+          row-key="name"
+          :pagination="{ pageSize: 10, showSizeChanger: true }"
+          :scroll="{ x: 640 }"
+        >
+          <template #emptyText>
+            <EmptyState description="暂无备份" hint="点击右上角「创建备份」生成一次备份" />
+          </template>
 
-    <!-- Status Detail Modal -->
-    <Modal
-      :open="selectedDB !== null"
-      :title="`📊 ${selectedDB?.name ?? ''} - 实时监控`"
-      :footer="null"
-      :width="900"
-      @cancel="selectedDB = null"
-    >
-      <div v-if="selectedDB">
-        <Tabs default-active-key="overview">
-          <!-- Overview Tab -->
-          <TabPane tab="概览" key="overview">
-            <Space direction="vertical" style="width: 100%" size="large">
-              <Card>
-                <Descriptions :column="2" bordered>
-                  <Descriptions.Item label="版本">{{ statusData.version || 'N/A' }}</Descriptions.Item>
-                  <Descriptions.Item label="运行状态">
-                    <Tag :color="getStatusColor(statusData.status)">{{ statusData.status || 'unknown' }}</Tag>
-                  </Descriptions.Item>
-                  <Descriptions.Item label="活跃连接数">{{ statusData.active_connections || 0 }}</Descriptions.Item>
-                  <Descriptions.Item label="最大连接数">{{ statusData.max_connections || 100 }}</Descriptions.Item>
-                  <Descriptions.Item label="数据库大小">{{ statusData.disk_usage?.total_size_mb || 0 }} MB</Descriptions.Item>
-                  <Descriptions.Item label="总表数">{{ statusData.disk_usage?.table_count || 0 }}</Descriptions.Item>
-                </Descriptions>
-              </Card>
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'size'">
+              {{ formatSize(record.size) }}
+            </template>
+            <template v-else-if="column.key === 'time'">
+              {{ formatTime(record.time) }}
+            </template>
+            <template v-else-if="column.key === 'actions'">
+              <Popconfirm
+                title="⚠️ 警告：从备份恢复将覆盖当前数据库数据，此操作不可撤销！确定继续吗？"
+                ok-text="确定恢复"
+                cancel-text="取消"
+                @confirm="restoreBackup(record)"
+              >
+                <Button size="small" danger :loading="restoringName === record.name">
+                  恢复
+                </Button>
+              </Popconfirm>
+            </template>
+          </template>
+        </Table>
+      </Card>
 
-              <Card title="磁盘使用情况">
-                <Space direction="vertical" style="width: 100%">
-                  <div>
-                    <p>数据大小: {{ statusData.disk_usage?.data_size_mb || 0 }} MB</p>
-                    <Progress :percent="percentOf(statusData.disk_usage?.data_size_mb, statusData.disk_usage?.total_size_mb)" />
-                  </div>
-                  <div>
-                    <p>索引大小: {{ statusData.disk_usage?.index_size_mb || 0 }} MB</p>
-                    <Progress :percent="percentOf(statusData.disk_usage?.index_size_mb, statusData.disk_usage?.total_size_mb)" />
-                  </div>
-                  <div>
-                    <p>TOAST 大小: {{ statusData.disk_usage?.toast_size_mb || 0 }} MB</p>
-                    <Progress :percent="percentOf(statusData.disk_usage?.toast_size_mb, statusData.disk_usage?.total_size_mb)" />
-                  </div>
-                </Space>
-              </Card>
-            </Space>
-          </TabPane>
-
-          <!-- Performance Tab -->
-          <TabPane tab="性能指标" key="performance">
-            <Space direction="vertical" style="width: 100%" size="large">
-              <Card title="查询统计">
-                <Descriptions :column="2" bordered>
-                  <Descriptions.Item label="平均查询时间">{{ statusData.query_stats?.avg_query_time_ms || 0 }} ms</Descriptions.Item>
-                  <Descriptions.Item label="慢查询数">{{ statusData.query_stats?.slow_queries || 0 }}</Descriptions.Item>
-                  <Descriptions.Item label="总查询数">{{ statusData.query_stats?.total_queries || 0 }}</Descriptions.Item>
-                  <Descriptions.Item label="查询失败数">{{ statusData.query_stats?.failures || 0 }}</Descriptions.Item>
-                </Descriptions>
-              </Card>
-
-              <Card title="缓存命中率">
-                <Space direction="vertical" style="width: 100%">
-                  <Progress
-                    type="circle"
-                    :percent="Number((statusData.performance?.cache_hit_rate || 0).toFixed(2))"
-                    :format="(p?: number) => `${p ?? 0}%`"
-                  />
-                  <p style="text-align: center" :style="{ color: getCacheHitRateColor(statusData.performance?.cache_hit_rate) }">
-                    缓存命中率
-                  </p>
-                </Space>
-              </Card>
-
-              <Card title="操作速率">
-                <Descriptions :column="3" bordered>
-                  <Descriptions.Item label="元组读取/秒">{{ statusData.performance?.tuple_read_per_sec || 0 }}</Descriptions.Item>
-                  <Descriptions.Item label="元组插入/秒">{{ statusData.performance?.tuple_insert_per_sec || 0 }}</Descriptions.Item>
-                  <Descriptions.Item label="缓冲区命中率">{{ statusData.performance?.buffer_hit_rate || 0 }}%</Descriptions.Item>
-                </Descriptions>
-              </Card>
-            </Space>
-          </TabPane>
-
-          <!-- Optimization Tab -->
-          <TabPane tab="优化操作" key="optimization">
-            <Alert message="以下操作将直接影响数据库性能,请谨慎使用" type="warning" showIcon style="margin-bottom: 16px" />
-            <Space direction="vertical" style="width: 100%">
-              <Button block @click="optimize('vacuum')">
-                VACUUM ANALYZE - 回收存储空间并更新统计信息
-              </Button>
-              <Button block @click="optimize('analyze')">
-                ANALYZE - 更新查询优化器统计信息
-              </Button>
-              <Button block @click="optimize('reindex')">
-                REINDEX - 重建所有索引
-              </Button>
-            </Space>
-          </TabPane>
-        </Tabs>
-      </div>
-    </Modal>
-
-    <!-- Query Modal -->
-    <Modal
-      v-model:open="queryModalVisible"
-      title="🔍 SQL 查询 (只读)"
-      :footer="null"
-      :width="1000"
-      @cancel="queryModalVisible = false; queryResult = []"
-    >
-      <Space direction="vertical" style="width: 100%">
+      <!-- SQL 查询器 -->
+      <Card title="SQL 查询器（只读）" style="margin-bottom: 16px">
+        <Alert
+          type="info"
+          show-icon
+          message="仅允许只读查询（SELECT 等），不会执行任何写操作。"
+          style="margin-bottom: 16px"
+        />
         <TextArea
           v-model:value="queryText"
           :rows="4"
-          placeholder="输入 SELECT 查询语句..."
-          style="font-family: monospace"
+          placeholder="SELECT * FROM ... LIMIT 100;"
+          style="font-family: monospace; margin-bottom: 12px"
         />
-        <Button type="primary" @click="executeQuery">
-          <SearchOutlined /> 执行查询
-        </Button>
+        <Space style="margin-bottom: 16px">
+          <Button type="primary" :loading="querying" @click="executeQuery">
+            <template #icon><SearchOutlined /></template>
+            执行查询
+          </Button>
+          <Button @click="queryResult = null; queryText = ''">清空</Button>
+        </Space>
 
-        <Table
-          :columns="queryColumns"
-          :data-source="queryRows"
-          row-key="key"
-          :scroll="{ x: 800 }"
-          :pagination="{ pageSize: 20 }"
-        >
-          <template #emptyText>
-            <div class="empty-block"><span class="empty-icon">📭</span><span class="empty-text">暂无数据</span></div>
-          </template>
-        </Table>
-      </Space>
-    </Modal>
+        <template v-if="queryResult">
+          <Space style="margin-bottom: 8px" wrap>
+            <Statistic title="返回行数" :value="queryResult.count ?? (queryResult.rows || []).length" />
+            <Tag v-if="queryResult.truncated" color="orange">结果已截断</Tag>
+          </Space>
+          <Table
+            :columns="queryColumns"
+            :data-source="queryRows"
+            :row-key="(_r: any, i?: number) => i ?? 0"
+            :pagination="{ pageSize: 20, showSizeChanger: true }"
+            :scroll="{ x: 800 }"
+            size="small"
+          >
+            <template #emptyText>
+              <EmptyState description="查询无返回结果" />
+            </template>
+            <template #bodyCell="{ column, record }">
+              <span class="cell">{{ cellText(record[(column as any).dataIndex as string]) }}</span>
+            </template>
+          </Table>
+        </template>
+        <template v-else>
+          <EmptyState description="执行查询后结果将显示在这里" />
+        </template>
+      </Card>
 
-    <!-- Add/Edit Modal -->
-    <Modal
-      v-model:open="modalVisible"
-      title="添加数据库实例"
-      ok-text="创建"
-      cancel-text="取消"
-      @ok="loadDBConfigs"
-    >
-      <Form layout="vertical">
-        <Form.Item label="实例名称" required>
-          <Input v-model:value="currentForm.name" placeholder="例如: Production PostgreSQL" />
-        </Form.Item>
-        <Form.Item label="主机地址" required>
-          <Input v-model:value="currentForm.host" placeholder="localhost" />
-        </Form.Item>
-        <Form.Item label="端口" required>
-          <InputNumber v-model:value="currentForm.port" :min="1" :max="65535" style="width: 100%" />
-        </Form.Item>
-        <Form.Item label="数据库名" required>
-          <Input v-model:value="currentForm.dbname" placeholder="minicc" />
-        </Form.Item>
-        <Form.Item label="用户名" required>
-          <Input v-model:value="currentForm.username" placeholder="postgres" />
-        </Form.Item>
-        <Form.Item label="密码哈希">
-          <Input v-model:value="currentForm.password_hash" placeholder="SHA-256 哈希值" />
-        </Form.Item>
-        <Form.Item label="最大打开连接">
-          <InputNumber v-model:value="currentForm.max_open_connections" :min="1" :max="100" style="width: 100%" />
-        </Form.Item>
-        <Form.Item label="最大空闲连接">
-          <InputNumber v-model:value="currentForm.max_idle_connections" :min="0" :max="50" style="width: 100%" />
-        </Form.Item>
-        <Form.Item label="连接生命周期">
-          <Input v-model:value="currentForm.conn_max_lifetime" placeholder="30m" />
-        </Form.Item>
-      </Form>
-    </Modal>
+      <!-- 优化区 -->
+      <Card title="性能优化" style="margin-bottom: 16px">
+        <Alert
+          type="warning"
+          show-icon
+          message="优化操作会占用数据库资源，建议在低峰期对指定表执行。"
+          style="margin-bottom: 16px"
+        />
+        <Space wrap>
+          <Input
+            v-model:value="optimizeTable"
+            placeholder="输入表名，例如 users"
+            style="width: 240px"
+            @press-enter="runOptimize('analyze')"
+          />
+          <Button :loading="optimizing" @click="runOptimize('analyze')">
+            <template #icon><ThunderboltOutlined /></template>
+            ANALYZE 更新统计信息
+          </Button>
+          <Button :loading="optimizing" @click="runOptimize('vacuum')">
+            <template #icon><ThunderboltOutlined /></template>
+            VACUUM 回收存储空间
+          </Button>
+        </Space>
+      </Card>
+    </Spin>
   </div>
 </template>
 
 <style scoped>
-.database-management {
-  padding: 24px;
-}
+.database-management { padding: 24px; }
+.page-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+.page-header h1 { margin: 0; font-size: 24px; font-weight: 600; }
+.cell { word-break: break-all; }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-}
-
-.page-header h1 {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 600;
-}
-
-/* 空状态统一 */
-.empty-block {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 28px 0;
-  color: var(--text-tertiary);
-}
-.empty-icon { font-size: 26px; line-height: 1; opacity: 0.8; }
-.empty-text { font-size: 13px; }
-
-/* 窄屏:页头换行、按钮全宽、触控目标 ≥ 40px */
 @media (max-width: 768px) {
-  .database-management .page-header {
-    flex-wrap: wrap;
-    row-gap: 12px;
-  }
-  .database-management .page-header .ant-space { flex-wrap: wrap; row-gap: 8px; }
+  .database-management .page-header { row-gap: 12px; }
   .database-management .page-header .ant-btn { min-height: 40px; }
 }
 </style>
