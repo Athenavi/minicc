@@ -519,31 +519,47 @@ function formatSize(bytes: number): string {
 <style scoped>
 .kb-detail-container { padding: 24px; max-width: 1200px; margin: 0 auto; }
 .kb-detail-header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
-.kb-detail-header h1 { flex: 1; margin: 0; font-size: 24px; font-weight: 600; }
+.kb-detail-header h1 { flex: 1; margin: 0; font-size: 24px; font-weight: 600; color: var(--text-primary); }
 .info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; }
 .info-item { display: flex; flex-direction: column; gap: 4px; }
-.info-item .label { font-size: 13px; color: #888; }
-.kb-description { margin-top: 16px; padding-top: 16px; border-top: 1px solid #f0f0f0; color: #666; line-height: 1.6; }
+.info-item .label { font-size: 13px; color: var(--text-tertiary); }
+.info-item .value { color: var(--text-primary); }
+.kb-description { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-card); color: var(--text-secondary); line-height: 1.6; }
 .modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 
-.query-results { margin-top: 16px; padding-top: 16px; border-top: 1px solid #f0f0f0; }
-.query-results h3 { margin: 0 0 12px; font-size: 16px; }
-.query-result-item { padding: 12px; background: #f9f9f9; border-radius: 8px; margin-bottom: 8px; }
+.query-results { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-card); }
+.query-results h3 { margin: 0 0 12px; font-size: 16px; color: var(--text-primary); }
+.query-result-item { padding: 12px; background: var(--bg-secondary, rgba(0,0,0,0.02)); border-radius: 8px; margin-bottom: 8px; }
 .result-source { font-size: 12px; color: var(--text-tertiary); }
 .result-header { margin-bottom: 8px; }
-.result-content { margin: 0; font-size: 14px; line-height: 1.6; color: #333; }
+.result-content { margin: 0; font-size: 14px; line-height: 1.6; color: var(--text-primary); }
 
 .media-search-bar { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
 .media-actions { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
-.selected-count { font-size: 13px; color: #666; }
+.selected-count { font-size: 13px; color: var(--text-secondary); }
 .media-empty { padding: 40px 0; }
-.media-list { border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; max-height: 400px; overflow-y: auto; }
-.media-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #f0f0f0; cursor: pointer; transition: background 0.2s; }
+.media-list { border: 1px solid var(--border-card); border-radius: 8px; overflow: hidden; max-height: 400px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.media-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border-card); cursor: pointer; transition: background 0.2s; }
 .media-item:last-child { border-bottom: none; }
-.media-item:hover { background: #f5f5f5; }
-.media-item.selected { background: #e6f7ff; }
+.media-item:hover { background: var(--bg-hover, rgba(0,0,0,0.03)); }
+.media-item.selected { background: var(--primary-bg, #e6f7ff); }
 .media-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
-.media-name { font-weight: 500; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.media-meta { display: flex; gap: 12px; font-size: 12px; color: #888; }
+.media-name { font-weight: 500; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
+.media-meta { display: flex; gap: 12px; font-size: 12px; color: var(--text-tertiary); }
 .media-type { text-transform: uppercase; }
+
+/* 移动端：搜索栏堆叠、header 纵向 */
+@media (max-width: 640px) {
+  .kb-detail-container { padding: 16px 12px; }
+  .kb-detail-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .kb-detail-header h1 { font-size: 20px; }
+  .media-search-bar { flex-direction: column; align-items: stretch; gap: 8px; }
+  .media-actions { justify-content: flex-end; }
+  .info-grid { grid-template-columns: repeat(2, 1fr); }
+  .media-item { padding: 10px 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .media-item { transition: none; }
+}
 </style>

@@ -40,14 +40,14 @@ async function loadSystemData() {
 <template>
   <div class="system-container">
     <div class="system-header">
-      <CloudServerOutlined style="font-size: 24px; color: #22c55e" />
+      <CloudServerOutlined class="system-header-icon" />
       <h1>系统监控</h1>
     </div>
 
     <Spin :spinning="loading">
       <Tabs v-model:activeKey="activeTab">
         <TabPane key="health" tab="健康状态">
-          <Card style="margin-top: 16px">
+          <Card class="system-card">
             <template #title>
               <CloudServerOutlined /> 服务状态
             </template>
@@ -61,12 +61,12 @@ async function loadSystemData() {
                 <span class="metric-value">{{ formatUptime(health.uptime) }}</span>
               </div>
             </div>
-            <p v-else style="color: #6b7280">暂无健康数据</p>
+            <p v-else class="empty-hint">暂无健康数据</p>
           </Card>
         </TabPane>
 
         <TabPane key="metrics" tab="性能指标">
-          <Card style="margin-top: 16px">
+          <Card class="system-card">
             <template #title>
               <BarChartOutlined /> 系统指标
             </template>
@@ -76,7 +76,7 @@ async function loadSystemData() {
                 <span class="metric-value">{{ value }}</span>
               </div>
             </div>
-            <p v-else style="color: #6b7280">暂无指标数据</p>
+            <p v-else class="empty-hint">暂无指标数据</p>
           </Card>
         </TabPane>
       </Tabs>
@@ -85,11 +85,25 @@ async function loadSystemData() {
 </template>
 
 <style scoped>
-.system-container { padding: 24px; }
+.system-container { padding: 24px; max-width: 1080px; margin: 0 auto; }
 .system-header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
-.system-header h1 { margin: 0; font-size: 24px; font-weight: 600; }
+.system-header h1 { margin: 0; font-size: 24px; font-weight: 600; color: var(--text-primary); }
+.system-header-icon { font-size: 24px; color: var(--colorSuccess, #22c55e); }
+.system-card { margin-top: 16px; }
 .health-grid, .metrics-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
-.health-item, .metric-item { display: flex; justify-content: space-between; align-items: center; padding: 12px; background-color: #f9fafb; border-radius: 8px; }
-.service-name, .metric-name { font-weight: 500; }
-.metric-value { font-weight: 600; color: #2080f0; }
+.health-item, .metric-item { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: var(--bg-secondary, rgba(0,0,0,0.02)); border-radius: 8px; }
+.service-name, .metric-name { font-weight: 500; color: var(--text-primary); }
+.metric-value { font-weight: 600; color: var(--primary, #2080f0); }
+.empty-hint { color: var(--text-tertiary); margin: 0; }
+
+/* 移动端 */
+@media (max-width: 640px) {
+  .system-container { padding: 16px 12px; }
+  .system-header h1 { font-size: 20px; }
+  .health-grid, .metrics-grid { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .system-container { transition: none; }
+}
 </style>

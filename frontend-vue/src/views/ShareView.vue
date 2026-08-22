@@ -146,4 +146,22 @@ function formatDate(iso: string): string {
 .share-msg-text :deep(th), .share-msg-text :deep(td) { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
 .share-msg-text :deep(th) { background: var(--bg-secondary); font-weight: 600; }
 .share-footer { padding: 18px 24px; text-align: center; font-size: 12px; color: var(--text-muted); border-top: 1px solid var(--border); }
+
+/* 移动端：小屏收紧 padding 和字号 */
+@media (max-width: 640px) {
+  .share-header { height: 48px; padding: 0 16px; }
+  .share-main { padding: 20px 16px 40px; }
+  .share-title { font-size: 18px; line-height: 26px; }
+  .share-msg.user .share-msg-bubble { font-size: 14px; line-height: 22px; padding: 8px 12px; }
+  .share-msg-text { font-size: 15px; line-height: 26px; }
+  .share-msg-text :deep(h1) { font-size: 20px; line-height: 28px; margin: 24px 0 12px; }
+  .share-msg-text :deep(h2) { font-size: 18px; line-height: 26px; margin: 24px 0 12px; }
+  .share-msg-text :deep(h3) { font-size: 16px; line-height: 24px; margin: 24px 0 12px; }
+  .share-msg-text :deep(pre) { padding: 12px; font-size: 12px; }
+  .share-footer { padding: 14px 16px; font-size: 11px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .share-page { animation: none; transition: none; }
+}
 </style>
