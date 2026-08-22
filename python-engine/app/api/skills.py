@@ -33,6 +33,39 @@ class SkillInstallRequest(BaseModel):
     inline: str = ""
 
 
+@router.post("/v1/skills/{name}/register")
+async def register_skill(name: str) -> dict[str, Any]:
+    """将能力注册中心的技能注册为本地技能（SkillStore），供对话/Agent 工具链调用。
+
+    前端 SkillMarketCard 调用 POST /v1/skills/{capabilityId}/register；
+    能力注册中心查询不到时返回 404，避免假注册。
+    """
+    from app.core.capabilities import get_registry
+
+    cap = get_registry().get(name)
+    if cap is None:
+        raise HTTPException(status_code=404, detail=f"capability not found: {name}")
+
+    existing = [s for s in store.list() if s.name == name]
+    if existing:
+        return {"success": True, "skill": name, "registered": True}
+
+    skill = SkillDef(
+        name=cap.name or name,
+        description=cap.description or f"Skill {name}",
+        version="0.1.0",
+        exec_type="prompt",
+        source=f"Use the {name} capability. {cap.description or ''}".strip(),
+    )
+    store.save(skill)
+    return {
+        "success": True,
+        "skill": skill.name,
+        "registered": True,
+        "description": skill.description,
+    }
+
+
 @router.post("/v1/skills/install")
 async def install_skill(body: SkillInstallRequest) -> dict[str, Any]:
     if not body.url and not body.file and not body.inline:

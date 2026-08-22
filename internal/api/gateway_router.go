@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -708,6 +709,28 @@ func registerProxyRoutes(
 	mux.Handle("GET /v1/kb/{id}/documents", authMW(kbRateMW(kbP(pathParamSuffix("/v1/kb", "/documents")))))
 	mux.Handle("POST /v1/kb/{id}/build", authMW(kbRateMW(kbP(pathParamSuffix("/v1/kb", "/build")))))
 	mux.Handle("POST /v1/kb/{id}/query", authMW(kbRateMW(kbP(pathParamSuffix("/v1/kb", "/query")))))
+	// 知识库删除文档（P1 修复：Python 端已有 DELETE /{kb_id}/documents?doc_id=，
+	// 网关此前缺失该路由导致前端删除文档 404）
+	mux.Handle("DELETE /v1/kb/{id}/documents", authMW(kbRateMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if pythonClient == nil {
+			InternalError(w, "python engine not available")
+			return
+		}
+		claims := auth.GetClaims(r.Context())
+		if claims == nil || claims.TenantID == "" {
+			Unauthorized(w, "missing tenant context")
+			return
+		}
+		// 保留原始 doc_id 查询参数（newProxy 的 buildPath 会丢弃原始 query）
+		target := "/v1/kb/" + r.PathValue("id") + "/documents?doc_id=" + url.QueryEscape(r.URL.Query().Get("doc_id")) +
+			"&user_id=" + claims.UserID + "&tenant_id=" + claims.TenantID
+		var resp interface{}
+		if err := pythonClient.DeleteJSON(r.Context(), target, &resp); err != nil {
+			logAndRespond(w, err, http.StatusInternalServerError, "python engine error")
+			return
+		}
+		OK(w, resp)
+	}))))
 
 	// Unified chat / quick-execute (六大工作台统一入口, proxies to Python TaskRouter)
 	chatP := newProxy("", proxyOpt{logTag: "chat"})

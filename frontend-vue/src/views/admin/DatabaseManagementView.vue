@@ -4,6 +4,8 @@ import { Card, Table, Button, Space, Tag, Input, Modal, Form, InputNumber, Alert
 import { PlusOutlined, ReloadOutlined, DatabaseOutlined, DatabaseTwoTone, SearchOutlined, MonitorOutlined } from '@ant-design/icons-vue'
 import { api } from '../../api'
 import { useCrudResource, apiErrorMessage } from '../../composables/useCrudResource'
+// 后端接口开发中（前端先行）：跳过真实请求，展示降级横幅
+const backendMissing = true
 
 const TextArea = Input.TextArea
 
@@ -177,12 +179,14 @@ function percentOf(part: any, total: any): number {
 
 // Initialize
 onMounted(() => {
+    if (backendMissing) return
   loadDBConfigs()
   listBackups()
 })
 </script>
 
 <template>
+<a-alert v-if="backendMissing" type="warning" show-icon message="该管理能力后端接口开发中（前端界面先行），暂不可用" style="margin: 16px" />
   <div class="database-management">
     <!-- Header -->
     <div class="page-header">

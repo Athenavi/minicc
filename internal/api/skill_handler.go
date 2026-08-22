@@ -36,6 +36,46 @@ func (h *SkillHandler) RegisterRoutes(mux *http.ServeMux, authMW, rlMW, sanitize
 	// 启停（PUT）与运行（POST run）——技能工作台主链路
 	mux.Handle("PUT /v1/skills/{name}", authMW(rlMW(sanitizeMW(http.HandlerFunc(h.proxy)))))
 	mux.Handle("POST /v1/skills/{name}/run", authMW(rlMW(sanitizeMW(http.HandlerFunc(h.proxy)))))
+	// 市场技能注册（P1 修复：前端 SkillMarketCard 调用 /v1/skills/{id}/register，
+	// 此前两端均无此路由导致注册 404）
+	mux.Handle("POST /v1/skills/{name}/register", authMW(rlMW(http.HandlerFunc(h.register))))
+}
+
+// register 将能力注册中心的技能注册为本地技能（转发 Python /v1/skills/{name}/register）。
+func (h *SkillHandler) register(w http.ResponseWriter, r *http.Request) {
+	if h.python == nil {
+		InternalError(w, "python engine not available")
+		return
+	}
+	name := r.PathValue("name")
+	if name == "" {
+		BadRequest(w, "name is required")
+		return
+	}
+	if !validSkillName.MatchString(name) {
+		BadRequest(w, "invalid skill name")
+		return
+	}
+	claims := auth.GetClaims(r.Context())
+	target := "/v1/skills/" + name + "/register"
+	if claims != nil {
+		target += "?user_id=" + claims.UserID + "&tenant_id=" + claims.TenantID
+	}
+	var body map[string]interface{}
+	if r.ContentLength > 0 {
+		if err := DecodeJSON(w, r, &body); err != nil {
+			BadRequest(w, ErrInvalidReq)
+			return
+		}
+	} else {
+		body = map[string]interface{}{}
+	}
+	var result map[string]interface{}
+	if err := h.python.PostJSON(r.Context(), target, body, &result); err != nil {
+		logAndRespond(w, err, http.StatusInternalServerError, "python engine error")
+		return
+	}
+	OK(w, result)
 }
 
 // proxy forwards the request to the Python engine.

@@ -4,6 +4,8 @@ import { Card, Table, Button, Space, Tag, Input, Modal, Form, InputNumber, DateP
 import { PlusOutlined, EditOutlined, DeleteOutlined, StopOutlined, BarChartOutlined } from '@ant-design/icons-vue'
 import { api } from '../../api'
 import { useCrudResource, apiErrorMessage } from '../../composables/useCrudResource'
+// 后端接口开发中（前端先行）：跳过真实请求，展示降级横幅
+const backendMissing = true
 
 // State
 const totalTenants = ref(0)
@@ -140,11 +142,13 @@ function formatDate(date: any): string {
 
 // Initialize
 onMounted(() => {
+    if (backendMissing) return
   loadTenants()
 })
 </script>
 
 <template>
+<a-alert v-if="backendMissing" type="warning" show-icon message="该管理能力后端接口开发中（前端界面先行），暂不可用" style="margin: 16px" />
   <div class="tenant-management">
     <!-- Header -->
     <div class="page-header">

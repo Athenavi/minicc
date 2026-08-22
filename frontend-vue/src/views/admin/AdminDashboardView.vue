@@ -93,7 +93,7 @@ const cronColumns = [
 // Create API Key
 async function createAPIKey() {
   try {
-    const response = await api.post('/admin/api-keys', newKeyForm.value)
+    const response = await api.post('/v1/admin/api-keys', newKeyForm.value)
     message.success('API Key 创建成功')
 
     // Show the key (only once!)
@@ -123,7 +123,7 @@ async function loadDashboardData() {
     loading.value = true
 
     const [keysRes, modelsRes, jobsRes] = await Promise.all([
-      api.get('/admin/api-keys?page=1&page_size=10').catch(() => ({ data: { data: [] } })),
+      api.get('/v1/admin/api-keys?page=1&page_size=10').catch(() => ({ data: { data: [] } })),
       api.get('/admin/models').catch(() => ({ data: { data: [] } })),
       api.get('/admin/cron-jobs').catch(() => ({ data: { data: [] } }))
     ])
