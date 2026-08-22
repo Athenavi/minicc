@@ -55,7 +55,7 @@ type BillingObserver interface {
 
 // Manager handles credit operations with async observer notification.
 // Balance is tracked in-memory via atomic operations; DB persistence is
-// delegated to observers (BalanceSyncer) and runs entirely in the background.
+// delegated to observers and runs in the background.
 type Manager struct {
 	mu        sync.RWMutex
 	config    BillingConfig

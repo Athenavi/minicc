@@ -113,13 +113,6 @@ func TestManager_CloseDoubleCall(t *testing.T) {
 	mgr.Close()
 }
 
-func TestBalanceSyncer_CloseDoubleCall(t *testing.T) {
-	syncer := NewBalanceSyncer(&mockStore{}, 1*time.Second)
-	// First close should succeed
-	syncer.Close()
-	// Second close should NOT panic
-	syncer.Close()
-}
 
 // TestTransactionRecorder_RecordsRealBalance 验证交易记录携带交易后真实余额，
 // 且金额符号正确（加为正、扣为负）。
