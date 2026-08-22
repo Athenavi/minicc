@@ -2,7 +2,8 @@
 import { ref, onMounted, watch, computed, nextTick } from 'vue'
 import { Input, Button, Select, message } from 'ant-design-vue'
 import { SendOutlined, StopOutlined, PaperClipOutlined, CloseOutlined, FileOutlined, BranchesOutlined } from '@ant-design/icons-vue'
-import { uploadFile } from '../../api'
+import { uploadFile, listModels } from '../../api'
+import type { LlmModel } from '../../api'
 import type { ChatAttachment } from './chat-types'
 
 const props = defineProps<{
@@ -12,12 +13,16 @@ const props = defineProps<{
   disabled?: boolean
   /** P2-C: 当前会话 ID，用于按会话持久化草稿 */
   sessionId?: string
+  /** 模型路由：当前会话 llm_config.model（空 = 后端默认路由） */
+  model?: string
 }>()
 
 const emit = defineEmits<{
   (e: 'send', text: string, attachments?: ChatAttachment[]): void
   (e: 'stop'): void
   (e: 'update:mode', mode: string): void
+  /** 模型路由：用户选择了模型（空字符串 = 恢复后端默认） */
+  (e: 'model-change', model: string): void
   /** P3-C: 斜杠命令 */
   (e: 'command', cmd: string): void
   /** 上下文快捷按钮：展开侧栏（若为抽屉模式） */
@@ -37,8 +42,39 @@ const uploading = ref(false)
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml']
 const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
 
-// 挂载自动聚焦（deepseek 输入区常驻聚焦）
-onMounted(() => { textareaRef.value?.focus?.() })
+// ── 模型路由选择器（GET /v1/models，仅 enabled）──
+const models = ref<LlmModel[]>([])
+const modelsLoading = ref(false)
+const modelValue = ref('')
+const modelOptions = computed(() =>
+  models.value.map(m => ({
+    // label：display_name + provider 前缀；value：模型 name（后端路由用）
+    label: m.display_name ? `${m.provider} · ${m.display_name}` : `${m.provider} · ${m.name}`,
+    value: m.name,
+  })),
+)
+
+function onModelChange(v: any) {
+  modelValue.value = String(v || '')
+  emit('model-change', modelValue.value)
+}
+
+// 会话切换/恢复时同步（父组件回传 llm_config.model；空 = 后端默认）
+watch(() => props.model, (v) => { modelValue.value = v || '' }, { immediate: true })
+
+// 挂载自动聚焦（deepseek 输入区常驻聚焦）+ 加载可用模型
+onMounted(async () => {
+  textareaRef.value?.focus?.()
+  try {
+    modelsLoading.value = true
+    models.value = await listModels()
+  } catch {
+    // 取不到模型列表时下拉为空，走后端默认路由
+    models.value = []
+  } finally {
+    modelsLoading.value = false
+  }
+})
 
 // P2-C: 草稿持久化（按会话 ID 存 localStorage）
 const DRAFT_PREFIX = 'minicc:draft:'
@@ -308,6 +344,18 @@ function onSlashInput() {
             :title="`当前模式：${modeOptions.find(o => o.value === mode)?.label || mode}（仅影响后续消息）`"
             @update:value="(v: any) => emit('update:mode', String(v))"
           />
+          <span class="mode-label">模型</span>
+          <Select
+            class="model-select"
+            :model-value="modelValue"
+            :options="modelOptions"
+            :loading="modelsLoading"
+            size="small"
+            allow-clear
+            placeholder="默认模型"
+            :title="`当前模型：${modelValue || '默认（后端路由）'}（仅影响后续消息）`"
+            @update:value="onModelChange"
+          />
           <Button
             type="text"
             size="small"
@@ -365,6 +413,11 @@ function onSlashInput() {
 .input-hint { font-size: 12px; color: var(--text-tertiary); }
 /* 模式选择器标签 */
 .mode-label { flex: none; font-size: 12px; color: var(--text-tertiary); }
+/* 模型路由下拉（与模式切换器同排；窄屏收窄防溢出） */
+.model-select { width: 170px; }
+.model-select :deep(.ant-select-selector) { font-size: 12px; }
+@media (max-width: 768px) { .model-select { width: 150px; } }
+@media (max-width: 576px) { .model-select { width: 126px; } }
 /* 上下文快捷按钮：展开侧栏（抽屉模式） */
 .context-btn { color: var(--text-tertiary); display: inline-flex; align-items: center; gap: 4px; }
 .context-btn:hover { color: var(--primary) !important; }

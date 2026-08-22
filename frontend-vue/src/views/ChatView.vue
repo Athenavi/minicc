@@ -68,6 +68,9 @@ const modeOptions = [
 ]
 const mode = ref('normal')
 
+// ── 模型路由：会话 llm_config.model（空 = 后端默认路由）──
+const llmModel = ref('')
+
 // ── 对话模式预设（mode → temperature/max_tokens；用户显式覆盖优先）──
 const MODE_PRESETS: Record<string, { temperature: number; max_tokens: number; note?: string }> = {
   normal: { temperature: 0.6, max_tokens: 4096 },
@@ -76,15 +79,27 @@ const MODE_PRESETS: Record<string, { temperature: number; max_tokens: number; no
   creative: { temperature: 1.0, max_tokens: 8192 },
 }
 
-/** 构造 llm_config：mode + 对应预设 temperature/max_tokens（base 已显式携带的字段优先保留） */
+/** 构造 llm_config：mode + 对应预设 temperature/max_tokens + 模型路由 model（base 已显式携带的字段优先保留） */
 function buildLlmConfig(base?: Record<string, any>): Record<string, any> {
   const cfg: Record<string, any> = { mode: mode.value, ...(base || {}) }
+  // 模型路由：会话选定模型写入 llm_config（空 = 不携带，走后端默认路由）
+  if (llmModel.value) cfg.model = llmModel.value
   const preset = MODE_PRESETS[mode.value]
   if (preset) {
     if (cfg.temperature === undefined) cfg.temperature = preset.temperature
     if (cfg.max_tokens === undefined) cfg.max_tokens = preset.max_tokens
   }
   return cfg
+}
+
+/** 模型切换：更新 llmModel ref + 会话级持久化（SSE 模式已有会话时立即保存 llm_config） */
+function onModelChange(m: string) {
+  if (m === llmModel.value) return
+  llmModel.value = m
+  message.info(m ? `模型已切换：${m}（仅影响后续消息）` : '模型已重置为默认（后端路由）')
+  if (!unifiedMode.value && activeSessionId.value) {
+    void updateConversation(activeSessionId.value, { llm_config: buildLlmConfig() } as any).catch(() => {})
+  }
 }
 
 /** 模式切换：更新 mode ref + 提示（仅影响后续消息）+ 会话级持久化（SSE 模式已有会话时立即保存 llm_config） */
@@ -360,6 +375,8 @@ async function sendUnified(text: string, attachments?: ChatAttachment[]) {
       session_id: unifiedSessionId.value,
       mode: unifiedSubmitMode.value || 'auto',
       context: buildContext(),
+      // 模型路由：统一任务发送同样携带 llm_config.model（空 = 后端默认）
+      llm_config: llmModel.value ? { model: llmModel.value } : {},
       ...(resolvedAtts.length
         ? { attachments: resolvedAtts.map(a => ({ id: a.id, name: a.name, mime_type: a.mimeType, url: a.url, is_image: a.isImage })) }
         : {}),
@@ -673,6 +690,8 @@ async function switchSession(id: string) {
     if (typeof savedMode === 'string' && modeOptions.some(o => o.value === savedMode)) {
       mode.value = savedMode
     }
+    // ── 会话级模型恢复：llm_config.model 回填模型下拉（空 = 后端默认）──
+    llmModel.value = typeof cfg?.model === 'string' ? cfg.model : ''
   } catch { /* fallback */ } finally {
     loading.value = false
     initialLoading.value = false  // P2-E: 隐藏骨架屏
@@ -1386,10 +1405,12 @@ function continueGeneration() {
         :loading="loading"
         :mode="mode"
         :mode-options="modeOptions"
+        :model="llmModel"
         :session-id="unifiedMode ? unifiedSessionId : activeSessionId"
         @send="sendMessage"
         @stop="stopGeneration"
         @update:mode="onModeChange"
+        @model-change="onModelChange"
         @command="onSlashCommand"
         @open-panel="openContextPanel"
       />

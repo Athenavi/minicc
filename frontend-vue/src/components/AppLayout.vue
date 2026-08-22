@@ -34,6 +34,8 @@ import {
 } from '@ant-design/icons-vue'
 // 全局快速命令：复用 WorkstationNav 的统一执行逻辑（创建 uni 会话 → /chat?task=）
 import { executeQuickCommand } from './WorkstationNav.vue'
+// 全局命令面板（Ctrl/Cmd+K）：六大工作台切换 / 主题 / 快速命令 / 全局搜索 / 最近活动
+import CommandPalette from './CommandPalette.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -317,6 +319,9 @@ async function runQuickCommand() {
         </Transition>
       </router-view>
     </main>
+
+    <!-- 全局命令面板（Ctrl/Cmd+K；Teleport 到 body，覆盖所有页面） -->
+    <CommandPalette />
   </div>
 </template>
 
