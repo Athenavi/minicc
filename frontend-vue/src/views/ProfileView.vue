@@ -366,6 +366,20 @@ async function handleSetPassword() {
 .profile-container {
   padding: 24px;
   max-width: 640px;
+  margin: 0 auto;
+}
+
+/* 移动端 */
+@media (max-width: 640px) {
+  .profile-container { padding: 16px 12px; }
+  .profile-header { flex-direction: column; align-items: flex-start; gap: 8px; margin-bottom: 18px; }
+  .profile-header h1 { font-size: 20px; }
+  .identity-row { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .identity-info { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profile-container { animation: none; transition: none; }
 }
 
 .profile-header {

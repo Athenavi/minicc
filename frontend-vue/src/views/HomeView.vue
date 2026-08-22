@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { Button } from 'ant-design-vue'
 import {
   MessageOutlined, UserOutlined, ApartmentOutlined, BlockOutlined,
-  BookOutlined, ThunderboltOutlined, ArrowRightOutlined,
+  BookOutlined, ThunderboltOutlined, ArrowRightOutlined, ArrowUpOutlined,
 } from '@ant-design/icons-vue'
 import HomeScene3D from '../components/home/HomeScene3D.vue'
 
@@ -45,6 +45,10 @@ function scrollToFeatures() {
 }
 
 // ── 特性卡片：IntersectionObserver 交错入场 + hover 3D tilt ──
+// 触屏设备禁用 3D tilt 和 CTA 磁吸（无鼠标 hover 语义，且会触发误触抖动）
+const isTouch = typeof window !== 'undefined'
+  && ('ontouchstart' in window || navigator.maxTouchPoints > 0)
+
 const cardEls = ref<(HTMLElement | null)[]>([])
 let cardObserver: IntersectionObserver | null = null
 let cardFallbackTimer: number | undefined
@@ -73,13 +77,16 @@ onMounted(() => {
   cardEls.value.forEach(el => el && cardObserver?.observe(el))
   // 兜底：即使 IO 未触发（滚动容器异常等），2s 后强制显示所有卡片
   cardFallbackTimer = window.setTimeout(revealCards, 2000)
+  window.addEventListener('scroll', onScroll, { passive: true })
 })
 onUnmounted(() => {
   cardObserver?.disconnect()
   if (cardFallbackTimer !== undefined) window.clearTimeout(cardFallbackTimer)
+  window.removeEventListener('scroll', onScroll)
 })
 
 function onCardMove(e: MouseEvent) {
+  if (isTouch) return
   const card = e.currentTarget as HTMLElement
   const r = card.getBoundingClientRect()
   const px = (e.clientX - r.left) / r.width - 0.5
@@ -95,6 +102,7 @@ function onCardLeave(e: MouseEvent) {
 
 // ── CTA 磁吸：按钮轻微跟随鼠标 ──
 function onCtaMove(e: MouseEvent) {
+  if (isTouch) return
   const btn = e.currentTarget as HTMLElement
   const r = btn.getBoundingClientRect()
   const dx = (e.clientX - r.left - r.width / 2) * 0.12
@@ -105,6 +113,15 @@ function onCtaMove(e: MouseEvent) {
 function onCtaLeave(e: MouseEvent) {
   const btn = e.currentTarget as HTMLElement
   btn.style.transform = ''
+}
+
+// ── 滚动到顶部按钮（长页面导航辅助） ──
+const showTop = ref(false)
+function onScroll() {
+  showTop.value = window.scrollY > 600
+}
+function scrollToTop() {
+  window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 </script>
 
@@ -254,6 +271,19 @@ function onCtaLeave(e: MouseEvent) {
       </span>
       <span class="home-footer-note">自托管 · 开源 · 你的数据留在你的机器上</span>
     </footer>
+
+    <!-- 滚动到顶部按钮（长页面辅助导航） -->
+    <Transition name="top-fade">
+      <button
+        v-if="showTop"
+        type="button"
+        class="scroll-top"
+        aria-label="回到顶部"
+        @click="scrollToTop"
+      >
+        <ArrowUpOutlined />
+      </button>
+    </Transition>
   </div>
 </template>
 
@@ -686,6 +716,17 @@ function onCtaLeave(e: MouseEvent) {
   .showcase-grid { grid-template-columns: 1fr; }
   .home-footer { flex-direction: column; text-align: center; }
 }
+/* 平板：中屏优化（特性卡 2 列、窗口预览保持 2 列、终端缩小） */
+@media (max-width: 768px) and (min-width: 641px) {
+  .feature-grid { grid-template-columns: repeat(2, 1fr); }
+  .showcase-grid { grid-template-columns: 1fr; }
+  .hero-title { font-size: clamp(30px, 6vw, 44px); }
+}
+/* 触屏设备：禁用 3D tilt 和磁吸 transform，避免抖动 */
+@media (hover: none) {
+  .feature-card:hover { transform: none; }
+  .hero-cta:hover { transform: none; }
+}
 /* 减少动效偏好：跳过入场动画，内容立即可见 */
 @media (prefers-reduced-motion: reduce) {
   .hero-badge, .hero-title, .hero-sub, .hero-actions,
@@ -693,7 +734,38 @@ function onCtaLeave(e: MouseEvent) {
   .feature-card::before, .features::before { animation: none; }
   .feature-card { opacity: 1; }
   .hero-cta { transition: none; }
+  .scroll-top { transition: none; }
 }
+
+/* ── 滚动到顶部按钮 ── */
+.scroll-top {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid hsla(0, 0%, 100%, 0.16);
+  background: hsla(0, 0%, 100%, 0.08);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 50;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), inset 0 1px 1px hsla(0, 0%, 100%, 0.12);
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+.scroll-top:hover {
+  transform: translateY(-2px);
+  border-color: hsla(0, 0%, 100%, 0.3);
+  background: hsla(0, 0%, 100%, 0.14);
+}
+.scroll-top:active { transform: translateY(0) scale(0.94); }
+.top-fade-enter-active, .top-fade-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
+.top-fade-enter-from, .top-fade-leave-to { opacity: 0; transform: translateY(8px); }
 </style>
 
 <!-- rotating-border 需要的注册属性与关键帧（@property 不能放 scoped 块） -->

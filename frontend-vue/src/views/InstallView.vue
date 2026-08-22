@@ -121,18 +121,34 @@ async function submit() {
 
 <style scoped>
 .install-page {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 24px 16px;
+  background: var(--bg-page);
+  position: relative;
+  overflow: hidden;
+}
+.install-page::before {
+  content: '';
+  position: absolute;
+  inset: -45% -20% auto -20%;
+  height: 60%;
+  background: radial-gradient(ellipse 55% 55% at 50% 0%, var(--primary-bg), transparent 72%);
+  pointer-events: none;
 }
 .install-card {
   width: 420px;
+  max-width: calc(100vw - 32px);
   padding: 32px;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  position: relative;
+  z-index: 1;
+  animation: installFadeIn 0.5s ease;
 }
 .install-brand {
   display: flex;
@@ -141,6 +157,7 @@ async function submit() {
   margin-bottom: 24px;
   font-size: 18px;
   font-weight: 600;
+  color: var(--text-primary);
 }
 .brand-mark {
   display: inline-flex;
@@ -148,22 +165,23 @@ async function submit() {
   justify-content: center;
   width: 32px;
   height: 32px;
-  background: #1677ff;
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
   color: #fff;
   border-radius: 8px;
   font-size: 14px;
+  box-shadow: var(--shadow-md);
 }
 .install-hint {
   margin: 0 0 20px;
-  color: rgba(0,0,0,0.65);
+  color: var(--text-secondary);
   font-size: 13px;
   line-height: 1.6;
   padding: 12px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm, 6px);
 }
 .hint-warn {
-  background: #f6ffed;
-  border: 1px solid #b7eb8f;
+  background: var(--warning-bg, rgba(255, 197, 23, 0.1));
+  border: 1px solid var(--warning-border, rgba(255, 197, 23, 0.3));
 }
 .installed-state {
   text-align: center;
@@ -174,8 +192,8 @@ async function submit() {
   height: 64px;
   margin: 0 auto 16px;
   border-radius: 50%;
-  background: #f6ffed;
-  color: #52c41a;
+  background: var(--success-bg, rgba(82, 196, 26, 0.12));
+  color: var(--colorSuccess, #52c41a);
   font-size: 32px;
   line-height: 64px;
   font-weight: bold;
@@ -185,8 +203,8 @@ async function submit() {
   height: 64px;
   margin: 0 auto 16px;
   border-radius: 50%;
-  background: #fff2f0;
-  color: #ff4d4f;
+  background: var(--error-bg, rgba(255, 77, 79, 0.1));
+  color: var(--colorError, #ff4d4f);
   font-size: 32px;
   line-height: 64px;
   font-weight: bold;
@@ -195,14 +213,37 @@ async function submit() {
   margin: 0 0 8px;
   font-size: 18px;
   font-weight: 600;
+  color: var(--text-primary);
 }
 .installed-desc {
   margin: 0 0 24px;
-  color: rgba(0,0,0,0.45);
+  color: var(--text-tertiary);
   font-size: 13px;
 }
 .install-footer {
   margin-top: 16px;
   text-align: center;
+}
+@keyframes installFadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 移动端 */
+@media (max-width: 480px) {
+  .install-page { align-items: flex-start; padding: 16px 12px; }
+  .install-card { width: 100%; max-width: 100%; padding: 24px 20px; }
+  .install-brand { font-size: 16px; margin-bottom: 18px; }
+}
+
+/* 焦点增强 */
+.install-card :deep(.ant-input:focus),
+.install-card :deep(.ant-btn:focus-visible) {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .install-card { animation: none; }
 }
 </style>

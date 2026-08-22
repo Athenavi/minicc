@@ -129,13 +129,13 @@ async function handleRegister() {
           layout="vertical"
         >
           <FormItem label="姓名" name="name">
-            <Input v-model:value="form.name" placeholder="请输入姓名" size="large">
+            <Input v-model:value="form.name" placeholder="请输入姓名" size="large" aria-label="姓名" autocomplete="name">
               <template #prefix><UserOutlined /></template>
             </Input>
           </FormItem>
 
           <FormItem label="邮箱" name="email">
-            <Input v-model:value="form.email" placeholder="请输入邮箱" size="large">
+            <Input v-model:value="form.email" placeholder="请输入邮箱" size="large" aria-label="邮箱" autocomplete="email">
               <template #prefix><MailOutlined /></template>
             </Input>
           </FormItem>
@@ -146,6 +146,8 @@ async function handleRegister() {
               placeholder="请输入密码（至少8位）"
               type="password"
               size="large"
+              aria-label="密码"
+              autocomplete="new-password"
             >
               <template #prefix><LockOutlined /></template>
             </Input>
@@ -157,6 +159,8 @@ async function handleRegister() {
               placeholder="请再次输入密码"
               type="password"
               size="large"
+              aria-label="确认密码"
+              autocomplete="new-password"
             >
               <template #prefix><LockOutlined /></template>
             </Input>
@@ -196,6 +200,7 @@ async function handleRegister() {
   justify-content: center;
   align-items: center;
   min-height: 100dvh;
+  padding: 24px 16px;
   background: var(--bg-page);
   position: relative;
   overflow: hidden;
@@ -262,5 +267,27 @@ async function handleRegister() {
 @keyframes registerFadeIn {
   from { opacity: 0; transform: translateY(20px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* 移动端：小屏顶部对齐，便于长表单滚动 */
+@media (max-width: 480px) {
+  .register-container { align-items: flex-start; padding: 16px 12px; }
+  .register-card { width: 100%; max-width: 100%; }
+  .register-logo { width: 40px; height: 40px; margin-bottom: 10px; }
+  .register-title { font-size: 20px; }
+  .register-subtitle { font-size: 13px; }
+  .register-header { margin-bottom: 18px; }
+}
+
+/* 焦点可见性增强（键盘导航） */
+.register-form-card :deep(.ant-input:focus),
+.register-form-card :deep(.ant-input:focus-within),
+.register-form-card :deep(.ant-btn:focus-visible) {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .register-card { animation: none; }
 }
 </style>

@@ -271,6 +271,8 @@ async function handleLogin() {
                 v-model:value="form.email"
                 placeholder="请输入邮箱"
                 size="large"
+                aria-label="邮箱"
+                autocomplete="email"
               >
                 <template #prefix><MailOutlined /></template>
               </Input>
@@ -282,6 +284,8 @@ async function handleLogin() {
                 placeholder="请输入密码"
                 type="password"
                 size="large"
+                aria-label="密码"
+                autocomplete="current-password"
               >
                 <template #prefix><LockOutlined /></template>
               </Input>
@@ -395,6 +399,7 @@ async function handleLogin() {
   justify-content: center;
   align-items: center;
   min-height: 100dvh;
+  padding: 24px 16px;
   background: var(--bg-page);
   position: relative;
   overflow: hidden;
@@ -461,5 +466,28 @@ async function handleLogin() {
 @keyframes loginFadeIn {
   from { opacity: 0; transform: translateY(20px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* 移动端：小屏顶部对齐，便于长表单滚动 */
+@media (max-width: 480px) {
+  .login-container { align-items: flex-start; padding: 16px 12px; }
+  .login-card { width: 100%; max-width: 100%; }
+  .login-logo { width: 40px; height: 40px; margin-bottom: 10px; }
+  .login-title { font-size: 20px; }
+  .login-subtitle { font-size: 13px; }
+  .login-header { margin-bottom: 18px; }
+}
+
+/* 焦点可见性增强（键盘导航） */
+.login-form-card :deep(.ant-input:focus),
+.login-form-card :deep(.ant-input:focus-within),
+.login-form-card :deep(.ant-btn:focus-visible) {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* 减少动效偏好 */
+@media (prefers-reduced-motion: reduce) {
+  .login-card { animation: none; }
 }
 </style>
