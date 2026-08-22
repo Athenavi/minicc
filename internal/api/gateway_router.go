@@ -234,10 +234,15 @@ func NewGatewayRouter(
 
 	// Media
 	mediaHandler := NewMediaHandler(fileStore, authenticator)
+	mediaHandler.SetMediaRoot(cfg.StorageRoot)
 
 	// 通用分片上传（断点续传）
 	uploadHandler := NewUploadHandler(authenticator, cfg.StorageRoot)
 	uploadHandler.RegisterRoutes(mux, authMW, rlMW)
+
+	// 用户侧市场（技能/Agent/MCP 浏览与一键安装）
+	userMarketHandler := NewUserMarketHandler(cfg, pythonClient)
+	registerUserMarketRoutes(mux, userMarketHandler, authMW, rlMW)
 
 	// Billing handler (uses the same billingMgr as /submit to avoid split-brain cache)
 	billingHandler := NewBillingHandler(billingMgr, authenticator, cfg)
@@ -573,6 +578,15 @@ func registerMediaRoutes(
 
 	// Media file serving
 	mux.Handle("GET /media/", rlMW(http.StripPrefix("/media/", http.FileServer(http.Dir(storageRoot+"/media")))))
+	// 签名 URL（P0 修复）：签发 + 校验后服务
+	mux.Handle("POST /v1/media/{id}/sign", authMW(rlMW(http.HandlerFunc(mediaHandler.SignMedia))))
+	mux.Handle("GET /media/s/{assetID}", rlMW(http.HandlerFunc(mediaHandler.ServeSignedMedia)))
+}
+
+// registerUserMarketRoutes 用户侧市场路由（技能/Agent/MCP 浏览与一键安装）。
+func registerUserMarketRoutes(mux *http.ServeMux, h *UserMarketHandler, authMW, rlMW routeMiddleware) {
+	mux.Handle("GET /v1/market", authMW(rlMW(http.HandlerFunc(h.List))))
+	mux.Handle("POST /v1/market/{type}/{itemID}/install", authMW(rlMW(http.HandlerFunc(h.Install))))
 }
 
 // ── Plugins ──

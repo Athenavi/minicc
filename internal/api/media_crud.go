@@ -19,10 +19,16 @@ import (
 type MediaHandler struct {
 	store         storage.FileStore
 	authenticator *auth.Authenticator
+	root          string // 本地媒体存储根（签名下载用）
 }
 
 func NewMediaHandler(store storage.FileStore, authenticator *auth.Authenticator) *MediaHandler {
 	return &MediaHandler{store: store, authenticator: authenticator}
+}
+
+// SetMediaRoot 注入本地媒体存储根（路由装配时调用）。
+func (h *MediaHandler) SetMediaRoot(root string) {
+	h.root = root
 }
 
 // 鈹€鈹€ Types 鈹€鈹€

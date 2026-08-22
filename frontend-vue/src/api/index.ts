@@ -252,3 +252,60 @@ export function createSSEConnection(sessionId: string, onMessage: (data: any) =>
 }
 
 export default api
+
+
+// ─────────────────────────────────────────────────────────────
+// 六大工作台互联互通 · 市场与媒体签名（2026-08-22）
+// ─────────────────────────────────────────────────────────────
+
+// ── 市场：技能 / Agent / MCP 浏览与一键安装 ──
+export type MarketType = 'skill' | 'agent' | 'mcp'
+
+export interface MarketItem {
+  id: string
+  type: MarketType
+  name: string
+  version: string
+  status: string
+  manifest: Record<string, any>
+  installed?: boolean
+}
+
+export async function listMarket(type: MarketType): Promise<MarketItem[]> {
+  const resp = await api.get('/v1/market', { params: { type } })
+  return resp.data?.items || []
+}
+
+export async function installMarket(type: MarketType, itemID: string): Promise<any> {
+  const resp = await api.post(`/v1/market/${type}/${itemID}/install`)
+  return resp.data
+}
+
+// ── 媒体签名 URL（短时效，防裸公开猜测）──
+const signedMediaCache = new Map<string, { url: string; exp: number }>()
+
+export async function signMediaUrl(id: string): Promise<string> {
+  const resp = await api.post(`/v1/media/${id}/sign`)
+  return resp.data?.url || ''
+}
+
+/**
+ * 解析媒体资源为可访问 URL：非 /media/ 前缀(绝对/签名/data:)直接返回；
+ * /media/ 公开路径统一改走签名 URL（带 12 分钟本地缓存）。
+ */
+export async function resolveMediaUrl(asset: { id?: string; file_url?: string }): Promise<string> {
+  const f = asset?.file_url || ''
+  if (f && !f.startsWith('/media/')) return f
+  if (!asset?.id) return f
+  const cached = signedMediaCache.get(asset.id)
+  if (cached && cached.exp > Date.now()) return cached.url
+  try {
+    const url = await signMediaUrl(asset.id)
+    signedMediaCache.set(asset.id, { url, exp: Date.now() + 12 * 60 * 1000 })
+    return url
+  } catch {
+    return f
+  }
+}
+
+export default api

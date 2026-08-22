@@ -86,6 +86,13 @@ func main() {
 		}
 	}
 
+	// 幂等播种市场目录示例（技能/Agent/MCP；目录非空则跳过）
+	if pgConnected {
+		if err := db.SeedMarketCatalog(ctx, db.Pool); err != nil {
+			slog.Warn("seed market catalog failed", "error", err)
+		}
+	}
+
 	// ── Redis ──
 	var atomicRedis *db.AtomicRedis
 	redisCfg := db.RedisConfig{

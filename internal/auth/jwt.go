@@ -25,6 +25,11 @@ type Authenticator struct {
 	expiration time.Duration
 }
 
+// SigningSecret 返回签名密钥（供媒体签名 URL 等复用同一密钥）。
+func (a *Authenticator) SigningSecret() []byte {
+	return a.secret
+}
+
 func NewAuthenticator(secret string, expiration time.Duration) *Authenticator {
 	return &Authenticator{
 		secret:     []byte(secret),

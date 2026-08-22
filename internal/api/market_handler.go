@@ -40,7 +40,7 @@ type MarketGrant struct {
 
 // 合法枚举（与迁移 CHECK 约束一致）
 var (
-	validMarketItemTypes = map[string]bool{"plugin": true, "skill": true}
+	validMarketItemTypes = map[string]bool{"plugin": true, "skill": true, "agent": true, "mcp": true}
 )
 
 var validMarketItemName = regexp.MustCompile(`^[a-zA-Z0-9_.-]{1,128}$`)

@@ -91,6 +91,12 @@ func (h *AgentHandler) seedPresetAgents() {
 	if err := db.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM agents WHERE tenant_id = $1`, ownerTenantID).Scan(&n); err != nil || n > 0 {
 		return
 	}
+	// 用户级隔离：预置 Agent 归属该租户首个 owner 用户
+	var ownerUserID string
+	if err := db.Pool.QueryRow(ctx, `SELECT id::text FROM users WHERE tenant_id = $1 AND role = 'owner' ORDER BY created_at LIMIT 1`, ownerTenantID).Scan(&ownerUserID); err != nil || ownerUserID == "" {
+		slog.Warn("seed preset agents: no owner user", "tenant", ownerTenantID)
+		return
+	}
 
 	presets := []presetAgent{
 		{
@@ -143,9 +149,9 @@ func (h *AgentHandler) seedPresetAgents() {
 		toolsJSON, _ := json.Marshal(p.tools)
 		llmJSON, _ := json.Marshal(p.llm)
 		if _, err := db.Pool.Exec(ctx,
-			`INSERT INTO agents (id, tenant_id, name, description, system_prompt, tools, llm_config, max_turns, timeout_seconds, enabled)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)`,
-			agentID, ownerTenantID, p.name, p.description, p.prompt,
+			`INSERT INTO agents (id, tenant_id, user_id, name, description, system_prompt, tools, llm_config, max_turns, timeout_seconds, enabled)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true)`,
+			agentID, ownerTenantID, ownerUserID, p.name, p.description, p.prompt,
 			string(toolsJSON), string(llmJSON), p.turns, 120); err != nil {
 			slog.Warn("seed preset agent", "name", p.name, "error", err)
 		}
@@ -159,7 +165,7 @@ func (h *AgentHandler) List(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	rows, err := db.Pool.Query(r.Context(),
 		`SELECT id::text, name, COALESCE(description,''), COALESCE(system_prompt,''), COALESCE(tools,'[]'::jsonb), COALESCE(llm_config,'{}'::jsonb), max_turns, timeout_seconds, enabled, created_at, updated_at
-		 FROM agents WHERE tenant_id = $1 ORDER BY created_at DESC`, claims.TenantID)
+		 FROM agents WHERE tenant_id = $1 AND user_id = $2 ORDER BY created_at DESC`, claims.TenantID, claims.UserID)
 	if err != nil {
 		logAndRespond(w, err, http.StatusInternalServerError, "list agents failed")
 		return
@@ -214,9 +220,9 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, err = db.Pool.Exec(r.Context(),
-		`INSERT INTO agents (id, tenant_id, name, description, system_prompt, tools, llm_config, max_turns, timeout_seconds, enabled)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-		id, claims.TenantID, body.Name, body.Description, body.SystemPrompt,
+		`INSERT INTO agents (id, tenant_id, user_id, name, description, system_prompt, tools, llm_config, max_turns, timeout_seconds, enabled)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+		id, claims.TenantID, claims.UserID, body.Name, body.Description, body.SystemPrompt,
 		string(toolsJSON), string(llmJSON), body.MaxTurns, body.TimeoutSeconds, body.Enabled)
 	if err != nil {
 		logAndRespond(w, err, http.StatusInternalServerError, "create agent failed")
@@ -236,7 +242,7 @@ func (h *AgentHandler) Get(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "id is required")
 		return
 	}
-	a, err := h.queryAgent(r.Context(), claims.TenantID, agentID)
+	a, err := h.queryAgent(r.Context(), claims.TenantID, claims.UserID, agentID)
 	if err != nil {
 		NotFound(w, "agent not found")
 		return
@@ -308,11 +314,11 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := db.Pool.Exec(r.Context(),
-		`UPDATE agents SET `+joinComma(sets)+`, updated_at = NOW() WHERE tenant_id = $`+itoa(len(args)-1)+` AND id = $`+itoa(len(args)), args...); err != nil {
+		`UPDATE agents SET `+joinComma(sets)+`, updated_at = NOW() WHERE tenant_id = $`+itoa(len(args)-1)+` AND id = $`+itoa(len(args))+" AND user_id = $"+itoa(len(args)+1), append(args, claims.UserID)...); err != nil {
 		logAndRespond(w, err, http.StatusInternalServerError, "update agent failed")
 		return
 	}
-	a, err := h.queryAgent(r.Context(), claims.TenantID, agentID)
+	a, err := h.queryAgent(r.Context(), claims.TenantID, claims.UserID, agentID)
 	if err != nil {
 		NotFound(w, "agent not found")
 		return
@@ -328,7 +334,7 @@ func (h *AgentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "id is required")
 		return
 	}
-	if _, err := db.Pool.Exec(r.Context(), `DELETE FROM agents WHERE tenant_id = $1 AND id = $2`, claims.TenantID, agentID); err != nil {
+	if _, err := db.Pool.Exec(r.Context(), `DELETE FROM agents WHERE tenant_id = $1 AND id = $2 AND user_id = $3`, claims.TenantID, agentID, claims.UserID); err != nil {
 		logAndRespond(w, err, http.StatusInternalServerError, "delete agent failed")
 		return
 	}
@@ -358,7 +364,7 @@ func (h *AgentHandler) Run(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	agent, err := h.queryAgent(r.Context(), claims.TenantID, agentID)
+	agent, err := h.queryAgent(r.Context(), claims.TenantID, claims.UserID, agentID)
 	if err != nil {
 		NotFound(w, "agent not found")
 		return
@@ -504,11 +510,11 @@ func (h *AgentHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 
 // ── helpers ───────────────────────────────────────────────────
 
-func (h *AgentHandler) queryAgent(ctx context.Context, tenantID, agentID string) (*Agent, error) {
+func (h *AgentHandler) queryAgent(ctx context.Context, tenantID, userID, agentID string) (*Agent, error) {
 	var a Agent
 	err := db.Pool.QueryRow(ctx,
 		`SELECT id::text, name, COALESCE(description,''), COALESCE(system_prompt,''), COALESCE(tools,'[]'::jsonb), COALESCE(llm_config,'{}'::jsonb), max_turns, timeout_seconds, enabled, created_at, updated_at
-		 FROM agents WHERE tenant_id = $1 AND id = $2`, tenantID, agentID).
+		 FROM agents WHERE tenant_id = $1 AND id = $2 AND user_id = $3`, tenantID, userID, agentID).
 		Scan(&a.ID, &a.Name, &a.Description, &a.SystemPrompt, &a.Tools, &a.LLMConfig,
 			&a.MaxTurns, &a.TimeoutSeconds, &a.Enabled, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
