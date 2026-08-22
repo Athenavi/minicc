@@ -366,7 +366,9 @@ async def submit_chat(request: Request):
     if not user_input.strip():
         return {"success": False, "error": "message is required"}
 
-    tenant_id = str(body.get("tenant_id") or request.query_params.get("user_id") or "")
+    # S 多租户隔离:优先 body → tenant_id query param(Go 网关注入 claims.TenantID)→ 拒绝
+    # 历史遗留:曾用 user_id 兜底,但 user_id 不是租户标识,会导致跨租户数据访问
+    tenant_id = str(body.get("tenant_id") or request.query_params.get("tenant_id") or "")
     if not tenant_id:
         return {"success": False, "error": "tenant_id is required"}
 

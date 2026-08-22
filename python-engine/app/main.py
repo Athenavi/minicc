@@ -549,6 +549,15 @@ async def agent_submit(
     import app.tools.web  # noqa: F401 — 网页搜索/抓取
     import app.tools.run_code  # noqa: F401 — PTC 模式
     import app.tools.mode_admin  # noqa: F401 — 创造模式
+    # ── 六大工作台互联互通：注册各工作台工具,使 CHAT 的 LLM 可通过 function-calling 调用 ──
+    import app.tools.skill  # noqa: F401 — SKILLS 工作台 (skill_list/skill_run/skill_install)
+    import app.tools.kb  # noqa: F401 — KNOWLEDGE 工作台 (kb_list/kb_search)
+    import app.tools.agent  # noqa: F401 — AGENTS 工作台 (agent_dispatch 等)
+    import app.workflow.tools  # noqa: F401 — WORKFLOW 工作台 (workflow_run/workflow_list)
+    import app.tools.memory  # noqa: F401 — 长期记忆 (跨工作台共享上下文)
+    import app.tools.edit_file  # noqa: F401 — 文件编辑 (创造模式常用)
+    import app.tools.browser  # noqa: F401 — 浏览器自动化 (PLUGINS/MCP 扩展)
+    # PLUGINS 工作台: MCP 工具由 app.plugins.pool / app.mcp.registry 动态注册,启动时已加载
 
     # ── 解析附件文件内容并注入到用户消息中 ──
     raw_content = body.get("content", "")

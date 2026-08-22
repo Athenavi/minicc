@@ -357,7 +357,7 @@ func (h *AgentHandler) Run(w http.ResponseWriter, r *http.Request) {
 	if timeout <= 0 {
 		timeout = 120 * time.Second
 	}
-	go h.executeAgent(agent, body.Task, sessionID, claims.UserID, timeout)
+	go h.executeAgent(agent, body.Task, sessionID, claims.UserID, claims.TenantID, timeout)
 
 	OK(w, AgentSession{
 		ID:        sessionID,
@@ -370,7 +370,7 @@ func (h *AgentHandler) Run(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *AgentHandler) executeAgent(agent *Agent, task, sessionID, userID string, timeout time.Duration) {
+func (h *AgentHandler) executeAgent(agent *Agent, task, sessionID, userID, tenantID string, timeout time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
@@ -396,7 +396,8 @@ func (h *AgentHandler) executeAgent(agent *Agent, task, sessionID, userID string
 		"max_turns":    agent.MaxTurns,
 		"max_tokens":   llmInt(llm, "max_tokens", 4096),
 		"temperature":  llmFloat(llm, "temperature", 0.6),
-		"tenant_id":    userID,
+		"tenant_id":    tenantID, // S 多租户隔离:用 JWT claims 的 TenantID,不能用 userID
+		"user_id":      userID,
 		"session_id":   sessionID,
 	}
 

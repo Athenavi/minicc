@@ -12,11 +12,18 @@
     "office-word-binary",
     "open-document",
     "spreadsheet-openxml",
+    "spreadsheet-dbf",
+    "apple-pages",
+    "apple-numbers",
+    "apple-keynote",
+    "office-wordperfect",
+    "office-hangul",
     "drawing",
     "model",
     "archive",
     "email",
     "epub",
+    "ebook-fb2",
     "umd",
     "code",
     "markdown",
@@ -28,7 +35,7 @@
     "data-asset",
     "eda"
   ],
-  "copiedAt": "2026-08-21T13:29:59.404Z",
+  "copiedAt": "2026-08-22T05:13:58.466Z",
   "assets": [
     {
       "rendererId": "pdf",
@@ -170,7 +177,9 @@
       "rendererId": "cad",
       "id": "cad-wasm-directory",
       "to": "X:\\project\\minicc\\frontend-vue\\public\\wasm\\cad",
-      "copied": true
+      "copied": true,
+      "sourcePackage": "@flyfish-dev/cad-viewer",
+      "sourceVersion": "0.8.0"
     },
     {
       "rendererId": "model",
