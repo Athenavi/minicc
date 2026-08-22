@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"path/filepath"
 	"net/url"
 	"strings"
 	"sync"
@@ -576,8 +577,19 @@ func registerMediaRoutes(
 	mux.Handle("POST /v1/media/{id}/share", authMW(rlMW(http.HandlerFunc(mediaHandler.Share))))
 	mux.Handle("DELETE /v1/media/{id}", authMW(rlMW(http.HandlerFunc(mediaHandler.Delete))))
 
-	// Media file serving
-	mux.Handle("GET /media/", rlMW(http.StripPrefix("/media/", http.FileServer(http.Dir(storageRoot+"/media")))))
+	// Media file serving（P0 存储型 XSS 防护：html/xml 直接拒服务；svg 以 CSP sandbox 输出；全量 nosniff）
+	mediaFileServer := http.StripPrefix("/media/", http.FileServer(http.Dir(storageRoot+"/media")))
+	mux.Handle("GET /media/", rlMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch strings.ToLower(filepath.Ext(r.URL.Path)) {
+		case ".html", ".htm", ".xml", ".xhtml", ".swf":
+			http.NotFound(w, r)
+			return
+		case ".svg":
+			w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+		}
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		mediaFileServer.ServeHTTP(w, r)
+	})))
 	// 签名 URL（P0 修复）：签发 + 校验后服务
 	mux.Handle("POST /v1/media/{id}/sign", authMW(rlMW(http.HandlerFunc(mediaHandler.SignMedia))))
 	mux.Handle("GET /media/s/{assetID}", rlMW(http.HandlerFunc(mediaHandler.ServeSignedMedia)))

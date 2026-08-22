@@ -122,6 +122,17 @@ func (h *UploadHandler) Init(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "invalid file name")
 		return
 	}
+	// P0 存储型 XSS 防护（分片路径补齐）：可执行/脚本 MIME 与 html/xml 类扩展名一律拒绝
+	// （直传路径已有 isExecutableMIME；此处覆盖分片上传，避免 .html 被按 text/html 同源输出）
+	if isExecutableMIME(body.MimeType, body.Name) {
+		BadRequest(w, "file type not allowed")
+		return
+	}
+	if ext := strings.ToLower(filepath.Ext(body.Name)); ext == ".html" || ext == ".htm" ||
+		ext == ".xml" || ext == ".xhtml" || ext == ".swf" {
+		BadRequest(w, "file type not allowed: " + ext)
+		return
+	}
 	if body.Purpose == "" {
 		body.Purpose = "generic"
 	}
