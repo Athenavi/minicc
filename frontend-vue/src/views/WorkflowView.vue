@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { VueFlow, useVueFlow, Handle, Position } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
@@ -11,13 +12,14 @@ import {
 import {
   SaveOutlined, PlayCircleOutlined, DeleteOutlined,
   CloseOutlined, UnorderedListOutlined, CopyOutlined,
-  AlignCenterOutlined, HistoryOutlined,
+  AlignCenterOutlined, HistoryOutlined, MessageOutlined,
 } from '@ant-design/icons-vue'
 import { api } from '../api'
 import { useAuthStore } from '../stores/auth'
 import type { Node, Edge, Connection } from '@vue-flow/core'
 
 const authStore = useAuthStore()
+const router = useRouter()
 
  // S 安全：user_id 从 authStore.user 读取（token 已迁至 httpOnly cookie，JS 不可读）
 function getUserIdFromToken(): string | null {
@@ -527,6 +529,12 @@ function resetCanvas() {
   nodeCounter = 0
 }
 
+// ── 互联互通：运行到对话（有 id 传 id，未保存则传画布名称，由后端兼容）──
+function runInChat() {
+  const value = workflowId.value || workflowName.value || '未命名工作流'
+  router.push({ path: '/chat', query: { workflow: value, mode: 'workflow' } })
+}
+
 // ── Mount ──
 onMounted(() => {
   loadWorkflows()
@@ -556,6 +564,10 @@ function statusClass(nodeProps: any): string {
         <Button size="small" type="primary" ghost @click="executeWorkflow" :disabled="isExecuting">
           <template #icon><PlayCircleOutlined /></template>
           {{ isExecuting ? '执行中…' : '执行' }}
+        </Button>
+        <Button size="small" title="在当前对话中运行该工作流" @click="runInChat">
+          <template #icon><MessageOutlined /></template>
+          运行到对话
         </Button>
         <Button size="small" title="自动布局 (按层排列)" @click="autoLayout">
           <template #icon><AlignCenterOutlined /></template>

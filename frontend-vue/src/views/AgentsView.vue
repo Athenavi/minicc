@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, markRaw } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   Button, Tabs, TabPane, Modal, Input, InputNumber, Switch, Tag,
   Alert, Dropdown, Menu, MenuItem, message,
@@ -8,6 +9,7 @@ import {
   PlusOutlined, PlayCircleOutlined, EditOutlined, DeleteOutlined,
   StopOutlined, ClockCircleOutlined, CheckCircleOutlined,
   CloseCircleOutlined, SyncOutlined, RobotOutlined, HistoryOutlined,
+  MessageOutlined,
 } from '@ant-design/icons-vue'
 import {
   listAgents, createAgent, updateAgent, deleteAgent,
@@ -25,6 +27,7 @@ const sessions = ref<AgentSession[]>([])
 const loadingSessions = ref(false)
 const errorSessions = ref(false)
 const activeTab = ref('agents')
+const router = useRouter()
 
 async function loadAgents() {
   loadingAgents.value = true
@@ -181,6 +184,11 @@ function requestDelete(a: Agent) {
       }
     },
   })
+}
+
+// ── 互联互通：在对话中发起会话（携带 Agent 配置上下文）──
+function chatWithAgent(a: Agent) {
+  router.push({ path: '/chat', query: { agent: a.id } })
 }
 
 // ── 运行 + 轮询 ──
@@ -351,6 +359,10 @@ function toolCount(a: Agent): number {
               <Button type="primary" size="small" :disabled="!a.enabled" @click="openRun(a)">
                 <template #icon><PlayCircleOutlined /></template>
                 运行
+              </Button>
+              <Button size="small" title="在对话中发起会话" @click="chatWithAgent(a)">
+                <template #icon><MessageOutlined /></template>
+                发起对话
               </Button>
             </div>
           </div>

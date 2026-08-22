@@ -1,16 +1,19 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { Button, Input, Modal, Checkbox, Alert, message } from 'ant-design-vue'
-import { MenuOutlined, CopyOutlined, LinkOutlined } from '@ant-design/icons-vue'
+import { MenuOutlined, CopyOutlined, LinkOutlined, CloseOutlined } from '@ant-design/icons-vue'
 import {
   api, createSSEConnection, submitApproval,
   updateConversation, createShare, getActiveShare, revokeShare,
+  getChatSessionMessages,
 } from '../api'
 import type { ShareInfo } from '../api'
 import { useAuthStore } from '../stores/auth'
 import { useThemeStore } from '../stores/theme'
+import { useRoute, useRouter } from 'vue-router'
 import ChatSidePanel from '../components/chat/ChatSidePanel.vue'
 import MessageList from '../components/chat/MessageList.vue'
+import MessageItem from '../components/chat/MessageItem.vue'
 import ChatEmptyHero from '../components/chat/ChatEmptyHero.vue'
 import ChatInput from '../components/chat/ChatInput.vue'
 import CallChainTimeline from '../components/CallChainTimeline.vue'
@@ -20,6 +23,8 @@ import type { ChatItem, ChatSession, ChatAttachment } from '../components/chat/c
 
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
+const route = useRoute()
+const router = useRouter()
 
 // ── 会话状态 ──
 const sessions = ref<ChatSession[]>([])
@@ -63,6 +68,227 @@ const modeOptions = [
 ]
 const mode = ref('normal')
 
+// ── 互联互通：统一任务模式 + 上下文芯片（与 SSE 流式并列的新路径）──
+// 路由 query 约定（由 WorkstationNav / 各工作台入口发起）：
+//   ?task=<sessionId>          统一会话（拉历史 + 继续追问）
+//   ?task=&error=xxx           仅错误提示
+//   ?kb=<id> / ?agent=<id> / ?skill=<name> / ?workflow=<id|name>   上下文附加
+//   ?mode=<auto|agent|workflow> 创建时模式（WorkflowView 传 workflow）
+interface ContextChip {
+  type: 'kb' | 'agent' | 'skill' | 'workflow'
+  label: string
+  value: string
+}
+const contextChips = ref<ContextChip[]>([])
+// Agent 配置（从 /v1/agents 尽力取；取不到则只传 agent_id，由后端兼容）
+const agentCfg = ref<{ id: string; name?: string; system_prompt?: string; model?: string; max_turns?: number } | null>(null)
+const errorBanner = ref('')          // query.error 提示条
+const unifiedSessionId = ref('')     // 统一任务会话 id（query.task）
+const unifiedSubmitMode = ref('auto') // 会话创建时的 mode（shared_context.mode 优先）
+const unifiedMode = computed(() => !!unifiedSessionId.value)
+let appliedQueryKey = ''
+
+async function applyRouteQuery() {
+  const q = route.query
+  const key = JSON.stringify(q)
+  if (key === appliedQueryKey) return
+  appliedQueryKey = key
+
+  const task = typeof q.task === 'string' && q.task.trim() ? q.task.trim() : ''
+  // task 变更 / 退出统一模式 → 重置消息区（避免污染普通 SSE 会话）
+  if (task !== unifiedSessionId.value) {
+    unifiedSessionId.value = task
+    items.value = []
+    activeSessionId.value = ''
+    currentTraceId.value = ''
+    loading.value = false
+    stopTurnTimer()
+    if (activeSSE) { activeSSE.close(); activeSSE = null }
+    if (task) await loadUnifiedSession(task)
+  }
+  errorBanner.value = typeof q.error === 'string' && q.error ? q.error : ''
+  await initContextChips(q)
+}
+
+async function initContextChips(q: Record<string, any>) {
+  const kb = typeof q.kb === 'string' && q.kb ? q.kb : ''
+  const agent = typeof q.agent === 'string' && q.agent ? q.agent : ''
+  const skill = typeof q.skill === 'string' && q.skill ? q.skill : ''
+  const workflow = typeof q.workflow === 'string' && q.workflow ? q.workflow : ''
+  const chips: ContextChip[] = []
+  if (kb) chips.push({ type: 'kb', label: `知识库 #${kb.slice(0, 8)}`, value: kb })
+  if (agent) chips.push({ type: 'agent', label: `Agent #${agent.slice(0, 8)}`, value: agent })
+  if (skill) chips.push({ type: 'skill', label: `技能 ${skill}`, value: skill })
+  if (workflow) chips.push({ type: 'workflow', label: `工作流 ${workflow}`, value: workflow })
+  contextChips.value = chips
+  agentCfg.value = null
+  // ── 尽力补全展示名 / Agent 配置（失败则保留 id 占位）──
+  if (kb) {
+    try {
+      const res = await api.get(`/v1/kb/${encodeURIComponent(kb)}`)
+      const d = res.data?.data || res.data
+      if (d?.name) {
+        const c = contextChips.value.find(x => x.type === 'kb')
+        if (c) c.label = `知识库 ${d.name}`
+      }
+    } catch { /* 保留 id 占位 */ }
+  }
+  if (agent) {
+    try {
+      const res = await api.get('/v1/agents')
+      const list = res.data?.data || []
+      const a = list.find((x: any) => x.id === agent)
+      if (a) {
+        agentCfg.value = {
+          id: a.id,
+          name: a.name,
+          system_prompt: a.system_prompt,
+          model: a.llm_config?.model,
+          max_turns: a.max_turns,
+        }
+        const c = contextChips.value.find(x => x.type === 'agent')
+        if (c && a.name) c.label = `Agent ${a.name}`
+      }
+    } catch { /* 取不到配置则只传 agent_id，由后端兼容 */ }
+  }
+  if (workflow) {
+    try {
+      const res = await api.get('/v1/graphs')
+      const list = res.data?.data || []
+      const rec = list.find((x: any) => x.id === workflow)
+      if (rec?.name) {
+        const c = contextChips.value.find(x => x.type === 'workflow')
+        if (c) c.label = `工作流 ${rec.name}`
+      }
+    } catch { /* 无列表时保留原值 */ }
+  }
+}
+
+function removeContextChip(type: ContextChip['type']) {
+  contextChips.value = contextChips.value.filter(c => c.type !== type)
+  if (type === 'agent') agentCfg.value = null
+}
+
+/** 组装发送时附带的 context（普通 SSE 模式与统一任务模式共用） */
+function buildContext(): Record<string, any> | undefined {
+  const ctx: Record<string, any> = {}
+  const kb = contextChips.value.find(c => c.type === 'kb')
+  if (kb) ctx.kb_id = kb.value
+  const agent = contextChips.value.find(c => c.type === 'agent')
+  if (agent) {
+    ctx.agent_id = agent.value
+    if (agentCfg.value) {
+      ctx.agent = {
+        ...(agentCfg.value.name ? { name: agentCfg.value.name } : {}),
+        ...(agentCfg.value.system_prompt ? { system_prompt: agentCfg.value.system_prompt } : {}),
+        ...(agentCfg.value.model ? { model: agentCfg.value.model } : {}),
+        ...(agentCfg.value.max_turns ? { max_turns: agentCfg.value.max_turns } : {}),
+      }
+    }
+  }
+  const skills = contextChips.value.filter(c => c.type === 'skill').map(c => c.value)
+  if (skills.length) ctx.skill_names = skills
+  const wf = contextChips.value.find(c => c.type === 'workflow')
+  if (wf) ctx.workflow_id = wf.value
+  return Object.keys(ctx).length ? ctx : undefined
+}
+
+/** 拉取统一会话历史（GET /v1/chat/sessions/{id}/messages） */
+async function loadUnifiedSession(sessionId: string) {
+  loading.value = true
+  try {
+    const res = await getChatSessionMessages(sessionId)
+    const d = (res?.messages ? res : (res?.data || {})) as any
+    const list = Array.isArray(d.messages) ? d.messages : []
+    // 会话创建时的 mode（shared_context 优先，其次 query.mode，兜底 auto）
+    const sharedMode = d.shared_context?.mode
+    unifiedSubmitMode.value =
+      (typeof sharedMode === 'string' && sharedMode) ||
+      (typeof route.query.mode === 'string' && route.query.mode) ||
+      'auto'
+    items.value = buildUnifiedItems(list)
+  } catch {
+    errorBanner.value = errorBanner.value || '统一会话加载失败，可直接发送消息继续';
+  } finally {
+    loading.value = false
+  }
+}
+
+/** 统一会话消息 → 现有 ChatItem（user/assistant 映射现有消息组件；metadata 带 kb 时插知识库引用标签） */
+function buildUnifiedItems(list: any[]): ChatItem[] {
+  const out: ChatItem[] = []
+  ;(list || []).forEach((m: any, idx: number) => {
+    if (!m || (m.role !== 'user' && m.role !== 'assistant')) return
+    const content = typeof m.content === 'string' ? m.content : ''
+    if (!content) return
+    const time = formatClock(m.timestamp || m.created_at)
+    if (m.role === 'user') {
+      out.push({ kind: 'text', role: 'user', content: stripUserInputTag(content), time, id: `uni_u_${idx}` })
+    } else {
+      const { reasoning, body } = splitThinking(content, { loose: true })
+      if (reasoning) out.push({ kind: 'reasoning', content: reasoning, time, id: `uni_r_${idx}` })
+      if (body) {
+        out.push({ kind: 'text', role: 'assistant', content: body, time, id: `uni_a_${idx}` })
+        const meta = m.metadata || {}
+        const n = typeof meta.kb_hits === 'number' ? meta.kb_hits : meta.kb_id ? 1 : 0
+        if (meta.kb_id || n > 0) {
+          out.push({ kind: 'kb_hits', count: n, id: `uni_k_${idx}` } as unknown as ChatItem)
+        }
+      }
+    }
+  })
+  return out
+}
+
+/** 统一任务模式发送：POST /v1/chat/submit，返回 output 追加为 assistant 消息 */
+async function sendUnified(text: string, attachments?: ChatAttachment[]) {
+  if (!unifiedSessionId.value) return
+  loading.value = true
+  startTurnTimer()
+  appendUserText(text, attachments)
+  const userItemId = items.value[items.value.length - 1]?.id
+  currentTraceId.value = ''
+  try {
+    const res = await api.post('/v1/chat/submit', {
+      message: text,
+      session_id: unifiedSessionId.value,
+      mode: unifiedSubmitMode.value || 'auto',
+      context: buildContext(),
+    })
+    const d = res.data?.data !== undefined ? res.data.data : (res.data || {})
+    if (d.success === false) throw new Error(d.error || '请求失败')
+    currentTraceId.value = d.trace_id || ''
+    appendAssistantWithKb(d.output || '', d.metadata || {})
+  } catch (e: any) {
+    markMessageFailed(userItemId, e.message || '网络错误')
+    message.error('发送失败: ' + (e.message || '网络错误'))
+  } finally {
+    loading.value = false
+    stopTurnTimer()
+  }
+}
+
+/** 追加 assistant 消息；metadata 有 kb_hits/kb_id 时在其下显示“引用了知识库(×N)”小标签 */
+function appendAssistantWithKb(content: string, meta: any) {
+  const { reasoning, body } = splitThinking(String(content))
+  if (reasoning) items.value.push({ kind: 'reasoning', content: reasoning, id: genItemId() })
+  if (body) {
+    items.value.push({ kind: 'text', role: 'assistant', content: body, id: genItemId() })
+    const n = typeof meta.kb_hits === 'number' ? meta.kb_hits : meta.kb_id ? 1 : 0
+    if (meta.kb_id || n > 0) {
+      items.value.push({ kind: 'kb_hits', count: n, id: genItemId() } as unknown as ChatItem)
+    }
+  }
+}
+
+// 统一任务模式：新消息后自动滚到底部
+watch(() => items.value.length, async () => {
+  if (!unifiedMode.value) return
+  await nextTick()
+  const el = document.querySelector<HTMLElement>('.unified-list')
+  if (el) el.scrollTop = el.scrollHeight
+})
+
 // 侧面板（主从时间线：轨迹 / 会话历史）
 const panelOpen = ref(false)
 const panelView = ref<'trajectory' | 'sessions'>('trajectory')
@@ -103,10 +329,15 @@ function persistSessions() { localStorage.setItem('chat_sessions', JSON.stringif
 
 // ── 会话 CRUD（保留原逻辑） ──
 onMounted(async () => {
+  // 互联互通：解析 /chat query（task / error / kb / agent / skill / workflow）
+  await applyRouteQuery()
   await loadSessions()
-  if (sessions.value.length > 0) {
+  // 统一任务模式不自动切换普通会话；其余保持原有行为
+  if (!unifiedMode.value && sessions.value.length > 0) {
     await switchSession(sessions.value[0].id)
   }
+  // 互联互通：同一路由内 query 变化（如 WorkstationNav 再次跳转）
+  watch(() => route.query, () => applyRouteQuery())
   // P2-G: 监听网络在线/离线状态
   window.addEventListener('online', onOnline)
   window.addEventListener('offline', onOffline)
@@ -293,6 +524,15 @@ async function createSession() {
 }
 
 async function switchSession(id: string) {
+  // 互联互通：从统一任务模式切到普通会话 → 移除 task/error（保留 kb/agent/skill/workflow 上下文）
+  if (unifiedMode.value && unifiedSessionId.value) {
+    const q = { ...route.query }
+    delete q.task
+    delete q.error
+    await router.replace({ path: '/chat', query: q })
+    appliedQueryKey = JSON.stringify(q)
+    unifiedSessionId.value = ''
+  }
   if (id === activeSessionId.value) return
   activeSessionId.value = id; items.value = []; loading.value = true
   hasMore.value = false; earliestCursor.value = ''; loadingEarlier.value = false
@@ -719,6 +959,11 @@ function onSSEMessage(raw: any) {
 }
 
 async function sendMessage(text: string, attachments?: ChatAttachment[]) {
+  // 互联互通：统一任务模式 → POST /v1/chat/submit（与 SSE 流式并列的新路径）
+  if (unifiedMode.value && unifiedSessionId.value) {
+    await sendUnified(text, attachments)
+    return
+  }
   loading.value = true
   startTurnTimer()
   resetStreamState()
@@ -742,6 +987,9 @@ async function sendMessage(text: string, attachments?: ChatAttachment[]) {
       },
     )
     const body: any = { content: text, session_id: sessionId, llm_config: { mode: mode.value } }
+    // 互联互通：上下文附加（知识库/Agent/技能/工作流，普通 SSE 模式同样携带）
+    const ctx = buildContext()
+    if (ctx) body.context = ctx
     if (attachments?.length) {
       body.attachments = attachments.map(a => ({ id: a.id, name: a.name, mime_type: a.mimeType, url: a.url, is_image: a.isImage }))
     }
@@ -851,8 +1099,8 @@ function continueGeneration() {
         <div class="chat-toolbar">
           <div class="toolbar-side" aria-hidden="true" />
           <div class="toolbar-center">
-            <span class="toolbar-title">{{ activeSession?.title || 'MiniCC' }}</span>
-            <span class="toolbar-mode">{{ modeOptions.find(o => o.value === mode)?.label || '常规' }}</span>
+            <span class="toolbar-title">{{ unifiedMode ? '统一任务' : (activeSession?.title || 'MiniCC') }}</span>
+            <span class="toolbar-mode">{{ unifiedMode ? (unifiedSubmitMode || 'auto') : (modeOptions.find(o => o.value === mode)?.label || '常规') }}</span>
           </div>
           <div class="toolbar-side toolbar-actions">
             <Button
@@ -897,7 +1145,47 @@ function continueGeneration() {
           </div>
         </div>
 
-        <ChatEmptyHero v-if="items.length === 0 && !loading" @suggest="sendMessage" />
+        <!-- 互联互通：错误提示条（query.error） -->
+        <div v-if="errorBanner" class="unified-error-banner">
+          <span class="ueb-text">{{ errorBanner }}</span>
+          <CloseOutlined class="ueb-close" title="关闭" @click="errorBanner = ''" />
+        </div>
+
+        <!-- 互联互通：当前上下文芯片（知识库 / Agent / 技能 / 工作流，可移除） -->
+        <div v-if="contextChips.length" class="context-chips">
+          <span class="ctx-label">当前上下文</span>
+          <span v-for="c in contextChips" :key="c.type" class="ctx-chip">
+            {{ c.label }}
+            <CloseOutlined class="ctx-remove" :title="`移除${c.label}`" @click="removeContextChip(c.type)" />
+          </span>
+        </div>
+
+        <!-- 互联互通：统一任务模式（WorkstationNav 发起；POST /v1/chat/submit，不走 SSE） -->
+        <template v-if="unifiedMode">
+          <div v-if="loading" class="turn-status">思考中<template v-if="turnElapsed >= 2">&nbsp;·&nbsp;{{ turnElapsed }}s</template></div>
+          <div v-if="!items.length && !loading" class="unified-empty">统一任务会话已就绪，直接发送消息即可继续追问</div>
+          <div class="unified-list">
+            <template v-for="(it, i) in items" :key="it.id ?? i">
+              <MessageItem
+                v-if="it.kind === 'text' || it.kind === 'reasoning'"
+                :item="it"
+                @retry-from="retryFromUserMessage"
+                @regenerate="regenerateAssistant"
+                @continue="continueGeneration"
+                @retry-failed="retryFailedMessage"
+              />
+              <div v-else-if="(it as any).kind === 'kb_hits'" class="kb-hits-tag">引用了知识库（×{{ (it as any).count || 1 }}）</div>
+            </template>
+          </div>
+          <CallChainTimeline
+            v-if="currentTraceId && !loading"
+            :trace-id="currentTraceId"
+            :tenant-id="authStore.user?.tenant_id || ''"
+          />
+        </template>
+
+        <!-- 原有 SSE 流式模式 -->
+        <ChatEmptyHero v-else-if="items.length === 0 && !loading" @suggest="sendMessage" />
         <template v-else>
           <div v-if="loading" class="turn-status">思考中<template v-if="turnElapsed >= 2">&nbsp;·&nbsp;{{ turnElapsed }}s</template></div>
           <MessageList
@@ -941,7 +1229,7 @@ function continueGeneration() {
         :loading="loading"
         :mode="mode"
         :mode-options="modeOptions"
-        :session-id="activeSessionId"
+        :session-id="unifiedMode ? unifiedSessionId : activeSessionId"
         @send="sendMessage"
         @stop="stopGeneration"
         @update:mode="(m: string) => (mode = m)"
@@ -1169,4 +1457,49 @@ function continueGeneration() {
 }
 .overlay-fade-enter-active, .overlay-fade-leave-active { transition: opacity 0.2s ease; }
 .overlay-fade-enter-from, .overlay-fade-leave-to { opacity: 0; }
+
+/* ── 互联互通：错误提示条（query.error）── */
+.unified-error-banner {
+  flex: none; display: flex; align-items: center; gap: 8px;
+  margin: 8px 20px 0; padding: 8px 12px;
+  background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: 10px; color: var(--danger, #ef4444); font-size: 13px;
+}
+.ueb-text { flex: 1; min-width: 0; line-height: 1.5; }
+.ueb-close { flex: none; cursor: pointer; opacity: 0.7; font-size: 12px; }
+.ueb-close:hover { opacity: 1; }
+
+/* ── 互联互通：当前上下文芯片（与侧栏 tag-chip 同设计语言）── */
+.context-chips {
+  flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  padding: 8px 20px 0;
+}
+.ctx-label { font-size: 11px; color: var(--text-tertiary); }
+.ctx-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 8px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--bg-card);
+  color: var(--text-secondary); font-size: 12px;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.ctx-chip:hover { border-color: var(--primary); color: var(--primary); }
+.ctx-remove { font-size: 10px; color: var(--text-tertiary); cursor: pointer; }
+.ctx-remove:hover { color: var(--danger, #ef4444); }
+
+/* ── 互联互通：统一任务消息列表（复用 MessageItem 渲染 user/assistant）── */
+.unified-list { flex: 1; overflow-y: auto; padding: 12px 0 24px; scrollbar-width: thin; scrollbar-color: var(--text-disabled) transparent; }
+.unified-empty { padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: 13px; }
+/* 知识库引用小标签（assistant 消息下方） */
+.kb-hits-tag {
+  display: flex; align-items: center;
+  max-width: min(720px, 92%); margin: 2px auto 6px;
+  padding: 2px 10px; border-radius: 10px;
+  background: var(--primary-bg); color: var(--primary);
+  font-size: 11px; line-height: 18px;
+}
+@media (max-width: 576px) {
+  .unified-error-banner { margin: 6px 12px 0; }
+  .context-chips { padding: 6px 12px 0; }
+  .kb-hits-tag { max-width: 88%; }
+}
 </style>

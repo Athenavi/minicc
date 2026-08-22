@@ -56,6 +56,7 @@ class UnifiedChatHandler:
         session_id: Optional[str] = None,
         mode: str = "auto",  # "auto" / "agent" / "workflow"
         trace_id: str = "",
+        context: Optional[dict] = None,
     ) -> dict[str, Any]:
         """提交任务 (自动编排)
         
@@ -65,11 +66,25 @@ class UnifiedChatHandler:
         3. 将结果写入共享上下文
         4. 发布结果到 ContextBus
         5. 返回给用户
+        
+        Args:
+            context: 可选会话上下文 (跨工作台注入):
+                - kb_id (str): 知识库 ID,执行前做 RAG 检索,片段拼接到 user_input 前
+                - agent (dict): mode=agent 时的 SubAgent 配置覆盖
+                  (system_prompt / model / max_turns / name,缺省保持现有默认值)
+                - skill_names (list[str]): 透传给 TaskRouter.route_task 的 context,
+                  供能力匹配阶段作提示 (不改变现有匹配逻辑)
+                - workflow_id (str): mode=workflow 时透传记录到结果 metadata
         """
         import uuid
         
         if not trace_id:
             trace_id = uuid.uuid4().hex[:12]
+        
+        context = context or {}
+        ctx_agent = context.get("agent") if isinstance(context.get("agent"), dict) else None
+        ctx_kb_id = str(context.get("kb_id") or "")
+        ctx_workflow_id = str(context.get("workflow_id") or "")
         
         # 创建/获取会话
         if not session_id:
@@ -98,21 +113,49 @@ class UnifiedChatHandler:
         )
         
         try:
+            # 会话上下文注入: context.kb_id → 执行前 RAG 检索,片段拼接到 user_input 前
+            kb_hits = 0
+            effective_input = user_input
+            if ctx_kb_id:
+                kb_block, kb_hits = await self._retrieve_kb_context(
+                    kb_id=ctx_kb_id, query=user_input, tenant_id=tenant_id, trace_id=trace_id,
+                )
+                if kb_block:
+                    effective_input = f"{kb_block}\n{user_input}"
+                logger.info(
+                    "KB context injected (kb_id=%s, hits=%d, session=%s)",
+                    ctx_kb_id, kb_hits, session_id,
+                )
+
             # 调用 TaskRouter (带模式选择)
             if mode == "agent":
-                # 强制使用 Agent 工作台
-                result = await self._execute_via_agent(user_input, tenant_id, trace_id)
+                # 强制使用 Agent 工作台 (context.agent 覆盖 SubAgent 配置)
+                result = await self._execute_via_agent(
+                    effective_input, tenant_id, trace_id, agent_config=ctx_agent,
+                )
             elif mode == "workflow":
-                # 强制使用工作流工作台
-                result = await self._execute_via_workflow(user_input, tenant_id, trace_id)
+                # 强制使用工作流工作台 (context.workflow_id 仅透传记录)
+                result = await self._execute_via_workflow(
+                    effective_input, tenant_id, trace_id, workflow_id=ctx_workflow_id,
+                )
             else:
                 # 自动模式 (默认)
-                result = await self.router.route_task(
-                    user_input=user_input,
-                    tenant_id=tenant_id,
-                    priority=TaskPriority.NORMAL,
-                    trace_id=trace_id,
-                )
+                if context:
+                    # context (含 skill_names) 透传给 route_task,供意图/能力匹配阶段参考
+                    result = await self.router.route_task(
+                        user_input=effective_input,
+                        tenant_id=tenant_id,
+                        priority=TaskPriority.NORMAL,
+                        trace_id=trace_id,
+                        context=context,
+                    )
+                else:
+                    result = await self.router.route_task(
+                        user_input=effective_input,
+                        tenant_id=tenant_id,
+                        priority=TaskPriority.NORMAL,
+                        trace_id=trace_id,
+                    )
             
             # 提取最终输出
             # Fail loud: 执行器返回 status=error (如 gateway 未初始化) 时,
@@ -127,16 +170,26 @@ class UnifiedChatHandler:
 
             final_output = self._extract_output(result)
             
-            # 添加到会话历史
+            # 结果元数据: 基础字段 + 上下文注入的可选字段 (kb_hits/kb_id/workflow_id/agent_name)
+            meta: dict[str, Any] = {
+                "task_id": result.get("task_id"),
+                "duration_ms": result.get("total_duration_ms"),
+                "subtasks": result.get("subtasks", []),
+            }
+            if ctx_kb_id:
+                meta["kb_hits"] = kb_hits
+                meta["kb_id"] = ctx_kb_id
+            if ctx_workflow_id or result.get("workflow_id"):
+                meta["workflow_id"] = result.get("workflow_id") or ctx_workflow_id
+            if mode == "agent":
+                meta["agent_name"] = (ctx_agent or {}).get("name") or "unified_chat_agent"
+            
+            # 添加到会话历史 (assistant 消息 metadata 同带引用/来源字段,供前端展示)
             session.messages.append({
                 "role": "assistant",
                 "content": final_output,
                 "timestamp": time.time(),
-                "metadata": {
-                    "task_id": result.get("task_id"),
-                    "duration_ms": result.get("total_duration_ms"),
-                    "subtasks": result.get("subtasks", []),
-                }
+                "metadata": dict(meta),
             })
             
             # 更新共享上下文 (供后续任务使用)
@@ -165,10 +218,8 @@ class UnifiedChatHandler:
                 "trace_id": trace_id,
                 "output": final_output,
                 "metadata": {
-                    "task_id": result.get("task_id"),
-                    "duration_ms": result.get("total_duration_ms"),
+                    **meta,
                     "subtasks_completed": result.get("output", {}).get("subtasks_completed", 0),
-                    "subtasks": result.get("subtasks", []),
                 }
             }
             
@@ -195,8 +246,13 @@ class UnifiedChatHandler:
         user_input: str,
         tenant_id: str,
         trace_id: str,
+        agent_config: Optional[dict] = None,
     ) -> dict:
-        """通过 Agent 工作台执行"""
+        """通过 Agent 工作台执行
+
+        agent_config (来自 context.agent) 可覆盖 SubAgent 的
+        name / system_prompt / model / max_turns,缺省时保持现有默认值。
+        """
         from app.agent.multi_agent import SubAgent
         from app.main import get_gateway
         
@@ -205,19 +261,39 @@ class UnifiedChatHandler:
         except RuntimeError:
             return {"status": "error", "output": {"error": "LLM gateway not initialized"}}
         
-        agent = SubAgent(
-            name="unified_chat_agent",
-            description="通用助手 Agent",
-            system_prompt="""你是一个多功能 AI 助手。请帮助用户完成各种任务,包括:
+        agent_config = agent_config or {}
+        
+        # name 覆盖
+        agent_name = str(agent_config.get("name") or "unified_chat_agent")
+        
+        # system_prompt 覆盖 (缺省保持现有默认)
+        default_prompt = """你是一个多功能 AI 助手。请帮助用户完成各种任务,包括:
 1. 数据分析和问题解答
 2. 代码生成和调试
 3. 文档编写和翻译
 4. 知识库检索和信息查询
 
-如果用户需要执行具体操作(如运行 Python 代码),请使用相应的工具。""",
+如果用户需要执行具体操作(如运行 Python 代码),请使用相应的工具。"""
+        system_prompt = str(agent_config.get("system_prompt") or default_prompt)
+        
+        # model 覆盖 (缺省保持现有默认 gpt-4o-mini)
+        model = str(agent_config.get("model") or "gpt-4o-mini")
+        
+        # max_turns 覆盖 (缺省保持现有默认 10)
+        try:
+            max_turns = int(agent_config.get("max_turns", 10) or 10)
+        except (TypeError, ValueError):
+            max_turns = 10
+        if max_turns <= 0:
+            max_turns = 10
+        
+        agent = SubAgent(
+            name=agent_name,
+            description="通用助手 Agent",
+            system_prompt=system_prompt,
             gateway=gateway,
-            model="gpt-4o-mini",
-            max_turns=10,
+            model=model,
+            max_turns=max_turns,
         )
         
         # SubAgent.run 已实现: 真实调用并透传结果 (绝不返回伪造输出)
@@ -240,11 +316,13 @@ class UnifiedChatHandler:
         user_input: str,
         tenant_id: str,
         trace_id: str,
+        workflow_id: str = "",
     ) -> dict:
         """通过工作流工作台执行
 
         构建单节点 LLM 工作流（input → llm → output）并执行，
         复用 workflow/engine.run_workflow 的 DAG 执行能力。
+        workflow_id 仅透传记录到结果,不改变工作流构建逻辑。
         """
         from app.workflow.engine import run_workflow
         from app.main import get_gateway
@@ -295,8 +373,58 @@ class UnifiedChatHandler:
                 "result": final_output,
                 "workflow_instance_id": instance.instance_id,
             },
+            "workflow_id": workflow_id,
             "total_duration_ms": int((instance.finished_at - instance.started_at) * 1000) if instance.finished_at else 0,
         }
+    
+    async def _retrieve_kb_context(
+        self,
+        kb_id: str,
+        query: str,
+        tenant_id: str,
+        trace_id: str,
+        top_k: int = 5,
+    ) -> tuple[str, int]:
+        """基于 context.kb_id 做 RAG 检索 (复用 knowledge:kb_search 的 kb_search 工具)
+
+        返回 (引用块, 命中数);任何失败 (DB 不可用 / kb 不存在 / 无命中) 都降级为
+        空块 + 0,不阻断主任务执行 (与"不传 context 行为一致"的向后兼容原则一致)。
+        """
+        try:
+            from app.tools.kb import kb_search
+            from app.tools.context import set_tool_context
+
+            # kb_search 依赖工具上下文做归属校验 (与 TaskRouter._execute_single_task 同口径)
+            set_tool_context(
+                session_id=f"task_{trace_id}" if trace_id else "chat_context_rag",
+                user_id=tenant_id,
+                tenant_id=tenant_id,
+            )
+
+            result = await kb_search(kb_id=kb_id, query=query, top_k=top_k)
+            if not isinstance(result, dict) or "error" in result:
+                error = result.get("error") if isinstance(result, dict) else result
+                logger.warning("KB context retrieval skipped (kb_id=%s): %s", kb_id, error)
+                return "", 0
+
+            hits = result.get("results", []) or []
+            if not hits:
+                return "", 0
+
+            snippets: list[str] = []
+            for hit in hits[:top_k]:
+                content = (hit.get("content") or hit.get("name") or "").strip()
+                if content:
+                    snippets.append(content[:300])
+            if not snippets:
+                return "", 0
+
+            block = "【知识库引用】\n" + "\n".join(f"- {s}" for s in snippets)
+            return block, len(hits)
+
+        except Exception as e:  # noqa: BLE001 — 检索失败不阻断主任务
+            logger.warning("KB context retrieval failed (kb_id=%s): %s", kb_id, e)
+            return "", 0
     
     def _extract_output(self, result: dict) -> str:
         """从执行结果中提取最终输出"""
@@ -358,7 +486,12 @@ router = APIRouter(tags=["chat"])
 async def submit_chat(request: Request):
     """统一任务提交入口：TaskRouter 自动编排六大工作台能力
 
-    Body: {message/user_input, tenant_id?, session_id?, mode?}
+    Body: {message/user_input, tenant_id?, session_id?, mode?, context?}
+    context (可选 dict): 跨工作台会话上下文注入 —
+        kb_id (str): 执行前 RAG 检索,片段以【知识库引用】拼接到输入前
+        agent (dict): mode=agent 时覆盖 SubAgent 配置 (system_prompt/model/max_turns/name)
+        skill_names (list[str]): 透传 TaskRouter 作能力匹配提示
+        workflow_id (str): mode=workflow 时记录到结果 metadata
     Go 网关代理时追加 ?user_id=<claims.UserID>，作为 tenant_id 兜底。
     """
     body = await request.json()
@@ -373,11 +506,15 @@ async def submit_chat(request: Request):
         return {"success": False, "error": "tenant_id is required"}
 
     handler = get_chat_handler()
+    context = body.get("context")
+    if context is not None and not isinstance(context, dict):
+        return {"success": False, "error": "context must be an object"}
     return await handler.submit_task(
         user_input=user_input,
         tenant_id=tenant_id,
         session_id=body.get("session_id"),
         mode=str(body.get("mode", "auto")),
+        context=context,
     )
 
 

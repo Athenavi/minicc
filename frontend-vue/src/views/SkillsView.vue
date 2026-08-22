@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, markRaw } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   Button, Input, Tabs, TabPane, Switch, Tag, Modal, InputNumber,
   Select, Alert, Dropdown, Menu, MenuItem, message,
 } from 'ant-design-vue'
 import {
   ThunderboltOutlined, DownloadOutlined, DeleteOutlined, PlayCircleOutlined,
-  SearchOutlined, CodeOutlined,
+  SearchOutlined, CodeOutlined, MessageOutlined,
 } from '@ant-design/icons-vue'
 import { api } from '../api'
 import PageSkeleton from '../components/common/PageSkeleton.vue'
@@ -46,6 +47,7 @@ const execColors: Record<string, string> = {
   http: 'gold',
   prompt: 'blue',
 }
+const router = useRouter()
 
 // ── 加载 ──
 async function loadSkills() {
@@ -119,6 +121,11 @@ function toggleDetail(name: string) {
   if (next.has(name)) next.delete(name)
   else next.add(name)
   expandedNames.value = next
+}
+
+// ── 互联互通：在对话中使用该技能 ──
+function useInChat(s: Skill) {
+  router.push({ path: '/chat', query: { skill: s.name } })
 }
 
 // ── 运行 ──
@@ -287,6 +294,10 @@ async function handleGenerate() {
                 {{ expandedNames.has(s.name) ? '收起详情' : '查看详情' }}
               </Button>
               <div class="action-right">
+                <Button size="small" title="在对话中使用该技能" @click="useInChat(s)">
+                  <template #icon><MessageOutlined /></template>
+                  在对话中使用
+                </Button>
                 <Button size="small" :disabled="s.enabled === false" @click="openRun(s)">
                   <template #icon><PlayCircleOutlined /></template>
                   运行

@@ -7,6 +7,7 @@ import {
   BookOutlined, ThunderboltOutlined, ArrowRightOutlined, ArrowUpOutlined,
 } from '@ant-design/icons-vue'
 import HomeScene3D from '../components/home/HomeScene3D.vue'
+import WorkstationNav from '../components/WorkstationNav.vue'
 
 const router = useRouter()
 
@@ -157,7 +158,10 @@ function scrollToTop() {
     </section>
 
     <!-- 特性网格 -->
-    <section id="features" class="features">
+        <!-- 六大工作台统一入口：快速命令 + 工作台网格 + 最近活动（互联互通） -->
+    <WorkstationNav />
+
+<section id="features" class="features">
       <h2 class="section-title">六大能力，一个控制台</h2>
       <p class="section-sub">每一块能力都可以独立使用，也可以自由组合</p>
       <div class="feature-grid">

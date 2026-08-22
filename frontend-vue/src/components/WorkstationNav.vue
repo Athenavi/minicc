@@ -79,7 +79,11 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { api, createSSEConnection } from '../api'
+
+// 定义事件
+const router = useRouter()
 
 // 定义事件
 const emit = defineEmits<{
@@ -122,7 +126,7 @@ const workstations: Workstation[] = [
     description: 'DAG 流程编排',
     icon: 'WorkflowIcon',
     color: '#f59e0b',
-    route: '/workflows',
+    route: '/workflow',
   },
   {
     id: 'skill',
@@ -167,7 +171,8 @@ function switchWorkstation(workstationId: string) {
   // 路由跳转
   const ws = workstations.find(w => w.id === workstationId)
   if (ws) {
-    window.location.hash = ws.route
+    // 修复：createWebHistory 模式下 location.hash 不会触发路由，改用 router.push
+    router.push(ws.route)
   }
 }
 
@@ -181,14 +186,18 @@ async function handleCommandSubmit() {
   
   try {
     // 调用 /v1/quick-execute API
-    const response = await api.post('/quick-execute', {
+    // 创建统一会话：执行后跳转聊天页展示结果，可继续追问（六大工作台统一入口）
+    const sessionId = `uni_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    const response = await api.post('/v1/quick-execute', {
       user_input: command,
       mode: 'auto',
+      session_id: sessionId,
     })
     
     if (response.data?.success) {
       // 显示结果 (可集成到聊天界面)
-      console.log('Quick execute result:', response.data)
+      // 跳转聊天页展示结果（不再丢弃）
+      router.push({ path: '/chat', query: { task: sessionId } })
       
       // 添加到最近活动
       addRecentActivity({
@@ -202,7 +211,7 @@ async function handleCommandSubmit() {
         timestamp: Date.now(),
       })
     } else {
-      console.error('Quick execute failed:', response.data)
+      router.push({ path: '/chat', query: { task: sessionId, error: response.data?.error || 'execution failed' } })
     }
     
     // 清空输入框
@@ -210,6 +219,7 @@ async function handleCommandSubmit() {
     
   } catch (error: any) {
     console.error('Command execution error:', error)
+    router.push({ path: '/chat', query: { task: '', error: error?.message || 'request failed' } })
   } finally {
     isSubmitting.value = false
   }
@@ -270,10 +280,21 @@ onMounted(() => {
 // 从 API 加载最近活动
 async function loadRecentActivities() {
   try {
-    const response = await api.get('/activities?limit=5')
-    if (response.data?.success) {
-      recentActivities.value = response.data.data || []
-    }
+    const response = await api.get('/v1/activities?limit=10')
+    const list = response.data?.activities || []
+    recentActivities.value = list.map((a: any) => {
+      const ws = workstations.find(w => w.id === a.workstation)
+      return {
+        id: `${a.workstation}_${a.timestamp}`,
+        title: a.title || '暂无标题',
+        wsName: ws?.name || '对话',
+        wsColor: ws?.color || '#10b981',
+        route: a.route || ws?.route || '/chat',
+        status: a.status || '',
+        statusText: a.status_text || '',
+        timestamp: a.timestamp || Date.now(),
+      }
+    })
   } catch (error) {
     console.warn('Failed to load recent activities:', error)
   }

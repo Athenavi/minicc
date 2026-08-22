@@ -287,6 +287,8 @@ func NewGatewayRouter(
 	smsHandler.RegisterUserRoutes(mux, authMW)
 	smsHandler.RegisterAdminRoutes(mux, authMW)
 	registerSystemRoutes(mux, authMW, rlMW, sanitizeMW, installHandler, editorHandler, toolHandler, systemHandler, traceHandler)
+	// 六大工作台互联：跨台最近活动聚合（租户+用户隔离）
+	mux.Handle("GET /v1/activities", authMW(rlMW(http.HandlerFunc(handleActivities))))
 	registerConversationRoutes(mux, conversationHandler, shareHandler, authMW, rlMW)
 	registerMediaRoutes(mux, mediaHandler, authMW, rlMW, cfg.StorageRoot)
 	registerPluginRoutes(mux, pluginHandler, authMW, rlMW)

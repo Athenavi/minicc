@@ -8,6 +8,7 @@ import {
 import {
   ArrowLeftOutlined, CloudUploadOutlined,
   PlayCircleOutlined, PictureOutlined, SearchOutlined,
+  MessageOutlined,
 } from '@ant-design/icons-vue'
 import { api } from '../api'
 import { createChunkUpload } from '../utils/uploader'
@@ -280,6 +281,11 @@ async function queryKnowledgeBase() {
   }
 }
 
+// 互联互通：携带知识库上下文跳转到对话工作台
+function askInChat() {
+  router.push({ path: '/chat', query: { kb: kbId } })
+}
+
 function formatSize(bytes: number): string {
   if (bytes === 0) return '0 B'
   const k = 1024
@@ -298,6 +304,10 @@ function formatSize(bytes: number): string {
       </Button>
       <h1>{{ kb?.name || '知识库' }}</h1>
       <Space>
+        <Button @click="askInChat" title="在对话中基于该知识库提问">
+          <template #icon><MessageOutlined /></template>
+          就此提问
+        </Button>
         <Button @click="showQueryModal = true">查询知识库</Button>
         <Button
           v-if="kb?.status !== 'building'"
