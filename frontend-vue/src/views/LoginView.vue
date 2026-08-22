@@ -215,7 +215,9 @@ async function handleLogin() {
       token: captchaToken.value,
       randstr: captchaRandstr.value,
     })
-    router.push('/chat')
+    // owner/admin 登录后进入管理后台，普通 user 进入对话
+    const role = authStore.user?.role
+    router.push(role === 'admin' || role === 'owner' ? '/admin' : '/chat')
   } catch (e: any) {
     const status = e.response?.status
     const apiErr = e.response?.data?.error
@@ -303,6 +305,9 @@ async function handleLogin() {
                 </Button>
                 <Button type="link" block @click="router.push('/register')">
                   没有账号？注册
+                </Button>
+                <Button type="link" block @click="router.push('/install')">
+                  首次部署？初始化系统
                 </Button>
               </Space>
             </FormItem>

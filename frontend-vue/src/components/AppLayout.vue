@@ -108,9 +108,10 @@ const userMenuItems = computed<any[]>(() => [
   { key: 'logout', label: '退出登录', icon: () => h(LogoutOutlined) },
 ])
 
-function handleUserMenuClick(info: any) {
+async function handleUserMenuClick(info: any) {
   if (info.key === 'logout') {
-    authStore.logout()
+    // S 安全：调 authStore.logout 清后端 httpOnly cookie + 本地 user 态
+    await authStore.logout()
     router.push('/login')
   } else if (info.key === 'profile') {
     router.push('/profile')

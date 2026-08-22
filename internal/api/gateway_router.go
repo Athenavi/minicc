@@ -201,7 +201,7 @@ func NewGatewayRouter(
 
 	// ── Route registration by functional domain ──
 
-	registerPublicEndpoints(mux, authMW, rlMW, publicMW, searchHandler, shareHandler)
+	registerPublicEndpoints(mux, authMW, rlMW, publicMW, searchHandler, shareHandler, systemHandler)
 	registerAgentRoutes(mux, authMW, rlMW, publicMW, sanitizeMW, submitHandler, billingMgr, agentSem, eventHub, sessionMgr, authenticator, rpaHub)
 	registerAuthRoutes(mux, authHandler, authMW, rlMW)
 
@@ -236,7 +236,8 @@ func NewGatewayRouter(
 	mux.Handle("GET /v1/agents/sessions", authMW(rlMW(http.HandlerFunc(agentHandler.ListSessions))))
 	mux.Handle("GET /v1/agents/sessions/{id}", authMW(rlMW(http.HandlerFunc(agentHandler.GetSession))))
 	// dispatch 保留 Python 代理（agent 工具链内部调用，非页面主链路）
-	mux.Handle("POST /v1/agents/dispatch", rlMW(sanitizeMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// 安全：必须经过 authMW，否则未认证可触发工具执行
+	mux.Handle("POST /v1/agents/dispatch", authMW(rlMW(sanitizeMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if pythonClient == nil || !pythonClient.IsConnected() {
 			InternalError(w, "python engine not available")
 			return
@@ -252,10 +253,25 @@ func NewGatewayRouter(
 			return
 		}
 		OK(w, resp)
-	}))))
+	})))))
 
 	// Skills (rate limited, proxies to Python)
 	skillHandler.RegisterRoutes(mux)
+
+	// Enterprise audit (auth + RequireEntPerm("audit:read"))
+	NewEntAuditHandler().RegisterRoutes(mux, authMW)
+
+	// Enterprise identity (auth + RequireEntPerm("ent:manage"))：用户/角色/群组/租户
+	NewEntIdentityHandler().RegisterRoutes(mux, authMW)
+
+	// Enterprise cost center（authMW，内部按 PermAdminRead/Write 分级）
+	NewEntCostCenterHandler(nil, nil).RegisterRoutes(mux, authMW)
+
+	// Enterprise policy（authMW + RequireEntPerm("policy:manage")）：隐私模式 + 模型策略
+	NewEntPolicyHandler().RegisterRoutes(mux, authMW)
+
+	// Enterprise market（authMW + RequireEntPerm("market:manage")）：能力市场 + 租户授权
+	NewMarketHandler().RegisterRoutes(mux, authMW)
 
 	// Mode (auth + rate limited)
 	mux.Handle("GET /v1/mode", authMW(rlMW(http.HandlerFunc(modeHandler.GetMode))))
@@ -276,6 +292,7 @@ func registerPublicEndpoints(
 	authMW, rlMW, publicMW routeMiddleware,
 	searchHandler *SearchHandler,
 	shareHandler *ShareHandler,
+	systemHandler *SystemHandler,
 ) {
 	mux.Handle("GET /search", authMW(rlMW(http.HandlerFunc(searchHandler.Search))))
 
@@ -283,6 +300,8 @@ func registerPublicEndpoints(
 	mux.Handle("GET /share/{id}", rlMW(publicMW(http.HandlerFunc(shareHandler.PublicGet))))
 
 	mux.Handle("GET /health", rlMW(publicMW(http.HandlerFunc(handleHealth))))
+	// Prometheus 指标端点（公开，供 Prometheus 抓取；生产建议加内网限制）
+	mux.Handle("GET /metrics", rlMW(publicMW(http.HandlerFunc(systemHandler.PrometheusMetrics))))
 	mux.Handle("GET /ready", rlMW(publicMW(http.HandlerFunc(handleReadiness))))
 }
 
@@ -523,7 +542,12 @@ func registerProxyRoutes(
 					return
 				}
 				claims := auth.GetClaims(r.Context())
-				proxiedPath := buildPath(r) + "?user_id=" + claims.UserID
+			if claims == nil || claims.TenantID == "" {
+				Unauthorized(w, "missing tenant context")
+				return
+			}
+			// 多租户隔离：透传 tenant_id 给 Python 引擎（query 参数兼容，header 见 pythonClient.WithTenant）
+			proxiedPath := buildPath(r) + "?user_id=" + claims.UserID + "&tenant_id=" + claims.TenantID
 				var resp interface{}
 				var err error
 				switch r.Method {
@@ -634,21 +658,23 @@ func registerAdminRoutes(
 	pythonClient *engine.PythonClient,
 ) {
 	// Admin routes (auth + admin permission)
-	adminPermMW := RequirePermission(auth.PermAdminRead)
+	// 读操作用 PermAdminRead，写操作（PUT/DELETE/POST）必须 PermAdminWrite，避免读权限执行写
+	adminReadMW := RequirePermission(auth.PermAdminRead)
+	adminWriteMW := RequirePermission(auth.PermAdminWrite)
 	adminMux := http.NewServeMux()
 	adminHandler.RegisterRoutes(adminMux)
 	// Strip the /v1/admin prefix so adminMux patterns (e.g. "GET /metrics") match correctly
 	adminStrip := http.StripPrefix("/v1/admin", adminMux)
-	mux.Handle("GET /v1/admin/metrics", authMW(adminPermMW(adminStrip)))
-	mux.Handle("GET /v1/admin/users", authMW(adminPermMW(adminStrip)))
-	mux.Handle("GET /v1/admin/users/{id}", authMW(adminPermMW(adminStrip)))
-	mux.Handle("PUT /v1/admin/users/{id}", authMW(adminPermMW(adminStrip)))
-	mux.Handle("DELETE /v1/admin/users/{id}", authMW(adminPermMW(adminStrip)))
-	mux.Handle("GET /v1/admin/system", authMW(adminPermMW(adminStrip)))
-	mux.Handle("POST /v1/admin/maintenance", authMW(adminPermMW(adminStrip)))
-	mux.Handle("POST /v1/admin/backup", authMW(adminPermMW(adminStrip)))
-	mux.Handle("POST /v1/admin/restore", authMW(adminPermMW(adminStrip)))
-	mux.Handle("GET /v1/admin/kb", authMW(adminPermMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("GET /v1/admin/metrics", authMW(adminReadMW(adminStrip)))
+	mux.Handle("GET /v1/admin/users", authMW(adminReadMW(adminStrip)))
+	mux.Handle("GET /v1/admin/users/{id}", authMW(adminReadMW(adminStrip)))
+	mux.Handle("PUT /v1/admin/users/{id}", authMW(adminWriteMW(adminStrip)))
+	mux.Handle("DELETE /v1/admin/users/{id}", authMW(adminWriteMW(adminStrip)))
+	mux.Handle("GET /v1/admin/system", authMW(adminReadMW(adminStrip)))
+	mux.Handle("POST /v1/admin/maintenance", authMW(adminWriteMW(adminStrip)))
+	mux.Handle("POST /v1/admin/backup", authMW(adminWriteMW(adminStrip)))
+	mux.Handle("POST /v1/admin/restore", authMW(adminWriteMW(adminStrip)))
+	mux.Handle("GET /v1/admin/kb", authMW(adminReadMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if pythonClient == nil || !pythonClient.IsConnected() {
 			InternalError(w, "python engine not available")
 			return
@@ -659,49 +685,49 @@ func registerAdminRoutes(
 	}))))
 
 	// Storage admin routes
-	mux.Handle("GET /v1/admin/storage", authMW(adminPermMW(adminStrip)))
-	mux.Handle("PUT /v1/admin/storage", authMW(adminPermMW(adminStrip)))
-	mux.Handle("POST /v1/admin/storage/test", authMW(adminPermMW(adminStrip)))
+	mux.Handle("GET /v1/admin/storage", authMW(adminReadMW(adminStrip)))
+	mux.Handle("PUT /v1/admin/storage", authMW(adminWriteMW(adminStrip)))
+	mux.Handle("POST /v1/admin/storage/test", authMW(adminWriteMW(adminStrip)))
 
 	// Redis admin routes
-	mux.Handle("GET /v1/admin/redis", authMW(adminPermMW(adminStrip)))
-	mux.Handle("PUT /v1/admin/redis", authMW(adminPermMW(adminStrip)))
-	mux.Handle("POST /v1/admin/redis/test", authMW(adminPermMW(adminStrip)))
+	mux.Handle("GET /v1/admin/redis", authMW(adminReadMW(adminStrip)))
+	mux.Handle("PUT /v1/admin/redis", authMW(adminWriteMW(adminStrip)))
+	mux.Handle("POST /v1/admin/redis/test", authMW(adminWriteMW(adminStrip)))
 
 	// Queue admin routes
-	mux.Handle("GET /v1/admin/queue", authMW(adminPermMW(adminStrip)))
-	mux.Handle("POST /v1/admin/queue/flush", authMW(adminPermMW(adminStrip)))
-	mux.Handle("POST /v1/admin/queue/pause", authMW(adminPermMW(adminStrip)))
+	mux.Handle("GET /v1/admin/queue", authMW(adminReadMW(adminStrip)))
+	mux.Handle("POST /v1/admin/queue/flush", authMW(adminWriteMW(adminStrip)))
+	mux.Handle("POST /v1/admin/queue/pause", authMW(adminWriteMW(adminStrip)))
 
 	// Cache admin routes
-	mux.Handle("GET /v1/admin/cache/stats", authMW(adminPermMW(adminStrip)))
+	mux.Handle("GET /v1/admin/cache/stats", authMW(adminReadMW(adminStrip)))
 
 	// Performance admin routes
-	mux.Handle("GET /v1/admin/performance", authMW(adminPermMW(adminStrip)))
+	mux.Handle("GET /v1/admin/performance", authMW(adminReadMW(adminStrip)))
 
 	// API Key admin routes (direct handlers, avoid adminMux path mismatch)
-	mux.Handle("GET /v1/admin/api-keys", authMW(adminPermMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("GET /v1/admin/api-keys", authMW(adminReadMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if pythonClient == nil || !pythonClient.IsConnected() {
 			OK(w, map[string]interface{}{"keys": []interface{}{}, "stats": map[string]interface{}{"total": 0, "active": 0, "rate_limited": 0, "circuit_open": 0}})
 			return
 		}
 		pythonClient.ForwardRequest(w, r, "/v1/admin/api-keys")
 	}))))
-	mux.Handle("POST /v1/admin/api-keys", authMW(adminPermMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("POST /v1/admin/api-keys", authMW(adminWriteMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if pythonClient == nil || !pythonClient.IsConnected() {
 			BadRequest(w, "python engine not available")
 			return
 		}
 		pythonClient.ForwardRequest(w, r, "/v1/admin/api-keys")
 	}))))
-	mux.Handle("PUT /v1/admin/api-keys/{id}", authMW(adminPermMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("PUT /v1/admin/api-keys/{id}", authMW(adminWriteMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if pythonClient == nil || !pythonClient.IsConnected() {
 			BadRequest(w, "python engine not available")
 			return
 		}
 		pythonClient.ForwardRequest(w, r, "/v1/admin/api-keys/"+r.PathValue("id"))
 	}))))
-	mux.Handle("DELETE /v1/admin/api-keys/{id}", authMW(adminPermMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("DELETE /v1/admin/api-keys/{id}", authMW(adminWriteMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if pythonClient == nil || !pythonClient.IsConnected() {
 			BadRequest(w, "python engine not available")
 			return
@@ -710,5 +736,5 @@ func registerAdminRoutes(
 	}))))
 
 	// Settings admin routes
-	mux.Handle("PUT /v1/admin/settings", authMW(adminPermMW(adminStrip)))
+	mux.Handle("PUT /v1/admin/settings", authMW(adminWriteMW(adminStrip)))
 }

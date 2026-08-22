@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, h } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useAuthStore } from '../../stores/auth'
 import {
   Layout,
   LayoutSider,
@@ -26,10 +27,17 @@ import {
   TeamOutlined,
   GlobalOutlined,
   SafetyOutlined,
+  FileSearchOutlined,
+  IdcardOutlined,
+  ClusterOutlined,
+  WalletOutlined,
+  ControlOutlined,
+  ShopOutlined,
 } from '@ant-design/icons-vue'
 
 const router = useRouter()
 const route = useRoute()
+const authStore = useAuthStore()
 
 const collapsed = ref(false)
 
@@ -53,6 +61,13 @@ const menuItems: any[] = [
   { key: '/admin/cache', label: '缓存监控', icon: () => h(DatabaseOutlined) },
   { key: '/admin/performance', label: '性能监控', icon: () => h(ThunderboltOutlined) },
   { key: '/admin/settings', label: '系统设置', icon: () => h(SettingOutlined) },
+  { key: '/admin/audit', label: '操作审计', icon: () => h(FileSearchOutlined) },
+  { key: '/admin/roles', label: '角色管理', icon: () => h(IdcardOutlined) },
+  { key: '/admin/groups', label: '群组管理', icon: () => h(ClusterOutlined) },
+  { key: '/admin/costcenter', label: '成本中心', icon: () => h(WalletOutlined) },
+  { key: '/admin/privacy', label: '隐私模式管控', icon: () => h(SafetyOutlined) },
+  { key: '/admin/model-policy', label: '模型策略管控', icon: () => h(ControlOutlined) },
+  { key: '/admin/market', label: '企业能力市场', icon: () => h(ShopOutlined) },
 ]
 
 const userMenuItems: any[] = [
@@ -64,9 +79,10 @@ function handleMenuClick(info: any) {
   router.push(info.key)
 }
 
-function handleUserAction(info: any) {
+async function handleUserAction(info: any) {
   if (info.key === 'logout') {
-    localStorage.removeItem('token')
+    // S 安全：调 authStore.logout 清后端 httpOnly cookie + 本地 user 态
+    await authStore.logout()
     router.push('/login')
   } else if (info.key === 'profile') {
     router.push('/profile')

@@ -1,0 +1,178 @@
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import { message, Modal } from 'ant-design-vue'
+import type { TableColumnsType } from 'ant-design-vue'
+import { listModelPolicies, createModelPolicy, updateModelPolicy, deleteModelPolicy } from '../../api/policy'
+import type { ModelPolicy } from '../../api/policy'
+
+const loading = ref(false)
+const policies = ref<ModelPolicy[]>([])
+
+const modalVisible = ref(false)
+const modalMode = ref<'create' | 'edit'>('create')
+const form = ref({
+  id: '',
+  role_id: '',
+  allowed_models: '',
+  per_model_limits: '{}',
+})
+const saving = ref(false)
+
+async function fetchPolicies() {
+  loading.value = true
+  try {
+    policies.value = await listModelPolicies()
+  } catch (e: any) {
+    message.error(e?.response?.data?.error || '加载失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+function openCreate() {
+  modalMode.value = 'create'
+  form.value = { id: '', role_id: '', allowed_models: '', per_model_limits: '{}' }
+  modalVisible.value = true
+}
+
+function openEdit(p: ModelPolicy) {
+  modalMode.value = 'edit'
+  form.value = {
+    id: p.id,
+    role_id: p.role_id ?? '',
+    allowed_models: (p.allowed_models ?? []).join('\n'),
+    per_model_limits: JSON.stringify(p.per_model_limits ?? {}, null, 2),
+  }
+  modalVisible.value = true
+}
+
+async function save() {
+  const models = form.value.allowed_models.split('\n').map(s => s.trim()).filter(Boolean)
+  let limits: Record<string, Record<string, number>>
+  try {
+    limits = JSON.parse(form.value.per_model_limits || '{}')
+  } catch {
+    message.error('per_model_limits 必须是合法 JSON')
+    return
+  }
+  saving.value = true
+  try {
+    if (modalMode.value === 'create') {
+      await createModelPolicy({
+        role_id: form.value.role_id || undefined,
+        allowed_models: models,
+        per_model_limits: limits,
+      })
+      message.success('已创建')
+    } else {
+      await updateModelPolicy(form.value.id, {
+        role_id: form.value.role_id || undefined,
+        allowed_models: models,
+        per_model_limits: limits,
+      })
+      message.success('已更新')
+    }
+    modalVisible.value = false
+    fetchPolicies()
+  } catch (e: any) {
+    message.error(e?.response?.data?.error || '保存失败')
+  } finally {
+    saving.value = false
+  }
+}
+
+function confirmDelete(p: ModelPolicy) {
+  Modal.confirm({
+    title: '删除模型策略',
+    content: `确认删除${p.role_id ? '角色 ' + p.role_id : '租户级兜底'}策略？`,
+    okText: '删除',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: async () => {
+      try {
+        await deleteModelPolicy(p.id)
+        message.success('已删除')
+        fetchPolicies()
+      } catch (e: any) {
+        message.error(e?.response?.data?.error || '删除失败')
+      }
+    },
+  })
+}
+
+function scopeLabel(p: ModelPolicy): string {
+  return p.role_id ? `角色 ${p.role_id.slice(0, 8)}…` : '租户级兜底'
+}
+
+const columns: TableColumnsType = [
+  { title: '作用域', key: 'scope', width: 160, customRender: ({ record }) => scopeLabel(record) },
+  { title: '允许模型', key: 'models', customRender: ({ record }) => (record.allowed_models ?? []).join(', ') || '-' },
+  { title: '模型限速', key: 'limits', width: 120, customRender: ({ record }) => Object.keys(record.per_model_limits ?? {}).length + ' 项' },
+  { title: '更新时间', dataIndex: 'updated_at', key: 'updated_at', width: 180, customRender: ({ text }) => new Date(text).toLocaleString('zh-CN', { hour12: false }) },
+  { title: '操作', key: 'action', width: 140, fixed: 'right' },
+]
+
+onMounted(fetchPolicies)
+</script>
+
+<template>
+  <div class="policy-view">
+    <div class="page-header">
+      <h2 class="page-title">模型策略管控</h2>
+      <a-button type="primary" @click="openCreate">新建策略</a-button>
+    </div>
+
+    <a-alert
+      type="info"
+      show-icon
+      message="角色精确策略优先（用户直接角色 ∪ 群组成员角色任一命中），缺失回退租户级兜底；两者都无则放行。"
+      style="margin-bottom: 16px"
+    />
+
+    <a-table
+      :columns="columns"
+      :data-source="policies"
+      :loading="loading"
+      :row-key="(r: ModelPolicy) => r.id"
+      :pagination="false"
+      size="small"
+    >
+      <template #bodyCell="{ column, record }">
+        <template v-if="column.key === 'action'">
+          <a-button type="link" size="small" @click="openEdit(record)">编辑</a-button>
+          <a-button type="link" size="small" danger @click="confirmDelete(record)">删除</a-button>
+        </template>
+      </template>
+    </a-table>
+
+    <a-modal
+      v-model:open="modalVisible"
+      :title="modalMode === 'create' ? '新建模型策略' : '编辑模型策略'"
+      :confirm-loading="saving"
+      @ok="save"
+      width="640"
+    >
+      <a-form layout="vertical">
+        <a-form-item label="角色 ID（留空 = 租户级兜底）">
+          <a-input v-model:value="form.role_id" placeholder="角色 UUID（留空为租户级）" />
+        </a-form-item>
+        <a-form-item label="允许模型（每行一个 model_id）">
+          <a-textarea v-model:value="form.allowed_models" :rows="6" placeholder="gpt-4&#10;claude-3-opus" />
+        </a-form-item>
+        <a-form-item label="每模型限速（JSON）">
+          <a-textarea
+            v-model:value="form.per_model_limits"
+            :rows="5"
+            placeholder='{"gpt-4": {"rpm": 60}}'
+          />
+        </a-form-item>
+      </a-form>
+    </a-modal>
+  </div>
+</template>
+
+<style scoped>
+.policy-view { padding: 16px 24px; }
+.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.page-title { margin: 0; font-size: 20px; }
+</style>
