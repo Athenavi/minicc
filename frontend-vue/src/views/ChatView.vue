@@ -68,6 +68,46 @@ const modeOptions = [
 ]
 const mode = ref('normal')
 
+// ── 对话模式预设（mode → temperature/max_tokens；用户显式覆盖优先）──
+const MODE_PRESETS: Record<string, { temperature: number; max_tokens: number; note?: string }> = {
+  normal: { temperature: 0.6, max_tokens: 4096 },
+  minimal: { temperature: 0.2, max_tokens: 1024, note: '简短回复' },
+  ptc: { temperature: 0.4, max_tokens: 4096, note: '分步思考' },
+  creative: { temperature: 1.0, max_tokens: 8192 },
+}
+
+/** 构造 llm_config：mode + 对应预设 temperature/max_tokens（base 已显式携带的字段优先保留） */
+function buildLlmConfig(base?: Record<string, any>): Record<string, any> {
+  const cfg: Record<string, any> = { mode: mode.value, ...(base || {}) }
+  const preset = MODE_PRESETS[mode.value]
+  if (preset) {
+    if (cfg.temperature === undefined) cfg.temperature = preset.temperature
+    if (cfg.max_tokens === undefined) cfg.max_tokens = preset.max_tokens
+  }
+  return cfg
+}
+
+/** 模式切换：更新 mode ref + 提示（仅影响后续消息）+ 会话级持久化（SSE 模式已有会话时立即保存 llm_config） */
+function onModeChange(m: string) {
+  if (m === mode.value) return
+  mode.value = m
+  const opt = modeOptions.find(o => o.value === m)
+  const preset = MODE_PRESETS[m]
+  message.info(`已切换到「${opt?.label || m}」模式${preset?.note ? `（${preset.note}）` : ''}，仅影响后续消息`)
+  if (!unifiedMode.value && activeSessionId.value) {
+    void updateConversation(activeSessionId.value, { llm_config: buildLlmConfig() } as any).catch(() => {})
+  }
+}
+
+/** 归一化后端 metadata（可能为 JSON 字符串或对象） */
+function normalizeMeta(raw: any): Record<string, any> | undefined {
+  if (!raw) return undefined
+  if (typeof raw === 'string') {
+    try { raw = JSON.parse(raw) } catch { return undefined }
+  }
+  return raw && typeof raw === 'object' ? raw : undefined
+}
+
 // ── 互联互通：统一任务模式 + 上下文芯片（与 SSE 流式并列的新路径）──
 // 路由 query 约定（由 WorkstationNav / 各工作台入口发起）：
 //   ?task=<sessionId>          统一会话（拉历史 + 继续追问）
@@ -238,8 +278,12 @@ function buildUnifiedItems(list: any[]): ChatItem[] {
       const { reasoning, body } = splitThinking(content, { loose: true })
       if (reasoning) out.push({ kind: 'reasoning', content: reasoning, time, id: `uni_r_${idx}` })
       if (body) {
-        out.push({ kind: 'text', role: 'assistant', content: body, time, id: `uni_a_${idx}` })
-        const meta = m.metadata || {}
+        out.push({
+          kind: 'text', role: 'assistant', content: body, time, id: `uni_a_${idx}`,
+          // 反向定位：透传消息 metadata
+          metadata: normalizeMeta(m.metadata),
+        } as any)
+        const meta = normalizeMeta(m.metadata) || {}
         const n = typeof meta.kb_hits === 'number' ? meta.kb_hits : meta.kb_id ? 1 : 0
         if (meta.kb_id || n > 0) {
           out.push({ kind: 'kb_hits', count: n, id: `uni_k_${idx}` } as unknown as ChatItem)
@@ -288,7 +332,11 @@ function appendAssistantWithKb(content: string, meta: any) {
   const { reasoning, body } = splitThinking(String(content))
   if (reasoning) items.value.push({ kind: 'reasoning', content: reasoning, id: genItemId() })
   if (body) {
-    items.value.push({ kind: 'text', role: 'assistant', content: body, id: genItemId() })
+    items.value.push({
+      kind: 'text', role: 'assistant', content: body, id: genItemId(),
+      // 反向定位：透传 /v1/chat/submit 返回的 metadata
+      metadata: normalizeMeta(meta),
+    } as any)
     const n = typeof meta.kb_hits === 'number' ? meta.kb_hits : meta.kb_id ? 1 : 0
     if (meta.kb_id || n > 0) {
       items.value.push({ kind: 'kb_hits', count: n, id: genItemId() } as unknown as ChatItem)
@@ -525,7 +573,7 @@ async function loadSessions() {
 async function createSession() {
   let session: ChatSession | null = null
   try {
-    const res = await api.post('/v1/conversations', { title: '新对话' })
+    const res = await api.post('/v1/conversations', { title: '新对话', llm_config: buildLlmConfig() })
     const data = res.data?.data || res.data
     if (data?.id) session = { id: data.id, title: data.title || '新对话', created_at: data.created_at, updated_at: data.updated_at }
   } catch { /* fallback */ }
@@ -560,6 +608,13 @@ async function switchSession(id: string) {
       earliestCursor.value = data.cursor || ''
       hasMore.value = !!data.has_more
     }
+    // ── 会话级模式恢复：历史 llm_config.mode 有效则恢复 mode ref（切换器与 toolbar 同步高亮）──
+    let cfg: any = data?.llm_config
+    if (typeof cfg === 'string') { try { cfg = JSON.parse(cfg) } catch { cfg = undefined } }
+    const savedMode = cfg?.mode
+    if (typeof savedMode === 'string' && modeOptions.some(o => o.value === savedMode)) {
+      mode.value = savedMode
+    }
   } catch { /* fallback */ } finally {
     loading.value = false
     initialLoading.value = false  // P2-E: 隐藏骨架屏
@@ -589,7 +644,11 @@ function mergeHistory(messages: any[], toolCalls: any[]): ChatItem[] {
         // assistant 历史：流式保存的原始文本（含 [thinking] 碎片）→ 宽松拆分
         const { reasoning, body } = splitThinking(m.content, { loose: true })
         if (reasoning) items.push({ kind: 'reasoning', content: reasoning, time: clock, id: `${m.id}:r` })
-        if (body) items.push({ kind: 'text', role: 'assistant', content: body, time: clock, id: m.id })
+        if (body) items.push({
+          kind: 'text', role: 'assistant', content: body, time: clock, id: m.id,
+          // 反向定位：透传消息 metadata（kb_id/kb_hits/workflow_id/agent_id/trace_id）
+          metadata: normalizeMeta((m as any)?.metadata),
+        } as any)
       }
       return { t: new Date(m.created_at).getTime(), items }
     })
@@ -721,7 +780,8 @@ async function confirmRename() {
   if (!title || !target) return
   renaming.value = true
   try {
-    await updateConversation(target.id, { title })
+    // 会话级持久化：重命名时一并保存 llm_config（含 mode）
+    await updateConversation(target.id, { title, llm_config: buildLlmConfig() } as any)
     const s = sessions.value.find(x => x.id === target.id)
     if (s) s.title = title
     persistSessions()
@@ -749,7 +809,8 @@ async function togglePin(id: string, pinned: boolean) {
   s.pinned = pinned
   sortSessions(); persistSessions()
   try {
-    await updateConversation(id, { pinned })
+    // 会话级持久化：置顶时一并保存 llm_config（含 mode）
+    await updateConversation(id, { pinned, llm_config: buildLlmConfig() } as any)
   } catch {
     s.pinned = prev // 失败回滚
     sortSessions(); persistSessions()
@@ -941,6 +1002,14 @@ function onSSEMessage(raw: any) {
     activeSSE?.close(); activeSSE = null
     // ── 捕获 trace_id (用于 Timeline 查询) ────────────────────
     currentTraceId.value = d?.trace_id || ''
+    // ── 反向定位：done 事件携带 metadata（kb_id/kb_hits/workflow_id/agent_id）→ 挂到流式 assistant 消息 ──
+    const doneMeta = normalizeMeta(d?.metadata)
+    if (doneMeta && Object.keys(doneMeta).length && streamTextId) {
+      const streamItem = items.value.find(x => x.id === streamTextId)
+      if (streamItem?.kind === 'text' && streamItem.role === 'assistant') {
+        ;(streamItem as any).metadata = { ...((streamItem as any).metadata || {}), ...doneMeta }
+      }
+    }
     const it = d?.input_tokens ?? 0
     const ot = d?.output_tokens ?? 0
     if (it || ot) {
@@ -1001,7 +1070,7 @@ async function sendMessage(text: string, attachments?: ChatAttachment[]) {
         markMessageFailed(userItemId, '连接已断开')
       },
     )
-    const body: any = { content: text, session_id: sessionId, llm_config: { mode: mode.value } }
+    const body: any = { content: text, session_id: sessionId, llm_config: buildLlmConfig() }
     // 互联互通：上下文附加（知识库/Agent/技能/工作流，普通 SSE 模式同样携带）
     const ctx = buildContext()
     if (ctx) body.context = ctx
@@ -1249,7 +1318,7 @@ function continueGeneration() {
         :session-id="unifiedMode ? unifiedSessionId : activeSessionId"
         @send="sendMessage"
         @stop="stopGeneration"
-        @update:mode="(m: string) => (mode = m)"
+        @update:mode="onModeChange"
         @command="onSlashCommand"
       />
     </div>

@@ -12,11 +12,13 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any, Optional
 from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Optional
 
-from app.core.task_router import TaskRouter, TaskPriority
 from app.core.context_bus import publish_result
+from app.core.task_router import TaskPriority, TaskRouter
+from app.db import get_pool
 
 logger = logging.getLogger(__name__)
 
@@ -27,12 +29,22 @@ class ChatSession:
     session_id: str
     tenant_id: str
     title: str = ""
+    mode: str = "auto"
     messages: list[dict] = field(default_factory=list)
     created_at: float = field(default_factory=time.time)
     updated_at: float = 0
     
     # 共享上下文 (跨工作台状态)
     shared_context: dict[str, Any] = field(default_factory=dict)
+
+
+def _dt_to_ts(value: Any) -> float:
+    """timestamptz → Unix 秒 (datetime / None / 数值兼容)。"""
+    if value is None:
+        return time.time()
+    if isinstance(value, datetime):
+        return value.timestamp()
+    return float(value)
 
 
 class UnifiedChatHandler:
@@ -46,8 +58,100 @@ class UnifiedChatHandler:
     """
     
     def __init__(self):
-        self.sessions: dict[str, ChatSession] = {}  # session_id -> Session
+        self.sessions: dict[str, ChatSession] = {}  # session_id -> Session (L1 缓存)
         self.router = TaskRouter()
+        self._db_warned = False  # DB 降级仅告警一次
+
+    # ── PostgreSQL 持久化层 (统一任务会话) ──────────────────────────
+    # 写策略: 先写库,再更新内存 L1 缓存 (写穿透)。
+    # 读策略: 读库为准 (多实例一致),内存仅作 DB 不可用时的兜底。
+    # 所有 DB 操作独立 try/except: 池未初始化 / 表缺失 / 连接异常均
+    # 降级为纯内存模式并 warn 一次,绝不阻断主任务执行。
+
+    def _warn_db(self, exc: Exception) -> None:
+        """DB 不可用时仅告警一次,避免日志刷屏。"""
+        if not self._db_warned:
+            self._db_warned = True
+            logger.warning(
+                "Unified session DB unavailable, falling back to in-memory mode: %s", exc
+            )
+
+    async def _db_get_session(self, session_id: str) -> dict | None:
+        """按 id 读取会话行;DB 不可用或会话不存在返回 None。"""
+        try:
+            pool = get_pool()
+            row = await pool.fetchrow(
+                "SELECT id, tenant_id, user_id, title, mode, shared_context, "
+                "created_at, updated_at FROM unified_sessions WHERE id = $1",
+                session_id,
+            )
+            return dict(row) if row else None
+        except Exception as e:  # noqa: BLE001
+            self._warn_db(e)
+            return None
+
+    async def _db_ensure_session(
+        self,
+        session_id: str,
+        tenant_id: str,
+        user_id: str,
+        title: str,
+        mode: str,
+        shared_context: dict,
+    ) -> bool:
+        """确保会话行存在 (INSERT ... ON CONFLICT DO NOTHING,幂等)。
+
+        多实例并发创建同一会话时,后到者冲突被忽略,行必然存在。
+        返回 True 表示 DB 可用;False 表示降级为内存模式。
+        """
+        try:
+            pool = get_pool()
+            await pool.execute(
+                "INSERT INTO unified_sessions (id, tenant_id, user_id, title, mode, shared_context) "
+                "VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO NOTHING",
+                session_id, tenant_id, user_id, title, mode, dict(shared_context),
+            )
+            return True
+        except Exception as e:  # noqa: BLE001
+            self._warn_db(e)
+            return False
+
+    async def _db_append_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        metadata: dict,
+        error: str = "",
+    ) -> None:
+        """追加一条消息到 unified_messages (写库失败不阻断主流程)。"""
+        try:
+            pool = get_pool()
+            await pool.execute(
+                "INSERT INTO unified_messages (session_id, role, content, metadata, error) "
+                "VALUES ($1, $2, $3, $4, $5)",
+                session_id, role, content, dict(metadata), error,
+            )
+        except Exception as e:  # noqa: BLE001
+            self._warn_db(e)
+
+    async def _db_touch_session(
+        self,
+        session_id: str,
+        mode: str,
+        shared_context: dict,
+    ) -> None:
+        """更新会话 mode / shared_context (jsonb 顶层键合并) / updated_at。"""
+        try:
+            pool = get_pool()
+            await pool.execute(
+                "UPDATE unified_sessions "
+                "SET mode = $2, shared_context = shared_context || $3::jsonb, "
+                "updated_at = NOW() WHERE id = $1",
+                session_id, mode, dict(shared_context),
+            )
+        except Exception as e:  # noqa: BLE001
+            self._warn_db(e)
     
     async def submit_task(
         self,
@@ -57,6 +161,7 @@ class UnifiedChatHandler:
         mode: str = "auto",  # "auto" / "agent" / "workflow"
         trace_id: str = "",
         context: Optional[dict] = None,
+        user_id: str = "",
     ) -> dict[str, Any]:
         """提交任务 (自动编排)
         
@@ -75,6 +180,11 @@ class UnifiedChatHandler:
                 - skill_names (list[str]): 透传给 TaskRouter.route_task 的 context,
                   供能力匹配阶段作提示 (不改变现有匹配逻辑)
                 - workflow_id (str): mode=workflow 时透传记录到结果 metadata
+            user_id: 会话归属用户标识 (Go 网关经 ?user_id=<claims.UserID> 注入;
+                缺省以 tenant_id 兜底),持久化到 unified_sessions.user_id。
+
+        持久化: 会话与每轮消息写 PostgreSQL (unified_sessions / unified_messages),
+        DB 不可用时降级为内存模式 (见 get_session_messages 同款策略)。
         """
         import uuid
         
@@ -86,26 +196,56 @@ class UnifiedChatHandler:
         ctx_kb_id = str(context.get("kb_id") or "")
         ctx_workflow_id = str(context.get("workflow_id") or "")
         
-        # 创建/获取会话
+        # ── 创建/获取会话 (内存 L1 缓存 + PostgreSQL 写穿透持久化) ──
         if not session_id:
             session_id = f"session_{int(time.time())}_{tenant_id[:8]}"
-        
-        if session_id not in self.sessions:
-            self.sessions[session_id] = ChatSession(
-                session_id=session_id,
-                tenant_id=tenant_id,
-                title=user_input[:50],
-            )
-        
-        session = self.sessions[session_id]
+
+        session = self.sessions.get(session_id)
+        if session is None:
+            # 先尝试从 DB 恢复 (多实例场景: 其他实例可能已创建该会话)
+            db_row = await self._db_get_session(session_id)
+            if db_row is not None:
+                session = ChatSession(
+                    session_id=session_id,
+                    tenant_id=db_row["tenant_id"],
+                    title=db_row["title"] or "",
+                    mode=db_row["mode"] or mode,
+                    created_at=_dt_to_ts(db_row.get("created_at")),
+                    updated_at=_dt_to_ts(db_row.get("updated_at")),
+                    shared_context=dict(db_row.get("shared_context") or {}),
+                )
+            else:
+                session = ChatSession(
+                    session_id=session_id,
+                    tenant_id=tenant_id,
+                    title=user_input[:50],
+                    mode=mode,
+                    # 初始 shared_context = 请求注入的跨工作台上下文
+                    shared_context=dict(context),
+                )
+            self.sessions[session_id] = session
+
         session.updated_at = time.time()
-        
-        # 添加用户消息到历史
+        session.mode = mode
+
+        # 写穿透: 确保会话行存在 (幂等; DB 不可用时静默降级为内存模式)
+        db_ok = await self._db_ensure_session(
+            session_id=session_id,
+            tenant_id=tenant_id,
+            user_id=user_id or tenant_id,
+            title=session.title,
+            mode=mode,
+            shared_context=session.shared_context,
+        )
+
+        # 添加用户消息到历史 (先写库,再更新内存缓存)
         session.messages.append({
             "role": "user",
             "content": user_input,
             "timestamp": time.time(),
         })
+        if db_ok:
+            await self._db_append_message(session_id, "user", user_input, {})
         
         logger.info(
             "User submitted task (session=%s, tenant=%s, mode=%s, trace_id=%s)",
@@ -196,6 +336,11 @@ class UnifiedChatHandler:
             session.shared_context["last_output"] = final_output
             session.shared_context["last_trace_id"] = trace_id
             
+            # 写穿透: 落库 assistant 消息 + 更新会话共享上下文
+            if db_ok:
+                await self._db_append_message(session_id, "assistant", final_output, dict(meta))
+                await self._db_touch_session(session_id, mode, session.shared_context)
+            
             # 发布结果到 ContextBus (publish_result 默认即 RESULT_PUBLISH)
             await publish_result(
                 topic=f"chat.sessions.{session_id}",
@@ -226,13 +371,18 @@ class UnifiedChatHandler:
         except Exception as e:
             logger.error(f"Task execution failed: {e}", exc_info=True)
             
-            # 记录错误到会话历史
+            # 记录错误到会话历史 (失败同样落库,便于跨实例恢复)
             session.messages.append({
                 "role": "assistant",
                 "content": f"抱歉,执行失败: {str(e)}",
                 "timestamp": time.time(),
                 "error": str(e),
             })
+            if db_ok:
+                await self._db_append_message(
+                    session_id, "assistant", f"抱歉,执行失败: {str(e)}", {}, error=str(e)
+                )
+                await self._db_touch_session(session_id, mode, session.shared_context)
             
             return {
                 "success": False,
@@ -324,8 +474,8 @@ class UnifiedChatHandler:
         复用 workflow/engine.run_workflow 的 DAG 执行能力。
         workflow_id 仅透传记录到结果,不改变工作流构建逻辑。
         """
-        from app.workflow.engine import run_workflow
         from app.main import get_gateway
+        from app.workflow.engine import run_workflow
 
         try:
             gateway = await get_gateway()
@@ -391,8 +541,8 @@ class UnifiedChatHandler:
         空块 + 0,不阻断主任务执行 (与"不传 context 行为一致"的向后兼容原则一致)。
         """
         try:
-            from app.tools.kb import kb_search
             from app.tools.context import set_tool_context
+            from app.tools.kb import kb_search
 
             # kb_search 依赖工具上下文做归属校验 (与 TaskRouter._execute_single_task 同口径)
             set_tool_context(
@@ -451,11 +601,65 @@ class UnifiedChatHandler:
         session_id: str,
         limit: int = 50,
     ) -> dict[str, Any]:
-        """获取会话消息历史"""
+        """获取会话消息历史 (DB 优先,内存兜底)
+
+        返回结构保持兼容:
+        {success, session_id, messages: [{role, content, timestamp, metadata?, error?}], shared_context}
+        timestamp 为 Unix 秒 (由 DB created_at 转换)。
+        """
+        # 1) DB 优先: 读库为准,保证多实例一致
+        try:
+            pool = get_pool()
+        except RuntimeError:
+            pool = None
+
+        if pool is not None:
+            try:
+                row = await pool.fetchrow(
+                    "SELECT tenant_id, title, mode, shared_context "
+                    "FROM unified_sessions WHERE id = $1",
+                    session_id,
+                )
+                if row is None:
+                    return {"success": False, "error": "Session not found"}
+                rows = await pool.fetch(
+                    "SELECT role, content, metadata, error, created_at "
+                    "FROM unified_messages WHERE session_id = $1 "
+                    "ORDER BY created_at, id LIMIT $2",
+                    session_id, limit,
+                )
+                messages: list[dict] = []
+                for m in rows:
+                    msg: dict[str, Any] = {
+                        "role": m["role"],
+                        "content": m["content"],
+                        "timestamp": _dt_to_ts(m["created_at"]),
+                    }
+                    if m.get("metadata"):
+                        msg["metadata"] = m["metadata"]
+                    if m.get("error"):
+                        msg["error"] = m["error"]
+                    messages.append(msg)
+                shared_context = dict(row["shared_context"] or {})
+                # 回填 L1 缓存 (DB 不可用时内存兜底仍可读到最新)
+                cache = self.sessions.get(session_id)
+                if cache is not None:
+                    cache.messages = messages
+                    cache.shared_context = shared_context
+                return {
+                    "success": True,
+                    "session_id": session_id,
+                    "messages": messages,
+                    "shared_context": shared_context,
+                }
+            except Exception as e:  # noqa: BLE001 — 表缺失/连接异常 → 降级内存
+                self._warn_db(e)
+
+        # 2) 内存兜底 (DB 不可用,维持旧版行为)
         session = self.sessions.get(session_id)
         if not session:
             return {"success": False, "error": "Session not found"}
-        
+
         return {
             "success": True,
             "session_id": session_id,
@@ -509,12 +713,15 @@ async def submit_chat(request: Request):
     context = body.get("context")
     if context is not None and not isinstance(context, dict):
         return {"success": False, "error": "context must be an object"}
+    # user_id 持久化标识 (Go 网关代理时追加 ?user_id=<claims.UserID>;缺省以 tenant_id 兜底)
+    user_id = str(body.get("user_id") or request.query_params.get("user_id") or "")
     return await handler.submit_task(
         user_input=user_input,
         tenant_id=tenant_id,
         session_id=body.get("session_id"),
         mode=str(body.get("mode", "auto")),
         context=context,
+        user_id=user_id,
     )
 
 

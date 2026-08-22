@@ -1,4 +1,16 @@
-"""Skill API endpoints — CRUD + discover, backed by SkillStore."""
+"""Skill API endpoints — CRUD + discover, backed by SkillStore.
+
+## 多租户 / 用户级隔离
+
+- 所有 handler 从 query 参数读取 `user_id` / `tenant_id`（由网关在代理时注入），
+  每个请求构造带身份的 `SkillStore`（根目录解析见 app/skill/store.py）：
+  `data/skills/{tenant_id}/{user_id}/`；两者都缺失（未登录 / 系统任务）时回退
+  `data/skills/_shared/`（首次访问自动迁移旧全局目录内容）。
+- 不传身份时行为与历史版本一致（共享目录），返回结构保持不变。
+- 身份段非法（如 `../` 路径穿越）→ 400，拒绝构造 store。
+- `run` handler 会把请求身份写入 tool context（app.tools.context），保证
+  tools/skill.py 的 `skill_run` 执行链（含沙箱工具）落在同一身份目录下。
+"""
 from __future__ import annotations
 
 import json
@@ -12,14 +24,18 @@ from app.skill.store import SkillStore, SkillDef
 
 router = APIRouter(tags=["skills"])
 
-# Shared store instance (same directory as tools/skill.py)
-import os
-_skill_root = os.getenv("SKILL_STORE_PATH", os.path.join(".", "data", "skills"))
-store = SkillStore(_skill_root)
+
+def _store_for(user_id: str = "", tenant_id: str = "") -> SkillStore:
+    """按请求身份构造 store；身份非法时 400（防路径穿越）。"""
+    try:
+        return SkillStore(tenant_id=tenant_id, user_id=user_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"invalid identity: {e}")
 
 
 @router.get("/v1/skills")
-async def list_skills() -> dict[str, Any]:
+async def list_skills(user_id: str = "", tenant_id: str = "") -> dict[str, Any]:
+    store = _store_for(user_id, tenant_id)
     skills = store.list()
     return {
         "skills": [s.to_dict() for s in skills],
@@ -34,13 +50,15 @@ class SkillInstallRequest(BaseModel):
 
 
 @router.post("/v1/skills/{name}/register")
-async def register_skill(name: str) -> dict[str, Any]:
+async def register_skill(name: str, user_id: str = "", tenant_id: str = "") -> dict[str, Any]:
     """将能力注册中心的技能注册为本地技能（SkillStore），供对话/Agent 工具链调用。
 
     前端 SkillMarketCard 调用 POST /v1/skills/{capabilityId}/register；
     能力注册中心查询不到时返回 404，避免假注册。
     """
     from app.core.capabilities import get_registry
+
+    store = _store_for(user_id, tenant_id)
 
     cap = get_registry().get(name)
     if cap is None:
@@ -67,7 +85,9 @@ async def register_skill(name: str) -> dict[str, Any]:
 
 
 @router.post("/v1/skills/install")
-async def install_skill(body: SkillInstallRequest) -> dict[str, Any]:
+async def install_skill(body: SkillInstallRequest, user_id: str = "", tenant_id: str = "") -> dict[str, Any]:
+    store = _store_for(user_id, tenant_id)
+
     if not body.url and not body.file and not body.inline:
         raise HTTPException(status_code=400, detail="provide url, file, or inline")
 
@@ -76,8 +96,7 @@ async def install_skill(body: SkillInstallRequest) -> dict[str, Any]:
             data = json.loads(body.inline)
         elif body.file:
             from app.tools.core import _safe_path
-            skill_root = os.getenv("SKILL_STORE_PATH", os.path.join(".", "data", "skills"))
-            safe_file = _safe_path(body.file, skill_root)
+            safe_file = _safe_path(body.file, str(store.root))
             data = json.loads(safe_file.read_text(encoding="utf-8"))
         else:
             import httpx
@@ -112,7 +131,9 @@ class SkillGenerateRequest(BaseModel):
 
 
 @router.post("/v1/skills/generate")
-async def generate_skill(body: SkillGenerateRequest) -> dict[str, Any]:
+async def generate_skill(body: SkillGenerateRequest, user_id: str = "", tenant_id: str = "") -> dict[str, Any]:
+    store = _store_for(user_id, tenant_id)
+
     if not body.description:
         raise HTTPException(status_code=400, detail="description is required")
 
@@ -134,7 +155,9 @@ async def generate_skill(body: SkillGenerateRequest) -> dict[str, Any]:
 
 
 @router.delete("/v1/skills/{name}")
-async def delete_skill(name: str) -> dict[str, str]:
+async def delete_skill(name: str, user_id: str = "", tenant_id: str = "") -> dict[str, str]:
+    store = _store_for(user_id, tenant_id)
+
     if not re.match(r"^[a-zA-Z0-9_.-]+$", name):
         raise HTTPException(status_code=400, detail="invalid skill name")
     if not store.get(name):
@@ -148,8 +171,10 @@ class SkillToggleRequest(BaseModel):
 
 
 @router.put("/v1/skills/{name}")
-async def toggle_skill(name: str, body: SkillToggleRequest) -> dict[str, Any]:
+async def toggle_skill(name: str, body: SkillToggleRequest, user_id: str = "", tenant_id: str = "") -> dict[str, Any]:
     """启用/停用技能（停用后不进 agent 目录、不可运行）。"""
+    store = _store_for(user_id, tenant_id)
+
     if not re.match(r"^[a-zA-Z0-9_.-]+$", name):
         raise HTTPException(status_code=400, detail="invalid skill name")
     skill = store.get(name)
@@ -168,8 +193,14 @@ class SkillRunRequest(BaseModel):
 
 
 @router.post("/v1/skills/{name}/run")
-async def run_skill(name: str, body: SkillRunRequest) -> dict[str, Any]:
-    """运行技能（校验启用状态后调 skill_run）。"""
+async def run_skill(name: str, body: SkillRunRequest, user_id: str = "", tenant_id: str = "") -> dict[str, Any]:
+    """运行技能（校验启用状态后调 skill_run）。
+
+    把请求身份写入 tool context 再执行，保证 tools/skill.py 的 skill_run
+    （及其内部沙箱/LLM 调用链）落在与校验相同的身份目录下。
+    """
+    store = _store_for(user_id, tenant_id)
+
     if not re.match(r"^[a-zA-Z0-9_.-]+$", name):
         raise HTTPException(status_code=400, detail="invalid skill name")
     skill = store.get(name)
@@ -179,13 +210,20 @@ async def run_skill(name: str, body: SkillRunRequest) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=f"Skill '{name}' 已停用")
 
     import json as _json
+    from app.tools.context import get_all, restore_context, set_tool_context
     from app.tools.skill import skill_run
 
-    return await skill_run(name, _json.dumps(body.params))
+    snapshot = get_all()
+    set_tool_context(user_id=user_id, tenant_id=tenant_id)
+    try:
+        return await skill_run(name, _json.dumps(body.params))
+    finally:
+        restore_context(snapshot)
 
 
 @router.get("/v1/skills/discover")
-async def discover_skills(url: str = "") -> dict[str, Any]:
+async def discover_skills(url: str = "", user_id: str = "", tenant_id: str = "") -> dict[str, Any]:
+    store = _store_for(user_id, tenant_id)
     results: list[dict[str, Any]] = []
 
     if url:

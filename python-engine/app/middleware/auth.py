@@ -1,4 +1,4 @@
-# 认证中间件 — JWT + API Key + 网关内部 token
+# 认证中间件 — JWT + 网关内部 token（API Key 校验由网关负责，引擎不处理）
 from __future__ import annotations
 
 import hmac
@@ -24,10 +24,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
     """
     认证策略（优先级从高到低）:
       1. 公开路径直接放行
-      2. X-API-Key header → 查询 Redis 获取 tenant_id
-      3. Authorization: Bearer <jwt> → 解析 JWT 获取 tenant_id
-      4. 网关代理路径：仅在 X-Internal-Token 与共享密钥匹配时，
+      2. Authorization: Bearer <jwt> → 解析 JWT 获取 tenant_id
+      3. 网关代理路径：仅在 X-Internal-Token 与共享密钥匹配时，
          才接受 ?tenant_id= / ?user_id= 透传身份
+
+    注意：本中间件按架构设计未挂载（引擎无鉴权，网关为认证边界），
+    API Key 校验（apikey:*）由网关负责，引擎不查 Redis、不校验 X-API-Key。
 
     安全约束：
       - query 参数透传身份必须校验 X-Internal-Token（P0-3 防伪造）
@@ -46,15 +48,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if request.url.path in PUBLIC_PATHS:
             return await call_next(request)
 
-        # API Key 认证
-        api_key = request.headers.get("X-API-Key", "")
-        if api_key:
-            tenant_id = await self._validate_api_key(api_key)
-            if tenant_id:
-                return self._set_tenant_and_continue(request, call_next, tenant_id)
-            return JSONResponse({"error": "Invalid API key"}, status_code=401)
-
-        # JWT 认证
+        # JWT 认证（API Key 校验由网关负责，见类 docstring）
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
@@ -93,18 +87,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return False
         # 常量时间比较，防计时侧信道
         return hmac.compare_digest(provided, self._internal_token)
-
-    async def _validate_api_key(self, api_key: str) -> Optional[str]:
-        """通过 Redis 验证 API Key → 返回 tenant_id"""
-        if not self._redis:
-            logger.warning("Redis not available for API key validation")
-            return None
-        try:
-            tenant_id = await self._redis.get(f"apikey:{api_key}")
-            return tenant_id.decode() if isinstance(tenant_id, bytes) else tenant_id
-        except Exception as e:
-            logger.error("API key validation error: %s", e)
-            return None
 
     async def _validate_jwt(self, token: str) -> Optional[str]:
         """解析 JWT 获取 tenant_id，并校验黑名单。

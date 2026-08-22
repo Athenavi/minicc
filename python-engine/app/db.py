@@ -107,6 +107,31 @@ async def ensure_tables():
         (f"""CREATE INDEX IF NOT EXISTS idx_kchunk_vectors_tenant ON {settings.pgvector_table}(tenant_id)""", "idx_kchunk_vectors_tenant"),
         (f"""CREATE INDEX IF NOT EXISTS idx_kchunk_vectors_embedding
             ON {settings.pgvector_table} USING hnsw (embedding vector_cosine_ops)""", "idx_kchunk_vectors_embedding"),
+
+        # ── unified_sessions / unified_messages（统一任务会话持久化，六大工作台统一入口）──
+        ("""CREATE TABLE IF NOT EXISTS unified_sessions (
+            id TEXT PRIMARY KEY,
+            tenant_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            title TEXT DEFAULT '',
+            mode TEXT DEFAULT 'auto',
+            shared_context JSONB DEFAULT '{}',
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )""", "unified_sessions"),
+        ("""CREATE INDEX IF NOT EXISTS idx_unified_sessions_lookup
+            ON unified_sessions(tenant_id, user_id, updated_at DESC)""", "idx_unified_sessions_lookup"),
+        ("""CREATE TABLE IF NOT EXISTS unified_messages (
+            id BIGSERIAL PRIMARY KEY,
+            session_id TEXT NOT NULL REFERENCES unified_sessions(id) ON DELETE CASCADE,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            metadata JSONB DEFAULT '{}',
+            error TEXT DEFAULT '',
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )""", "unified_messages"),
+        ("""CREATE INDEX IF NOT EXISTS idx_unified_messages_session
+            ON unified_messages(session_id, created_at)""", "idx_unified_messages_session"),
     ]
 
     for sql, name in tables:

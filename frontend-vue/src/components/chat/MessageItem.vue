@@ -16,6 +16,7 @@ import ToolResultBlock from './ToolResultBlock.vue'
 import type { ChatItem, ToolCallItem, ToolResultItem, TextItem, ChatAttachment } from './chat-types'
 import { formatSize } from './chat-types'
 import { resolveMediaUrl } from '../../api'
+import { useRouter } from 'vue-router'
 
 const props = defineProps<{
   item: ChatItem
@@ -33,6 +34,48 @@ const emit = defineEmits<{
   /** 失败消息重试：用原文本重发 */
   (e: 'retry-failed', itemId: string): void
 }>()
+
+// ── 反向定位：消息 → 来源工作台 chips（assistant metadata 驱动）──
+const router = useRouter()
+
+interface SourceChip {
+  key: string
+  kind: 'kb' | 'workflow' | 'agent'
+  label: string
+  title: string
+  go: () => void
+}
+
+const sourceChips = computed<SourceChip[]>(() => {
+  if (props.item.kind !== 'text' || props.item.role !== 'assistant') return []
+  const meta: Record<string, any> = (props.item as any).metadata || {}
+  const chips: SourceChip[] = []
+  const kbId = typeof meta.kb_id === 'string' && meta.kb_id ? meta.kb_id : ''
+  if (kbId) {
+    chips.push({
+      key: 'kb', kind: 'kb', label: '知识库',
+      title: `来源知识库 #${kbId}，点击打开`,
+      go: () => router.push(`/knowledge/${encodeURIComponent(kbId)}`),
+    })
+  }
+  const wfId = typeof meta.workflow_id === 'string' && meta.workflow_id ? meta.workflow_id : ''
+  if (wfId) {
+    chips.push({
+      key: 'workflow', kind: 'workflow', label: '工作流',
+      title: `来源工作流 ${wfId}，点击打开`,
+      go: () => router.push({ path: '/workflow', query: { id: wfId } }),
+    })
+  }
+  const agentId = typeof meta.agent_id === 'string' && meta.agent_id ? meta.agent_id : ''
+  if (agentId) {
+    chips.push({
+      key: 'agent', kind: 'agent', label: 'Agent',
+      title: `来源 Agent #${agentId}，点击打开`,
+      go: () => router.push('/agents'),
+    })
+  }
+  return chips
+})
 
 // ── 安全改造：附件签名 URL 解析 ──
 // 附件若为 /media/ 公开路径，渲染前异步解析为短时效签名 URL（12 分钟本地缓存）；
@@ -276,6 +319,20 @@ function handleMsgClick(e: MouseEvent) {
             </a>
           </template>
         </div>
+        <!-- 反向定位：来源工作台 chips（kb_id / workflow_id / agent_id，metadata 驱动） -->
+        <div v-if="item.role === 'assistant' && sourceChips.length" class="source-chips">
+          <a
+            v-for="chip in sourceChips"
+            :key="chip.key"
+            class="source-chip"
+            :class="chip.kind"
+            :title="chip.title"
+            href="#"
+            @click.prevent="chip.go()"
+          >
+            {{ chip.label }}
+          </a>
+        </div>
         <!-- 失败消息错误提示 -->
         <div v-if="(item as TextItem).error" class="msg-error-banner">
           <span class="error-text">发送失败：{{ (item as TextItem).errorMsg || '网络错误' }}</span>
@@ -456,6 +513,7 @@ function handleMsgClick(e: MouseEvent) {
 /* ── 移动端：间距压缩 + 操作按钮常驻（触控目标 ≥40px）+ 代码块横向滚动 ── */
 @media (max-width: 768px) {
   .msg-row { padding: 4px 0; }
+  .source-chip { min-height: 28px; } /* 反向定位 chip 触控目标微放大 */
   .msg-actions { gap: 4px; height: 40px; }
   .msg-time { opacity: 1; font-size: 11px; padding-right: 4px; }
   .msg-action { width: 40px; height: 40px; opacity: 1; }
@@ -493,6 +551,21 @@ function handleMsgClick(e: MouseEvent) {
 .msg-attachment-file:hover { border-color: var(--primary); color: var(--primary); }
 .msg-attachment-file .att-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .msg-attachment-file .att-size { color: var(--text-tertiary); font-size: 12px; }
+
+/* ── 反向定位：来源工作台 chips（与 kb-hits 标签同设计语言：胶囊 + CSS 变量色）── */
+.source-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.source-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 10px; border-radius: 10px;
+  font-size: 12px; line-height: 18px; text-decoration: none; cursor: pointer;
+  background: var(--bg-secondary); color: var(--text-secondary);
+  border: 1px solid var(--border);
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.source-chip:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-bg); }
+.source-chip.kb { background: var(--primary-bg); color: var(--primary); border-color: transparent; }
+.source-chip.kb:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+.source-chip.agent { background: var(--bg-hover); color: var(--text-primary); }
 
 /* ── P1-3 错误状态 ── */
 .msg-row.msg-error .msg-text { opacity: 0.6; }

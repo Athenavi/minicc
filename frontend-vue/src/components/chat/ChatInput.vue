@@ -297,11 +297,13 @@ function onSlashInput() {
           >
             <template #icon><PaperClipOutlined /></template>
           </Button>
+          <span class="mode-label">模式</span>
           <Select
             :model-value="mode"
             :options="modeOptions"
             size="small"
             style="width: 110px"
+            :title="`当前模式：${modeOptions.find(o => o.value === mode)?.label || mode}（仅影响后续消息）`"
             @update:value="(v: any) => emit('update:mode', String(v))"
           />
         </div>
@@ -349,6 +351,8 @@ function onSlashInput() {
 .input-actions { display: flex; align-items: center; justify-content: space-between; }
 .input-left { display: flex; align-items: center; gap: 8px; }
 .input-hint { font-size: 12px; color: var(--text-tertiary); }
+/* 模式选择器标签 */
+.mode-label { flex: none; font-size: 12px; color: var(--text-tertiary); }
 /* 发送按钮：可发送时主色、hover 微放大 + 加深 */
 .send-btn { transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease; }
 .send-btn:not(:disabled):hover { transform: scale(1.06); box-shadow: 0 4px 12px var(--primary-bg); }

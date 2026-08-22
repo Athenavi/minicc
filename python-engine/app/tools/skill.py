@@ -1,10 +1,20 @@
 """Skill tools (skill_list / skill_install / skill_generate / skill_discover) 注册到本地工具注册表。
 
 实现对标 Go `internal/skill/tools.go`，使用磁盘 SkillStore 作为后端。
+
+## 多租户 / 用户级隔离
+
+- 运行时工具链从 app.tools.context（contextvars，AgentRuntime 注入）读取
+  user_id / tenant_id，按与 API 层（app/api/skills.py）相同的规则构造 store：
+  `data/skills/{tenant_id}/{user_id}/`；无身份（未登录 / 系统任务）→
+  `data/skills/_shared/`（首次访问自动迁移旧全局目录内容，见 app/skill/store.py）。
+- 函数签名保持兼容：调用方不传身份时行为与历史一致（共享目录）。
+- 身份段非法（路径穿越）时回退共享目录并告警，避免工具调用中断。
 """
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from typing import Any
@@ -12,12 +22,30 @@ from typing import Any
 from app.tools.registry import registry
 from app.skill.store import SkillStore, SkillDef
 
+logger = logging.getLogger(__name__)
+
 _skill_root = os.getenv("SKILL_STORE_PATH", os.path.join(".", "data", "skills"))
-_store = SkillStore(_skill_root)
+# 无显式 root → 按身份解析；模块加载时无上下文，即为共享目录（含旧目录迁移）
+_store = SkillStore()
+
+
+def _get_store() -> SkillStore:
+    """按当前运行上下文解析身份 store；无身份 → 共享目录（模块级 _store）。"""
+    from app.tools.context import get_tenant_id, get_user_id
+
+    uid = get_user_id()
+    tid = get_tenant_id()
+    if uid or tid:
+        try:
+            return SkillStore(tenant_id=tid, user_id=uid)
+        except ValueError as e:
+            # 身份段非法（路径穿越防护失败）→ 回退共享目录，不中断工具调用
+            logger.warning("skill store: invalid identity from context, fallback to shared: %s", e)
+    return _store
 
 
 async def skill_list() -> dict[str, Any]:
-    skills = _store.list()
+    skills = _get_store().list()
     if not skills:
         return {"output": "No skills installed.", "count": 0, "skills": []}
     lines = [f"  - {s.name}: {s.description} (v{s.version}, {s.exec_type})" for s in skills]
@@ -35,7 +63,7 @@ async def skill_install(url: str = "", file: str = "", inline: str = "") -> dict
             data = json.loads(inline)
         elif file:
             from app.tools.core import _safe_path
-            safe_file = _safe_path(file, _skill_root)
+            safe_file = _safe_path(file, str(_get_store().root))
             if safe_file.stat().st_size > 1_048_576:
                 return {"error": "skill file too large (max 1MB)"}
             data = json.loads(safe_file.read_text(encoding="utf-8"))
@@ -74,7 +102,7 @@ async def skill_install(url: str = "", file: str = "", inline: str = "") -> dict
         source=exec_cfg.get("source", ""),
         parameters=data.get("parameters", []),
     )
-    _store.save(skill)
+    _get_store().save(skill)
     return {"output": f"Skill installed: {skill.name} (v{skill.version})\n{json.dumps(skill.to_dict(), ensure_ascii=False, indent=2)}", "skill": skill.name, "version": skill.version}
 
 
@@ -99,7 +127,7 @@ async def skill_generate(description: str, install: bool = False) -> dict[str, A
 
     if install:
         try:
-            _store.save(skill)
+            _get_store().save(skill)
             result["installed"] = True
             result["output"] = f"Generated and installed skill: {skill.name}\n{json.dumps(skill.to_dict(), ensure_ascii=False, indent=2)}"
         except Exception as e:
@@ -118,7 +146,7 @@ async def skill_discover(url: str = "") -> dict[str, Any]:
                 resp = await client.get(url)
                 resp.raise_for_status()
                 items = resp.json()
-                installed_names = {s.name for s in _store.list()}
+                installed_names = {s.name for s in _get_store().list()}
                 for item in items:
                     name = item.get("name", "")
                     results.append({
@@ -132,7 +160,7 @@ async def skill_discover(url: str = "") -> dict[str, Any]:
         except Exception as e:
             return {"error": f"discover remote failed: {e}"}
     else:
-        for s in _store.list():
+        for s in _get_store().list():
             results.append({
                 "name": s.name,
                 "description": s.description,
@@ -155,7 +183,7 @@ async def skill_run(name: str, params: str | dict = "{}") -> dict[str, Any]:
     - shell：渲染命令后在 sandbox（逃逸拦截 + 环境清理）中执行
     - http：渲染 URL 后经 SSRF 防护抓取内容
     """
-    skill = _store.get(name)
+    skill = _get_store().get(name)
     if not skill:
         return {"error": f"Skill not found: {name}"}
     if not skill.enabled:
