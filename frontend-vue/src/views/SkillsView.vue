@@ -7,11 +7,13 @@ import {
 } from 'ant-design-vue'
 import {
   ThunderboltOutlined, DownloadOutlined, DeleteOutlined, PlayCircleOutlined,
-  SearchOutlined, CodeOutlined, MessageOutlined,
+  SearchOutlined, CodeOutlined, MessageOutlined, ShopOutlined,
 } from '@ant-design/icons-vue'
-import { api } from '../api'
+import { api, listMarket, installMarket } from '../api'
+import type { MarketItem } from '../api'
 import PageSkeleton from '../components/common/PageSkeleton.vue'
 import EmptyState from '../components/common/EmptyState.vue'
+import SkillMarketCard from '../components/SkillMarketCard.vue'
 
 interface SkillParam {
   name: string
@@ -64,7 +66,43 @@ async function loadSkills() {
   }
 }
 
-onMounted(loadSkills)
+onMounted(() => {
+  loadSkills()
+  loadMarket()
+})
+
+// ── 市场（技能市场：admin 发布，前端仅浏览 + 安装）──
+const marketItems = ref<MarketItem[]>([])
+const marketLoading = ref(false)
+const marketError = ref(false)
+const marketInstallingId = ref<string | null>(null)
+
+async function loadMarket() {
+  marketLoading.value = true
+  marketError.value = false
+  try {
+    marketItems.value = await listMarket('skill')
+  } catch {
+    marketError.value = true
+    message.error('获取技能市场失败')
+  } finally {
+    marketLoading.value = false
+  }
+}
+
+async function handleMarketInstall(item: MarketItem) {
+  marketInstallingId.value = item.id
+  try {
+    await installMarket('skill', item.id)
+    message.success(`「${item.name}」已安装`)
+    await Promise.all([loadMarket(), loadSkills()])
+  } catch (e: any) {
+    const raw = e?.response?.data
+    message.error('安装失败: ' + (raw?.message || raw?.detail || raw?.error || e?.message || ''))
+  } finally {
+    marketInstallingId.value = null
+  }
+}
 
 const execTypes = computed(() => {
   const set = new Set<string>()
@@ -334,6 +372,27 @@ async function handleGenerate() {
             </div>
           </div>
         </div>
+      </TabPane>
+
+      <!-- ── 技能市场 ── -->
+      <TabPane key="market" tab="市场">
+        <PageSkeleton v-if="marketLoading" variant="cards" :columns="3" :rows="6" :header="false" />
+        <EmptyState
+          v-else-if="marketError"
+          size="page"
+          :icon="markRaw(ShopOutlined)"
+          description="市场加载失败"
+          hint="无法获取市场内容，请稍后重试"
+        >
+          <Button type="primary" @click="loadMarket">重试</Button>
+        </EmptyState>
+        <SkillMarketCard
+          v-else
+          :items="marketItems"
+          type="skill"
+          :installing-id="marketInstallingId"
+          @install="handleMarketInstall"
+        />
       </TabPane>
 
       <!-- ── 安装技能 ── -->

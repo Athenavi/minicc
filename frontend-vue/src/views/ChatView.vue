@@ -5,7 +5,7 @@ import { MenuOutlined, CopyOutlined, LinkOutlined, CloseOutlined } from '@ant-de
 import {
   api, createSSEConnection, submitApproval,
   updateConversation, createShare, getActiveShare, revokeShare,
-  getChatSessionMessages,
+  getChatSessionMessages, resolveMediaUrl,
 } from '../api'
 import type { ShareInfo } from '../api'
 import { useAuthStore } from '../stores/auth'
@@ -193,6 +193,16 @@ function buildContext(): Record<string, any> | undefined {
   return Object.keys(ctx).length ? ctx : undefined
 }
 
+/** 安全改造：附件签名 URL 解析 — /media/ 公开路径 → 短时效签名 URL；非 /media/ 前缀原样；失败回退原 url */
+async function resolveAttachmentUrls(attachments?: ChatAttachment[]): Promise<ChatAttachment[]> {
+  if (!attachments?.length) return []
+  return Promise.all(attachments.map(async a => {
+    if (!a.url || !a.url.startsWith('/media/')) return a
+    const url = await resolveMediaUrl({ id: a.id, file_url: a.url })
+    return url && url !== a.url ? { ...a, url } : a
+  }))
+}
+
 /** 拉取统一会话历史（GET /v1/chat/sessions/{id}/messages） */
 async function loadUnifiedSession(sessionId: string) {
   loading.value = true
@@ -249,11 +259,16 @@ async function sendUnified(text: string, attachments?: ChatAttachment[]) {
   const userItemId = items.value[items.value.length - 1]?.id
   currentTraceId.value = ''
   try {
+    // 安全改造：附件若为 /media/ 公开路径，先解析为签名 URL 再随消息发送（loading 期间发送已禁用）
+    const resolvedAtts = await resolveAttachmentUrls(attachments)
     const res = await api.post('/v1/chat/submit', {
       message: text,
       session_id: unifiedSessionId.value,
       mode: unifiedSubmitMode.value || 'auto',
       context: buildContext(),
+      ...(resolvedAtts.length
+        ? { attachments: resolvedAtts.map(a => ({ id: a.id, name: a.name, mime_type: a.mimeType, url: a.url, is_image: a.isImage })) }
+        : {}),
     })
     const d = res.data?.data !== undefined ? res.data.data : (res.data || {})
     if (d.success === false) throw new Error(d.error || '请求失败')
@@ -990,8 +1005,10 @@ async function sendMessage(text: string, attachments?: ChatAttachment[]) {
     // 互联互通：上下文附加（知识库/Agent/技能/工作流，普通 SSE 模式同样携带）
     const ctx = buildContext()
     if (ctx) body.context = ctx
-    if (attachments?.length) {
-      body.attachments = attachments.map(a => ({ id: a.id, name: a.name, mime_type: a.mimeType, url: a.url, is_image: a.isImage }))
+    // 安全改造：附件若为 /media/ 公开路径，先解析为短时效签名 URL 再发送（loading 期间发送已禁用）
+    const resolvedAtts = await resolveAttachmentUrls(attachments)
+    if (resolvedAtts.length) {
+      body.attachments = resolvedAtts.map(a => ({ id: a.id, name: a.name, mime_type: a.mimeType, url: a.url, is_image: a.isImage }))
     }
     await api.post('/submit', body)
     activeSessionId.value = sessionId

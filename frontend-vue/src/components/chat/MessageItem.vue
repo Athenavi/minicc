@@ -7,14 +7,15 @@ import 'highlight.js/styles/github.css'
 import texmath from 'markdown-it-texmath'
 import katex from 'katex'
 import hljs from 'highlight.js/lib/common'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { message, Input } from 'ant-design-vue'
 import { CopyOutlined, EditOutlined, ReloadOutlined, FileOutlined, LikeOutlined, DislikeOutlined, LikeFilled, DislikeFilled } from '@ant-design/icons-vue'
 import ReasoningBlock from './ReasoningBlock.vue'
 import ToolCallCard from './ToolCallCard.vue'
 import ToolResultBlock from './ToolResultBlock.vue'
-import type { ChatItem, ToolCallItem, ToolResultItem, TextItem } from './chat-types'
+import type { ChatItem, ToolCallItem, ToolResultItem, TextItem, ChatAttachment } from './chat-types'
 import { formatSize } from './chat-types'
+import { resolveMediaUrl } from '../../api'
 
 const props = defineProps<{
   item: ChatItem
@@ -32,6 +33,38 @@ const emit = defineEmits<{
   /** 失败消息重试：用原文本重发 */
   (e: 'retry-failed', itemId: string): void
 }>()
+
+// ── 安全改造：附件签名 URL 解析 ──
+// 附件若为 /media/ 公开路径，渲染前异步解析为短时效签名 URL（12 分钟本地缓存）；
+// 非 /media/ 前缀（绝对/签名/data:）原样；解析失败或加载失败回退原 url。
+const attachmentResolved = ref<Record<string, string>>({})
+
+function attachmentUrl(att: ChatAttachment): string {
+  return attachmentResolved.value[att.id] || att.url
+}
+
+async function resolveAttachmentUrls() {
+  const item = props.item
+  if (item.kind !== 'text' || !item.attachments?.length) return
+  const targets = item.attachments.filter(a => a.url?.startsWith('/media/') && !attachmentResolved.value[a.id])
+  if (!targets.length) return
+  const results = await Promise.all(targets.map(async a => {
+    const url = await resolveMediaUrl({ id: a.id, file_url: a.url })
+    return [a.id, url] as const
+  }))
+  for (const [id, url] of results) {
+    if (url) attachmentResolved.value[id] = url
+  }
+}
+
+watch(() => props.item, () => { void resolveAttachmentUrls() }, { immediate: true, deep: true })
+
+function onAttachmentImgError(att: ChatAttachment) {
+  // 签名 URL 加载失败/过期 → 回退原始公开路径（旧路径仍保留，仅不再作为新渲染首选）
+  if (attachmentResolved.value[att.id] && attachmentResolved.value[att.id] !== att.url) {
+    attachmentResolved.value[att.id] = ''
+  }
+}
 
 // 消息时间（hover 淡入显示，deepseek MessageIconActions timeEnd）
 // S 修复：历史消息用落库 created_at（item.time），实时消息缺省时取当前时间
@@ -228,8 +261,15 @@ function handleMsgClick(e: MouseEvent) {
         <!-- 附件展示：图片内联，文件显示卡片 -->
         <div v-if="(item as TextItem).attachments?.length" class="msg-attachments">
           <template v-for="att in (item as TextItem).attachments" :key="att.id">
-            <img v-if="att.isImage" :src="att.url" :alt="att.name" class="msg-attachment-img" loading="lazy" />
-            <a v-else :href="att.url" :download="att.name" class="msg-attachment-file">
+            <img
+              v-if="att.isImage"
+              :src="attachmentUrl(att)"
+              :alt="att.name"
+              class="msg-attachment-img"
+              loading="lazy"
+              @error="onAttachmentImgError(att)"
+            />
+            <a v-else :href="attachmentUrl(att)" :download="att.name" class="msg-attachment-file">
               <FileOutlined />
               <span class="att-name">{{ att.name }}</span>
               <span class="att-size">{{ formatSize(att.size) }}</span>

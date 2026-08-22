@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, markRaw } from 'vue'
 import {
-  Button, Input, Modal, Switch, Tag, Popconfirm, message,
+  Button, Input, Modal, Switch, Tag, Popconfirm, Tabs, TabPane, message,
 } from 'ant-design-vue'
 import {
   ThunderboltOutlined, PlusOutlined, DeleteOutlined, SearchOutlined,
-  EditOutlined, ExperimentOutlined, DownOutlined, UpOutlined,
+  EditOutlined, ExperimentOutlined, DownOutlined, UpOutlined, ShopOutlined,
 } from '@ant-design/icons-vue'
-import { api } from '../api'
+import { api, listMarket, installMarket } from '../api'
+import type { MarketItem } from '../api'
 import PageSkeleton from '../components/common/PageSkeleton.vue'
 import EmptyState from '../components/common/EmptyState.vue'
+import SkillMarketCard from '../components/SkillMarketCard.vue'
 
 interface Plugin {
   name: string
@@ -26,6 +28,7 @@ const error = ref(false)
 const plugins = ref<Plugin[]>([])
 const searchQuery = ref('')
 const expanded = ref<Set<string>>(new Set())
+const activeTab = ref('plugins')
 
 // 新建/编辑
 const editorOpen = ref(false)
@@ -39,7 +42,48 @@ const saving = ref(false)
 const testingName = ref('')
 const testResults = ref<Record<string, { ok: boolean; message: string }>>({})
 
-onMounted(loadPlugins)
+onMounted(() => {
+  loadPlugins()
+  loadMarket()
+})
+
+// ── MCP 市场：浏览 + 一键安装；命令未命中白名单时后端返回 403 ──
+const marketItems = ref<MarketItem[]>([])
+const marketLoading = ref(false)
+const marketError = ref(false)
+const marketInstallingId = ref<string | null>(null)
+
+async function loadMarket() {
+  marketLoading.value = true
+  marketError.value = false
+  try {
+    marketItems.value = await listMarket('mcp')
+  } catch {
+    marketError.value = true
+    message.error('获取 MCP 市场失败')
+  } finally {
+    marketLoading.value = false
+  }
+}
+
+async function handleMarketInstall(item: MarketItem) {
+  marketInstallingId.value = item.id
+  try {
+    await installMarket('mcp', item.id)
+    message.success(`「${item.name}」已安装`)
+    await Promise.all([loadMarket(), loadPlugins()])
+  } catch (e: any) {
+    const raw = e?.response?.data
+    const detail = raw?.message || raw?.detail || raw?.error || e?.message || ''
+    if (e?.response?.status === 403 || String(detail).includes('PLUGIN_COMMAND_ALLOWLIST')) {
+      message.error('安装被拒绝：该 MCP 命令不在安全白名单内，请先在「插件」中手动创建，或联系管理员加入白名单')
+    } else {
+      message.error('安装失败: ' + detail)
+    }
+  } finally {
+    marketInstallingId.value = null
+  }
+}
 
 const filtered = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
@@ -198,6 +242,9 @@ async function testPlugin(p: Plugin) {
       </Button>
     </div>
 
+    <Tabs v-model:activeKey="activeTab" class="plugins-tabs">
+      <!-- ── 插件列表 ── -->
+      <TabPane key="plugins" tab="插件">
     <div class="list-toolbar">
       <Input v-model:value="searchQuery" placeholder="搜索插件（名称 / 描述）" allow-clear class="search-input">
         <template #prefix><SearchOutlined /></template>
@@ -296,6 +343,29 @@ async function testPlugin(p: Plugin) {
         </div>
       </div>
     </div>
+      </TabPane>
+
+      <!-- ── MCP 市场 ── -->
+      <TabPane key="market" tab="MCP 市场">
+        <PageSkeleton v-if="marketLoading" variant="cards" :columns="3" :rows="6" :header="false" />
+        <EmptyState
+          v-else-if="marketError"
+          size="page"
+          :icon="markRaw(ShopOutlined)"
+          description="市场加载失败"
+          hint="无法获取市场内容，请稍后重试"
+        >
+          <Button type="primary" @click="loadMarket">重试</Button>
+        </EmptyState>
+        <SkillMarketCard
+          v-else
+          :items="marketItems"
+          type="mcp"
+          :installing-id="marketInstallingId"
+          @install="handleMarketInstall"
+        />
+      </TabPane>
+    </Tabs>
 
     <!-- 新建/编辑 Modal -->
     <Modal
@@ -343,6 +413,7 @@ async function testPlugin(p: Plugin) {
 .page-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
 .page-title { font-size: 24px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
 .page-sub { margin: 4px 0 0; color: var(--text-tertiary); font-size: 13px; }
+.plugins-tabs :deep(.ant-tabs-nav) { margin-bottom: 16px; }
 .list-toolbar { margin-bottom: 16px; }
 .search-input { max-width: 320px; }
 .page-empty { padding: 60px 0; }

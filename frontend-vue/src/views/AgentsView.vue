@@ -9,15 +9,17 @@ import {
   PlusOutlined, PlayCircleOutlined, EditOutlined, DeleteOutlined,
   StopOutlined, ClockCircleOutlined, CheckCircleOutlined,
   CloseCircleOutlined, SyncOutlined, RobotOutlined, HistoryOutlined,
-  MessageOutlined,
+  MessageOutlined, ShopOutlined,
 } from '@ant-design/icons-vue'
 import {
   listAgents, createAgent, updateAgent, deleteAgent,
   runAgent, listAgentSessions, getAgentSession,
+  listMarket, installMarket,
 } from '../api'
-import type { Agent, AgentSession } from '../api'
+import type { Agent, AgentSession, MarketItem } from '../api'
 import PageSkeleton from '../components/common/PageSkeleton.vue'
 import EmptyState from '../components/common/EmptyState.vue'
+import SkillMarketCard from '../components/SkillMarketCard.vue'
 
 // ── 数据 ──
 const agents = ref<Agent[]>([])
@@ -58,8 +60,42 @@ async function loadSessions() {
 onMounted(() => {
   loadAgents()
   loadSessions()
+  loadMarket()
 })
 onUnmounted(() => stopPolling())
+
+// ── 市场（Agent 市场：安装后出现在「我的 Agent」列表）──
+const marketItems = ref<MarketItem[]>([])
+const marketLoading = ref(false)
+const marketError = ref(false)
+const marketInstallingId = ref<string | null>(null)
+
+async function loadMarket() {
+  marketLoading.value = true
+  marketError.value = false
+  try {
+    marketItems.value = await listMarket('agent')
+  } catch {
+    marketError.value = true
+    message.error('获取 Agent 市场失败')
+  } finally {
+    marketLoading.value = false
+  }
+}
+
+async function handleMarketInstall(item: MarketItem) {
+  marketInstallingId.value = item.id
+  try {
+    await installMarket('agent', item.id)
+    message.success(`「${item.name}」已安装`)
+    await Promise.all([loadMarket(), loadAgents()])
+  } catch (e: any) {
+    const raw = e?.response?.data
+    message.error('安装失败: ' + (raw?.message || raw?.detail || raw?.error || e?.message || ''))
+  } finally {
+    marketInstallingId.value = null
+  }
+}
 
 // ── 新建 / 编辑 ──
 interface EditorState {
@@ -367,6 +403,27 @@ function toolCount(a: Agent): number {
             </div>
           </div>
         </div>
+      </TabPane>
+
+      <!-- ── Agent 市场 ── -->
+      <TabPane key="market" tab="市场">
+        <PageSkeleton v-if="marketLoading" variant="cards" :columns="3" :rows="6" :header="false" />
+        <EmptyState
+          v-else-if="marketError"
+          size="page"
+          :icon="markRaw(ShopOutlined)"
+          description="市场加载失败"
+          hint="无法获取市场内容，请稍后重试"
+        >
+          <Button type="primary" @click="loadMarket">重试</Button>
+        </EmptyState>
+        <SkillMarketCard
+          v-else
+          :items="marketItems"
+          type="agent"
+          :installing-id="marketInstallingId"
+          @install="handleMarketInstall"
+        />
       </TabPane>
 
       <!-- ── Tab 2：运行记录 ── -->

@@ -10,10 +10,17 @@ import {
   PlayCircleOutlined, PictureOutlined, SearchOutlined,
   MessageOutlined,
 } from '@ant-design/icons-vue'
-import { api } from '../api'
+import { api, resolveMediaUrl } from '../api'
 import { createChunkUpload } from '../utils/uploader'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
+
+/** 相对路径补 API_URL 前缀（resolveMediaUrl 返回的签名 URL 为 /media/s/... 相对路径） */
+function absUrl(url: string): string {
+  if (!url) return ''
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) return url
+  return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -182,7 +189,9 @@ async function importFromMedia() {
     if (!file) continue
 
     try {
-      const response = await fetch(`${API_URL}${file.file_url}`)
+      // 安全改造：/media/ 公开路径先解析为短时效签名 URL 再取字节（带归属校验）
+      const signed = await resolveMediaUrl({ id: file.id, file_url: file.file_url })
+      const response = await fetch(absUrl(signed || file.file_url))
       const blob = await response.blob()
       const mediaFile = new File([blob], file.name, { type: file.mime_type || '' })
       const handle = await createChunkUpload(mediaFile, { purpose: 'kb_doc', parentId: kbId })

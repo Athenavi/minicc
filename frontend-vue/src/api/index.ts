@@ -308,4 +308,4 @@ export async function resolveMediaUrl(asset: { id?: string; file_url?: string })
   }
 }
 
-export default api
+

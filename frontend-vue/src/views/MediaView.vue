@@ -8,7 +8,7 @@ import {
   SearchOutlined, CloudUploadOutlined, FolderOutlined, FileOutlined,
   FolderAddOutlined, LeftOutlined, RightOutlined, TagOutlined, PictureOutlined,
 } from '@ant-design/icons-vue'
-import { api } from '../api'
+import { api, resolveMediaUrl } from '../api'
 import { createChunkUpload } from '../utils/uploader'
 import { FileViewer } from '@file-viewer/vue3'
 import allPreset from '@file-viewer/preset-all'
@@ -81,6 +81,58 @@ function absUrl(url: string): string {
   return `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`
 }
 
+// ── 签名 URL 解析（安全改造：/media/ 公开路径 → 短时效签名 URL；非 /media/ 前缀原样）──
+const resolvedUrls = ref<Record<string, string>>({})
+const resolvingIds = new Set<string>()
+const fallbackIds = new Set<string>()
+
+/** resolveMediaUrl 结果归一化：相对路径补 API_URL 前缀；失败回退原 file_url */
+function normalizeResolved(url: string, item: MediaItem): string {
+  if (!url) return absUrl(item.file_url)
+  if (url.startsWith('/') && !url.startsWith('//')) return `${API_URL}${url}`
+  return url
+}
+
+async function resolveItemUrl(item: MediaItem) {
+  if (resolvingIds.has(item.id)) return
+  resolvingIds.add(item.id)
+  try {
+    const url = await resolveMediaUrl({ id: item.id, file_url: item.file_url })
+    if (url) resolvedUrls.value[item.id] = normalizeResolved(url, item)
+  } finally {
+    resolvingIds.delete(item.id)
+  }
+}
+
+/** 列表加载后批量解析（缩略图/详情/灯箱共用 resolvedUrl map） */
+function resolveAllUrls() {
+  for (const i of items.value) {
+    if (!isFolder(i) && (i.file_url || '').startsWith('/media/')) void resolveItemUrl(i)
+  }
+}
+
+/** 渲染用 URL：签名 URL 优先；未解析时懒解析并以原路径占位；失败回退原 file_url */
+function itemUrl(item: MediaItem): string {
+  const r = resolvedUrls.value[item.id]
+  if (r) return r
+  if (!fallbackIds.has(item.id) && (item.file_url || '').startsWith('/media/')) {
+    void resolveItemUrl(item)
+  }
+  return absUrl(item.file_url)
+}
+
+/** 图片加载失败回退：签名 URL 失效 → 回退公开路径原图；原图也失败 → 隐藏 */
+function onImgError(e: Event, item: MediaItem) {
+  const el = e.target as HTMLImageElement
+  const raw = absUrl(item.file_url)
+  if (resolvedUrls.value[item.id] && el.src !== raw) {
+    resolvedUrls.value[item.id] = ''
+    fallbackIds.add(item.id)
+    return
+  }
+  el.style.display = 'none'
+}
+
 async function fetchItems() {
   loading.value = true
   error.value = false
@@ -98,6 +150,7 @@ async function fetchItems() {
     items.value = data.items || []
     total.value = data.total || 0
     selectedIds.value = new Set()
+    resolveAllUrls()
   } catch {
     items.value = []
     total.value = 0
@@ -145,13 +198,21 @@ const shareUrl = ref('')
 const shareExpires = ref('')
 const shareLoading = ref(false)
 
-function openPreview(item: MediaItem) { previewItem.value = item; showPreview.value = true }
+function openPreview(item: MediaItem) {
+  previewItem.value = item
+  showPreview.value = true
+  if ((item.file_url || '').startsWith('/media/')) void resolveItemUrl(item)
+}
 
-function downloadItem(item: MediaItem) { window.open(absUrl(item.file_url), '_blank') }
+async function downloadItem(item: MediaItem) {
+  const url = await resolveMediaUrl({ id: item.id, file_url: item.file_url })
+  window.open(normalizeResolved(url, item), '_blank')
+}
 
 async function copyUrl(item: MediaItem) {
+  const url = await resolveMediaUrl({ id: item.id, file_url: item.file_url })
   try {
-    await navigator.clipboard.writeText(absUrl(item.file_url))
+    await navigator.clipboard.writeText(normalizeResolved(url, item))
     message.success('URL 已复制')
   } catch {
     message.error('复制失败')
@@ -414,7 +475,8 @@ async function uploadToKnowledgeBase() {
   const files = items.value.filter(i => selectedIds.value.has(i.id) && !isFolder(i))
   for (const file of files) {
     try {
-      const resp = await fetch(absUrl(file.file_url))
+      const url = await resolveMediaUrl({ id: file.id, file_url: file.file_url })
+      const resp = await fetch(normalizeResolved(url, file))
       const blob = await resp.blob()
       const mediaFile = new File([blob], file.name, { type: file.mime_type || '' })
       // 全局分片上传到知识库（kb_doc purpose → complete 落 knowledge_documents）
@@ -545,9 +607,9 @@ onUnmounted(() => {
           <div class="card-thumb">
             <img
               v-if="isImage(item) && !isFolder(item)"
-              :src="absUrl(item.file_url)"
+              :src="itemUrl(item)"
               loading="lazy"
-              @error="(e: any) => (e.target.style.display = 'none')"
+              @error="onImgError($event, item)"
             />
             <FolderOutlined v-else-if="isFolder(item)" class="thumb-icon folder" />
             <FileOutlined v-else class="thumb-icon" />
@@ -589,7 +651,8 @@ onUnmounted(() => {
         <div class="detail-thumb">
           <img
             v-if="isImage(detailItem) && !isFolder(detailItem)"
-            :src="absUrl(detailItem.file_url)"
+            :src="itemUrl(detailItem)"
+            @error="onImgError($event, detailItem)"
           />
           <FolderOutlined v-else-if="isFolder(detailItem)" class="thumb-icon folder" />
           <FileOutlined v-else class="thumb-icon" />
@@ -599,7 +662,7 @@ onUnmounted(() => {
           <div class="detail-row"><span class="label">大小</span><span>{{ formatSize(detailItem.size) }}</span></div>
           <div class="detail-row"><span class="label">MIME</span><span>{{ detailItem.mime_type || '—' }}</span></div>
           <div class="detail-row"><span class="label">上传时间</span><span>{{ detailItem.created_at }}</span></div>
-          <div class="detail-row"><span class="label">URL</span><span class="url-text">{{ absUrl(detailItem.file_url) }}</span></div>
+          <div class="detail-row"><span class="label">URL</span><span class="url-text">{{ itemUrl(detailItem) }}</span></div>
           <!-- 标签编辑 -->
           <div class="detail-row">
             <span class="label"><TagOutlined /> 标签</span>
@@ -672,7 +735,7 @@ onUnmounted(() => {
     >
       <div v-if="lightboxItem" class="lightbox">
         <button type="button" class="lb-btn lb-prev" title="上一张" @click="lbPrev"><LeftOutlined /></button>
-        <img :src="absUrl(lightboxItem.file_url)" :alt="lightboxItem.name" class="lb-img" />
+        <img :src="itemUrl(lightboxItem)" :alt="lightboxItem.name" class="lb-img" @error="onImgError($event, lightboxItem)" />
         <button type="button" class="lb-btn lb-next" title="下一张" @click="lbNext"><RightOutlined /></button>
         <div class="lb-meta">
           <span class="lb-name">{{ lightboxItem.name }}</span>
@@ -702,7 +765,7 @@ onUnmounted(() => {
     >
       <div class="preview-shell" v-if="previewItem">
         <file-viewer
-          :url="absUrl(previewItem.file_url)"
+          :url="itemUrl(previewItem)"
           :options="{ preset: allPreset, rendererMode: 'replace', theme: 'light', toolbar: { position: 'auto' } }"
         />
       </div>
