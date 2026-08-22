@@ -8,31 +8,11 @@
         </svg>
         <span class="brand-text">MiniCC 工作台</span>
       </div>
-      
-      <!-- 快捷命令输入框 -->
-      <div class="quick-command-bar">
-        <svg class="command-icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-          <path d="M8 0a8 8 0 100 16A8 8 0 008 0zm1 11H7V7h2v4zm0-6H7V3h2v2z"/>
-        </svg>
-        <input
-          v-model="commandInput"
-          type="text"
-          placeholder="输入自然语言命令,例如: '帮我分析 sales.csv 并生成报告'"
-          class="command-input"
-          @keydown.enter="handleCommandSubmit"
-          @keydown.esc="clearCommand"
-        />
-        <button
-          class="command-submit"
-          :disabled="isSubmitting"
-          @click="handleCommandSubmit"
-        >
-          <span v-if="isSubmitting" class="loading-spinner"></span>
-          <span v-else>执行</span>
-        </button>
-      </div>
+
+      <!-- 快捷命令输入框（子组件 QuickCommandBar：输入 + loading，emit submit） -->
+      <QuickCommandBar ref="quickBarRef" @submit="handleQuickCommand" />
     </div>
-    
+
     <!-- 工作台网格 -->
     <div class="workstation-grid">
       <div
@@ -52,44 +32,168 @@
         <div v-if="ws.badge" class="ws-badge">{{ ws.badge }}</div>
       </div>
     </div>
-    
-    <!-- 最近活动 (可选) -->
-    <div v-if="showRecentActivity" class="recent-activity">
-      <div class="activity-header">最近活动</div>
-      <div
-        v-for="activity in recentActivities"
-        :key="activity.id"
-        class="activity-item"
-        @click="viewActivityDetail(activity)"
-      >
-        <div class="activity-workstation" :style="{ borderColor: activity.wsColor }">
-          {{ activity.wsName.charAt(0) }}
-        </div>
-        <div class="activity-content">
-          <div class="activity-title">{{ activity.title }}</div>
-          <div class="activity-time">{{ formatTime(activity.timestamp) }}</div>
-        </div>
-        <div class="activity-status" :class="activity.status">
-          {{ activity.statusText }}
-        </div>
-      </div>
-    </div>
+
+    <!-- 最近活动（子组件 RecentActivities：props activities，emit select） -->
+    <RecentActivities
+      v-if="showRecentActivity"
+      :activities="recentActivities"
+      @select="viewActivityDetail"
+    />
   </div>
 </template>
 
-<script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { api, createSSEConnection } from '../api'
+<!-- 普通 script 块：与 <script setup> 共享模块作用域。
+     导出 executeQuickCommand 供全局停靠坞（AppLayout）复用同一套
+     快速命令执行逻辑：创建 uni 会话 → /v1/quick-execute → 跳转 /chat?task= -->
+<script lang="ts">
+import { api } from '../api'
+import router from '../router'
 
-// 定义事件
-const router = useRouter()
+export interface QuickCommandRunResult {
+  sessionId: string
+  title: string
+}
+
+/** 快速命令统一执行逻辑（WorkstationNav 与停靠坞弹层共用）：
+ *  创建 uni 会话 → 调用 /v1/quick-execute → 跳转聊天页展示结果，可继续追问 */
+export async function executeQuickCommand(command: string): Promise<QuickCommandRunResult> {
+  const sessionId = `uni_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  const title = command.substring(0, 50)
+  try {
+    const response = await api.post('/v1/quick-execute', {
+      user_input: command,
+      mode: 'auto',
+      session_id: sessionId,
+    })
+    if (response.data?.success) {
+      await router.push({ path: '/chat', query: { task: sessionId } })
+      return { sessionId, title }
+    }
+    await router.push({ path: '/chat', query: { task: sessionId, error: response.data?.error || 'execution failed' } })
+    return { sessionId, title }
+  } catch (error: any) {
+    console.error('Command execution error:', error)
+    await router.push({ path: '/chat', query: { task: '', error: error?.message || 'request failed' } })
+    throw error
+  }
+}
+</script>
+
+<script setup lang="ts">
+import { defineComponent, h, onMounted, onUnmounted, ref, type PropType } from 'vue'
+import { MessageOutlined, RobotOutlined, ApartmentOutlined, ThunderboltOutlined, BookOutlined, AppstoreOutlined } from '@ant-design/icons-vue'
+
+// api / router 由上方普通 <script> 块提供（同模块作用域，避免重复 import 造成重名）
 
 // 定义事件
 const emit = defineEmits<{
   workstationSwitch: [workstationId: string]
   commandSubmit: [command: string]
 }>()
+
+// ── 最近活动数据模型 ──
+interface ActivityItem {
+  id: string
+  title: string
+  wsName: string
+  wsColor: string
+  route?: string
+  status: string
+  statusText: string
+  timestamp: number
+}
+
+// ── 子组件：QuickCommandBar（props: 无；emit submit；内部管理输入与 loading） ──
+const QuickCommandBar = defineComponent({
+  name: 'QuickCommandBar',
+  emits: ['submit'],
+  setup(_, { emit: barEmit, expose }) {
+    const commandInput = ref('')
+    const isSubmitting = ref(false)
+
+    function submit() {
+      const command = commandInput.value.trim()
+      if (!command || isSubmitting.value) return
+      isSubmitting.value = true
+      commandInput.value = ''
+      barEmit('submit', command)
+    }
+
+    function clear() {
+      commandInput.value = ''
+    }
+
+    // 供父组件在提交流程（API 请求 → 跳转）结束后复位 loading
+    function setSubmitting(v: boolean) {
+      isSubmitting.value = v
+    }
+    expose({ setSubmitting })
+
+    return () => h('div', { class: 'quick-command-bar' }, [
+      h('svg', { class: 'command-icon', width: 16, height: 16, viewBox: '0 0 16 16', fill: 'currentColor' }, [
+        h('path', { d: 'M8 0a8 8 0 100 16A8 8 0 008 0zm1 11H7V7h2v4zm0-6H7V3h2v2z' }),
+      ]),
+      h('input', {
+        class: 'command-input',
+        type: 'text',
+        placeholder: "输入自然语言命令,例如: '帮我分析 sales.csv 并生成报告'",
+        disabled: isSubmitting.value,
+        value: commandInput.value,
+        onInput: (e: Event) => { commandInput.value = (e.target as HTMLInputElement).value },
+        onKeydown: (e: KeyboardEvent) => {
+          if (e.key === 'Enter') submit()
+          else if (e.key === 'Escape') clear()
+        },
+      }),
+      h('button', {
+        class: 'command-submit',
+        type: 'button',
+        disabled: isSubmitting.value,
+        onClick: submit,
+      }, isSubmitting.value
+        ? [h('span', { class: 'loading-spinner' })]
+        : '执行'),
+    ])
+  },
+})
+
+// ── 子组件：RecentActivities（props: activities；emit select；空态"暂无活动"） ──
+const RecentActivities = defineComponent({
+  name: 'RecentActivities',
+  props: {
+    activities: { type: Array as PropType<ActivityItem[]>, required: true },
+  },
+  emits: ['select'],
+  setup(props, { emit: actEmit }) {
+    function formatTime(timestamp: number): string {
+      const diff = Date.now() - timestamp
+      const minutes = Math.floor(diff / 60000)
+      if (minutes < 1) return '刚刚'
+      if (minutes < 60) return `${minutes} 分钟前`
+      const hours = Math.floor(minutes / 60)
+      if (hours < 24) return `${hours} 小时前`
+      const days = Math.floor(hours / 24)
+      return `${days} 天前`
+    }
+
+    return () => h('div', { class: 'recent-activity' }, [
+      h('div', { class: 'activity-header' }, '最近活动'),
+      props.activities.length === 0
+        ? h('div', { class: 'activity-empty' }, '暂无活动')
+        : props.activities.map((a) => h('div', {
+            class: 'activity-item',
+            onClick: () => actEmit('select', a),
+          }, [
+            h('div', { class: 'activity-workstation', style: { borderColor: a.wsColor } }, a.wsName.charAt(0)),
+            h('div', { class: 'activity-content' }, [
+              h('div', { class: 'activity-title' }, a.title),
+              h('div', { class: 'activity-time' }, formatTime(a.timestamp)),
+            ]),
+            h('div', { class: ['activity-status', a.status] }, a.statusText),
+          ])),
+    ])
+  },
+})
 
 // 工作台配置
 interface Workstation {
@@ -154,115 +258,7 @@ const workstations: Workstation[] = [
   },
 ]
 
-const activeWorkstation = ref('dialogue')
-const commandInput = ref('')
-const isSubmitting = ref(false)
-const showRecentActivity = ref(true)
-
-const recentActivities = ref<any[]>([
-  // 示例数据,实际应从 API 获取
-])
-
-// 切换到工作台
-function switchWorkstation(workstationId: string) {
-  activeWorkstation.value = workstationId
-  emit('workstationSwitch', workstationId)
-  
-  // 路由跳转
-  const ws = workstations.find(w => w.id === workstationId)
-  if (ws) {
-    // 修复：createWebHistory 模式下 location.hash 不会触发路由，改用 router.push
-    router.push(ws.route)
-  }
-}
-
-// 提交快捷命令
-async function handleCommandSubmit() {
-  const command = commandInput.value.trim()
-  if (!command || isSubmitting.value) return
-  
-  isSubmitting.value = true
-  emit('commandSubmit', command)
-  
-  try {
-    // 调用 /v1/quick-execute API
-    // 创建统一会话：执行后跳转聊天页展示结果，可继续追问（六大工作台统一入口）
-    const sessionId = `uni_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-    const response = await api.post('/v1/quick-execute', {
-      user_input: command,
-      mode: 'auto',
-      session_id: sessionId,
-    })
-    
-    if (response.data?.success) {
-      // 显示结果 (可集成到聊天界面)
-      // 跳转聊天页展示结果（不再丢弃）
-      router.push({ path: '/chat', query: { task: sessionId } })
-      
-      // 添加到最近活动
-      addRecentActivity({
-        id: `act_${Date.now()}`,
-        title: command.substring(0, 50),
-        wsName: '对话',
-        wsColor: '#10b981',
-        route: '/chat',
-        status: 'completed',
-        statusText: '完成',
-        timestamp: Date.now(),
-      })
-    } else {
-      router.push({ path: '/chat', query: { task: sessionId, error: response.data?.error || 'execution failed' } })
-    }
-    
-    // 清空输入框
-    commandInput.value = ''
-    
-  } catch (error: any) {
-    console.error('Command execution error:', error)
-    router.push({ path: '/chat', query: { task: '', error: error?.message || 'request failed' } })
-  } finally {
-    isSubmitting.value = false
-  }
-}
-
-// 添加最近活动
-function addRecentActivity(activity: any) {
-  recentActivities.value.unshift(activity)
-  if (recentActivities.value.length > 10) {
-    recentActivities.value.pop()
-  }
-}
-
-// 格式化时间
-function formatTime(timestamp: number): string {
-  const diff = Date.now() - timestamp
-  const minutes = Math.floor(diff / 60000)
-  if (minutes < 1) return '刚刚'
-  if (minutes < 60) return `${minutes} 分钟前`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours} 小时前`
-  const days = Math.floor(hours / 24)
-  return `${days} 天前`
-}
-
-// 清除命令
-function clearCommand() {
-  commandInput.value = ''
-}
-
-// 查看活动详情：跳转到活动关联的工作台路由
-// 活动带 route（如快捷命令产生的活动）直接跳；否则按 wsName 匹配工作台；兜底 /chat
-function viewActivityDetail(activity: any) {
-  const route =
-    activity?.route ||
-    workstations.find(w => w.name === activity?.wsName)?.route ||
-    '/chat'
-  window.location.hash = route
-}
-
-// 注册图标组件（原 ./icons/*..vue 组件不存在，改用 antd 图标映射）
-import { MessageOutlined, RobotOutlined, ApartmentOutlined, ThunderboltOutlined, BookOutlined, AppstoreOutlined } from '@ant-design/icons-vue'
-
+// 注册图标组件（原 ./icons/*.vue 组件不存在，改用 antd 图标映射）
 const iconMap: Record<string, any> = {
   ChatIcon: MessageOutlined,
   AgentIcon: RobotOutlined,
@@ -272,17 +268,77 @@ const iconMap: Record<string, any> = {
   PluginIcon: AppstoreOutlined,
 }
 
-onMounted(() => {
-  // 加载最近活动
-  loadRecentActivities()
-})
+const activeWorkstation = ref('dialogue')
+const showRecentActivity = ref(true)
+const recentActivities = ref<ActivityItem[]>([])
+const quickBarRef = ref<{ setSubmitting(v: boolean): void } | null>(null)
 
-// 从 API 加载最近活动
+// 切换到工作台
+function switchWorkstation(workstationId: string) {
+  activeWorkstation.value = workstationId
+  emit('workstationSwitch', workstationId)
+
+  // 路由跳转
+  const ws = workstations.find(w => w.id === workstationId)
+  if (ws) {
+    // 修复：createWebHistory 模式下 location.hash 不会触发路由，改用 router.push
+    router.push(ws.route)
+  }
+}
+
+// 快速命令提交：复用 executeQuickCommand（创建 uni 会话 → 跳转 /chat?task=）
+async function handleQuickCommand(command: string) {
+  emit('commandSubmit', command)
+  try {
+    const result = await executeQuickCommand(command)
+    // 添加到最近活动
+    addRecentActivity({
+      id: `act_${Date.now()}`,
+      title: result.title,
+      wsName: '对话',
+      wsColor: '#10b981',
+      route: '/chat',
+      status: 'completed',
+      statusText: '完成',
+      timestamp: Date.now(),
+    })
+  } catch {
+    // executeQuickCommand 已携带 error query 跳转 /chat，无需额外处理
+  } finally {
+    // 提交后跳转前的 loading 态：由父组件在流程结束后复位
+    quickBarRef.value?.setSubmitting(false)
+  }
+}
+
+// 添加最近活动
+function addRecentActivity(activity: ActivityItem) {
+  recentActivities.value.unshift(activity)
+  if (recentActivities.value.length > 10) {
+    recentActivities.value.pop()
+  }
+}
+
+// 查看活动详情：跳转到活动关联的工作台路由
+// 活动带 route（如快捷命令产生的活动）直接跳；否则按 wsName 匹配工作台；兜底 /chat
+function viewActivityDetail(activity: ActivityItem) {
+  const route =
+    activity?.route ||
+    workstations.find(w => w.name === activity?.wsName)?.route ||
+    '/chat'
+  router.push(route)
+}
+
+// 从 API 加载最近活动（/v1/activities；30s 轮询，卸载时停止）
+let activityTimer: number | undefined
+let loadingActivities = false
+
 async function loadRecentActivities() {
+  if (loadingActivities) return
+  loadingActivities = true
   try {
     const response = await api.get('/v1/activities?limit=10')
     const list = response.data?.activities || []
-    recentActivities.value = list.map((a: any) => {
+    recentActivities.value = list.map((a: any): ActivityItem => {
       const ws = workstations.find(w => w.id === a.workstation)
       return {
         id: `${a.workstation}_${a.timestamp}`,
@@ -297,8 +353,20 @@ async function loadRecentActivities() {
     })
   } catch (error) {
     console.warn('Failed to load recent activities:', error)
+  } finally {
+    loadingActivities = false
   }
 }
+
+onMounted(() => {
+  loadRecentActivities()
+  activityTimer = window.setInterval(loadRecentActivities, 30_000)
+})
+
+onUnmounted(() => {
+  if (activityTimer !== undefined) window.clearInterval(activityTimer)
+  activityTimer = undefined
+})
 </script>
 
 <style scoped>
@@ -325,7 +393,8 @@ async function loadRecentActivities() {
   white-space: nowrap;
 }
 
-.quick-command-bar {
+/* ── QuickCommandBar 子组件样式（:deep 穿透运行时子组件） ── */
+:deep(.quick-command-bar) {
   flex: 1;
   display: flex;
   align-items: center;
@@ -334,12 +403,12 @@ async function loadRecentActivities() {
   margin: 0 auto;
 }
 
-.command-icon {
+:deep(.command-icon) {
   color: var(--text-secondary);
   flex-shrink: 0;
 }
 
-.command-input {
+:deep(.command-input) {
   flex: 1;
   min-width: 0;
   min-height: 40px;
@@ -353,16 +422,16 @@ async function loadRecentActivities() {
   transition: all 0.2s ease;
 }
 
-.command-input:focus {
+:deep(.command-input:focus) {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-bg);
 }
 
-.command-input::placeholder {
+:deep(.command-input::placeholder) {
   color: var(--text-muted);
 }
 
-.command-submit {
+:deep(.command-submit) {
   min-height: 40px;
   padding: 8px 18px;
   border: none;
@@ -376,16 +445,17 @@ async function loadRecentActivities() {
   white-space: nowrap;
 }
 
-.command-submit:hover:not(:disabled) {
+:deep(.command-submit:hover:not(:disabled)) {
   background: var(--primary-dark);
 }
 
-.command-submit:disabled {
+:deep(.command-submit:disabled) {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-.loading-spinner {
+:deep(.loading-spinner) {
+  display: inline-block;
   width: 16px;
   height: 16px;
   border: 2px solid rgba(255, 255, 255, 0.3);
@@ -473,19 +543,27 @@ async function loadRecentActivities() {
   font-weight: 600;
 }
 
-.recent-activity {
+/* ── RecentActivities 子组件样式（:deep 穿透运行时子组件；状态色走语义令牌） ── */
+:deep(.recent-activity) {
   border-top: 1px solid var(--border);
   padding: 16px;
 }
 
-.activity-header {
+:deep(.activity-header) {
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
   margin-bottom: 12px;
 }
 
-.activity-item {
+:deep(.activity-empty) {
+  padding: 16px 8px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+:deep(.activity-item) {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -495,11 +573,11 @@ async function loadRecentActivities() {
   transition: background 0.2s ease;
 }
 
-.activity-item:hover {
+:deep(.activity-item:hover) {
   background: var(--bg-hover);
 }
 
-.activity-workstation {
+:deep(.activity-workstation) {
   width: 32px;
   height: 32px;
   border-radius: 6px;
@@ -513,12 +591,12 @@ async function loadRecentActivities() {
   flex-shrink: 0;
 }
 
-.activity-content {
+:deep(.activity-content) {
   flex: 1;
   min-width: 0;
 }
 
-.activity-title {
+:deep(.activity-title) {
   font-size: 13px;
   color: var(--text-primary);
   white-space: nowrap;
@@ -526,29 +604,29 @@ async function loadRecentActivities() {
   text-overflow: ellipsis;
 }
 
-.activity-time {
+:deep(.activity-time) {
   font-size: 11px;
   color: var(--text-secondary);
 }
 
-.activity-status {
+:deep(.activity-status) {
   font-size: 12px;
   font-weight: 500;
   padding: 2px 8px;
   border-radius: 4px;
 }
 
-.activity-status.completed {
+:deep(.activity-status.completed) {
   color: var(--success);
   background: rgba(34, 197, 94, 0.12);
 }
 
-.activity-status.failed {
+:deep(.activity-status.failed) {
   color: var(--error);
   background: rgba(239, 68, 68, 0.12);
 }
 
-.activity-status.running {
+:deep(.activity-status.running) {
   color: var(--warning);
   background: rgba(245, 158, 11, 0.12);
 }
@@ -558,16 +636,16 @@ async function loadRecentActivities() {
     flex-direction: column;
     align-items: stretch;
   }
-  
-  .quick-command-bar {
+
+  :deep(.quick-command-bar) {
     order: -1;
   }
-  
+
   .workstation-grid {
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: 8px;
   }
-  
+
   .workstation-card {
     padding: 8px;
   }
@@ -584,20 +662,20 @@ async function loadRecentActivities() {
     padding: 12px;
   }
 
-  .command-input {
+  :deep(.command-input) {
     font-size: 13px;
   }
 
-  .activity-item {
+  :deep(.activity-item) {
     padding: 10px 4px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .command-input,
-  .command-submit,
+  :deep(.command-input),
+  :deep(.command-submit),
   .workstation-card,
-  .activity-item {
+  :deep(.activity-item) {
     transition: none;
   }
 }

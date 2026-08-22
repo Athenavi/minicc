@@ -1,15 +1,24 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { Button, Avatar, Dropdown, Menu, MenuItem, MenuDivider, SubMenu } from 'ant-design-vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
+import { Button, Avatar, Dropdown, Menu, MenuItem, MenuDivider, SubMenu, Input, message } from 'ant-design-vue'
 import {
   SearchOutlined, CloseOutlined, LeftOutlined, DownOutlined,
   PlusOutlined, EllipsisOutlined, EditOutlined, PushpinOutlined,
-  ShareAltOutlined, DeleteOutlined, TagOutlined,
+  ShareAltOutlined, DeleteOutlined, TagOutlined, ReloadOutlined, ThunderboltOutlined,
 } from '@ant-design/icons-vue'
+import { useRouter } from 'vue-router'
+import { api, quickExecute } from '../../api'
 import { formatRelativeTime } from './chat-types'
 import type { ChatItem, ChatSession } from './chat-types'
 
-const props = defineProps<{
+/** 上下文芯片（与 ChatView contextChips 结构一致：由路由 query kb/agent/skill/workflow 驱动） */
+export interface ContextChip {
+  type: 'kb' | 'agent' | 'skill' | 'workflow'
+  label: string
+  value: string
+}
+
+const props = withDefaults(defineProps<{
   items: ChatItem[]
   selectedIndex: number | null
   open: boolean
@@ -18,7 +27,11 @@ const props = defineProps<{
   sessions: ChatSession[]
   activeSessionId: string
   userName?: string
-}>()
+  /** 当前会话上下文芯片（知识库/Agent/技能/工作流，可移除） */
+  contextChips?: ContextChip[]
+}>(), {
+  contextChips: () => [],
+})
 
 const emit = defineEmits<{
   (e: 'focus', index: number): void
@@ -32,13 +45,23 @@ const emit = defineEmits<{
   (e: 'share', id: string): void
   /** P3-D: 设置会话标签 */
   (e: 'tag', id: string, tag: string): void
+  /** 移除单个上下文芯片（父级同步清空路由 query） */
+  (e: 'remove-context', type: ContextChip['type']): void
+  /** 清空全部上下文（父级同步清空路由 query） */
+  (e: 'clear-context'): void
 }>()
 
+const router = useRouter()
 const trajectoryQuery = ref('')
 const sessionQuery = ref('')
 const hoveredIndex = ref<number | null>(null)
 // 当前展开菜单的会话行 id：菜单打开时行保持 hover 态
 const menuSessionId = ref<string | null>(null)
+
+// ── 抽屉模式判定（≤1024px）：触摸手势仅在抽屉模式下生效，桌面常驻面板不受影响 ──
+const drawerMq = window.matchMedia('(max-width: 1024px)')
+const isDrawerMode = ref(drawerMq.matches)
+drawerMq.addEventListener?.('change', (e: MediaQueryListEvent) => { isDrawerMode.value = e.matches })
 
 // ── 移动端左滑关闭手势 ──
 const dragX = ref(0)
@@ -47,7 +70,7 @@ const dragging = ref(false)
 const SWIPE_THRESHOLD = 80 // 拖拽超过 80px 触发关闭
 
 function onTouchStart(e: TouchEvent) {
-  if (!props.open) return
+  if (!props.open || !isDrawerMode.value) return
   const touch = e.touches[0]
   dragStartX.value = touch.clientX
   dragging.value = true
@@ -71,13 +94,92 @@ function onTouchEnd() {
 }
 
 const panelStyle = computed(() => {
-  if (dragX.value !== 0) {
+  if (isDrawerMode.value && dragX.value !== 0) {
     return { transform: `translateX(${dragX.value}px)`, transition: dragging.value ? 'none' : 'transform 0.25s ease' }
   }
   return undefined
 })
 
 const activeSession = computed(() => props.sessions.find(s => s.id === props.activeSessionId) || null)
+
+// ── 快捷操作：发起统一任务（复用快速命令：创建 uni 会话 → 跳转 /chat?task=）──
+const unifiedTaskInput = ref('')
+const launchingUnified = ref(false)
+
+async function launchUnified() {
+  const text = unifiedTaskInput.value.trim()
+  if (!text || launchingUnified.value) return
+  launchingUnified.value = true
+  try {
+    // 与 WorkstationNav 一致：客户端生成 uni_ 会话 id → quick-execute 创建 → 跳转统一会话
+    const sessionId = `uni_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    const res = await quickExecute({ message: text, session_id: sessionId, mode: 'auto' })
+    const q: Record<string, string> = { task: sessionId }
+    // 携带当前上下文（kb/agent/skill/workflow）到统一会话
+    for (const c of props.contextChips || []) q[c.type] = c.value
+    if (res?.success === false) q.error = res.error || 'execution failed'
+    unifiedTaskInput.value = ''
+    await router.push({ path: '/chat', query: q })
+  } catch (e: any) {
+    message.error('发起统一任务失败: ' + (e?.message || '网络错误'))
+  } finally {
+    launchingUnified.value = false
+  }
+}
+
+// ── 最近活动（/v1/activities，30s 轮询；点击跳转）──
+interface ActivityItem {
+  id: string
+  title: string
+  route: string
+  status: string
+  timestamp: string | number
+}
+const recentActivities = ref<ActivityItem[]>([])
+const activitiesLoading = ref(false)
+let activityTimer: ReturnType<typeof setInterval> | null = null
+
+async function loadActivities() {
+  if (!props.open) return
+  activitiesLoading.value = true
+  try {
+    const res = await api.get('/v1/activities?limit=8')
+    const list = res.data?.activities || []
+    recentActivities.value = list.map((a: any, i: number) => ({
+      id: a.id || `${a.workstation || 'act'}_${a.timestamp || i}`,
+      title: a.title || '暂无标题',
+      route: a.route || '/chat',
+      status: a.status || '',
+      timestamp: a.timestamp || 0,
+    }))
+  } catch {
+    /* 拉取失败保留上次列表 */
+  } finally {
+    activitiesLoading.value = false
+  }
+}
+
+function actTime(ts: string | number): string {
+  if (!ts) return ''
+  const d = new Date(ts)
+  return Number.isNaN(d.getTime()) ? '' : formatRelativeTime(d.toISOString())
+}
+
+function goActivity(a: ActivityItem) {
+  void router.push(a.route || '/chat')
+}
+
+// 面板打开时立即刷新一次（常驻挂载，onMounted 只跑一次）
+watch(() => props.open, (v) => { if (v) void loadActivities() })
+
+onMounted(() => {
+  void loadActivities()
+  activityTimer = setInterval(() => { void loadActivities() }, 30000)
+})
+
+onUnmounted(() => {
+  if (activityTimer) { clearInterval(activityTimer); activityTimer = null }
+})
 
 // ── 主视图：当前会话轨迹（仅用户提问作为锚点） ──
 const userIndexes = computed(() =>
@@ -199,6 +301,50 @@ function pickSession(id: string) {
       <CloseOutlined class="toolbar-close" title="收起面板" @click="emit('close')" />
     </div>
 
+    <!-- 顶部：当前会话上下文（知识库/Agent/技能/工作流芯片，可移除；移除由父级清空 query 与 context） -->
+    <div v-if="contextChips.length" class="panel-context">
+      <span class="ctx-title">当前上下文</span>
+      <div class="ctx-chips">
+        <span v-for="c in contextChips" :key="c.type" class="ctx-chip" :title="`${c.label}（点击移除）`">
+          <span class="ctx-chip-label">{{ c.label }}</span>
+          <CloseOutlined class="ctx-chip-remove" :title="`移除${c.label}`" @click="emit('remove-context', c.type)" />
+        </span>
+      </div>
+    </div>
+
+    <!-- 中部：快捷操作（发起统一任务 / 清空上下文） -->
+    <div class="panel-quick">
+      <span class="quick-title">快捷操作</span>
+      <div class="quick-task-row">
+        <Input
+          v-model:value="unifiedTaskInput"
+          size="small"
+          class="quick-task-input"
+          placeholder="输入任务，发起统一执行…"
+          :disabled="launchingUnified"
+          @press-enter="launchUnified"
+        />
+        <Button
+          size="small"
+          type="primary"
+          class="quick-launch-btn"
+          :loading="launchingUnified"
+          :disabled="!unifiedTaskInput.trim()"
+          @click="launchUnified"
+        >
+          <template #icon><ThunderboltOutlined /></template>
+          发起
+        </Button>
+      </div>
+      <button
+        type="button"
+        class="quick-clear"
+        :disabled="!contextChips.length"
+        title="清空知识库/Agent/技能/工作流上下文"
+        @click="emit('clear-context')"
+      >清空上下文</button>
+    </div>
+
     <!-- 主视图：当前会话轨迹（搜索 + 时间线 + 提问锚点） -->
     <template v-if="view === 'trajectory'">
       <div class="panel-search">
@@ -245,6 +391,30 @@ function pickSession(id: string) {
           <span class="row-text">{{ summary(i) }}</span>
         </div>
         <div v-if="filteredIndexes.length === 0" class="list-empty">当前会话暂无提问</div>
+      </div>
+
+      <!-- 底部：最近活动（/v1/activities，30s 轮询，点击跳转） -->
+      <div class="panel-activities">
+        <div class="act-head">
+          <span class="act-title">最近活动</span>
+          <span class="act-refresh" title="刷新" @click="loadActivities"><ReloadOutlined /></span>
+        </div>
+        <div v-if="activitiesLoading && !recentActivities.length" class="act-empty">加载中…</div>
+        <div v-else-if="!recentActivities.length" class="act-empty">暂无活动</div>
+        <div v-else class="act-list">
+          <button
+            v-for="a in recentActivities"
+            :key="a.id"
+            type="button"
+            class="act-row"
+            :title="a.title"
+            @click="goActivity(a)"
+          >
+            <span class="act-dot" :class="a.status || ''" />
+            <span class="act-text">{{ a.title }}</span>
+            <span class="act-time">{{ actTime(a.timestamp) }}</span>
+          </button>
+        </div>
       </div>
     </template>
 
@@ -334,6 +504,30 @@ function pickSession(id: string) {
         </template>
       </div>
 
+      <!-- 底部：最近活动（/v1/activities，30s 轮询，点击跳转） -->
+      <div class="panel-activities">
+        <div class="act-head">
+          <span class="act-title">最近活动</span>
+          <span class="act-refresh" title="刷新" @click="loadActivities"><ReloadOutlined /></span>
+        </div>
+        <div v-if="activitiesLoading && !recentActivities.length" class="act-empty">加载中…</div>
+        <div v-else-if="!recentActivities.length" class="act-empty">暂无活动</div>
+        <div v-else class="act-list">
+          <button
+            v-for="a in recentActivities"
+            :key="a.id"
+            type="button"
+            class="act-row"
+            :title="a.title"
+            @click="goActivity(a)"
+          >
+            <span class="act-dot" :class="a.status || ''" />
+            <span class="act-text">{{ a.title }}</span>
+            <span class="act-time">{{ actTime(a.timestamp) }}</span>
+          </button>
+        </div>
+      </div>
+
       <div class="panel-foot">
         <Avatar :size="22" :style="{ backgroundColor: 'var(--primary)' }">
           {{ (userName || 'U').charAt(0).toUpperCase() }}
@@ -345,8 +539,9 @@ function pickSession(id: string) {
 </template>
 
 <style scoped>
-/* 自由浮动侧面板：悬浮于整页右侧，覆盖聊天区，不参与文档流；
-   隐藏时 translateX 移出 + visibility 延迟隐藏，避免溢出视口产生横向滚动条 */
+/* 上下文面板：≤1024px 为自由浮动抽屉（悬浮于整页右侧，覆盖聊天区，不参与文档流；
+   隐藏时 translateX 移出 + visibility 延迟隐藏，避免溢出视口产生横向滚动条）；
+   ≥1025px 为文档流内常驻面板（见下方 min-width 媒体查询） */
 .side-panel {
   position: absolute;
   top: 0; right: 0; bottom: 0;
@@ -365,6 +560,17 @@ function pickSession(id: string) {
 .side-panel.open { transform: translateX(0); visibility: visible; }
 .side-panel.dragging { transition: none; }
 @media (max-width: 768px) { .side-panel { width: 100%; } }
+/* ── 上下文面板：≥1025px 常驻展开（文档流内 flex 子项，不覆盖聊天区）── */
+@media (min-width: 1025px) {
+  .side-panel {
+    position: relative; top: auto; right: auto; bottom: auto;
+    width: 300px; z-index: auto;
+    flex: none;
+    transform: none; visibility: visible;
+    box-shadow: none;
+  }
+  .side-panel:not(.open) { display: none; }
+}
 /* ── 响应式：≤1024px 抽屉宽度自适应（平板半屏抽屉），≤576px 全屏 ── */
 @media (max-width: 1024px) { .side-panel { width: min(420px, 100%); } }
 @media (max-width: 768px) {
@@ -397,6 +603,37 @@ function pickSession(id: string) {
 .session-picker-arrow { flex: none; font-size: 10px; color: var(--text-tertiary); }
 .toolbar-close { flex: none; font-size: 13px; color: var(--text-tertiary); cursor: pointer; padding: 4px; border-radius: 4px; transition: color 0.15s ease, background 0.15s ease; }
 .toolbar-close:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+/* ── 当前会话上下文 chips（与消息区/侧栏 tag-chip 同设计语言）── */
+.panel-context { flex: none; padding: 8px 12px 0; }
+.ctx-title { display: block; font-size: 11px; color: var(--text-tertiary); margin-bottom: 6px; }
+.ctx-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ctx-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 8px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--bg-card);
+  color: var(--text-secondary); font-size: 12px;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.ctx-chip:hover { border-color: var(--primary); color: var(--primary); }
+.ctx-chip-label { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctx-chip-remove { font-size: 10px; color: var(--text-tertiary); cursor: pointer; }
+.ctx-chip-remove:hover { color: var(--danger, #ef4444); }
+
+/* ── 快捷操作：发起统一任务 + 清空上下文 ── */
+.panel-quick { flex: none; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.quick-title { display: block; font-size: 11px; color: var(--text-tertiary); margin-bottom: 6px; }
+.quick-task-row { display: flex; gap: 6px; }
+.quick-task-input { flex: 1; min-width: 0; }
+.quick-task-input :deep(input) { font-size: 12px; }
+.quick-launch-btn { flex: none; }
+.quick-clear {
+  margin-top: 6px; padding: 0; border: none; background: none;
+  font-size: 11px; color: var(--text-tertiary); cursor: pointer;
+  transition: color 0.15s ease;
+}
+.quick-clear:hover:not(:disabled) { color: var(--danger, #ef4444); }
+.quick-clear:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* 搜索框（轨迹 / 会话通用） */
 .panel-search { flex: none; display: flex; align-items: center; gap: 4px; margin: 8px 12px 0; padding: 0 8px; height: 28px; background: var(--bg-secondary); border-radius: 6px; }
@@ -479,6 +716,33 @@ function pickSession(id: string) {
 .session-menu { min-width: 148px; border-radius: 10px; padding: 4px; box-shadow: var(--shadow-lg); }
 .session-menu :deep(.ant-dropdown-menu-item) { display: flex; align-items: center; gap: 8px; font-size: 13px; border-radius: 6px; }
 .menu-icon { font-size: 14px; }
+
+/* ── 最近活动（/v1/activities，30s 轮询）── */
+.panel-activities {
+  flex: none; display: flex; flex-direction: column;
+  border-top: 1px solid var(--border);
+  max-height: 220px;
+}
+.act-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px 4px; }
+.act-title { font-size: 11px; color: var(--text-tertiary); }
+.act-refresh { font-size: 11px; color: var(--text-tertiary); cursor: pointer; padding: 2px; border-radius: 4px; transition: color 0.15s ease; }
+.act-refresh:hover { color: var(--primary); }
+.act-list { overflow-y: auto; padding: 0 6px 6px; scrollbar-width: thin; scrollbar-color: var(--text-disabled) transparent; }
+.act-row {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 6px 8px; border: none; border-radius: 6px;
+  background: transparent; color: var(--text-secondary);
+  font-size: 12px; text-align: left; cursor: pointer;
+  transition: background 0.15s ease;
+}
+.act-row:hover { background: var(--bg-hover); }
+.act-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--text-disabled); }
+.act-dot.completed, .act-dot.success { background: #52c41a; }
+.act-dot.running, .act-dot.pending { background: var(--primary); }
+.act-dot.failed, .act-dot.error { background: var(--danger, #ef4444); }
+.act-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.act-time { flex: none; font-size: 10px; color: var(--text-muted); }
+.act-empty { padding: 10px 12px; font-size: 11px; color: var(--text-muted); }
 
 /* 底部用户信息 */
 .panel-foot {

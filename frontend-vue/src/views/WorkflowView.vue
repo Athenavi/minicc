@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { VueFlow, useVueFlow, Handle, Position } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
@@ -14,7 +14,8 @@ import {
   CloseOutlined, UnorderedListOutlined, CopyOutlined,
   AlignCenterOutlined, HistoryOutlined, MessageOutlined,
 } from '@ant-design/icons-vue'
-import { api } from '../api'
+import { api, listAgents } from '../api'
+import type { Agent } from '../api'
 import { useAuthStore } from '../stores/auth'
 import type { Node, Edge, Connection } from '@vue-flow/core'
 
@@ -73,6 +74,7 @@ const nodeTypes = [
   { type: 'tool', label: '工具', color: '#3b82f6', icon: '🔧', description: '执行注册工具' },
   { type: 'skill', label: '技能', color: '#ec4899', icon: '🎯', description: '调用已安装技能' },
   { type: 'knowledge', label: '知识库', color: '#14b8a6', icon: '📚', description: '检索知识库片段' },
+  { type: 'agent', label: 'Agent', color: '#6366f1', icon: '🤖', description: '调用已安装 Agent 执行子任务' },
   { type: 'condition', label: '条件', color: '#f59e0b', icon: '🔀', description: '条件分支判断' },
   { type: 'output', label: '输出', color: '#6b7280', icon: '📤', description: '输出结果' },
 ]
@@ -138,6 +140,32 @@ const editSkillParams = ref('')
 const editKbId = ref('')
 const editKbQuery = ref('')
 const editKbTopK = ref(5)
+
+// ── Agent 节点配置字段 ──
+const editAgentId = ref('')
+const editAgentName = ref('')
+const editAgentTask = ref('')
+const editMaxTurns = ref(5)
+
+// ── Agent 列表（复用 /v1/agents API） ──
+const agentList = ref<Agent[]>([])
+const agentLoading = ref(false)
+const agentLoadFailed = ref(false)
+const agentOptions = computed(() =>
+  agentList.value.map(a => ({ value: a.id, label: a.name }))
+)
+// 取不到 Agent 列表时回退手动输入
+const agentManualMode = computed(() =>
+  agentLoadFailed.value || (!agentLoading.value && agentList.value.length === 0)
+)
+// 模型下拉：默认模型列表 + 当前值（Agent 自带模型可能不在预设列表中）
+const agentModelOptions = computed(() => {
+  const list = [...modelOptions]
+  if (editModel.value && !list.some(o => o.value === editModel.value)) {
+    list.push({ value: editModel.value, label: editModel.value })
+  }
+  return list
+})
 
 // ── Helper ──
 let nodeCounter = 0
@@ -205,6 +233,10 @@ function onNodeClick(_event: any) {
   editKbId.value = cfg.kb_id || ''
   editKbQuery.value = cfg.query || ''
   editKbTopK.value = cfg.top_k || 5
+  editAgentId.value = cfg.agent_id || ''
+  editAgentName.value = cfg.name || ''
+  editAgentTask.value = cfg.task || ''
+  editMaxTurns.value = cfg.max_turns || 5
 }
 
 function onPaneClick() {
@@ -233,6 +265,10 @@ function applyNodeConfig() {
       kb_id: editKbId.value || undefined,
       query: editKbQuery.value || undefined,
       top_k: editKbTopK.value > 0 ? editKbTopK.value : undefined,
+      name: editAgentName.value || undefined,
+      max_turns: editMaxTurns.value > 0 ? editMaxTurns.value : undefined,
+      task: editAgentTask.value || undefined,
+      agent_id: editAgentId.value || undefined,
     },
   }
 }
@@ -242,7 +278,36 @@ function parseJSON(s: string): any {
   try { return JSON.parse(s) } catch { return { input: s } }
 }
 
-watch([editLabel, editSystemPrompt, editPrompt, editUserMessage, editToolName, editModel, editRetries, editCondition, editVariable, editSkillName, editSkillParams, editKbId, editKbQuery, editKbTopK], () => {
+// ── Agent 列表 ──
+async function loadAgentList() {
+  agentLoading.value = true
+  agentLoadFailed.value = false
+  try {
+    agentList.value = await listAgents()
+  } catch {
+    agentList.value = []
+    agentLoadFailed.value = true
+  } finally {
+    agentLoading.value = false
+  }
+}
+
+// 选中 Agent 后自动填入 name/system_prompt/model/max_turns（可编辑覆盖）
+function onAgentSelect(value: unknown) {
+  if (!value) {
+    editAgentId.value = ''
+    return
+  }
+  const agent = agentList.value.find(a => a.id === value)
+  if (!agent) return
+  editAgentId.value = agent.id
+  editAgentName.value = agent.name || ''
+  editSystemPrompt.value = agent.system_prompt || ''
+  editModel.value = String(agent.llm_config?.model || editModel.value)
+  editMaxTurns.value = agent.max_turns || 5
+}
+
+watch([editLabel, editSystemPrompt, editPrompt, editUserMessage, editToolName, editModel, editRetries, editCondition, editVariable, editSkillName, editSkillParams, editKbId, editKbQuery, editKbTopK, editAgentId, editAgentName, editAgentTask, editMaxTurns], () => {
   applyNodeConfig()
 })
 
@@ -539,6 +604,7 @@ function runInChat() {
 onMounted(() => {
   loadWorkflows()
   loadInstances()
+  loadAgentList()
   window.addEventListener('keydown', onKeydown)
 })
 onUnmounted(() => {
@@ -681,6 +747,18 @@ function statusClass(nodeProps: any): string {
             </div>
           </template>
 
+          <template #node-agent="nodeProps">
+            <div class="custom-node" :class="statusClass(nodeProps)" :style="{ borderColor: '#6366f1' }">
+              <Handle type="target" :position="Position.Top" />
+              <div class="node-header" style="background: #6366f120;"><span>🤖 {{ nodeProps.data?.label || 'Agent' }}</span></div>
+              <div class="node-body">
+                <span class="node-type-tag">agent</span>
+                <span v-if="nodeProps.data?.config?.name" class="node-detail">{{ nodeProps.data.config.name }}</span>
+              </div>
+              <Handle type="source" :position="Position.Bottom" />
+            </div>
+          </template>
+
           <template #node-condition="nodeProps">
             <div class="custom-node" :class="statusClass(nodeProps)" :style="{ borderColor: '#f59e0b' }">
               <Handle type="target" :position="Position.Top" />
@@ -758,6 +836,44 @@ function statusClass(nodeProps: any): string {
               </FormItem>
               <FormItem label="返回条数">
                 <InputNumber v-model:value="editKbTopK" :min="1" :max="20" style="width: 100%" />
+              </FormItem>
+            </template>
+
+            <template v-if="selectedNode.data?.nodeType === 'agent'">
+              <div class="section-divider"></div>
+              <div class="section-title">Agent 配置</div>
+              <FormItem label="Agent">
+                <Select
+                  v-if="!agentManualMode"
+                  v-model:value="editAgentId"
+                  :options="agentOptions"
+                  :loading="agentLoading"
+                  placeholder="选择已安装 Agent"
+                  style="width: 100%"
+                  allow-clear
+                  @change="onAgentSelect"
+                />
+                <Input
+                  v-else
+                  v-model:value="editAgentName"
+                  placeholder="手动输入 Agent 名称"
+                />
+                <div v-if="agentManualMode && !agentLoading" class="agent-hint">Agent 列表不可用，已切换为手动输入</div>
+              </FormItem>
+              <FormItem label="名称（自动填入，可覆盖）">
+                <Input v-model:value="editAgentName" placeholder="Agent 名称" />
+              </FormItem>
+              <FormItem label="System Prompt（自动填入，可覆盖）">
+                <Input.TextArea v-model:value="editSystemPrompt" :rows="3" placeholder="留空则使用 Agent 默认提示词" />
+              </FormItem>
+              <FormItem label="模型（自动填入，可覆盖）">
+                <Select v-model:value="editModel" :options="agentModelOptions" style="width: 100%" allow-clear />
+              </FormItem>
+              <FormItem label="最大轮数（自动填入，可覆盖）">
+                <InputNumber v-model:value="editMaxTurns" :min="1" :max="50" style="width: 100%" />
+              </FormItem>
+              <FormItem label="任务输入">
+                <Input.TextArea v-model:value="editAgentTask" :rows="3" placeholder="子任务描述；支持 $节点ID 引用前置节点输出（如 $llm_1），留空则使用前置输出" />
               </FormItem>
             </template>
 
@@ -882,6 +998,8 @@ function statusClass(nodeProps: any): string {
 .panel-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 14px; color: var(--text-primary); }
 .panel-body { padding: 12px; }
 .section-divider { height: 1px; background: var(--border); margin: 12px 0; }
+.section-title { font-weight: 600; font-size: 13px; color: var(--text-primary); margin-bottom: 8px; }
+.agent-hint { margin-top: 4px; font-size: 11px; color: var(--warning); }
 /* 执行日志 + 结果 */
 .execution-bar { border-top: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); font-family: var(--font-mono); font-size: 12px; padding: 8px 16px; flex-shrink: 0; max-height: 220px; overflow-y: auto; }
 .execution-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; color: var(--text-tertiary); font-size: 11px; }

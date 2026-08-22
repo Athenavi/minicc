@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, computed, nextTick } from 'vue'
 import { Input, Button, Select, message } from 'ant-design-vue'
-import { SendOutlined, StopOutlined, PaperClipOutlined, CloseOutlined, FileOutlined } from '@ant-design/icons-vue'
+import { SendOutlined, StopOutlined, PaperClipOutlined, CloseOutlined, FileOutlined, BranchesOutlined } from '@ant-design/icons-vue'
 import { uploadFile } from '../../api'
 import type { ChatAttachment } from './chat-types'
 
@@ -20,6 +20,8 @@ const emit = defineEmits<{
   (e: 'update:mode', mode: string): void
   /** P3-C: 斜杠命令 */
   (e: 'command', cmd: string): void
+  /** 上下文快捷按钮：展开侧栏（若为抽屉模式） */
+  (e: 'open-panel'): void
 }>()
 
 const input = ref('')
@@ -306,6 +308,16 @@ function onSlashInput() {
             :title="`当前模式：${modeOptions.find(o => o.value === mode)?.label || mode}（仅影响后续消息）`"
             @update:value="(v: any) => emit('update:mode', String(v))"
           />
+          <Button
+            type="text"
+            size="small"
+            class="context-btn"
+            title="打开上下文面板（会话/轨迹/上下文）"
+            @click="emit('open-panel')"
+          >
+            <template #icon><BranchesOutlined /></template>
+            <span class="context-label">上下文</span>
+          </Button>
         </div>
         <div class="input-left">
           <span class="input-hint">Enter 发送 · Shift+Enter 换行</span>
@@ -353,6 +365,14 @@ function onSlashInput() {
 .input-hint { font-size: 12px; color: var(--text-tertiary); }
 /* 模式选择器标签 */
 .mode-label { flex: none; font-size: 12px; color: var(--text-tertiary); }
+/* 上下文快捷按钮：展开侧栏（抽屉模式） */
+.context-btn { color: var(--text-tertiary); display: inline-flex; align-items: center; gap: 4px; }
+.context-btn:hover { color: var(--primary) !important; }
+.context-label { font-size: 12px; }
+@media (max-width: 576px) {
+  .context-label { display: none; }
+  .context-btn.ant-btn { min-width: 40px; height: 40px; }
+}
 /* 发送按钮：可发送时主色、hover 微放大 + 加深 */
 .send-btn { transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease; }
 .send-btn:not(:disabled):hover { transform: scale(1.06); box-shadow: 0 4px 12px var(--primary-bg); }

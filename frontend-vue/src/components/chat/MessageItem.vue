@@ -40,7 +40,7 @@ const router = useRouter()
 
 interface SourceChip {
   key: string
-  kind: 'kb' | 'workflow' | 'agent'
+  kind: 'kb' | 'workflow' | 'agent' | 'trace'
   label: string
   title: string
   go: () => void
@@ -72,6 +72,20 @@ const sourceChips = computed<SourceChip[]>(() => {
       key: 'agent', kind: 'agent', label: 'Agent',
       title: `来源 Agent #${agentId}，点击打开`,
       go: () => router.push('/agents'),
+    })
+  }
+  // 追踪：metadata.trace_id 存在时显示「追踪」chip，点击复制 trace_id
+  // （/admin/traces 为占位目标，暂不跳转，仅复制）
+  const traceId = typeof meta.trace_id === 'string' && meta.trace_id ? meta.trace_id : ''
+  if (traceId) {
+    chips.push({
+      key: 'trace', kind: 'trace', label: '追踪',
+      title: `Trace ${traceId}，点击复制`,
+      go: () => {
+        navigator.clipboard.writeText(traceId)
+          .then(() => message.success('Trace ID 已复制'))
+          .catch(() => message.error('复制失败'))
+      },
     })
   }
   return chips
@@ -566,6 +580,8 @@ function handleMsgClick(e: MouseEvent) {
 .source-chip.kb { background: var(--primary-bg); color: var(--primary); border-color: transparent; }
 .source-chip.kb:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
 .source-chip.agent { background: var(--bg-hover); color: var(--text-primary); }
+.source-chip.trace { background: var(--bg-card); color: var(--text-secondary); border-color: var(--border); font-family: var(--font-mono); font-size: 11px; }
+.source-chip.trace:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-bg); }
 
 /* ── P1-3 错误状态 ── */
 .msg-row.msg-error .msg-text { opacity: 0.6; }

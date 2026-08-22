@@ -167,6 +167,7 @@
               <option value="condition">条件判断</option>
               <option value="loop">循环</option>
               <option value="end">结束</option>
+              <option value="agent">Agent</option>
             </select>
           </div>
           <div class="form-group">
@@ -186,6 +187,49 @@
               </option>
             </select>
           </div>
+          <template v-if="selectedNode.type === 'agent'">
+            <div class="section-label">Agent 配置</div>
+            <div class="form-group">
+              <label>Agent</label>
+              <select
+                v-if="!agentManualMode"
+                v-model="editAgentId"
+                class="form-select"
+                @change="onAgentSelect"
+              >
+                <option value="">请选择 Agent</option>
+                <option v-for="a in agentList" :key="a.id" :value="a.id">{{ a.name }}</option>
+              </select>
+              <input
+                v-else
+                v-model="editAgentName"
+                type="text"
+                class="form-input"
+                placeholder="手动输入 Agent 名称"
+              />
+              <div v-if="agentManualMode && !agentLoading" class="agent-hint">Agent 列表不可用，请手动填写名称</div>
+            </div>
+            <div class="form-group">
+              <label>名称（自动填入，可覆盖）</label>
+              <input v-model="editAgentName" type="text" class="form-input" placeholder="Agent 名称" />
+            </div>
+            <div class="form-group">
+              <label>System Prompt（自动填入，可覆盖）</label>
+              <textarea v-model="editAgentSystemPrompt" class="form-textarea" rows="3" placeholder="留空则使用 Agent 默认提示词"></textarea>
+            </div>
+            <div class="form-group">
+              <label>模型（自动填入，可覆盖）</label>
+              <input v-model="editAgentModel" type="text" class="form-input" placeholder="如 gpt-4o-mini / deepseek-chat" />
+            </div>
+            <div class="form-group">
+              <label>最大轮数（自动填入，可覆盖）</label>
+              <input v-model.number="editAgentMaxTurns" type="number" min="1" max="50" class="form-input" />
+            </div>
+            <div class="form-group">
+              <label>任务输入</label>
+              <textarea v-model="editAgentTask" class="form-textarea" rows="3" placeholder="子任务描述；支持 $节点ID 引用前置输出（如 $llm_1），留空则使用前置输出"></textarea>
+            </div>
+          </template>
           <div class="form-actions">
             <button @click="deleteSelectedNode" class="btn-delete">删除节点</button>
             <button @click="duplicateNode" class="btn-duplicate">复制</button>
@@ -197,14 +241,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
+import { listAgents } from '../api'
 
 interface WorkflowNode {
   id: string
   title: string
   description?: string
-  type: string // llm_call | tool_execution | condition | loop | end
+  type: string // llm_call | tool_execution | condition | loop | end | agent
   x: number
   y: number
   width?: number
@@ -212,6 +257,7 @@ interface WorkflowNode {
   status?: string // pending | running | completed | error
   boundSkill?: any
   boundSkillId?: string
+  config?: Record<string, any> // 节点配置（agent 等类型使用，随工作流 JSON 持久化）
   error?: boolean
 }
 
@@ -356,6 +402,7 @@ function getNodeStrokeColor(type: string): string {
     condition: '#f59e0b',
     loop: '#ec4899',
     end: '#ef4444',
+    agent: '#6366f1',
   }
   return colorMap[type] || '#6b7280'
 }
@@ -368,6 +415,7 @@ function getNodeIcon(type: string): string {
     condition: '❓',
     loop: '🔄',
     end: '⏹️',
+    agent: '🤖',
   }
   return iconMap[type] || '📦'
 }
@@ -474,6 +522,77 @@ function saveWorkflow() {
   emit('save', props.workflow)
   message.success('工作流已保存')
 }
+
+// ── Agent 配置（node_type === 'agent'） ──
+const agentList = ref<any[]>([])
+const agentLoading = ref(false)
+const agentLoadFailed = ref(false)
+const editAgentId = ref('')
+const editAgentName = ref('')
+const editAgentSystemPrompt = ref('')
+const editAgentModel = ref('')
+const editAgentMaxTurns = ref(5)
+const editAgentTask = ref('')
+// 取不到 Agent 列表时回退手动输入
+const agentManualMode = computed(() =>
+  agentLoadFailed.value || (!agentLoading.value && agentList.value.length === 0)
+)
+
+async function loadAgentList() {
+  agentLoading.value = true
+  agentLoadFailed.value = false
+  try {
+    agentList.value = await listAgents()
+  } catch {
+    agentList.value = []
+    agentLoadFailed.value = true
+  } finally {
+    agentLoading.value = false
+  }
+}
+
+// 选中 Agent 后自动填入 name/system_prompt/model/max_turns（可编辑覆盖）
+function onAgentSelect() {
+  const agent = agentList.value.find(a => a.id === editAgentId.value)
+  if (!agent) return
+  editAgentId.value = agent.id
+  editAgentName.value = agent.name || ''
+  editAgentSystemPrompt.value = agent.system_prompt || ''
+  editAgentModel.value = String(agent.llm_config?.model || editAgentModel.value)
+  editAgentMaxTurns.value = agent.max_turns || 5
+}
+
+// 选中节点变化 → 载入表单（type 在面板内可改，监听其变化）
+watch([selectedNode, () => selectedNode.value?.type], () => {
+  const node = selectedNode.value
+  if (!node) return
+  const cfg = node.config || {}
+  editAgentId.value = cfg.agent_id || ''
+  editAgentName.value = cfg.name || ''
+  editAgentSystemPrompt.value = cfg.system_prompt || ''
+  editAgentModel.value = cfg.model || ''
+  editAgentMaxTurns.value = cfg.max_turns || 5
+  editAgentTask.value = cfg.task || ''
+})
+
+// Agent 表单编辑 → 实时写回 node.config（随工作流 JSON 持久化）
+watch([editAgentId, editAgentName, editAgentSystemPrompt, editAgentModel, editAgentMaxTurns, editAgentTask], () => {
+  const node = selectedNode.value
+  if (!node || node.type !== 'agent') return
+  node.config = {
+    ...(node.config || {}),
+    agent_id: editAgentId.value || undefined,
+    name: editAgentName.value || undefined,
+    system_prompt: editAgentSystemPrompt.value || undefined,
+    model: editAgentModel.value || undefined,
+    max_turns: editAgentMaxTurns.value > 0 ? editAgentMaxTurns.value : undefined,
+    task: editAgentTask.value || undefined,
+  }
+})
+
+onMounted(() => {
+  loadAgentList()
+})
 </script>
 
 <style>
@@ -741,6 +860,19 @@ function saveWorkflow() {
 .btn-duplicate:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+.section-label {
+  margin: 4px 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.agent-hint {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--warning);
 }
 
 /* 移动端：画布保持可拖拽（min-height + 横向滚动提示），工具栏换行 */

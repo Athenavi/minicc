@@ -204,9 +204,51 @@ async function initContextChips(q: Record<string, any>) {
   }
 }
 
+/** 移除单个上下文芯片：本地 context 与路由 query 双源同步清空（侧栏上下文面板触发） */
 function removeContextChip(type: ContextChip['type']) {
   contextChips.value = contextChips.value.filter(c => c.type !== type)
   if (type === 'agent') agentCfg.value = null
+  const q: Record<string, any> = { ...route.query }
+  if (q[type] !== undefined) {
+    delete q[type]
+    void router.replace({ path: '/chat', query: q })
+    appliedQueryKey = JSON.stringify(q)
+  }
+}
+
+/** 清空全部上下文：本地 context 与路由 query（kb/agent/skill/workflow）一并清空 */
+function clearContext() {
+  contextChips.value = []
+  agentCfg.value = null
+  const q: Record<string, any> = { ...route.query }
+  let changed = false
+  for (const key of ['kb', 'agent', 'skill', 'workflow']) {
+    if (q[key] !== undefined) { delete q[key]; changed = true }
+  }
+  if (changed) {
+    void router.replace({ path: '/chat', query: q })
+    appliedQueryKey = JSON.stringify(q)
+  }
+}
+
+/** 统一任务模式：清空当前消息区（保留会话与上下文，可继续追问） */
+function clearUnifiedMessages() {
+  items.value = []
+  currentTraceId.value = ''
+  message.info('已清空统一任务消息')
+}
+
+/** 统一任务模式：退出（移除 task/error query；路由 watcher 触发 applyRouteQuery 重置消息区） */
+async function exitUnifiedMode() {
+  const q: Record<string, any> = { ...route.query }
+  delete q.task
+  delete q.error
+  await router.replace({ path: '/chat', query: q })
+}
+
+/** kb_hits 标签增强：跳转到引用的知识库详情 */
+function openKb(kbId: string) {
+  if (kbId) void router.push(`/knowledge/${encodeURIComponent(kbId)}`)
 }
 
 /** 组装发送时附带的 context（普通 SSE 模式与统一任务模式共用） */
@@ -286,7 +328,7 @@ function buildUnifiedItems(list: any[]): ChatItem[] {
         const meta = normalizeMeta(m.metadata) || {}
         const n = typeof meta.kb_hits === 'number' ? meta.kb_hits : meta.kb_id ? 1 : 0
         if (meta.kb_id || n > 0) {
-          out.push({ kind: 'kb_hits', count: n, id: `uni_k_${idx}` } as unknown as ChatItem)
+          out.push({ kind: 'kb_hits', count: n, kb_id: meta.kb_id || '', id: `uni_k_${idx}` } as unknown as ChatItem)
         }
       }
     }
@@ -339,7 +381,7 @@ function appendAssistantWithKb(content: string, meta: any) {
     } as any)
     const n = typeof meta.kb_hits === 'number' ? meta.kb_hits : meta.kb_id ? 1 : 0
     if (meta.kb_id || n > 0) {
-      items.value.push({ kind: 'kb_hits', count: n, id: genItemId() } as unknown as ChatItem)
+      items.value.push({ kind: 'kb_hits', count: n, kb_id: meta.kb_id || '', id: genItemId() } as unknown as ChatItem)
     }
   }
 }
@@ -352,8 +394,8 @@ watch(() => items.value.length, async () => {
   if (el) el.scrollTop = el.scrollHeight
 })
 
-// 侧面板（主从时间线：轨迹 / 会话历史）
-const panelOpen = ref(false)
+// 侧面板（主从时间线：轨迹 / 会话历史）；上下文面板：桌面端（≥1025px）默认展开常驻，≤1024px 折叠为抽屉
+const panelOpen = ref(window.matchMedia('(min-width: 1025px)').matches)
 const panelView = ref<'trajectory' | 'sessions'>('trajectory')
 const trajectoryFocus = ref<number | null>(null)
 const trajectoryToken = ref(0)
@@ -370,6 +412,12 @@ function openPanel(view: 'trajectory' | 'sessions') {
     return
   }
   panelView.value = view
+  panelOpen.value = true
+}
+
+/** ChatInput「上下文」快捷按钮：确保上下文面板展开（抽屉模式下亦然）并直达轨迹视图 */
+function openContextPanel() {
+  panelView.value = 'trajectory'
   panelOpen.value = true
 }
 
@@ -1237,18 +1285,20 @@ function continueGeneration() {
           <CloseOutlined class="ueb-close" title="关闭" @click="errorBanner = ''" />
         </div>
 
-        <!-- 互联互通：当前上下文芯片（知识库 / Agent / 技能 / 工作流，可移除） -->
-        <div v-if="contextChips.length" class="context-chips">
-          <span class="ctx-label">当前上下文</span>
-          <span v-for="c in contextChips" :key="c.type" class="ctx-chip">
-            {{ c.label }}
-            <CloseOutlined class="ctx-remove" :title="`移除${c.label}`" @click="removeContextChip(c.type)" />
-          </span>
-        </div>
-
         <!-- 互联互通：统一任务模式（WorkstationNav 发起；POST /v1/chat/submit，不走 SSE） -->
         <template v-if="unifiedMode">
-          <div v-if="loading" class="turn-status">思考中<template v-if="turnElapsed >= 2">&nbsp;·&nbsp;{{ turnElapsed }}s</template></div>
+          <!-- 统一任务标识 + 会话 mode 标签 + 清空/退出 -->
+          <div class="unified-bar">
+            <span class="ub-badge">统一任务</span>
+            <span class="ub-mode">{{ unifiedSubmitMode || 'auto' }}</span>
+            <span class="ub-spacer" />
+            <button type="button" class="ub-btn" :disabled="!items.length" @click="clearUnifiedMessages">清空</button>
+            <button type="button" class="ub-btn exit" title="退出统一任务模式" @click="exitUnifiedMode">退出</button>
+          </div>
+          <!-- 执行中：正在编排/执行子任务的轻量提示（CallChainTimeline 在 trace 就绪后展示） -->
+          <div v-if="loading" class="unified-exec-hint">
+            <span class="ueh-dot" />正在编排/执行子任务…<template v-if="turnElapsed >= 2">&nbsp;·&nbsp;{{ turnElapsed }}s</template>
+          </div>
           <div v-if="!items.length && !loading" class="unified-empty">统一任务会话已就绪，直接发送消息即可继续追问</div>
           <div class="unified-list">
             <template v-for="(it, i) in items" :key="it.id ?? i">
@@ -1260,7 +1310,16 @@ function continueGeneration() {
                 @continue="continueGeneration"
                 @retry-failed="retryFailedMessage"
               />
-              <div v-else-if="(it as any).kind === 'kb_hits'" class="kb-hits-tag">引用了知识库（×{{ (it as any).count || 1 }}）</div>
+              <div v-else-if="(it as any).kind === 'kb_hits'" class="kb-hits-tag">
+                <span class="kb-hits-text">引用了知识库（×{{ (it as any).count || 1 }}）</span>
+                <a
+                  v-if="(it as any).kb_id"
+                  class="kb-hits-link"
+                  href="#"
+                  title="查看引用的知识库"
+                  @click.prevent="openKb((it as any).kb_id)"
+                >查看知识库</a>
+              </div>
             </template>
           </div>
           <CallChainTimeline
@@ -1320,6 +1379,7 @@ function continueGeneration() {
         @stop="stopGeneration"
         @update:mode="onModeChange"
         @command="onSlashCommand"
+        @open-panel="openContextPanel"
       />
     </div>
 
@@ -1335,6 +1395,7 @@ function continueGeneration() {
       :sessions="sessions"
       :active-session-id="activeSessionId"
       :user-name="authStore.user?.name"
+      :context-chips="contextChips"
       @update:view="(v: 'trajectory' | 'sessions') => (panelView = v)"
       @focus="onTrajectoryFocus"
       @close="panelOpen = false"
@@ -1345,6 +1406,8 @@ function continueGeneration() {
       @pin="togglePin"
       @share="openShare"
       @tag="setSessionTag"
+      @remove-context="removeContextChip"
+      @clear-context="clearContext"
     />
 
     <!-- 重命名对话框 -->
@@ -1541,6 +1604,8 @@ function continueGeneration() {
   position: fixed; inset: 0; z-index: 110;
   background: rgba(10, 10, 12, 0.35);
 }
+/* 桌面端（≥1025px）：上下文面板常驻展开，无需遮罩 */
+@media (min-width: 1025px) { .panel-overlay { display: none; } }
 .overlay-fade-enter-active, .overlay-fade-leave-active { transition: opacity 0.2s ease; }
 .overlay-fade-enter-from, .overlay-fade-leave-to { opacity: 0; }
 
@@ -1555,27 +1620,54 @@ function continueGeneration() {
 .ueb-close { flex: none; cursor: pointer; opacity: 0.7; font-size: 12px; }
 .ueb-close:hover { opacity: 1; }
 
-/* ── 互联互通：当前上下文芯片（与侧栏 tag-chip 同设计语言）── */
-.context-chips {
-  flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
-  padding: 8px 20px 0;
+/* ── 互联互通：统一任务标识栏（标识 + mode 标签 + 清空/退出）── */
+.unified-bar {
+  flex: none; display: flex; align-items: center; gap: 8px;
+  margin: 8px 20px 0; padding: 6px 10px;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg-card);
 }
-.ctx-label { font-size: 11px; color: var(--text-tertiary); }
-.ctx-chip {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 2px 8px; border-radius: 10px;
-  border: 1px solid var(--border); background: var(--bg-card);
-  color: var(--text-secondary); font-size: 12px;
-  transition: border-color 0.15s ease, color 0.15s ease;
+.ub-badge {
+  flex: none; display: inline-flex; align-items: center; gap: 6px;
+  padding: 1px 10px; border-radius: 10px;
+  background: var(--primary); color: #fff;
+  font-size: 11px; font-weight: 600; line-height: 18px;
 }
-.ctx-chip:hover { border-color: var(--primary); color: var(--primary); }
-.ctx-remove { font-size: 10px; color: var(--text-tertiary); cursor: pointer; }
-.ctx-remove:hover { color: var(--danger, #ef4444); }
+.ub-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: rgba(255, 255, 255, 0.85); }
+.ub-mode {
+  flex: none; font-size: 11px; color: var(--text-secondary);
+  background: var(--bg-secondary); padding: 1px 8px; border-radius: 10px; line-height: 18px;
+}
+.ub-spacer { flex: 1; }
+.ub-btn {
+  flex: none; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg-card); color: var(--text-secondary);
+  font-size: 11px; line-height: 18px; padding: 1px 10px; cursor: pointer;
+  transition: all 0.15s ease;
+}
+.ub-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+.ub-btn.exit:hover:not(:disabled) { border-color: var(--danger, #ef4444); color: var(--danger, #ef4444); }
+.ub-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── 互联互通：统一任务执行中轻量提示（编排/子任务进行中）── */
+.unified-exec-hint {
+  flex: none; display: inline-flex; align-items: center; gap: 6px;
+  align-self: center; margin: 10px auto 0;
+  font-size: 12px; color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.ueh-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--primary);
+  animation: uehPulse 1.2s ease-in-out infinite;
+}
+@keyframes uehPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) { .ueh-dot { animation: none; } }
 
 /* ── 互联互通：统一任务消息列表（复用 MessageItem 渲染 user/assistant）── */
 .unified-list { flex: 1; overflow-y: auto; padding: 12px 0 24px; scrollbar-width: thin; scrollbar-color: var(--text-disabled) transparent; }
 .unified-empty { padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: 13px; }
-/* 知识库引用小标签（assistant 消息下方） */
+/* 知识库引用小标签（assistant 消息下方；kb_id 已知时展示“查看知识库”链接） */
 .kb-hits-tag {
   display: flex; align-items: center;
   max-width: min(720px, 92%); margin: 2px auto 6px;
@@ -1583,9 +1675,16 @@ function continueGeneration() {
   background: var(--primary-bg); color: var(--primary);
   font-size: 11px; line-height: 18px;
 }
+.kb-hits-text { flex: 1; min-width: 0; }
+.kb-hits-link {
+  flex: none; margin-left: auto; padding-left: 12px;
+  color: var(--primary); font-weight: 600; white-space: nowrap;
+  text-decoration: none;
+}
+.kb-hits-link:hover { text-decoration: underline; }
 @media (max-width: 576px) {
   .unified-error-banner { margin: 6px 12px 0; }
-  .context-chips { padding: 6px 12px 0; }
+  .unified-bar { margin: 6px 12px 0; }
   .kb-hits-tag { max-width: 88%; }
 }
 </style>
