@@ -84,4 +84,12 @@ const wrapClass = computed(() => [
   line-height: 20px;
 }
 .empty-state-actions { margin-top: 16px; }
+
+/* 响应式：窄屏收敛留白，按钮/操作换行 */
+@media (max-width: 576px) {
+  .empty-state--page { padding: 48px 16px; min-height: 240px; }
+  .empty-state--list { min-height: 140px; }
+  .empty-state-actions { width: 100%; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+  .empty-state-hint { max-width: 280px; }
+}
 </style>

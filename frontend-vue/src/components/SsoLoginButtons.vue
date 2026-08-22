@@ -102,6 +102,7 @@ function startSso(p: SsoPublicProvider) {
 .sso-btn {
   flex: 1 1 calc(50% - 8px);
   min-width: 0;
+  min-height: 40px; /* 触控目标 ≥ 40px */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -119,6 +120,16 @@ function startSso(p: SsoPublicProvider) {
 .sso-btn:hover {
   border-color: var(--primary, #1677ff);
   box-shadow: 0 1px 4px rgba(22, 119, 255, 0.12);
+}
+
+.sso-btn:focus-visible {
+  outline: 2px solid var(--primary, #1677ff);
+  outline-offset: 2px;
+}
+
+/* 窄屏（≤576px，与 .u-hide-sm 断点一致）：按钮全宽换行，易点按 */
+@media (max-width: 576px) {
+  .sso-btn { flex: 1 1 100%; }
 }
 
 .sso-badge {

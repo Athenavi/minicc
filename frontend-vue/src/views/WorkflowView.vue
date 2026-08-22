@@ -846,7 +846,7 @@ function statusClass(nodeProps: any): string {
 .workflow-container { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 .toolbar { display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--bg-card); gap: 8px; flex-shrink: 0; }
 .toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 8px; }
-.main-area { display: flex; flex: 1; overflow: hidden; }
+.main-area { display: flex; flex: 1; overflow: hidden; position: relative; }
 .node-palette { width: 168px; padding: 12px; border-right: 1px solid var(--border); background: var(--bg-secondary); flex-shrink: 0; }
 .palette-title { font-weight: 600; font-size: 12px; color: var(--text-tertiary); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
 .palette-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin-bottom: 6px; background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 8px; cursor: grab; font-size: 13px; transition: box-shadow 0.15s, border-color 0.15s; user-select: none; }
@@ -900,21 +900,52 @@ function statusClass(nodeProps: any): string {
 .history-node { font-size: 11px; font-weight: 600; color: var(--primary); }
 .history-output { margin: 4px 0 0; font-size: 11px; color: var(--text-secondary); white-space: pre-wrap; word-break: break-all; }
 
-/* 移动端：节点面板和属性面板收窄，toolbar 允许换行 */
+/* 移动端：节点面板和属性面板收窄，toolbar 允许换行；属性面板改为浮层保证画布宽度 */
 @media (max-width: 768px) {
   .toolbar { flex-wrap: wrap; padding: 8px 12px; gap: 6px; }
   .toolbar-left, .toolbar-right { flex-wrap: wrap; gap: 6px; }
+  .toolbar-left { flex: 1 1 100%; }
+  .toolbar-left :deep(.ant-input) { width: 100% !important; }
   .node-palette { width: 120px; padding: 8px; }
   .palette-item { padding: 6px 8px; font-size: 12px; }
   .palette-hint { display: none; }
-  .property-panel { width: 240px; }
+  /* 画布：保持可拖拽（min-height），画布超出时横向滚动 */
+  .canvas-wrapper { min-height: 440px; }
+  .canvas-wrapper::after {
+    content: '↔ 可横向拖动 · 滚轮/双指缩放';
+    position: absolute;
+    left: 50%;
+    bottom: 10px;
+    transform: translateX(-50%);
+    z-index: 5;
+    pointer-events: none;
+    padding: 4px 12px;
+    border-radius: var(--radius-full);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-tertiary);
+    font-size: 11px;
+    white-space: nowrap;
+    box-shadow: var(--shadow-md);
+    opacity: 0.92;
+  }
+  /* 属性面板：浮层覆盖（不挤压画布） */
+  .property-panel {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 20;
+    width: min(300px, 82%);
+    box-shadow: var(--shadow-lg);
+  }
   .execution-bar { max-height: 140px; padding: 6px 12px; font-size: 11px; }
 }
 
 /* 超小屏：隐藏节点面板（通过 toolbar 按钮触发浮层） */
 @media (max-width: 480px) {
   .node-palette { display: none; }
-  .property-panel { position: absolute; right: 0; top: 0; bottom: 0; z-index: 20; width: 80%; max-width: 280px; box-shadow: var(--shadow-lg); }
+  .property-panel { width: 85%; max-width: 280px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

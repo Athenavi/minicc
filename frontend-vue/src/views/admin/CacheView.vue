@@ -116,9 +116,8 @@ onMounted(() => {
 <template>
   <div class="cache-monitor">
     <Spin :spinning="loading">
-      <Row :gutter="16">
-        <Col :span="8">
-          <Card title="缓存命中率">
+      <div class="metric-grid">
+        <Card title="缓存命中率">
             <Progress type="dashboard" :percent="cacheStats.hitRate" :strokeColor="progressColor" size="small">
               <template #format><span style="font-size: 24px; font-weight: 600">{{ cacheStats.hitRate }}%</span></template>
             </Progress>
@@ -128,9 +127,7 @@ onMounted(() => {
               <DescriptionsItem label="L3 命中">{{ cacheStats.l3Hit }}%</DescriptionsItem>
             </Descriptions>
           </Card>
-        </Col>
-        <Col :span="8">
-          <Card title="缓存统计">
+        <Card title="缓存统计">
             <Descriptions bordered :column="1">
               <DescriptionsItem label="总请求数">{{ cacheStats.totalRequests }}</DescriptionsItem>
               <DescriptionsItem label="缓存命中">{{ cacheStats.hits }}</DescriptionsItem>
@@ -138,9 +135,7 @@ onMounted(() => {
               <DescriptionsItem label="平均延迟">{{ cacheStats.avgLatency }}ms</DescriptionsItem>
             </Descriptions>
           </Card>
-        </Col>
-        <Col :span="8">
-          <Card title="缓存大小">
+        <Card title="缓存大小">
             <Descriptions bordered :column="1">
               <DescriptionsItem label="L1 容量">{{ cacheStats.l1Size }} / {{ cacheStats.l1Capacity }}</DescriptionsItem>
               <DescriptionsItem label="L2 容量">{{ cacheStats.l2Size }}</DescriptionsItem>
@@ -148,25 +143,47 @@ onMounted(() => {
               <DescriptionsItem label="总内存">{{ cacheStats.totalMemory }}</DescriptionsItem>
             </Descriptions>
           </Card>
-        </Col>
-      </Row>
+      </div>
 
       <Card title="缓存命中率趋势" style="margin-top: 16px">
-        <VChart :option="hitRateChartOption" style="height: 300px" autoresize />
+        <VChart :option="hitRateChartOption" style="height: var(--chart-h, 300px)" autoresize />
       </Card>
 
       <Card title="热门查询" style="margin-top: 16px">
-        <Table :columns="columns" :dataSource="hotQueries" :pagination="false" />
+        <Table :columns="columns" :dataSource="hotQueries" :pagination="false" :scroll="{ x: 560 }">
+          <template #emptyText>
+            <div class="empty-block"><span class="empty-icon">📭</span><span class="empty-text">暂无数据</span></div>
+          </template>
+        </Table>
       </Card>
     </Spin>
   </div>
 </template>
 
 <style scoped>
-.cache-monitor { padding: 0; }
+.cache-monitor { padding: 0; --chart-h: 300px; }
 
-/* 移动端 */
-@media (max-width: 640px) {
-  .cache-monitor :deep(.ant-col) { flex: 0 0 50%; max-width: 50%; margin-bottom: 12px; }
+/* 指标卡网格:auto-fill,窄屏自动降列 */
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+/* 空状态统一 */
+.empty-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 0;
+  color: var(--text-tertiary);
+}
+.empty-icon { font-size: 26px; line-height: 1; opacity: 0.8; }
+.empty-text { font-size: 13px; }
+
+/* 移动端:图表高度压缩 */
+@media (max-width: 768px) {
+  .cache-monitor { --chart-h: 220px; }
 }
 </style>

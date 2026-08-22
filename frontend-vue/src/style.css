@@ -197,3 +197,62 @@ body, body * { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb, va
 .ant-table-tbody > tr:hover > td {
   background: var(--bg-secondary, rgba(0, 0, 0, 0.02)) !important;
 }
+
+/* ============================================================
+   Responsive foundation (2026-08-22 UI/UX pass)
+   - mobile-first global guards + antd small-screen overrides
+   - utility classes for view-level responsive work
+   ============================================================ */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+body {
+  overflow-x: hidden;
+}
+#app {
+  min-width: 320px;
+}
+
+/* antd 弹层在窄屏上的行为：抽屉全宽、弹窗贴边、描述列表横向滚动 */
+@media (max-width: 576px) {
+  .ant-drawer-content-wrapper {
+    max-width: 100vw !important;
+  }
+  .ant-modal {
+    max-width: calc(100vw - 24px);
+    margin: 12px auto;
+    top: 24px;
+  }
+  .ant-modal-content { padding: 16px; }
+  .ant-modal-confirm .ant-modal-body { padding: 16px; }
+  .ant-card-body { padding: 14px; }
+  .ant-pagination { flex-wrap: wrap; row-gap: 8px; }
+}
+@media (max-width: 768px) {
+  .ant-descriptions-view { overflow-x: auto; }
+  .ant-steps { overflow-x: auto; }
+  .ant-space { flex-wrap: wrap; row-gap: 8px !important; }
+  .ant-form-item .ant-form-item-control-input-content > .ant-input-group,
+  .ant-form-item .ant-form-item-control-input-content > .ant-select,
+  .ant-form-item .ant-form-item-control-input-content > .ant-input-number,
+  .ant-form-item .ant-form-item-control-input-content > .ant-picker {
+    width: 100% !important;
+  }
+}
+
+/* 工具类：视图级响应式改造统一使用 */
+.u-w-full { width: 100% !important; }
+.u-scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.u-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.u-flex-wrap { flex-wrap: wrap; }
+.u-gap-8 { gap: 8px; }
+.u-gap-12 { gap: 12px; }
+@media (max-width: 576px) {
+  .u-hide-sm { display: none !important; }
+  .u-stack-sm { flex-direction: column !important; align-items: stretch !important; }
+  .u-full-sm { width: 100% !important; }
+}
+@media (min-width: 577px) {
+  .u-hide-lg { display: none !important; }
+}

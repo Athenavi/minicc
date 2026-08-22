@@ -198,7 +198,7 @@ function exportMarkdown() {
     lines.push('---', '', '## 工具调用记录', '')
     for (const tc of toolCalls) {
       if (tc.kind !== 'tool_call') continue
-      lines.push(`### ${tc.name || 'tool'}`, '```json', JSON.stringify(tc.args || {}, null, 2), '```', '')
+      lines.push(`### ${tc.name || 'tool'}`, '```json', tc.arguments || '{}', '```', '')
     }
   }
   const md = lines.join('\n')
@@ -862,7 +862,7 @@ function continueGeneration() {
               @click="openPanel('sessions')"
             >
               <template #icon><MenuOutlined /></template>
-              会话
+              <span class="toolbar-label">会话</span>
             </Button>
             <Button
               type="text" size="small" class="toolbar-btn"
@@ -871,7 +871,7 @@ function continueGeneration() {
               @click="openPanel('trajectory')"
             >
               <template #icon><HistoryOutlined /></template>
-              轨迹
+              <span class="toolbar-label">轨迹</span>
             </Button>
             <!-- P2-I: 导出当前会话为 Markdown -->
             <Button
@@ -881,7 +881,7 @@ function continueGeneration() {
               @click="exportMarkdown"
             >
               <template #icon><ExportOutlined /></template>
-              导出
+              <span class="toolbar-label">导出</span>
             </Button>
             <!-- P3-A: 暗色模式切换 -->
             <Button
@@ -1086,6 +1086,25 @@ function continueGeneration() {
 .toolbar-btn { color: var(--text-secondary); border-radius: var(--radius-md); }
 .toolbar-btn:hover { color: var(--text-primary) !important; background: var(--bg-hover) !important; }
 .toolbar-btn.active { color: var(--primary); background: var(--primary-bg); }
+.toolbar-btn:not(:disabled):active { transform: scale(0.94); }
+/* ── 响应式：≤1024px 侧栏抽屉化；≤768px 工具栏图标化；≤576px 极窄适配 ── */
+@media (max-width: 1024px) {
+  .chat-toolbar { padding: 0 10px; }
+  .toolbar-title { max-width: 32vw; }
+}
+@media (max-width: 768px) {
+  .chat-toolbar { padding: 0 8px; }
+  .toolbar-actions { gap: 0; }
+  .toolbar-btn.ant-btn { height: 36px; min-width: 36px; padding: 0 8px; }
+  .toolbar-label { display: none; } /* 图标常驻，语义由 title 承担 */
+}
+@media (max-width: 576px) {
+  .chat-toolbar { padding: 0 6px; }
+  .toolbar-title { max-width: 24vw; font-size: 12px; }
+  .toolbar-mode { display: none; }
+  .approval-zone { padding: 0 12px 8px; }
+  .turn-status { margin: 8px auto 0; padding: 0 12px; }
+}
 /* S 安全修复：工具确认卡片 */
 .approval-zone { padding: 0 20px 8px; display: flex; flex-direction: column; gap: 8px; }
 .approval-card { background: var(--bg-card); border: 1px solid var(--border); border-left: 3px solid var(--primary); border-radius: 10px; padding: 10px 14px; }
@@ -1094,7 +1113,8 @@ function continueGeneration() {
 .approval-name { font-weight: 600; font-size: 13px; color: var(--text-primary); }
 .approval-args { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); word-break: break-all; margin-bottom: 8px; }
 .approval-actions { display: flex; gap: 8px; }
-.approval-btn { border: none; border-radius: 8px; padding: 6px 16px; font-size: 13px; cursor: pointer; }
+.approval-btn { border: none; border-radius: 8px; padding: 6px 16px; font-size: 13px; cursor: pointer; transition: transform 0.1s ease, opacity 0.15s ease, background 0.15s ease; }
+.approval-btn:active { transform: scale(0.97); }
 .approval-btn.allow { background: var(--primary); color: #fff; }
 .approval-btn.allow:hover { opacity: 0.9; }
 .approval-btn.danger { background: var(--bg-hover); color: var(--text-primary); }

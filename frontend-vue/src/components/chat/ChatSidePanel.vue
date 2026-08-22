@@ -365,6 +365,19 @@ function pickSession(id: string) {
 .side-panel.open { transform: translateX(0); visibility: visible; }
 .side-panel.dragging { transition: none; }
 @media (max-width: 768px) { .side-panel { width: 100%; } }
+/* ── 响应式：≤1024px 抽屉宽度自适应（平板半屏抽屉），≤576px 全屏 ── */
+@media (max-width: 1024px) { .side-panel { width: min(420px, 100%); } }
+@media (max-width: 768px) {
+  .session-picker, .session-back { height: 36px; }
+  .toolbar-close { padding: 10px; font-size: 14px; }
+  .session-more-btn { width: 36px; height: 36px; }
+  .anchor-row { min-height: 36px; }
+  .tag-chip { min-height: 32px; }
+  .panel-foot { padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+}
+@media (max-width: 576px) { .side-panel { width: 100%; } }
+/* 触屏无 hover：行操作按钮常驻可点 */
+@media (hover: none) { .session-more-btn { opacity: 1; } }
 
 /* 顶部工具栏：会话选择器（主从钻取）+ 关闭 */
 .panel-toolbar {

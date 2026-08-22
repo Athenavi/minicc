@@ -278,6 +278,7 @@ function scrollToTop() {
         v-if="showTop"
         type="button"
         class="scroll-top"
+        title="回到顶部"
         aria-label="回到顶部"
         @click="scrollToTop"
       >
@@ -654,12 +655,13 @@ function scrollToTop() {
 .term-copy {
   flex: none;
   margin-left: auto;
+  min-height: 28px;
   border: 1px solid hsla(0, 0%, 100%, 0.12);
   border-radius: 6px;
   background: transparent;
   color: var(--text-tertiary);
   font-size: 11px;
-  padding: 2px 10px;
+  padding: 4px 12px;
   cursor: pointer;
   transition: color 0.15s ease, border-color 0.15s ease;
 }
@@ -721,6 +723,14 @@ function scrollToTop() {
   .feature-grid { grid-template-columns: repeat(2, 1fr); }
   .showcase-grid { grid-template-columns: 1fr; }
   .hero-title { font-size: clamp(30px, 6vw, 44px); }
+}
+/* 窄屏：区块间距压缩，触控目标保持 */
+@media (max-width: 640px) {
+  .features, .showcase { padding-left: 16px; padding-right: 16px; }
+  .quickstart { padding-left: 16px; padding-right: 16px; }
+  .cta { padding-left: 16px; padding-right: 16px; }
+  .feature-grid { gap: 12px; }
+  .hero-cta { width: 100%; max-width: 320px; }
 }
 /* 触屏设备：禁用 3D tilt 和磁吸 transform，避免抖动 */
 @media (hover: none) {

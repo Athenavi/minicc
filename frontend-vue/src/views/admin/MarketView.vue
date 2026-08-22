@@ -197,7 +197,7 @@ onMounted(fetchItems)
   <div class="market-view">
     <div class="page-header">
       <h2 class="page-title">企业能力市场</h2>
-      <a-space>
+      <a-space class="filter-bar">
         <a-select v-model:value="filterType" placeholder="类型" allow-clear style="width: 120px" @change="fetchItems">
           <a-select-option value="plugin">plugin</a-select-option>
           <a-select-option value="skill">skill</a-select-option>
@@ -225,8 +225,12 @@ onMounted(fetchItems)
       :loading="loading"
       :row-key="(r: MarketItem) => r.id"
       :pagination="false"
+      :scroll="{ x: 900 }"
       size="small"
     >
+      <template #emptyText>
+        <div class="empty-block"><span class="empty-icon">📭</span><span class="empty-text">暂无数据</span></div>
+      </template>
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'status'">
           <a-tag :color="statusColor(record.status)">{{ record.status }}</a-tag>
@@ -261,7 +265,7 @@ onMounted(fetchItems)
           <a-input v-model:value="itemForm.version" placeholder="1.0.0" />
         </a-form-item>
         <a-form-item label="Manifest（JSON）">
-          <a-textarea v-model:value="itemForm.manifest" :rows="6" placeholder='{"description": "...", "entry": "..."}' />
+          <a-textarea v-model:value="itemForm.manifest" :rows="6" class="code-editor" placeholder='{"description": "...", "entry": "..."}' />
         </a-form-item>
       </a-form>
     </a-modal>
@@ -283,9 +287,13 @@ onMounted(fetchItems)
         :data-source="grants"
         :row-key="(r: MarketGrant) => r.item_id + ':' + r.tenant_id"
         :pagination="false"
+        :scroll="{ x: 520 }"
         size="small"
         style="margin-top: 16px"
       >
+        <template #emptyText>
+          <div class="empty-block"><span class="empty-icon">📭</span><span class="empty-text">暂无数据</span></div>
+        </template>
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'action'">
             <a-button type="link" size="small" danger @click="removeGrant(record)">撤销</a-button>
@@ -301,5 +309,48 @@ onMounted(fetchItems)
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; }
 .page-title { margin: 0; font-size: 20px; }
 .grant-form { display: flex; gap: 8px; align-items: center; }
-.hint { color: rgba(0,0,0,0.45); font-size: 12px; }
+.hint { color: var(--text-secondary); font-size: 12px; }
+
+/* 空状态统一 */
+.empty-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 0;
+  color: var(--text-tertiary);
+}
+.empty-icon { font-size: 26px; line-height: 1; opacity: 0.8; }
+.empty-text { font-size: 13px; }
+
+/* JSON 编辑区:等宽字体、min-height 自适应、可纵向拉伸 */
+.market-view :deep(.code-editor) {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  min-height: 120px;
+  resize: vertical;
+}
+
+/* 窄屏:页头/筛选竖排、抽屉授权表单竖排、触控目标 ≥ 40px */
+@media (max-width: 768px) {
+  .market-view .page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .market-view .filter-bar { width: 100%; }
+  .market-view .filter-bar :deep(.ant-space-item) { flex: 1 1 auto; min-width: 0; }
+  .market-view .filter-bar :deep(.ant-select) { width: 100% !important; }
+  .market-view .filter-bar :deep(.ant-btn) { width: 100%; min-height: 40px; }
+  .market-view .grant-form { flex-direction: column; align-items: stretch; }
+  .market-view .grant-form :deep(.ant-input),
+  .market-view .grant-form :deep(.ant-switch) { width: 100%; }
+  .market-view .grant-form :deep(.ant-btn) { width: 100%; min-height: 40px; }
+  .market-view :deep(.ant-btn-sm) { position: relative; }
+  .market-view :deep(.ant-btn-sm)::after {
+    content: '';
+    position: absolute;
+    inset: -8px;
+    border-radius: inherit;
+  }
+}
 </style>

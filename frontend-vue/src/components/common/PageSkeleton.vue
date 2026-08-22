@@ -28,7 +28,7 @@ const cardCount = computed(() => props.columns * 2)
     <!-- 标题栏 -->
     <div v-if="header" class="sk-header">
       <Skeleton :title="{ width: '32%' }" :loading="true" active :paragraph="false" />
-      <Skeleton :title="{ width: '14%', marginTop: '4px' }" :loading="true" active :paragraph="false" />
+      <Skeleton :title="{ width: '14%' }" :loading="true" active :paragraph="false" style="margin-top: 6px" />
     </div>
 
     <!-- 列表行 -->
@@ -94,7 +94,7 @@ const cardCount = computed(() => props.columns * 2)
 /* 卡片网格 */
 .sk-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
   gap: 16px;
   margin-top: 16px;
 }
@@ -135,4 +135,10 @@ const cardCount = computed(() => props.columns * 2)
 }
 .sk-table-row:last-child { border-bottom: none; }
 .sk-cell { min-width: 0; }
+
+/* 响应式：窄屏表格骨架减少列数视觉密度 */
+@media (max-width: 768px) {
+  .sk-table-head, .sk-table-row { gap: 6px; padding: 10px; }
+  .sk-header { margin-bottom: 14px; }
+}
 </style>

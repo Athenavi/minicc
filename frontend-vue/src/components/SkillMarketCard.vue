@@ -76,15 +76,14 @@
       </div>
     </div>
     
-    <!-- 空状态 -->
-    <div v-if="filteredSkills.length === 0" class="empty-state">
-      <svg width="48" height="48" viewBox="0 0 48 48" fill="#d1d5db">
-        <circle cx="24" cy="24" r="20" fill="none" stroke="currentColor" stroke-width="2"/>
-        <path d="M18 24h12M24 18v12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-      </svg>
-      <p>暂无技能</p>
-      <p class="empty-hint">尝试调整搜索或筛选条件</p>
-    </div>
+    <!-- 空状态：统一 EmptyState 模式 -->
+    <EmptyState
+      v-if="filteredSkills.length === 0"
+      size="list"
+      :icon="markRaw(SearchOutlined)"
+      description="暂无技能"
+      hint="尝试调整搜索或筛选条件"
+    />
     
     <!-- 详情弹窗 -->
     <Modal
@@ -139,9 +138,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, markRaw } from 'vue'
 import { Modal, message } from 'ant-design-vue'
+import { SearchOutlined, FileTextOutlined, EditOutlined, CodeOutlined, DatabaseOutlined, ToolOutlined } from '@ant-design/icons-vue'
 import { api } from '../api'
+import EmptyState from './common/EmptyState.vue'
 
 interface CapabilityParam {
   name: string
@@ -244,15 +245,15 @@ function getSkillColor(category: string): string {
 }
 
 function getSkillIcon(name: string): any {
-  // 根据技能名称返回不同的图标组件
+  // 根据技能名称返回真实图标组件（修复：字符串形式无法被 <component :is> 解析）
   const iconMap: Record<string, any> = {
-    read_file: 'DocumentOutlined',
-    write_file: 'EditOutlined',
-    shell_exec: 'CodeOutlined',
-    grep_files: 'SearchOutlined',
-    kb_search: 'DatabaseOutlined',
+    read_file: FileTextOutlined,
+    write_file: EditOutlined,
+    shell_exec: CodeOutlined,
+    grep_files: SearchOutlined,
+    kb_search: DatabaseOutlined,
   }
-  return iconMap[name] || 'ToolOutlined'
+  return iconMap[name] || ToolOutlined
 }
 
 function formatMetadata(skill: Capability): string {
@@ -278,26 +279,41 @@ function formatMetadata(skill: Capability): string {
 
 .search-input {
   flex: 1;
+  min-width: 0;
+  min-height: 38px;
   padding: 8px 12px;
   font-size: 14px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
+  color: var(--text-primary);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .search-input:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-bg);
+}
+
+.search-input::placeholder {
+  color: var(--text-muted);
 }
 
 .filter-select {
+  min-height: 38px;
   padding: 8px 12px;
   font-size: 14px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  background: white;
+  color: var(--text-primary);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   cursor: pointer;
+  outline: none;
+}
+
+.filter-select:focus {
+  border-color: var(--primary);
 }
 
 .skill-grid {
@@ -308,51 +324,62 @@ function formatMetadata(skill: Capability): string {
 
 .skill-card {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   padding: 16px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: white;
-  transition: all 0.2s;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-md);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .skill-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border-color: var(--primary);
+  box-shadow: var(--shadow-lg);
 }
 
 .skill-card.registered {
-  border-color: #10b981;
-  background: linear-gradient(to bottom right, #ecfdf5, #ffffff);
+  border-color: var(--success);
+  background: linear-gradient(to bottom right, rgba(34, 197, 94, 0.08), var(--bg-card));
 }
 
 .skill-icon {
   width: 48px;
   height: 48px;
-  border-radius: 8px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
   font-size: 24px;
-  margin-bottom: 12px;
+  flex-shrink: 0;
 }
 
 .skill-info {
-  margin-bottom: 12px;
+  flex: 1;
+  min-width: 0;
 }
 
 .skill-name {
   font-size: 15px;
   font-weight: 600;
-  color: #111827;
+  color: var(--text-primary);
   margin-bottom: 4px;
+  overflow-wrap: anywhere;
 }
 
 .skill-desc {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--text-secondary);
   line-height: 1.5;
   margin-bottom: 8px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .skill-tags {
@@ -365,12 +392,12 @@ function formatMetadata(skill: Capability): string {
   padding: 2px 6px;
   font-size: 10px;
   color: #ffffff;
-  background: #9ca3af;
-  border-radius: 2px;
+  background: var(--text-tertiary);
+  border-radius: 3px;
 }
 
 .skill-status {
-  margin-bottom: 8px;
+  margin-bottom: 2px;
 }
 
 .badge-registered {
@@ -378,7 +405,7 @@ function formatMetadata(skill: Capability): string {
   font-size: 11px;
   font-weight: 600;
   color: #ffffff;
-  background: #10b981;
+  background: var(--success);
   border-radius: 3px;
 }
 
@@ -387,81 +414,65 @@ function formatMetadata(skill: Capability): string {
   font-size: 11px;
   font-weight: 600;
   color: #ffffff;
-  background: #6b7280;
+  background: var(--text-tertiary);
   border-radius: 3px;
 }
 
 .skill-actions {
   display: flex;
   gap: 8px;
+  margin-top: auto;
 }
 
 .btn-detail,
 .btn-register,
 .btn-unregister {
   flex: 1;
-  padding: 6px 12px;
+  min-height: 38px;
+  padding: 8px 12px;
   font-size: 12px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition: all 0.2s;
   border: 1px solid;
 }
 
 .btn-detail {
-  color: #6b7280;
-  background: white;
-  border-color: #d1d5db;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border-color: var(--border);
 }
 
 .btn-detail:hover {
-  background: #f9fafb;
-  border-color: #9ca3af;
+  background: var(--bg-hover);
+  border-color: var(--text-tertiary);
+  color: var(--text-primary);
 }
 
 .btn-register {
   color: white;
-  background: #10b981;
-  border-color: #10b981;
+  background: var(--success);
+  border-color: var(--success);
 }
 
 .btn-register:hover {
-  background: #059669;
+  filter: brightness(0.92);
 }
 
 .btn-unregister {
   color: white;
-  background: #ef4444;
-  border-color: #ef4444;
+  background: var(--error);
+  border-color: var(--error);
 }
 
 .btn-unregister:hover {
-  background: #dc2626;
-}
-
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 48px 16px;
-  text-align: center;
-}
-
-.empty-state p {
-  margin: 12px 0 4px;
-  font-size: 14px;
-  color: #9ca3af;
-}
-
-.empty-hint {
-  font-size: 12px;
-  color: #d1d5db;
+  filter: brightness(0.92);
 }
 
 .skill-detail {
   max-height: 400px;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .detail-section {
@@ -472,7 +483,7 @@ function formatMetadata(skill: Capability): string {
   margin: 0 0 8px;
   font-size: 13px;
   font-weight: 600;
-  color: #374151;
+  color: var(--text-secondary);
 }
 
 .param-list {
@@ -486,49 +497,79 @@ function formatMetadata(skill: Capability): string {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  background: #f9fafb;
-  border-radius: 4px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
 }
 
 .param-name {
   flex: 1;
+  min-width: 0;
   font-size: 12px;
   font-weight: 600;
-  color: #111827;
-  font-family: 'Fira Code', monospace;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
 }
 
 .param-type {
   padding: 2px 6px;
   font-size: 10px;
   color: #ffffff;
-  background: #6b7280;
-  border-radius: 2px;
+  background: var(--text-tertiary);
+  border-radius: 3px;
+  flex-shrink: 0;
 }
 
 .param-required {
   padding: 2px 6px;
   font-size: 10px;
   color: #ffffff;
-  background: #ef4444;
-  border-radius: 2px;
+  background: var(--error);
+  border-radius: 3px;
+  flex-shrink: 0;
 }
 
 .empty-params {
   margin: 0;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--text-tertiary);
   font-style: italic;
 }
 
 .metadata-json {
   margin: 0;
   padding: 8px 12px;
-  background: #f9fafb;
-  border-radius: 4px;
-  font-family: 'Fira Code', monospace;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.5;
-  color: #374151;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 移动端：搜索/筛选竖排、网格单列 */
+@media (max-width: 576px) {
+  .skill-market {
+    padding: 12px;
+  }
+  .search-bar {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .skill-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skill-card,
+  .btn-detail,
+  .btn-register,
+  .btn-unregister {
+    transition: none;
+  }
 }
 </style>

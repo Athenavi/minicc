@@ -27,12 +27,14 @@ const summary = computed(() => {
       <span class="state-dot" :class="streaming ? 'running' : 'done'" aria-hidden />
       <span class="think-summary">{{ summary }}</span>
     </button>
-    <div v-if="expanded" class="think-body">{{ content }}</div>
+    <Transition name="expand">
+      <div v-if="expanded" class="think-body">{{ content }}</div>
+    </Transition>
   </div>
 </template>
 
 <style scoped>
-.reasoning-row { max-width: 748px; margin: 4px auto 0; padding: 0 24px; }
+.reasoning-row { max-width: min(720px, 92%); margin: 4px auto 0; padding: 0 24px; }
 .reasoning-main { display: flex; align-items: center; gap: 6px; width: 100%; height: 28px; padding: 0 8px; border: none; background: none; color: var(--text-secondary); cursor: pointer; font-size: 13px; text-align: left; border-radius: 6px; }
 .reasoning-main:hover { background: var(--bg-hover); }
 .chevron { font-size: 10px; color: var(--text-muted); transition: transform 0.2s; flex-shrink: 0; }
@@ -51,5 +53,13 @@ const summary = computed(() => {
 .reasoning-row[data-state='running'] .think-summary { color: var(--primary); }
 .think-body { padding: 10px 12px; font-size: 13px; line-height: 1.7; color: var(--text-secondary); background: var(--bg-secondary); border: 1px solid var(--border-card); border-radius: 6px; margin-top: 2px; white-space: pre-wrap; }
 @media (prefers-reduced-motion: reduce) { .state-dot.running::after { animation: none; } }
-@media (max-width: 768px) { .reasoning-row { padding: 0 16px; } }
+/* 轻量展开动画（≤200ms） */
+.expand-enter-active, .expand-leave-active { transition: opacity 0.15s ease, transform 0.15s ease; overflow: hidden; }
+.expand-enter-from, .expand-leave-to { opacity: 0; transform: translateY(-4px); }
+@media (prefers-reduced-motion: reduce) { .expand-enter-active, .expand-leave-active { transition: none; } }
+@media (max-width: 768px) {
+  .reasoning-row { padding: 0 16px; }
+  .reasoning-main { min-height: 36px; } /* 触控目标放大 */
+}
+@media (max-width: 576px) { .reasoning-row { padding: 0 12px; } }
 </style>

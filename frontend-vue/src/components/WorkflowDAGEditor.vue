@@ -41,8 +41,8 @@
           
           <!-- 渐变定义 -->
           <linearGradient id="nodeGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" style="stop-color:#f9fafb;stop-opacity:1" />
-            <stop offset="100%" style="stop-color:#f3f4f6;stop-opacity:1" />
+            <stop offset="0%" style="stop-color:var(--bg-card);stop-opacity:1" />
+            <stop offset="100%" style="stop-color:var(--bg-secondary);stop-opacity:1" />
           </linearGradient>
         </defs>
         
@@ -53,7 +53,6 @@
             :key="eIdx"
             :d="getEdgePath(edge.source, edge.target)"
             fill="none"
-            stroke="#6b7280"
             stroke-width="2"
             marker-end="url(#arrowhead)"
             class="edge-path"
@@ -104,7 +103,7 @@
             <text
               :x="node.x + 30"
               :y="node.y + 20"
-              fill="#111827"
+              class="node-title"
               font-size="12"
               font-weight="600"
             >
@@ -115,7 +114,7 @@
             <text
               :x="node.x + 16"
               :y="node.y + 40"
-              fill="#6b7280"
+              class="node-desc"
               font-size="10"
             >
               {{ node.description || '暂无描述' }}
@@ -153,7 +152,7 @@
       <div v-if="selectedNode" class="properties-panel">
         <div class="panel-header">
           <span>节点属性</span>
-          <button @click="selectedNode = null" class="btn-close">×</button>
+          <button @click="selectedNode = null" class="btn-close" title="关闭属性面板">×</button>
         </div>
         <div class="panel-body">
           <div class="form-group">
@@ -477,73 +476,92 @@ function saveWorkflow() {
 }
 </script>
 
+<style>
+@import '@vue-flow/core/dist/style.css';
+@import '@vue-flow/core/dist/theme-default.css';
+@import '@vue-flow/controls/dist/style.css';
+@import '@vue-flow/minimap/dist/style.css';
+</style>
+
 <style scoped>
 .workflow-dag-editor {
   display: flex;
   flex-direction: column;
   height: 600px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  min-height: 480px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   overflow: hidden;
+  background: var(--bg-card);
 }
 
 .toolbar {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 12px 16px;
-  background: #f9fafb;
-  border-bottom: 1px solid #e5e7eb;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
 }
 
 .toolbar-btn {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 12px;
+  min-height: 38px;
+  padding: 8px 14px;
   font-size: 12px;
-  color: #374151;
-  background: white;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .toolbar-btn:hover {
-  background: #f3f4f6;
-  border-color: #9ca3af;
+  background: var(--bg-hover);
+  border-color: var(--text-tertiary);
+  color: var(--text-primary);
 }
 
 .btn-validate {
-  color: #f59e0b;
-  border-color: #f59e0b;
+  color: var(--warning);
+  border-color: var(--warning);
 }
 
 .btn-validate:hover {
-  background: #fef3c7;
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--warning);
+  border-color: var(--warning);
 }
 
 .btn-save {
   color: #ffffff;
-  background: #10b981;
-  border-color: #10b981;
+  background: var(--primary);
+  border-color: var(--primary);
 }
 
 .btn-save:hover {
-  background: #059669;
+  background: var(--primary-dark);
+  border-color: var(--primary-dark);
+  color: #ffffff;
 }
 
 .canvas-container {
   flex: 1;
   position: relative;
   overflow: hidden;
+  min-height: 400px;
 }
 
 .dag-canvas {
   width: 100%;
   height: 100%;
-  background: #ffffff;
+  min-width: 100%;
+  background: var(--bg-page);
   cursor: grab;
+  display: block;
 }
 
 .dag-canvas:active {
@@ -551,12 +569,18 @@ function saveWorkflow() {
 }
 
 .edge-path {
+  stroke: var(--text-tertiary);
   transition: stroke 0.2s;
 }
 
 .edge-path:hover {
-  stroke: #3b82f6;
+  stroke: var(--primary);
   stroke-width: 2.5;
+}
+
+/* 箭头标记跟随主题 */
+#arrowhead polygon {
+  fill: var(--text-tertiary);
 }
 
 .dag-node {
@@ -569,8 +593,19 @@ function saveWorkflow() {
 }
 
 .dag-node.error rect {
-  stroke: #ef4444;
+  stroke: var(--error);
   stroke-dasharray: 4 2;
+}
+
+/* SVG 节点文本：跟随主题变量 */
+.node-title {
+  fill: var(--text-primary);
+  font-family: var(--font-sans);
+}
+
+.node-desc {
+  fill: var(--text-tertiary);
+  font-family: var(--font-sans);
 }
 
 .skill-badge {
@@ -580,7 +615,7 @@ function saveWorkflow() {
   padding: 2px 6px;
   font-size: 9px;
   color: #ffffff;
-  background: #3b82f6;
+  background: var(--primary);
   border-radius: 2px;
 }
 
@@ -589,10 +624,12 @@ function saveWorkflow() {
   top: 0;
   right: 0;
   width: 300px;
+  max-width: 85vw;
   height: 100%;
-  background: white;
-  border-left: 1px solid #e5e7eb;
-  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.1);
+  background: var(--bg-card);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  z-index: 10;
 }
 
 .panel-header {
@@ -600,23 +637,31 @@ function saveWorkflow() {
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  background: #f9fafb;
-  border-bottom: 1px solid #e5e7eb;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
   font-size: 13px;
   font-weight: 600;
+  color: var(--text-primary);
 }
 
 .btn-close {
-  padding: 4px 8px;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   font-size: 16px;
-  color: #9ca3af;
+  color: var(--text-tertiary);
   background: none;
   border: none;
+  border-radius: var(--radius-md);
   cursor: pointer;
 }
 
 .btn-close:hover {
-  color: #374151;
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 
 .panel-body {
@@ -634,7 +679,7 @@ function saveWorkflow() {
   margin-bottom: 4px;
   font-size: 12px;
   font-weight: 600;
-  color: #374151;
+  color: var(--text-secondary);
 }
 
 .form-input,
@@ -643,17 +688,20 @@ function saveWorkflow() {
   width: 100%;
   padding: 8px 12px;
   font-size: 12px;
-  border: 1px solid #d1d5db;
-  border-radius: 4px;
+  color: var(--text-primary);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  font-family: var(--font-sans);
 }
 
 .form-input:focus,
 .form-select:focus,
 .form-textarea:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-bg);
 }
 
 .form-actions {
@@ -665,31 +713,92 @@ function saveWorkflow() {
 .btn-delete,
 .btn-duplicate {
   flex: 1;
+  min-height: 36px;
   padding: 8px 12px;
   font-size: 12px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition: all 0.2s;
   border: 1px solid;
 }
 
 .btn-delete {
-  color: #ef4444;
-  background: white;
-  border-color: #ef4444;
+  color: var(--error);
+  background: var(--bg-card);
+  border-color: var(--error);
 }
 
 .btn-delete:hover {
-  background: #fef2f2;
+  background: rgba(239, 68, 68, 0.1);
 }
 
 .btn-duplicate {
-  color: #374151;
-  background: white;
-  border-color: #d1d5db;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border-color: var(--border);
 }
 
 .btn-duplicate:hover {
-  background: #f3f4f6;
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* 移动端：画布保持可拖拽（min-height + 横向滚动提示），工具栏换行 */
+@media (max-width: 768px) {
+  .workflow-dag-editor {
+    height: auto;
+    min-height: 560px;
+  }
+  .toolbar {
+    gap: 6px;
+    padding: 10px 12px;
+  }
+  .canvas-container {
+    min-height: 440px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .dag-canvas {
+    min-width: 640px;
+  }
+  /* 横向滚动提示（纯 CSS，pointer-events none 不挡交互） */
+  .canvas-container::after {
+    content: '↔ 可横向拖动 · 点击节点编辑';
+    position: absolute;
+    left: 50%;
+    bottom: 10px;
+    transform: translateX(-50%);
+    z-index: 5;
+    pointer-events: none;
+    padding: 4px 12px;
+    border-radius: var(--radius-full);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-tertiary);
+    font-size: 11px;
+    white-space: nowrap;
+    box-shadow: var(--shadow-md);
+    opacity: 0.92;
+  }
+  .properties-panel {
+    width: min(300px, 88vw);
+  }
+}
+
+@media (max-width: 480px) {
+  .toolbar-btn {
+    flex: 1 1 auto;
+    justify-content: center;
+    padding: 8px 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toolbar-btn,
+  .btn-delete,
+  .btn-duplicate,
+  .edge-path {
+    transition: none;
+  }
 }
 </style>

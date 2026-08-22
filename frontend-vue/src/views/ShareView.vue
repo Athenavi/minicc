@@ -5,6 +5,8 @@ import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 import { getPublicShare } from '../api'
 import type { PublicShare } from '../api'
+import PageSkeleton from '../components/common/PageSkeleton.vue'
+import EmptyState from '../components/common/EmptyState.vue'
 
 const route = useRoute()
 
@@ -76,8 +78,8 @@ function formatDate(iso: string): string {
     </header>
 
     <main class="share-main">
-      <div v-if="loading" class="share-state">加载中…</div>
-      <div v-else-if="error" class="share-state share-error">{{ error }}</div>
+      <PageSkeleton v-if="loading" variant="detail" :rows="4" />
+      <EmptyState v-else-if="error" size="page" :description="error" />
       <template v-else-if="share">
         <div class="share-head">
           <h1 class="share-title">{{ share.title || '新对话' }}</h1>
@@ -106,9 +108,7 @@ function formatDate(iso: string): string {
 .share-header { height: 52px; display: flex; align-items: center; padding: 0 24px; border-bottom: 1px solid var(--border); background: var(--bg-card); }
 .share-brand { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--text-primary); }
 .share-brand-mark { width: 22px; height: 22px; border-radius: 6px; background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: #fff; font-weight: 700; font-size: 10px; display: inline-flex; align-items: center; justify-content: center; }
-.share-main { flex: 1; width: 100%; max-width: 748px; margin: 0 auto; padding: 32px 24px 60px; }
-.share-state { padding: 80px 0; text-align: center; color: var(--text-muted); font-size: 14px; }
-.share-state.share-error { color: var(--text-secondary); }
+.share-main { flex: 1; width: 100%; max-width: 748px; margin: 0 auto; padding: 32px 24px 60px; min-width: 0; }
 .share-head { margin-bottom: 24px; }
 .share-title { font-size: 22px; line-height: 30px; font-weight: 700; margin: 0 0 6px; word-break: break-word; }
 .share-meta { font-size: 12px; color: var(--text-tertiary); }
@@ -135,12 +135,13 @@ function formatDate(iso: string): string {
 .share-msg-text :deep(a) { color: var(--primary); text-decoration: none; }
 .share-msg-text :deep(a:hover) { text-decoration: underline; }
 .share-msg-text :deep(code) { font-family: var(--font-mono); font-size: 0.9em; background: var(--bg-secondary); padding: 2px 6px; border-radius: 6px; }
-.share-msg-text :deep(.code-block) { margin: 16px 0; background: var(--bg-code); border-radius: 12px; overflow: hidden; }
+.share-msg-text :deep(.code-block) { margin: 16px 0; background: var(--bg-code); border-radius: 12px; overflow: hidden; max-width: 100%; }
 .share-msg-text :deep(.code-block-head) { display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; background: var(--bg-secondary); }
 .share-msg-text :deep(.code-lang) { font-family: var(--font-mono); font-size: 12px; color: var(--text-primary); }
-.share-msg-text :deep(.code-copy) { background: none; border: none; color: var(--text-tertiary); cursor: pointer; font-size: 12px; padding: 0; }
-.share-msg-text :deep(.code-copy:hover) { color: var(--primary); }
-.share-msg-text :deep(pre) { margin: 0 !important; padding: 16px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+.share-msg-text :deep(.code-copy) { background: none; border: none; color: var(--text-tertiary); cursor: pointer; font-size: 12px; padding: 4px 10px; min-height: 32px; border-radius: 6px; transition: color 0.2s, background-color 0.2s; }
+.share-msg-text :deep(.code-copy:hover) { color: var(--primary); background: var(--bg-hover); }
+/* 代码块：横向滚动而非折行，长行不撑破页面 */
+.share-msg-text :deep(pre) { margin: 0 !important; padding: 16px; overflow-x: auto; white-space: pre; word-break: normal; -webkit-overflow-scrolling: touch; }
 .share-msg-text :deep(pre code) { background: none; padding: 0; font-size: 0.9em; color: var(--text-code); }
 .share-msg-text :deep(table) { border-collapse: collapse; margin: 16px 0; width: 100%; }
 .share-msg-text :deep(th), .share-msg-text :deep(td) { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
@@ -158,7 +159,14 @@ function formatDate(iso: string): string {
   .share-msg-text :deep(h2) { font-size: 18px; line-height: 26px; margin: 24px 0 12px; }
   .share-msg-text :deep(h3) { font-size: 16px; line-height: 24px; margin: 24px 0 12px; }
   .share-msg-text :deep(pre) { padding: 12px; font-size: 12px; }
+  /* 宽表格窄屏横向滚动，避免撑破页面 */
+  .share-msg-text :deep(table) { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .share-footer { padding: 14px 16px; font-size: 11px; }
+}
+
+/* 窄屏（≤576px）：复制按钮触控目标 ≥ 40px */
+@media (max-width: 576px) {
+  .share-msg-text :deep(.code-copy) { min-height: 40px; padding: 8px 14px; font-size: 13px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

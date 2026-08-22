@@ -165,9 +165,9 @@ onMounted(() => {
 <template>
   <div class="admin-dashboard">
     <!-- Header -->
-    <div class="dashboard-header">
+    <div class="dashboard-header u-stack-sm">
       <h1>⚙️ 后端管理系统</h1>
-      <Button type="primary" @click="activeTab = 'api-keys'">
+      <Button type="primary" size="large" @click="activeTab = 'api-keys'">
         <PlusOutlined /> 新建 API Key
       </Button>
     </div>
@@ -201,7 +201,7 @@ onMounted(() => {
           </div>
 
           <!-- Recent API Keys -->
-          <Card title="最近创建的 API Key" style="margin-top: 24px">
+          <Card title="最近创建的 API Key" class="recent-card">
             <Table :columns="recentKeyColumns" :data-source="apiKeys.slice(0, 5)" :pagination="false" />
           </Card>
         </TabPane>
@@ -213,6 +213,7 @@ onMounted(() => {
               <Space>
                 <Input.Search
                   placeholder="搜索名称..."
+                  class="u-full-sm"
                   style="width: 200px"
                 />
                 <Button @click="keyModalVisible = true">
@@ -334,9 +335,16 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.admin-dashboard { padding: 24px; }
-.dashboard-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+.admin-dashboard { padding: clamp(12px, 2vw, 24px); }
+.dashboard-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 24px; }
 .dashboard-header h1 { margin: 0; font-size: 24px; font-weight: 600; }
-.stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }
-.stat-card { text-align: center; }
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+.stat-card { text-align: center; min-width: 0; }
+.recent-card { margin-top: 16px; }
+
+/* 窄屏：标题缩小、卡片内按钮提高触控高度 */
+@media (max-width: 576px) {
+  .dashboard-header h1 { font-size: 20px; }
+  .admin-dashboard :deep(.ant-btn:not(.ant-btn-sm):not(.ant-btn-link)) { min-height: 40px; }
+}
 </style>

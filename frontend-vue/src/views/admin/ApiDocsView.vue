@@ -34,8 +34,8 @@ const redocUrl = computed(() =>
 
 <style scoped>
 .api-docs-page {
-  padding: 24px;
-  height: calc(100vh - 64px);
+  padding: 0;
+  height: 100%;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -51,17 +51,18 @@ const redocUrl = computed(() =>
 }
 
 .api-docs-desc {
-  color: var(--text-secondary, #666);
+  color: var(--text-secondary);
   margin: 0;
   font-size: 14px;
 }
 
 .redoc-wrapper {
   flex: 1;
+  min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--border-card, #e8e8e8);
-  border-radius: 8px;
-  background: var(--bg-card, #fff);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
 }
 
 .redoc-frame {
@@ -72,7 +73,6 @@ const redocUrl = computed(() =>
 
 /* 移动端 */
 @media (max-width: 640px) {
-  .api-docs-page { padding: 16px 12px; height: calc(100vh - 56px); }
   .api-docs-header h2 { font-size: 18px; }
   .api-docs-desc { font-size: 13px; }
 }

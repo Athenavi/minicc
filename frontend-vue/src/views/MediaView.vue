@@ -671,9 +671,9 @@ onUnmounted(() => {
       wrap-class-name="lightbox-modal"
     >
       <div v-if="lightboxItem" class="lightbox">
-        <button type="button" class="lb-btn lb-prev" @click="lbPrev"><LeftOutlined /></button>
+        <button type="button" class="lb-btn lb-prev" title="上一张" @click="lbPrev"><LeftOutlined /></button>
         <img :src="absUrl(lightboxItem.file_url)" :alt="lightboxItem.name" class="lb-img" />
-        <button type="button" class="lb-btn lb-next" @click="lbNext"><RightOutlined /></button>
+        <button type="button" class="lb-btn lb-next" title="下一张" @click="lbNext"><RightOutlined /></button>
         <div class="lb-meta">
           <span class="lb-name">{{ lightboxItem.name }}</span>
           <span class="lb-count">{{ lightboxIndex + 1 }} / {{ lightboxList.length }}</span>
@@ -795,11 +795,18 @@ onUnmounted(() => {
 .lb-count { color: rgba(255, 255, 255, 0.7); }
 .lb-close { position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; border: none; border-radius: 50%; background: rgba(0, 0, 0, 0.5); color: #fff; cursor: pointer; }
 @media (max-width: 768px) {
-  .media-page { padding: 12px; }
-  .file-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+  .media-page { padding: 12px; height: auto; min-height: 100%; overflow: visible; }
+  .file-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; overflow: visible; padding-bottom: 16px; }
   :deep(.ant-drawer-content-wrapper) { width: 100vw !important; }
   .toolbar-actions { margin-left: 0; width: 100%; }
-  .batch-bar { position: fixed; left: 12px; right: 12px; bottom: 12px; top: auto; }
+  /* 筛选/搜索控件占满整行，便于触控 */
+  .toolbar-actions :deep(.ant-input-affix-wrapper) { width: 100% !important; }
+  .toolbar-actions :deep(.ant-select) { width: 100% !important; min-width: 0; }
+  .toolbar-actions :deep(.ant-segmented) { width: 100%; }
+  .toolbar-actions :deep(.ant-segmented-group) { width: 100%; display: flex; }
+  .toolbar-actions :deep(.ant-segmented-item) { flex: 1; text-align: center; }
+  .batch-bar { position: fixed; left: 12px; right: 12px; bottom: 12px; top: auto; flex-wrap: wrap; }
+  .media-total { margin-left: 0; }
 }
 .modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 </style>

@@ -327,7 +327,7 @@ function toolCount(a: Agent): number {
                 <span class="card-desc">{{ a.description || '暂无描述' }}</span>
               </div>
               <Dropdown trigger="click" placement="bottomRight">
-                <Button type="text" size="small" class="card-more" @click.stop>
+                <Button type="text" size="small" class="card-more" title="更多操作" @click.stop>
                   <template #icon><EditOutlined /></template>
                 </Button>
                 <template #overlay>
@@ -634,5 +634,13 @@ function toolCount(a: Agent): number {
 @media (max-width: 640px) {
   .agents-page { padding: 20px 16px 48px; }
   .form-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 768px) {
+  .page-head { flex-direction: column; align-items: flex-start; }
+  .page-head > .ant-btn { width: 100%; }
+  .session-row { flex-wrap: wrap; row-gap: 8px; }
+  .session-main { flex-basis: calc(100% - 42px); }
+  .session-task { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 }
 </style>

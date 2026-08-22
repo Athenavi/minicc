@@ -259,11 +259,11 @@ async function testPlugin(p: Plugin) {
               <DownOutlined v-else class="mini-icon" />
             </Button>
             <div class="action-right">
-              <Button type="text" size="small" @click="openEdit(p)">
+              <Button type="text" size="small" title="编辑" @click="openEdit(p)">
                 <template #icon><EditOutlined /></template>
               </Button>
               <Popconfirm title="确认卸载？" @confirm="requestUninstall(p)">
-                <Button type="text" danger size="small">
+                <Button type="text" danger size="small" title="卸载">
                   <template #icon><DeleteOutlined /></template>
                 </Button>
               </Popconfirm>
@@ -365,7 +365,7 @@ async function testPlugin(p: Plugin) {
 .plugin-desc { display: block; margin-top: 3px; font-size: 12px; color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
 .card-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .card-command { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.card-actions { display: flex; align-items: center; gap: 6px; }
+.card-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .mini-icon { font-size: 10px; }
 .action-right { margin-left: auto; display: flex; gap: 2px; }
 .test-result { font-size: 12px; padding: 6px 10px; border-radius: 8px; background: rgba(239, 68, 68, 0.1); color: var(--error); }
@@ -380,8 +380,15 @@ async function testPlugin(p: Plugin) {
 .form-row { display: flex; flex-direction: column; gap: 6px; }
 .form-label { font-size: 12px; color: var(--text-secondary); font-weight: 500; }
 .mono-input :deep(textarea) { font-family: var(--font-mono); font-size: 12px; }
-@media (max-width: 640px) {
+@media (max-width: 768px) {
   .plugins-page { padding: 20px 16px 48px; }
+  .search-input { max-width: none; width: 100%; }
+  .card-actions { flex-wrap: wrap; }
+}
+
+@media (max-width: 640px) {
   .plugin-grid { grid-template-columns: 1fr; }
+  .page-head { flex-direction: column; align-items: flex-start; }
+  .page-head > .ant-btn { width: 100%; }
 }
 </style>

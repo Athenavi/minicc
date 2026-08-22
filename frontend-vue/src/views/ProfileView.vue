@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { Card, Button, Input, Form, FormItem, message, Popconfirm, Tag, Empty, Spin } from 'ant-design-vue'
+import { Card, Button, Input, Form, FormItem, message, Popconfirm, Tag, Spin } from 'ant-design-vue'
 import { UserOutlined, SafetyOutlined, MobileOutlined } from '@ant-design/icons-vue'
+import EmptyState from '../components/common/EmptyState.vue'
 import { useAuthStore } from '../stores/auth'
 import { api } from '../api'
 import {
@@ -247,7 +248,7 @@ async function handleSetPassword() {
 
     <Card class="profile-card" title="三方账号绑定" style="margin-top: 16px">
       <Spin :spinning="bindingsLoading">
-        <Empty v-if="!identities.length && !bindable.length" description="暂无可用的三方登录方式" />
+        <EmptyState v-if="!identities.length && !bindable.length" description="暂无可用的三方登录方式" />
         <template v-else>
           <div v-for="item in identities" :key="item.id" class="identity-row">
             <div class="identity-info">
@@ -261,7 +262,7 @@ async function handleSetPassword() {
               cancel-text="取消"
               @confirm="handleUnbind(item.id)"
             >
-              <Button danger size="small" :loading="unbinding === item.id">解绑</Button>
+              <Button danger :loading="unbinding === item.id">解绑</Button>
             </Popconfirm>
           </div>
           <div v-if="bindable.length" class="bind-section">
@@ -270,7 +271,6 @@ async function handleSetPassword() {
               <Button
                 v-for="p in bindable"
                 :key="p.id"
-                size="small"
                 @click="startBind(p.id)"
               >
                 绑定 {{ p.display_name || p.name }}
@@ -295,12 +295,12 @@ async function handleSetPassword() {
             cancel-text="取消"
             @confirm="handleUnbindPhone"
           >
-            <Button danger size="small" :loading="unbindingPhone">解绑</Button>
+            <Button danger :loading="unbindingPhone">解绑</Button>
           </Popconfirm>
         </div>
       </template>
       <template v-else>
-        <Form :model="phoneForm" layout="vertical" style="max-width: 360px">
+        <Form :model="phoneForm" layout="vertical" class="profile-form">
           <FormItem label="手机号">
             <Input
               v-model:value="phoneForm.phone"
@@ -340,7 +340,7 @@ async function handleSetPassword() {
           <SafetyOutlined /> 三方登录账号首次设置密码无需当前密码
         </span>
       </template>
-      <Form :model="pwdForm" layout="vertical" style="max-width: 360px">
+      <Form :model="pwdForm" layout="vertical" class="profile-form">
         <FormItem label="当前密码（首次设置可留空）">
           <Input
             v-model:value="pwdForm.current_password"
@@ -369,6 +369,11 @@ async function handleSetPassword() {
   margin: 0 auto;
 }
 
+/* 内嵌表单（手机号/设置密码）：桌面限定宽度，窄屏自动全宽 */
+.profile-form {
+  max-width: 360px;
+}
+
 /* 移动端 */
 @media (max-width: 640px) {
   .profile-container { padding: 16px 12px; }
@@ -376,6 +381,18 @@ async function handleSetPassword() {
   .profile-header h1 { font-size: 20px; }
   .identity-row { flex-direction: column; align-items: flex-start; gap: 6px; }
   .identity-info { width: 100%; }
+}
+
+/* 窄屏（≤576px，与 .u-hide-sm 断点一致）：表单/列表竖排、卡片贴边、iOS 防缩放 */
+@media (max-width: 576px) {
+  .profile-container { padding: 12px; }
+  .profile-form { max-width: 100%; }
+  .profile-card :deep(.ant-card-body) { padding: 16px; }
+  .profile-card :deep(.ant-input) { font-size: 16px; }
+  .profile-card :deep(.ant-btn:not(.ant-btn-sm)) { min-height: 40px; }
+  /* 卡片头（标题+右侧提示）允许换行，避免长提示挤压 */
+  .profile-card :deep(.ant-card-head-wrapper) { flex-wrap: wrap; gap: 4px 8px; }
+  .pwd-hint { display: block; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -417,6 +434,7 @@ async function handleSetPassword() {
 .identity-name {
   font-weight: 500;
   color: var(--text-primary, rgba(0, 0, 0, 0.88));
+  font-variant-numeric: tabular-nums; /* 手机号等数字等宽对齐 */
 }
 
 .identity-meta {

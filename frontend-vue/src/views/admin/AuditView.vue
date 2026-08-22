@@ -16,7 +16,7 @@ const filters = reactive({
   user_id: '',
   action: '',
   resource_type: '',
-  dateRange: [] as [string, string] | undefined,
+  dateRange: undefined as [string, string] | undefined,
 })
 
 const pagination = reactive({
@@ -120,12 +120,14 @@ onMounted(() => {
       <a-range-picker
         v-model:value="filters.dateRange"
         :format="'YYYY-MM-DD'"
+        class="u-full-sm"
         style="width: 260px"
       />
       <a-input
         v-model:value="filters.user_id"
         placeholder="用户 ID"
         allow-clear
+        class="u-full-sm"
         style="width: 180px"
         @press-enter="onSearch"
       />
@@ -133,6 +135,7 @@ onMounted(() => {
         v-model:value="filters.action"
         placeholder="动作（如 POST /v1/ent/privacy）"
         allow-clear
+        class="u-full-sm"
         style="width: 280px"
         @press-enter="onSearch"
       />
@@ -140,11 +143,12 @@ onMounted(() => {
         v-model:value="filters.resource_type"
         placeholder="资源类型"
         allow-clear
+        class="u-full-sm"
         style="width: 160px"
         @press-enter="onSearch"
       />
-      <a-button type="primary" @click="onSearch">查询</a-button>
-      <a-button @click="onReset">重置</a-button>
+      <a-button type="primary" class="u-full-sm" @click="onSearch">查询</a-button>
+      <a-button class="u-full-sm" @click="onReset">重置</a-button>
     </div>
 
     <a-table
@@ -210,7 +214,7 @@ onMounted(() => {
 }
 .audit-desc {
   margin: 4px 0 0;
-  color: rgba(0, 0, 0, 0.45);
+  color: var(--text-tertiary);
   font-size: 13px;
 }
 .audit-filters {
@@ -229,12 +233,23 @@ onMounted(() => {
 .audit-detail-json {
   margin: 0;
   padding: 12px;
-  background: rgba(0, 0, 0, 0.04);
-  border-radius: 4px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-md);
   font-size: 12px;
   max-height: 320px;
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+/* 窄屏：筛选表单竖排全宽，输入/按钮提高触控高度 */
+@media (max-width: 576px) {
+  .audit-view { padding: 12px; }
+  .audit-filters :deep(.ant-input),
+  .audit-filters :deep(.ant-picker),
+  .audit-filters :deep(.ant-btn) {
+    height: 40px;
+  }
 }
 </style>

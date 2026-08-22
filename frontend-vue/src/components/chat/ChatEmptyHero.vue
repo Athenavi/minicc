@@ -20,7 +20,12 @@ const suggestions = [
           v-for="s in suggestions"
           :key="s.title"
           class="suggestion-card"
+          role="button"
+          tabindex="0"
+          :aria-label="s.prompt"
           @click="emit('suggest', s.prompt)"
+          @keydown.enter.prevent="emit('suggest', s.prompt)"
+          @keydown.space.prevent="emit('suggest', s.prompt)"
         >
           <div class="card-icon">{{ s.icon }}</div>
           <div class="card-title">{{ s.title }}</div>
@@ -44,4 +49,15 @@ const suggestions = [
 .card-title { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
 .card-desc { font-size: 12px; color: var(--text-tertiary); line-height: 1.4; }
 @media (max-width: 768px) { .suggestion-card { width: 100%; } .hero-content { width: 100%; } }
+/* ── 微交互 + 可访问性：键盘可操作、焦点可见、按压反馈 ── */
+.suggestion-card:active { transform: scale(0.98); border-color: var(--primary); }
+.suggestion-card:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+/* ── 移动端：窄屏密度压缩 ── */
+@media (max-width: 576px) {
+  .hero-content { padding: 0 16px; }
+  .hero-logo { width: 48px; height: 48px; font-size: 18px; border-radius: 14px; margin-bottom: 14px; }
+  .hero-title { font-size: 20px; margin-bottom: 20px; }
+  .suggestion-grid { gap: 8px; }
+  .suggestion-card { padding: 12px; }
+}
 </style>

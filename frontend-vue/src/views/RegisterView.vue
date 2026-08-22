@@ -269,14 +269,20 @@ async function handleRegister() {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* 移动端：小屏顶部对齐，便于长表单滚动 */
-@media (max-width: 480px) {
+/* 移动端（≤576px，与 .u-hide-sm 断点一致）：小屏顶部对齐，便于长表单滚动 */
+@media (max-width: 576px) {
   .register-container { align-items: flex-start; padding: 16px 12px; }
   .register-card { width: 100%; max-width: 100%; }
   .register-logo { width: 40px; height: 40px; margin-bottom: 10px; }
   .register-title { font-size: 20px; }
   .register-subtitle { font-size: 13px; }
   .register-header { margin-bottom: 18px; }
+  /* 表单贴边：卡片内边距收窄，让输入框更接近屏幕边缘 */
+  .register-form-card :deep(.ant-card-body) { padding: 20px 16px; }
+  /* iOS 聚焦防缩放：输入字号 ≥16px */
+  .register-form-card :deep(.ant-input) { font-size: 16px; }
+  /* 触控目标 ≥ 40px */
+  .register-form-card :deep(.ant-btn:not(.ant-btn-sm)) { min-height: 40px; }
 }
 
 /* 焦点可见性增强（键盘导航） */

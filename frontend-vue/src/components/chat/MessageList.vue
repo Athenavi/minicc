@@ -187,6 +187,14 @@ const badgeText = computed(() => (unseenCount.value > 99 ? '99+' : String(unseen
 .skeleton-line:nth-child(2) { animation-delay: 0.2s; }
 @keyframes skeleton-pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .skeleton-avatar, .skeleton-line { animation: none; } }
+/* ── 移动端：骨架屏间距/头像压缩 ── */
+@media (max-width: 768px) {
+  .skeleton-list { padding: 12px 16px; }
+  .skeleton-msg { gap: 10px; margin-bottom: 18px; }
+  .skeleton-avatar { width: 24px; height: 24px; }
+  .skeleton-lines { max-width: 85%; }
+}
+@media (max-width: 576px) { .skeleton-list { padding: 10px 12px; } }
 .virtual-window { width: 100%; }
 .earlier-loader { display: flex; align-items: center; justify-content: center; gap: 6px; height: 36px; font-size: 12px; color: var(--text-tertiary); }
 .loading-indicator { display: flex; justify-content: center; gap: 6px; padding: 14px 0; }

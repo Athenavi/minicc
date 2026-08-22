@@ -20,6 +20,8 @@
           :key="agent.id"
           class="agent-card"
           :class="{ active: agent.isActive, completed: agent.status === 'completed' }"
+          :aria-expanded="showOutput[index]"
+          @click="showOutput[index] = !showOutput[index]"
         >
           <!-- Agent 头像 -->
           <div class="agent-avatar" :style="{ backgroundColor: agent.color }">
@@ -185,10 +187,11 @@ defineExpose({
 }
 
 .btn-collapse {
-  padding: 4px 12px;
+  min-height: 34px;
+  padding: 6px 14px;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
   color: var(--text-secondary);
   font-size: 12px;
   cursor: pointer;
@@ -215,17 +218,23 @@ defineExpose({
 .agent-card {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 12px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-primary);
-  transition: all 0.2s ease;
+  border-radius: 10px;
+  background: var(--bg-card);
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.agent-card:hover {
+  border-color: var(--primary);
 }
 
 .agent-card.active {
   border-color: var(--primary);
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.1);
+  box-shadow: 0 0 0 2px var(--primary-bg);
 }
 
 .agent-card.completed {
@@ -309,7 +318,7 @@ defineExpose({
 }
 
 .error-icon {
-  color: var(--danger);
+  color: var(--error);
   font-size: 18px;
   font-weight: bold;
 }
@@ -354,8 +363,10 @@ defineExpose({
 }
 
 .btn-clear {
-  padding: 2px 8px;
+  min-height: 30px;
+  padding: 4px 10px;
   border: none;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-secondary);
   font-size: 11px;
@@ -363,7 +374,8 @@ defineExpose({
 }
 
 .btn-clear:hover {
-  color: var(--danger);
+  color: var(--error);
+  background: var(--bg-hover);
 }
 
 .log-content {
@@ -390,7 +402,7 @@ defineExpose({
 }
 
 .log-entry.error {
-  color: var(--danger);
+  color: var(--error);
 }
 
 .log-time {
@@ -414,13 +426,44 @@ defineExpose({
   .agent-card {
     flex-wrap: wrap;
   }
-  
+
   .agent-info {
     flex-basis: calc(100% - 52px);
   }
-  
+
   .agent-output {
-    grid-column: 1 / -1;
+    flex-basis: 100%;
+  }
+
+  .panel-body {
+    max-height: none;
+  }
+}
+
+@media (max-width: 576px) {
+  .agents-container {
+    padding: 12px;
+  }
+
+  .log-entry {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+
+  .log-time {
+    width: 100%;
+  }
+
+  .log-agent {
+    min-width: 48px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-collapse,
+  .btn-clear,
+  .agent-card {
+    transition: none;
   }
 }
 </style>

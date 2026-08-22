@@ -169,7 +169,12 @@ onMounted(() => {
         :data-source="redisConfigs"
         :loading="loading"
         row-key="id"
-      />
+        :scroll="{ x: 1000 }"
+      >
+        <template #emptyText>
+          <div class="empty-block"><span class="empty-icon">📭</span><span class="empty-text">暂无数据</span></div>
+        </template>
+      </Table>
     </Card>
 
     <!-- Status Detail Modal -->
@@ -185,7 +190,7 @@ onMounted(() => {
         <TabPane tab="概览" key="overview">
           <Space direction="vertical" style="width: 100%" size="large">
             <Card>
-              <Space size="large">
+              <div class="metric-grid">
                 <Statistic title="状态" :value="statusData.status" :value-style="{ color: getStatusColor(statusData.status) }" />
                 <Statistic title="平均延迟" :value="statusData.avg_latency_ms" suffix="ms" />
                 <Statistic title="连接客户端" :value="statusData.clients" />
@@ -194,7 +199,7 @@ onMounted(() => {
                     <span :style="{ color: getHitRateColor(statusData.hit_rate), fontWeight: 'bold' }">●</span>
                   </template>
                 </Statistic>
-              </Space>
+              </div>
             </Card>
 
             <Card title="内存使用情况">
@@ -217,7 +222,11 @@ onMounted(() => {
               :data-source="poolDataSource"
               row-key="metric"
               :pagination="false"
-            />
+            >
+              <template #emptyText>
+                <div class="empty-block"><span class="empty-icon">📭</span><span class="empty-text">暂无数据</span></div>
+              </template>
+            </Table>
           </Card>
         </TabPane>
 
@@ -231,8 +240,13 @@ onMounted(() => {
               :columns="slowLogColumns"
               :data-source="slowLogData"
               row-key="id"
+              :scroll="{ x: 560 }"
               :pagination="{ pageSize: 10 }"
-            />
+            >
+              <template #emptyText>
+                <div class="empty-block"><span class="empty-icon">📭</span><span class="empty-text">暂无数据</span></div>
+              </template>
+            </Table>
           </Card>
         </TabPane>
       </Tabs>
@@ -299,5 +313,45 @@ onMounted(() => {
   margin: 0;
   font-size: 24px;
   font-weight: 600;
+}
+
+/* 指标卡网格:auto-fill,窄屏自动降列 */
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 16px;
+}
+
+/* 空状态统一 */
+.empty-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 0;
+  color: var(--text-tertiary);
+}
+.empty-icon { font-size: 26px; line-height: 1; opacity: 0.8; }
+.empty-text { font-size: 13px; }
+
+/* 窄屏:页头竖排、弹层底部按钮竖排、触控目标 ≥ 40px */
+@media (max-width: 768px) {
+  .redis-management .page-header {
+    flex-wrap: wrap;
+    row-gap: 12px;
+  }
+  .redis-management .page-header .ant-btn { min-height: 40px; }
+}
+@media (max-width: 576px) {
+  .redis-management :deep(.ant-modal-footer) {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .redis-management :deep(.ant-modal-footer .ant-btn) {
+    width: 100%;
+    min-height: 40px;
+    margin: 0;
+  }
 }
 </style>

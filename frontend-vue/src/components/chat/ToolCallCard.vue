@@ -51,13 +51,15 @@ const padLeft = computed(() => (props.depth || 0) * 22)
         <span class="tool-summary">{{ summary }}</span>
       </button>
 
-      <div v-if="expanded" class="tool-args"><pre>{{ prettyArgs() }}</pre></div>
+      <Transition name="expand">
+        <div v-if="expanded" class="tool-args"><pre>{{ prettyArgs() }}</pre></div>
+      </Transition>
     </div>
   </div>
 </template>
 
 <style scoped>
-.tool-row-wrap { position: relative; max-width: 748px; margin: 2px auto 0; padding: 0 24px; }
+.tool-row-wrap { position: relative; max-width: min(720px, 92%); margin: 2px auto 0; padding: 0 24px; }
 .tree-guide { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--border); }
 
 /* 工具行：24px 单行（deepseek ToolRow 视觉） */
@@ -97,4 +99,13 @@ const padLeft = computed(() => (props.depth || 0) * 22)
 .tool-args { padding: 8px 12px; margin: 2px 8px 6px; background: var(--bg-secondary); border: 1px solid var(--border-card); border-radius: 6px; }
 .tool-args pre { margin: 0; font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); white-space: pre-wrap; word-break: break-all; }
 @media (max-width: 768px) { .tool-row-wrap { padding: 0 16px; } }
+/* 轻量展开动画（≤200ms） */
+.expand-enter-active, .expand-leave-active { transition: opacity 0.15s ease, transform 0.15s ease; overflow: hidden; }
+.expand-enter-from, .expand-leave-to { opacity: 0; transform: translateY(-4px); }
+@media (prefers-reduced-motion: reduce) { .expand-enter-active, .expand-leave-active { transition: none; } }
+@media (max-width: 768px) { .tool-main { min-height: 36px; } } /* 触控目标放大 */
+@media (max-width: 576px) {
+  .tool-row-wrap { padding: 0 12px; }
+  .tool-args { margin: 2px 4px 6px; }
+}
 </style>

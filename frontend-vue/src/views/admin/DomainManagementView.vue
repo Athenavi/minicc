@@ -160,7 +160,11 @@ onMounted(() => {
         :loading="loading"
         row-key="id"
         :scroll="{ x: 1400 }"
-      />
+      >
+        <template #emptyText>
+          <div class="empty-block"><span class="empty-icon">📭</span><span class="empty-text">暂无数据</span></div>
+        </template>
+      </Table>
     </Card>
 
     <!-- DNS Result Modal -->
@@ -217,16 +221,14 @@ onMounted(() => {
         <Form.Item label="CNAME 目标地址" required>
           <Input v-model:value="currentForm.cname_target" placeholder="cname.minicc.com" />
           <template #extra>
-            <span style="color: rgba(0,0,0,0.45); font-size: 12px">
-              需要将域名 CNAME 记录指向此地址
-            </span>
+            <span class="hint">需要将域名 CNAME 记录指向此地址</span>
           </template>
         </Form.Item>
 
         <Form.Item label="启用自动续期">
           <Switch v-model:checked="currentForm.auto_renew" />
           <template #extra>
-            <span style="margin-left: 8px">到期前自动续期 SSL 证书</span>
+            <span class="hint">到期前自动续期 SSL 证书</span>
           </template>
         </Form.Item>
 
@@ -257,5 +259,28 @@ onMounted(() => {
   margin: 0;
   font-size: 24px;
   font-weight: 600;
+}
+
+.hint { color: var(--text-secondary); font-size: 12px; }
+
+/* 空状态统一 */
+.empty-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 0;
+  color: var(--text-tertiary);
+}
+.empty-icon { font-size: 26px; line-height: 1; opacity: 0.8; }
+.empty-text { font-size: 13px; }
+
+/* 窄屏:页头换行、触控目标 ≥ 40px */
+@media (max-width: 768px) {
+  .domain-management .page-header {
+    flex-wrap: wrap;
+    row-gap: 12px;
+  }
+  .domain-management .page-header .ant-btn { min-height: 40px; }
 }
 </style>

@@ -127,9 +127,8 @@ onMounted(() => {
 <template>
   <div class="queue-monitor">
     <Spin :spinning="loading">
-      <Row :gutter="16">
-        <Col :span="12">
-          <Card title="队列状态">
+      <div class="metric-grid">
+        <Card title="队列状态">
             <Descriptions bordered :column="1">
               <DescriptionsItem label="任务队列长度">{{ queueStats.taskQueueLength }}</DescriptionsItem>
               <DescriptionsItem label="VIP 队列长度">{{ queueStats.vipQueueLength }}</DescriptionsItem>
@@ -139,13 +138,10 @@ onMounted(() => {
               <DescriptionsItem label="最大等待时间">{{ queueStats.maxWaitTime }}ms</DescriptionsItem>
             </Descriptions>
           </Card>
-        </Col>
-        <Col :span="12">
-          <Card title="队列长度趋势">
-            <VChart :option="queueChartOption" style="height: 300px" autoresize />
-          </Card>
-        </Col>
-      </Row>
+        <Card title="队列长度趋势">
+          <VChart :option="queueChartOption" style="height: var(--chart-h, 300px)" autoresize />
+        </Card>
+      </div>
 
       <Card title="等待队列" style="margin-top: 16px">
         <template #extra>
@@ -154,12 +150,43 @@ onMounted(() => {
             {{ isPaused ? '恢复消费' : '暂停消费' }}
           </Button>
         </template>
-        <Table :columns="columns" :dataSource="waitingTasks" :pagination="false" />
+        <Table :columns="columns" :dataSource="waitingTasks" :pagination="false" :scroll="{ x: 720 }">
+          <template #emptyText>
+            <div class="empty-block"><span class="empty-icon">📭</span><span class="empty-text">暂无数据</span></div>
+          </template>
+        </Table>
       </Card>
     </Spin>
   </div>
 </template>
 
 <style scoped>
-.queue-monitor { padding: 0; }
+.queue-monitor { padding: 0; --chart-h: 300px; }
+
+/* 卡片网格:auto-fill,窄屏自动降列 */
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+/* 空状态统一 */
+.empty-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 0;
+  color: var(--text-tertiary);
+}
+.empty-icon { font-size: 26px; line-height: 1; opacity: 0.8; }
+.empty-text { font-size: 13px; }
+
+/* 移动端:图表压缩高度、卡片头换行、触控目标 */
+@media (max-width: 768px) {
+  .queue-monitor { --chart-h: 220px; }
+  .queue-monitor :deep(.ant-card-head-wrapper) { flex-wrap: wrap; row-gap: 8px; }
+  .queue-monitor :deep(.ant-card-extra) { margin-left: 0; }
+  .queue-monitor :deep(.ant-btn) { min-height: 40px; }
+}
 </style>

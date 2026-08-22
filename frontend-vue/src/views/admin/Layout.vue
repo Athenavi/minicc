@@ -199,7 +199,7 @@ const userInitial = computed(() => authStore.user?.name?.charAt(0)?.toUpperCase(
     >
       <div class="sider-brand">
         <span class="sider-logo">MC</span>
-        <span v-if="!collapsed" class="sider-name">MiniCC Admin</span>
+        <span v-if="drawerOpen" class="sider-name">MiniCC Admin</span>
       </div>
       <div class="sider-menu">
         <Menu mode="inline" :selected-keys="selectedKeys" @click="handleMenuClick">
@@ -222,25 +222,30 @@ const userInitial = computed(() => authStore.user?.name?.charAt(0)?.toUpperCase(
           <Button
             type="text"
             class="header-collapse-btn"
+            title="展开或收起导航"
             :aria-label="collapsed ? '展开侧边栏' : '收起侧边栏'"
             @click="isMobile ? (drawerOpen = !drawerOpen) : (collapsed = !collapsed)"
           >
             <component :is="isMobile ? (drawerOpen ? MenuUnfoldOutlined : MenuFoldOutlined) : (collapsed ? MenuUnfoldOutlined : MenuFoldOutlined)" />
           </Button>
           <Breadcrumb class="header-breadcrumb">
-            <BreadcrumbItem v-for="item in breadcrumbs" :key="item.path">
+            <BreadcrumbItem
+              v-for="(item, index) in breadcrumbs"
+              :key="item.path"
+              :class="{ 'u-hide-sm': index > 0 && index < breadcrumbs.length - 1 }"
+            >
               {{ item.title }}
             </BreadcrumbItem>
           </Breadcrumb>
         </div>
         <div class="header-actions">
           <Badge :count="0" :overflow-count="99">
-            <Button type="text" class="header-btn" aria-label="通知">
+            <Button type="text" class="header-btn" title="通知" aria-label="通知">
               <template #icon><BellOutlined /></template>
             </Button>
           </Badge>
           <Dropdown :menu="{ items: userMenuItems, onClick: handleUserAction }" placement="bottomRight">
-            <div class="header-user">
+            <div class="header-user" title="用户菜单">
               <Avatar :size="30" :style="{ backgroundColor: 'var(--primary)', color: '#fff' }">
                 {{ userInitial }}
               </Avatar>
@@ -262,7 +267,7 @@ const userInitial = computed(() => authStore.user?.name?.charAt(0)?.toUpperCase(
 
 <style scoped>
 /* ── 设计系统接入：Sider 使用 CSS 变量，不再硬编码颜色 ── */
-.admin-root { height: 100vh; background: var(--bg-page); }
+.admin-root { height: 100vh; height: 100dvh; background: var(--bg-page); }
 
 .admin-sider {
   background: var(--bg-card) !important;
@@ -366,10 +371,22 @@ const userInitial = computed(() => authStore.user?.name?.charAt(0)?.toUpperCase(
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
-.header-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.header-collapse-btn { flex-shrink: 0; color: var(--text-secondary); }
+.header-left { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+.header-collapse-btn {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+}
 .header-collapse-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
-.header-breadcrumb { min-width: 0; }
+.header-breadcrumb { flex: 1; min-width: 0; }
+.header-breadcrumb :deep(.ant-breadcrumb) {
+  overflow: hidden;
+  white-space: nowrap;
+}
 .header-breadcrumb :deep(.ant-breadcrumb-link) {
   font-size: 13px;
   color: var(--text-tertiary);
@@ -383,7 +400,14 @@ const userInitial = computed(() => authStore.user?.name?.charAt(0)?.toUpperCase(
 }
 
 .header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.header-btn { color: var(--text-secondary); display: flex; align-items: center; }
+.header-btn {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+}
 .header-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
 
 .header-user {
@@ -407,15 +431,20 @@ const userInitial = computed(() => authStore.user?.name?.charAt(0)?.toUpperCase(
 
 /* ── Content ── */
 .admin-content {
-  padding: 20px;
+  padding: clamp(12px, 2.5vw, 24px);
   overflow: auto;
   background: var(--bg-page);
-}
-@media (max-width: 768px) {
-  .admin-content { padding: 12px; }
 }
 
 /* 过渡 */
 .fade-enter-active, .fade-leave-active { transition: opacity 0.18s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+/* 移动端抽屉菜单：菜单项提高至 40px 触控高度 */
+@media (max-width: 960px) {
+  .sider-menu :deep(.ant-menu-item) {
+    height: 40px;
+    line-height: 40px;
+  }
+}
 </style>

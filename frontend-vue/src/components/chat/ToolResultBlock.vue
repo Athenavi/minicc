@@ -113,7 +113,7 @@ const searchFiles = computed(() => {
 </template>
 
 <style scoped>
-.tool-result { max-width: 748px; margin: 2px auto 8px; }
+.tool-result { max-width: min(720px, 92%); margin: 2px auto 8px; }
 .result-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 0; border: none; background: none; color: var(--text-tertiary); cursor: pointer; font-size: 12px; }
 .result-head:hover { color: var(--primary); }
 .tool-result.error .result-label { color: var(--error); }
@@ -121,7 +121,7 @@ const searchFiles = computed(() => {
 .chevron.open { transform: rotate(90deg); }
 .result-code { margin: 0; padding: 12px; background: var(--bg-code); border-radius: 12px; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; color: var(--text-code); white-space: pre-wrap; word-break: break-all; }
 .result-text { padding: 10px 12px; background: var(--bg-secondary); border-radius: 12px; font-size: 13px; color: var(--text-secondary); white-space: pre-wrap; word-break: break-all; }
-.result-image { max-width: 320px; max-height: 240px; border-radius: 12px; border: 1px solid var(--border-card); display: block; margin-top: 4px; }
+.result-image { max-width: min(320px, 80vw); max-height: 240px; border-radius: 12px; border: 1px solid var(--border-card); display: block; margin-top: 4px; }
 
 /* read 卡片：12px 圆角 + banner + 48px 行号 gutter + 22px 行高（deepseek ReadBlock） */
 .read-block { margin: 8px 0; background: var(--bg-code); border-radius: 12px; overflow: hidden; }
@@ -150,4 +150,12 @@ const searchFiles = computed(() => {
 .search-line { min-height: 22px; padding-left: 14px; white-space: pre; color: var(--text-primary); }
 .search-line-no { display: inline-block; width: 40px; color: var(--text-tertiary); user-select: none; }
 .search-line-text { color: var(--text-primary); }
+/* ── 移动端：结果卡片内边距/字号压缩 ── */
+@media (max-width: 768px) {
+  .result-code { padding: 10px; font-size: 11px; }
+  .result-text { padding: 8px 10px; }
+  .read-banner, .terminal-banner { padding: 8px 10px; }
+  .read-line { line-height: 20px; font-size: 11px; }
+  .search-body { font-size: 11px; }
+}
 </style>

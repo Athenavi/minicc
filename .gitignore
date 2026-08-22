@@ -283,3 +283,8 @@ sandbox/
 .reasonix/
 .agents/
 reasonix.toml
+
+# Local agent scratch (never commit)
+.cowork-temp/
+**/.cowork-temp/
+frontend-vue/-1)

@@ -292,7 +292,7 @@ async function handleGenerate() {
                   运行
                 </Button>
                 <Dropdown trigger="click" placement="bottomRight">
-                  <Button type="text" size="small">⋯</Button>
+                  <Button type="text" size="small" title="更多操作">⋯</Button>
                   <template #overlay>
                     <Menu class="card-menu">
                       <MenuItem key="delete" danger @click="requestDelete(s)"><DeleteOutlined class="menu-icon" />删除</MenuItem>
@@ -461,7 +461,7 @@ async function handleGenerate() {
 .exec-tag { flex: none; }
 .card-desc { display: block; margin-top: 3px; font-size: 12px; color: var(--text-tertiary); line-height: 1.5; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .card-meta { display: flex; flex-wrap: wrap; gap: 4px; }
-.card-actions { display: flex; align-items: center; justify-content: space-between; }
+.card-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px; }
 .action-right { display: flex; align-items: center; gap: 4px; }
 .card-menu { min-width: 130px; border-radius: 10px; padding: 4px; box-shadow: var(--shadow-lg); }
 .card-menu :deep(.ant-dropdown-menu-item) { display: flex; align-items: center; gap: 8px; font-size: 13px; border-radius: 6px; }
@@ -493,9 +493,16 @@ async function handleGenerate() {
 .result-label { padding: 8px 12px; font-size: 12px; color: var(--text-tertiary); background: var(--bg-secondary); border-bottom: 1px solid var(--border-card); }
 .result-pre { margin: 0; padding: 12px; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; color: var(--text-primary); white-space: pre-wrap; word-break: break-word; max-height: 300px; overflow-y: auto; }
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
   .skills-page { padding: 20px 16px 48px; }
+  .list-toolbar { flex-direction: column; align-items: stretch; }
+  .search-input { max-width: none; }
+  .type-filter { width: 100%; }
+}
+
+@media (max-width: 640px) {
   .skill-grid { grid-template-columns: 1fr; }
-  .list-toolbar { flex-direction: column; }
+  .page-head { flex-direction: column; align-items: flex-start; }
+  .page-head > .ant-btn { width: 100%; }
 }
 </style>

@@ -229,11 +229,15 @@ async function submit() {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* 移动端 */
-@media (max-width: 480px) {
+/* 移动端（≤576px，与 .u-hide-sm 断点一致）：小屏顶部对齐，便于长表单滚动 */
+@media (max-width: 576px) {
   .install-page { align-items: flex-start; padding: 16px 12px; }
-  .install-card { width: 100%; max-width: 100%; padding: 24px 20px; }
+  .install-card { width: 100%; max-width: 100%; padding: 24px 16px; }
   .install-brand { font-size: 16px; margin-bottom: 18px; }
+  /* iOS 聚焦防缩放：输入字号 ≥16px（含密码框内层 input） */
+  .install-card :deep(.ant-input) { font-size: 16px; }
+  /* 触控目标 ≥ 40px（排除 small 按钮） */
+  .install-card :deep(.ant-btn:not(.ant-btn-sm)) { min-height: 40px; }
 }
 
 /* 焦点增强 */

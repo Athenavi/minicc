@@ -203,7 +203,7 @@ onMounted(() => {
       :description="error"
       hint="请检查后端服务是否正常，或稍后重试"
     >
-      <a-button type="primary" @click="fetchDashboardData">重试</a-button>
+      <a-button type="primary" size="large" @click="fetchDashboardData">重试</a-button>
     </EmptyState>
 
     <template v-else>
@@ -230,65 +230,57 @@ onMounted(() => {
       </div>
 
       <!-- 统计卡片 -->
-      <Row :gutter="16" class="stats-row">
-        <Col :xs="12" :sm="12" :md="6">
-          <Card class="stat-card" :bordered="false">
-            <Statistic
-              title="并发连接"
-              :value="stats.connections"
-              :value-style="{ color: 'var(--text-primary)', fontSize: '28px', fontFamily: 'var(--font-sans)', fontVariantNumeric: 'tabular-nums' }"
-            >
-              <template #prefix><ApartmentOutlined class="stat-icon" /></template>
-              <template #suffix>
-                <Tag v-if="stats.connectionsTrend !== 0" :color="stats.connectionsTrend > 0 ? 'success' : 'error'" class="stat-trend">
-                  <component :is="stats.connectionsTrend > 0 ? ArrowUpOutlined : ArrowDownOutlined" />
-                  {{ Math.abs(stats.connectionsTrend) }}%
-                </Tag>
-              </template>
-            </Statistic>
-          </Card>
-        </Col>
-        <Col :xs="12" :sm="12" :md="6">
-          <Card class="stat-card" :bordered="false">
-            <Statistic
-              title="队列积压"
-              :value="stats.queueBacklog"
-              :value-style="{ color: 'var(--text-primary)', fontSize: '28px', fontVariantNumeric: 'tabular-nums' }"
-            >
-              <template #prefix><OrderedListOutlined class="stat-icon" /></template>
-              <template #suffix>
-                <Tag :color="stats.queueBacklog > 1000 ? 'error' : 'success'" class="stat-trend">
-                  {{ stats.queueBacklog > 1000 ? '告警' : '正常' }}
-                </Tag>
-              </template>
-            </Statistic>
-          </Card>
-        </Col>
-        <Col :xs="12" :sm="12" :md="6">
-          <Card class="stat-card" :bordered="false">
-            <Statistic
-              title="缓存命中率"
-              :value="stats.cacheHitRate"
-              suffix="%"
-              :value-style="{ color: 'var(--text-primary)', fontSize: '28px', fontVariantNumeric: 'tabular-nums' }"
-            >
-              <template #prefix><DatabaseFilled class="stat-icon" /></template>
-            </Statistic>
-          </Card>
-        </Col>
-        <Col :xs="12" :sm="12" :md="6">
-          <Card class="stat-card" :bordered="false">
-            <Statistic
-              title="API 延迟 P99"
-              :value="stats.latencyP99"
-              suffix="ms"
-              :value-style="{ color: 'var(--text-primary)', fontSize: '28px', fontVariantNumeric: 'tabular-nums' }"
-            >
-              <template #prefix><ThunderboltFilled class="stat-icon" /></template>
-            </Statistic>
-          </Card>
-        </Col>
-      </Row>
+      <div class="stats-grid">
+        <Card class="stat-card" :bordered="false">
+          <Statistic
+            title="并发连接"
+            :value="stats.connections"
+            :value-style="{ color: 'var(--text-primary)', fontSize: '28px', fontFamily: 'var(--font-sans)', fontVariantNumeric: 'tabular-nums' }"
+          >
+            <template #prefix><ApartmentOutlined class="stat-icon" /></template>
+            <template #suffix>
+              <Tag v-if="stats.connectionsTrend !== 0" :color="stats.connectionsTrend > 0 ? 'success' : 'error'" class="stat-trend">
+                <component :is="stats.connectionsTrend > 0 ? ArrowUpOutlined : ArrowDownOutlined" />
+                {{ Math.abs(stats.connectionsTrend) }}%
+              </Tag>
+            </template>
+          </Statistic>
+        </Card>
+        <Card class="stat-card" :bordered="false">
+          <Statistic
+            title="队列积压"
+            :value="stats.queueBacklog"
+            :value-style="{ color: 'var(--text-primary)', fontSize: '28px', fontVariantNumeric: 'tabular-nums' }"
+          >
+            <template #prefix><OrderedListOutlined class="stat-icon" /></template>
+            <template #suffix>
+              <Tag :color="stats.queueBacklog > 1000 ? 'error' : 'success'" class="stat-trend">
+                {{ stats.queueBacklog > 1000 ? '告警' : '正常' }}
+              </Tag>
+            </template>
+          </Statistic>
+        </Card>
+        <Card class="stat-card" :bordered="false">
+          <Statistic
+            title="缓存命中率"
+            :value="stats.cacheHitRate"
+            suffix="%"
+            :value-style="{ color: 'var(--text-primary)', fontSize: '28px', fontVariantNumeric: 'tabular-nums' }"
+          >
+            <template #prefix><DatabaseFilled class="stat-icon" /></template>
+          </Statistic>
+        </Card>
+        <Card class="stat-card" :bordered="false">
+          <Statistic
+            title="API 延迟 P99"
+            :value="stats.latencyP99"
+            suffix="ms"
+            :value-style="{ color: 'var(--text-primary)', fontSize: '28px', fontVariantNumeric: 'tabular-nums' }"
+          >
+            <template #prefix><ThunderboltFilled class="stat-icon" /></template>
+          </Statistic>
+        </Card>
+      </div>
 
       <!-- 图表区域 -->
       <Row :gutter="16" class="charts-row">
@@ -391,11 +383,16 @@ onMounted(() => {
 .nav-card:hover .nav-card-arrow { color: var(--primary); transform: translateX(2px); }
 
 /* ── 统计卡片 ── */
-.stats-row { margin-bottom: 0 !important; }
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
 .stat-card {
   border-radius: 10px !important;
   background: var(--bg-card) !important;
   box-shadow: var(--shadow-md);
+  min-width: 0;
 }
 .stat-card :deep(.ant-card-body) { padding: 18px 20px; }
 .stat-card :deep(.ant-statistic-title) {
@@ -455,9 +452,15 @@ onMounted(() => {
   background: var(--bg-hover) !important;
 }
 
-/* 移动端：统计卡片间距收紧 */
+/* 移动端：导航卡片两列 → 单列；统计/图表高度压缩 */
 @media (max-width: 768px) {
-  .nav-grid { grid-template-columns: 1fr; }
+  .nav-grid { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
   .chart-canvas { height: 220px; }
+}
+@media (max-width: 576px) {
+  .nav-grid { grid-template-columns: 1fr; }
+  .chart-canvas { height: 200px; }
+  .stat-card :deep(.ant-card-body) { padding: 14px 16px; }
+  .stat-card :deep(.ant-statistic-content-value) { font-size: 22px !important; }
 }
 </style>

@@ -201,7 +201,7 @@ const copyKernel = () => {
   <div class="settings">
     <Row :gutter="16">
       <!-- 限流配置 -->
-      <Col :span="12">
+      <Col :xs="24" :sm="12">
         <Card title="限流配置">
           <Form :model="rateLimitConfig" layout="vertical">
             <FormItem label="每秒请求数">
@@ -225,7 +225,7 @@ const copyKernel = () => {
       </Col>
 
       <!-- 降级配置 -->
-      <Col :span="12">
+      <Col :xs="24" :sm="12">
         <Card title="降级配置">
           <Form :model="degradationConfig" layout="vertical">
             <FormItem label="启用降级">
@@ -249,7 +249,7 @@ const copyKernel = () => {
       </Col>
 
       <!-- 缓存配置 -->
-      <Col :span="12">
+      <Col :xs="24" :sm="12">
         <Card title="缓存配置">
           <Form :model="cacheConfig" layout="vertical">
             <FormItem label="L1 容量">
@@ -270,7 +270,7 @@ const copyKernel = () => {
       </Col>
 
       <!-- API Key 配置 -->
-      <Col :span="12">
+      <Col :xs="24" :sm="12">
         <Card title="API Key 配置">
           <Form :model="apiKeyConfig" layout="vertical">
             <FormItem label="熔断阈值">
@@ -292,7 +292,7 @@ const copyKernel = () => {
     </Row>
 
     <!-- Nginx 配置 -->
-    <Card title="Nginx 调优配置" style="margin-top: 16px">
+    <Card title="Nginx 调优配置" class="config-card">
       <template #extra>
         <Button type="primary" ghost @click="copyNginx">复制配置</Button>
       </template>
@@ -300,7 +300,7 @@ const copyKernel = () => {
     </Card>
 
     <!-- 内核调优 -->
-    <Card title="内核调优配置" style="margin-top: 16px">
+    <Card title="内核调优配置" class="config-card">
       <template #extra>
         <Button type="primary" ghost @click="copyKernel">复制配置</Button>
       </template>
@@ -311,11 +311,12 @@ const copyKernel = () => {
 
 <style scoped>
 .settings { padding: 0; }
+.config-card { margin-top: 16px; }
 
 .code-block {
-  background: var(--bg-code, #f5f5f5);
-  border: 1px solid var(--border-card, #e0e0e0);
-  border-radius: 6px;
+  background: var(--bg-code);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-md);
   padding: 16px;
   font-family: var(--font-mono, 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace);
   font-size: 12px;
@@ -329,6 +330,11 @@ const copyKernel = () => {
 /* 移动端 */
 @media (max-width: 640px) {
   .code-block { padding: 12px; font-size: 11px; }
+}
+
+/* 窄屏：按钮提高触控高度 */
+@media (max-width: 576px) {
+  .settings :deep(.ant-btn:not(.ant-btn-sm):not(.ant-btn-link)) { min-height: 40px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

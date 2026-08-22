@@ -184,7 +184,7 @@ defineExpose({ reset })
 <template>
   <div class="captcha-widget">
     <template v-if="provider === 'tencent'">
-      <button type="button" class="tencent-trigger" :disabled="loading" @click="showTencent">
+      <button type="button" class="tencent-trigger" title="点击进行人机验证" :disabled="loading" @click="showTencent">
         {{ loading ? '加载中…' : '点击进行人机验证' }}
       </button>
     </template>
@@ -211,10 +211,14 @@ defineExpose({ reset })
   min-height: 44px;
   display: flex;
   justify-content: flex-start;
+  max-width: 100%;
+  /* 第三方组件（如 Turnstile 300px 宽）在极窄屏防页面横向溢出 */
+  overflow-x: auto;
 }
 
 .tencent-trigger {
   width: 100%;
+  min-height: 40px; /* 触控目标 ≥ 40px */
   padding: 10px 12px;
   border: 1px solid var(--border-card, #d9d9d9);
   border-radius: 8px;

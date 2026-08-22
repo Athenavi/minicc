@@ -23,7 +23,7 @@ const poolSaving = ref(false)
 const allocDrawerVisible = ref(false)
 const currentPool = ref<QuotaPoolWithAllocated | null>(null)
 const allocations = ref<QuotaAllocation[]>([])
-const allocForm = ref({ target_type: 'group', target_id: '', amount: 0 })
+const allocForm = ref<{ target_type: 'user' | 'group'; target_id: string; amount: number }>({ target_type: 'group', target_id: '', amount: 0 })
 const allocSaving = ref(false)
 
 async function fetchPools() {
@@ -209,7 +209,7 @@ onMounted(fetchPools)
   <div class="cost-view">
     <div class="page-header">
       <h2 class="page-title">成本中心与资源池化</h2>
-      <a-space>
+      <a-space class="filter-bar">
         <a-input
           v-model:value="currentTenantID"
           placeholder="租户 ID（按租户过滤）"
@@ -236,8 +236,12 @@ onMounted(fetchPools)
       :loading="loading"
       :row-key="(r: QuotaPoolWithAllocated) => r.id"
       :pagination="false"
+      :scroll="{ x: 950 }"
       size="small"
     >
+      <template #emptyText>
+        <div class="empty-block"><span class="empty-icon">📭</span><span class="empty-text">暂无数据</span></div>
+      </template>
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'action'">
           <a-button type="link" size="small" @click="openAllocDrawer(record)">分配</a-button>
@@ -308,9 +312,13 @@ onMounted(fetchPools)
           :data-source="allocations"
           :row-key="(r: QuotaAllocation) => r.id"
           :pagination="false"
+          :scroll="{ x: 520 }"
           size="small"
           style="margin-top: 16px"
         >
+          <template #emptyText>
+            <div class="empty-block"><span class="empty-icon">📭</span><span class="empty-text">暂无数据</span></div>
+          </template>
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'action'">
               <a-button type="link" size="small" danger @click="removeAllocation(record.id)">删除</a-button>
@@ -327,4 +335,30 @@ onMounted(fetchPools)
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; }
 .page-title { margin: 0; font-size: 20px; }
 .alloc-form { display: flex; gap: 8px; align-items: center; }
+
+/* 空状态统一 */
+.empty-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 0;
+  color: var(--text-tertiary);
+}
+.empty-icon { font-size: 26px; line-height: 1; opacity: 0.8; }
+.empty-text { font-size: 13px; }
+
+/* 窄屏:筛选竖排、抽屉分配表单竖排、触控目标 ≥ 40px */
+@media (max-width: 768px) {
+  .cost-view .page-header { flex-direction: column; align-items: stretch; }
+  .cost-view .page-header :deep(.ant-space) { width: 100%; }
+  .cost-view .page-header :deep(.ant-space-item) { flex: 1 1 auto; min-width: 0; }
+  .cost-view .page-header :deep(.ant-input) { width: 100% !important; }
+  .cost-view .page-header :deep(.ant-btn) { width: 100%; min-height: 40px; }
+  .cost-view .alloc-form { flex-direction: column; align-items: stretch; }
+  .cost-view .alloc-form :deep(.ant-input),
+  .cost-view .alloc-form :deep(.ant-input-number),
+  .cost-view .alloc-form :deep(.ant-select) { width: 100% !important; }
+  .cost-view .alloc-form :deep(.ant-btn) { width: 100%; min-height: 40px; }
+}
 </style>

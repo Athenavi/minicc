@@ -156,8 +156,12 @@ onMounted(() => {
       :loading="loading"
       :row-key="(r: EntGroup) => r.id"
       :pagination="false"
+      :scroll="{ x: 860 }"
       size="small"
     >
+      <template #emptyText>
+        <div class="empty-block"><span class="empty-icon">📭</span><span class="empty-text">暂无数据</span></div>
+      </template>
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'action'">
           <a-button type="link" size="small" @click="openRoleBinding(record)">绑定角色</a-button>
@@ -214,9 +218,42 @@ onMounted(() => {
 .groups-view { padding: 16px 24px; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .page-title { margin: 0; font-size: 20px; }
-.drawer-hint { color: rgba(0,0,0,0.45); font-size: 13px; margin-bottom: 16px; }
+.drawer-hint { color: var(--text-secondary); font-size: 13px; margin-bottom: 16px; }
 .role-list { display: flex; flex-direction: column; gap: 8px; }
-.role-item { padding: 8px; border: 1px solid #f0f0f0; border-radius: 4px; }
+.role-item {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  transition: background-color 0.2s ease;
+}
+.role-item:hover { background: var(--bg-hover); }
 .role-name { font-weight: 500; }
-.role-desc { margin-left: 8px; color: rgba(0,0,0,0.45); font-size: 12px; }
+.role-desc { margin-left: 8px; color: var(--text-tertiary); font-size: 12px; }
+
+/* 空状态统一 */
+.empty-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 0;
+  color: var(--text-tertiary);
+}
+.empty-icon { font-size: 26px; line-height: 1; opacity: 0.8; }
+.empty-text { font-size: 13px; }
+
+/* 窄屏:页头换行、选项说明换行、表格小按钮扩大热区 */
+@media (max-width: 768px) {
+  .groups-view .page-header { flex-wrap: wrap; row-gap: 12px; }
+  .groups-view .page-header .ant-btn { min-height: 40px; }
+  .role-desc { display: block; margin-left: 0; margin-top: 2px; }
+  .groups-view :deep(.ant-btn-sm) { position: relative; }
+  .groups-view :deep(.ant-btn-sm)::after {
+    content: '';
+    position: absolute;
+    inset: -8px;
+    border-radius: inherit;
+  }
+}
 </style>

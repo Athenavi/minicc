@@ -135,8 +135,12 @@ onMounted(fetchPolicies)
       :loading="loading"
       :row-key="(r: ModelPolicy) => r.id"
       :pagination="false"
+      :scroll="{ x: 900 }"
       size="small"
     >
+      <template #emptyText>
+        <div class="empty-block"><span class="empty-icon">📭</span><span class="empty-text">暂无数据</span></div>
+      </template>
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'action'">
           <a-button type="link" size="small" @click="openEdit(record)">编辑</a-button>
@@ -157,12 +161,13 @@ onMounted(fetchPolicies)
           <a-input v-model:value="form.role_id" placeholder="角色 UUID（留空为租户级）" />
         </a-form-item>
         <a-form-item label="允许模型（每行一个 model_id）">
-          <a-textarea v-model:value="form.allowed_models" :rows="6" placeholder="gpt-4&#10;claude-3-opus" />
+          <a-textarea v-model:value="form.allowed_models" :rows="6" class="code-editor" placeholder="gpt-4&#10;claude-3-opus" />
         </a-form-item>
         <a-form-item label="每模型限速（JSON）">
           <a-textarea
             v-model:value="form.per_model_limits"
             :rows="5"
+            class="code-editor"
             placeholder='{"gpt-4": {"rpm": 60}}'
           />
         </a-form-item>
@@ -175,4 +180,38 @@ onMounted(fetchPolicies)
 .policy-view { padding: 16px 24px; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .page-title { margin: 0; font-size: 20px; }
+
+/* 空状态统一 */
+.empty-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 0;
+  color: var(--text-tertiary);
+}
+.empty-icon { font-size: 26px; line-height: 1; opacity: 0.8; }
+.empty-text { font-size: 13px; }
+
+/* 代码/JSON 编辑区:等宽字体、min-height 自适应、可纵向拉伸 */
+.policy-view :deep(.code-editor) {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  min-height: 120px;
+  resize: vertical;
+}
+
+/* 窄屏:页头换行、表单项全宽、表格小按钮扩大热区 */
+@media (max-width: 768px) {
+  .policy-view .page-header { flex-wrap: wrap; row-gap: 12px; }
+  .policy-view .page-header .ant-btn { min-height: 40px; }
+  .policy-view :deep(.ant-form-item) { margin-bottom: 16px; }
+  .policy-view :deep(.ant-btn-sm) { position: relative; }
+  .policy-view :deep(.ant-btn-sm)::after {
+    content: '';
+    position: absolute;
+    inset: -8px;
+    border-radius: inherit;
+  }
+}
 </style>

@@ -83,20 +83,21 @@
       </div>
     </div>
     
-    <!-- 空状态 -->
-    <div v-if="results.length === 0" class="empty-state">
-      <svg width="48" height="48" viewBox="0 0 48 48" fill="#d1d5db">
-        <circle cx="24" cy="24" r="20" fill="none" stroke="currentColor" stroke-width="2"/>
-        <path d="M16 20h16M16 26h12M16 32h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-      </svg>
-      <p>暂无检索结果</p>
-      <p class="empty-hint">尝试其他搜索关键词</p>
-    </div>
+    <!-- 空状态：统一 EmptyState 模式 -->
+    <EmptyState
+      v-if="results.length === 0"
+      size="list"
+      :icon="markRaw(SearchOutlined)"
+      description="暂无检索结果"
+      hint="尝试其他搜索关键词"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, markRaw } from 'vue'
+import { SearchOutlined } from '@ant-design/icons-vue'
+import EmptyState from './common/EmptyState.vue'
 
 interface SearchResult {
   documentId: string
@@ -162,19 +163,22 @@ function formatTime(timestamp: string | number): string {
 <style scoped>
 .kb-search-results {
   margin-top: 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   overflow: hidden;
-  background: #ffffff;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-md);
 }
 
 .results-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
   padding: 12px 16px;
-  background: linear-gradient(to right, #f3f4f6, #ffffff);
-  border-bottom: 1px solid #e5e7eb;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
 }
 
 .header-title {
@@ -183,7 +187,7 @@ function formatTime(timestamp: string | number): string {
   gap: 8px;
   font-size: 14px;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--text-primary);
 }
 
 .header-actions {
@@ -192,29 +196,32 @@ function formatTime(timestamp: string | number): string {
 }
 
 .btn-toggle {
-  padding: 4px 12px;
+  min-height: 34px;
+  padding: 6px 14px;
   font-size: 12px;
-  color: #6b7280;
-  background: white;
-  border: 1px solid #d1d5db;
-  border-radius: 4px;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .btn-toggle:hover {
-  background: #f9fafb;
-  border-color: #9ca3af;
+  background: var(--bg-hover);
+  border-color: var(--text-tertiary);
+  color: var(--text-primary);
 }
 
 .results-list {
   max-height: 500px;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .result-card {
   padding: 16px;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--border-card);
   transition: background 0.2s;
 }
 
@@ -223,7 +230,7 @@ function formatTime(timestamp: string | number): string {
 }
 
 .result-card:hover {
-  background: #f9fafb;
+  background: var(--bg-hover);
 }
 
 .result-rank {
@@ -231,6 +238,7 @@ function formatTime(timestamp: string | number): string {
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
+  flex-wrap: wrap;
 }
 
 .rank-badge {
@@ -238,7 +246,7 @@ function formatTime(timestamp: string | number): string {
   font-size: 11px;
   font-weight: 700;
   color: #ffffff;
-  background: #6b7280;
+  background: var(--text-tertiary);
   border-radius: 3px;
 }
 
@@ -257,11 +265,13 @@ function formatTime(timestamp: string | number): string {
   margin-bottom: 8px;
   font-size: 13px;
   font-weight: 600;
-  color: #111827;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
 }
 
 .doc-icon {
-  color: #6b7280;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
 }
 
 .result-content {
@@ -271,13 +281,13 @@ function formatTime(timestamp: string | number): string {
 .content-text {
   margin: 0;
   padding: 8px 12px;
-  background: #f9fafb;
-  border-left: 3px solid #d1d5db;
+  background: var(--bg-secondary);
+  border-left: 3px solid var(--border);
   border-radius: 4px;
-  font-family: 'Fira Code', monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.6;
-  color: #374151;
+  color: var(--text-secondary);
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 80px;
@@ -298,14 +308,14 @@ function formatTime(timestamp: string | number): string {
 
 .highlight-label {
   font-size: 11px;
-  color: #6b7280;
+  color: var(--text-tertiary);
 }
 
 .highlight-tag {
   padding: 2px 8px;
   font-size: 11px;
   color: #ffffff;
-  background: #3b82f6;
+  background: var(--primary);
   border-radius: 3px;
 }
 
@@ -320,47 +330,52 @@ function formatTime(timestamp: string | number): string {
   align-items: center;
   gap: 4px;
   font-size: 11px;
-  color: #9ca3af;
+  color: var(--text-tertiary);
 }
 
 .expand-btn {
-  padding: 4px 12px;
+  min-height: 32px;
+  padding: 5px 14px;
   font-size: 12px;
-  color: #3b82f6;
+  color: var(--primary);
   background: none;
-  border: 1px solid #3b82f6;
-  border-radius: 4px;
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .expand-btn:hover {
-  background: #3b82f6;
+  background: var(--primary);
   color: #ffffff;
 }
 
 .expand-btn.collapsed {
-  color: #6b7280;
-  border-color: #d1d5db;
+  color: var(--text-tertiary);
+  border-color: var(--border);
 }
 
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 48px 16px;
-  text-align: center;
+.expand-btn.collapsed:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border-color: var(--text-tertiary);
 }
 
-.empty-state p {
-  margin: 12px 0 4px;
-  font-size: 14px;
-  color: #9ca3af;
+@media (max-width: 576px) {
+  .result-card {
+    padding: 12px;
+  }
+  .results-header {
+    padding: 10px 12px;
+  }
 }
 
-.empty-hint {
-  font-size: 12px;
-  color: #d1d5db;
+@media (prefers-reduced-motion: reduce) {
+  .result-card,
+  .btn-toggle,
+  .expand-btn,
+  .content-text {
+    transition: none;
+  }
 }
 </style>

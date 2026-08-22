@@ -194,11 +194,11 @@ function formatDate(iso: string): string {
               <div class="kb-footer">
                 <span class="kb-time">更新于 {{ formatDate(kb.updated_at) }}</span>
                 <div class="footer-actions">
-                  <Button type="text" size="small" @click.stop="openEdit(kb)">
+                  <Button type="text" size="small" title="编辑" @click.stop="openEdit(kb)">
                     <template #icon><EditOutlined /></template>
                   </Button>
                   <Popconfirm title="确认删除此知识库？" @confirm="deleteKnowledgeBase(kb.id)">
-                    <Button type="text" danger size="small" @click.stop>
+                    <Button type="text" danger size="small" title="删除" @click.stop>
                       <template #icon><DeleteOutlined /></template>
                     </Button>
                   </Popconfirm>
@@ -232,11 +232,11 @@ function formatDate(iso: string): string {
               <div class="kb-footer">
                 <span class="kb-time">更新于 {{ formatDate(kb.updated_at) }}</span>
                 <div class="footer-actions">
-                  <Button type="text" size="small" @click.stop="openEdit(kb)">
+                  <Button type="text" size="small" title="编辑" @click.stop="openEdit(kb)">
                     <template #icon><EditOutlined /></template>
                   </Button>
                   <Popconfirm title="确认删除此知识库？" @confirm="deleteKnowledgeBase(kb.id)">
-                    <Button type="text" danger size="small" @click.stop>
+                    <Button type="text" danger size="small" title="删除" @click.stop>
                       <template #icon><DeleteOutlined /></template>
                     </Button>
                   </Popconfirm>
@@ -363,8 +363,14 @@ function formatDate(iso: string): string {
 .editor-form { display: flex; flex-direction: column; gap: 12px; }
 .form-row { display: flex; flex-direction: column; gap: 6px; }
 .form-label { font-size: 12px; color: var(--text-secondary); font-weight: 500; }
-@media (max-width: 640px) {
+@media (max-width: 768px) {
   .kb-page { padding: 20px 16px 48px; }
+  .search-input { max-width: none; width: 100%; }
+}
+
+@media (max-width: 640px) {
   .kb-grid { grid-template-columns: 1fr; }
+  .page-head { flex-direction: column; align-items: flex-start; }
+  .page-head > .ant-btn { width: 100%; }
 }
 </style>

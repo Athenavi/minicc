@@ -41,7 +41,7 @@ const columns = [
   { title: '失败次数', dataIndex: 'failures', width: 100 },
   { title: '最后使用', dataIndex: 'last_used', width: 180 },
   { title: '备注', dataIndex: 'remark' },
-  { title: '操作', dataIndex: 'actions', width: 150 },
+  { title: '操作', dataIndex: 'actions', width: 150, fixed: 'right' as const },
 ]
 
 async function fetchApiKeys() {
@@ -111,7 +111,7 @@ onMounted(() => {
     <Spin :spinning="loading">
       <Card title="API Key 管理">
         <template #extra>
-          <Button type="primary" @click="showAddModal = true">
+          <Button type="primary" size="large" @click="showAddModal = true">
             <template #icon><PlusOutlined /></template>
             添加 Key
           </Button>
@@ -139,7 +139,7 @@ onMounted(() => {
           </Col>
         </Row>
 
-        <Table :columns="columns" :dataSource="apiKeys" :pagination="false">
+        <Table :columns="columns" :dataSource="apiKeys" :pagination="false" :scroll="{ x: 1060 }">
           <template #bodyCell="{ column, record }">
             <template v-if="column.dataIndex === 'status'">
               <Tag :color="record.status === 'active' ? 'success' : record.status === 'rate_limited' ? 'warning' : 'error'">
@@ -178,12 +178,17 @@ onMounted(() => {
 
 <style scoped>
 .api-keys { padding: 0; }
-.status-ok { color: var(--colorSuccess, #18a058); }
-.status-warn { color: var(--colorWarning, #f0a020); }
-.status-error { color: var(--colorError, #d03050); }
+.status-ok { color: var(--success, #22c55e); }
+.status-warn { color: var(--warning, #f59e0b); }
+.status-error { color: var(--error, #ef4444); }
 
 /* 移动端：统计四列改两列 */
 @media (max-width: 640px) {
   .api-keys :deep(.ant-col) { flex: 0 0 50%; max-width: 50%; margin-bottom: 12px; }
+}
+
+/* 窄屏：按钮提高触控高度 */
+@media (max-width: 576px) {
+  .api-keys :deep(.ant-btn:not(.ant-btn-sm):not(.ant-btn-link)) { min-height: 40px; }
 }
 </style>

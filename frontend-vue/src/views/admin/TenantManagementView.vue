@@ -156,7 +156,7 @@ onMounted(() => {
 
     <!-- Filters -->
     <Card style="margin-bottom: 16px">
-      <Space>
+      <Space class="filter-bar">
         <Input.Search
           v-model:value="searchText"
           placeholder="搜索租户名称或 ID..."
@@ -186,7 +186,11 @@ onMounted(() => {
         :loading="loading"
         :pagination="{ pageSize: 20, total: totalTenants, showSizeChanger: true }"
         :scroll="{ x: 1200 }"
-      />
+      >
+        <template #emptyText>
+          <div class="empty-block"><span class="empty-icon">📭</span><span class="empty-text">暂无数据</span></div>
+        </template>
+      </Table>
     </Card>
 
     <!-- Usage Statistics Modal -->
@@ -203,7 +207,12 @@ onMounted(() => {
             :columns="usageColumns"
             :data-source="usageData"
             :pagination="false"
-          />
+            :scroll="{ x: 640 }"
+          >
+            <template #emptyText>
+              <div class="empty-block"><span class="empty-icon">📭</span><span class="empty-text">暂无数据</span></div>
+            </template>
+          </Table>
         </TabPane>
       </Tabs>
     </Modal>
@@ -291,4 +300,27 @@ onMounted(() => {
 .tenant-management { padding: 24px; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
 .page-header h1 { margin: 0; font-size: 24px; font-weight: 600; }
+
+/* 空状态统一 */
+.empty-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 0;
+  color: var(--text-tertiary);
+}
+.empty-icon { font-size: 26px; line-height: 1; opacity: 0.8; }
+.empty-text { font-size: 13px; }
+
+/* 窄屏:页头换行、筛选表单竖排、触控目标 ≥ 40px */
+@media (max-width: 768px) {
+  .tenant-management .page-header { flex-wrap: wrap; row-gap: 12px; }
+  .tenant-management .page-header .ant-btn { min-height: 40px; }
+  .tenant-management .filter-bar { width: 100%; }
+  .tenant-management .filter-bar :deep(.ant-space-item) { flex: 1 1 100%; min-width: 0; }
+  .tenant-management .filter-bar :deep(.ant-input-group-wrapper),
+  .tenant-management .filter-bar :deep(.ant-select) { width: 100% !important; }
+  .tenant-management .filter-bar :deep(.ant-btn) { min-height: 40px; }
+}
 </style>

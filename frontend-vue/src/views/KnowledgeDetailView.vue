@@ -424,7 +424,7 @@ function formatSize(bytes: number): string {
               </template>
               <template v-else-if="column.key === 'action'">
                 <Popconfirm title="确认删除此文档？" @confirm="deleteDoc(record.id)">
-                  <Button type="text" danger size="small">
+                  <Button type="text" danger size="small" title="删除文档">
                     <template #icon><DeleteOutlined /></template>
                   </Button>
                 </Popconfirm>
@@ -548,8 +548,8 @@ function formatSize(bytes: number): string {
 .media-meta { display: flex; gap: 12px; font-size: 12px; color: var(--text-tertiary); }
 .media-type { text-transform: uppercase; }
 
-/* 移动端：搜索栏堆叠、header 纵向 */
-@media (max-width: 640px) {
+/* 移动端/平板：搜索栏堆叠、header 纵向、卡片头部换行、表格横向滚动 */
+@media (max-width: 768px) {
   .kb-detail-container { padding: 16px 12px; }
   .kb-detail-header { flex-direction: column; align-items: flex-start; gap: 10px; }
   .kb-detail-header h1 { font-size: 20px; }
@@ -557,6 +557,14 @@ function formatSize(bytes: number): string {
   .media-actions { justify-content: flex-end; }
   .info-grid { grid-template-columns: repeat(2, 1fr); }
   .media-item { padding: 10px 12px; }
+  /* 卡片头部（标题 + 搜索/按钮）允许换行 */
+  :deep(.ant-card-head) { flex-wrap: wrap; row-gap: 8px; }
+  :deep(.ant-card-head-wrapper) { flex-wrap: wrap; row-gap: 8px; }
+  :deep(.ant-card-extra) { margin-left: 0; width: 100%; }
+  :deep(.ant-card-extra .ant-space) { flex-wrap: wrap; row-gap: 8px; }
+  /* 文档表格窄屏横向滚动 */
+  :deep(.ant-table-wrapper) { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  :deep(.ant-table-wrapper .ant-table) { min-width: 640px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

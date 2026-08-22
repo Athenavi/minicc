@@ -392,11 +392,11 @@ function pct(n: number): string {
                   <Tag color="blue">置信 {{ item.confidence }}</Tag>
                 </Tooltip>
                 <Space class="entry-actions">
-                  <Button size="small" type="text" @click="openEdit(item)">
+                  <Button size="small" type="text" title="编辑" @click="openEdit(item)">
                     <template #icon><EditOutlined /></template>
                   </Button>
                   <Popconfirm title="删除这条记忆？" ok-text="删除" cancel-text="取消" @confirm="handleDelete(item.id)">
-                    <Button size="small" type="text" danger>
+                    <Button size="small" type="text" danger title="删除">
                       <template #icon><DeleteOutlined /></template>
                     </Button>
                   </Popconfirm>
@@ -501,5 +501,24 @@ function pct(n: number): string {
 .entry-meta {
   font-size: 12px;
   color: var(--text-secondary, #888);
+}
+
+/* 移动端：检索框占满、标题区换行 */
+@media (max-width: 768px) {
+  .memory-view {
+    padding: 16px 12px;
+  }
+  .search-card :deep(.ant-input-affix-wrapper) {
+    width: 100% !important;
+  }
+  .title {
+    font-size: 18px;
+  }
+  .title .subtitle {
+    display: none;
+  }
+  .entry-head {
+    row-gap: 4px;
+  }
 }
 </style>

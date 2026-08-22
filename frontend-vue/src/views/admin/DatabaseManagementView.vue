@@ -204,7 +204,12 @@ onMounted(() => {
         :data-source="dbConfigs"
         :loading="loading"
         row-key="id"
-      />
+        :scroll="{ x: 1100 }"
+      >
+        <template #emptyText>
+          <div class="empty-block"><span class="empty-icon">📭</span><span class="empty-text">暂无数据</span></div>
+        </template>
+      </Table>
     </Card>
 
     <!-- Backups List -->
@@ -214,8 +219,13 @@ onMounted(() => {
         :columns="backupColumns"
         :data-source="backups"
         row-key="id"
+        :scroll="{ x: 800 }"
         :pagination="{ pageSize: 10 }"
-      />
+      >
+        <template #emptyText>
+          <div class="empty-block"><span class="empty-icon">📭</span><span class="empty-text">暂无数据</span></div>
+        </template>
+      </Table>
     </Card>
 
     <!-- Status Detail Modal -->
@@ -342,7 +352,11 @@ onMounted(() => {
           row-key="key"
           :scroll="{ x: 800 }"
           :pagination="{ pageSize: 20 }"
-        />
+        >
+          <template #emptyText>
+            <div class="empty-block"><span class="empty-icon">📭</span><span class="empty-text">暂无数据</span></div>
+          </template>
+        </Table>
       </Space>
     </Modal>
 
@@ -403,5 +417,27 @@ onMounted(() => {
   margin: 0;
   font-size: 24px;
   font-weight: 600;
+}
+
+/* 空状态统一 */
+.empty-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 0;
+  color: var(--text-tertiary);
+}
+.empty-icon { font-size: 26px; line-height: 1; opacity: 0.8; }
+.empty-text { font-size: 13px; }
+
+/* 窄屏:页头换行、按钮全宽、触控目标 ≥ 40px */
+@media (max-width: 768px) {
+  .database-management .page-header {
+    flex-wrap: wrap;
+    row-gap: 12px;
+  }
+  .database-management .page-header .ant-space { flex-wrap: wrap; row-gap: 8px; }
+  .database-management .page-header .ant-btn { min-height: 40px; }
 }
 </style>

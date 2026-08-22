@@ -122,8 +122,12 @@ onMounted(fetchRoles)
       :loading="loading"
       :row-key="(r: EntRole) => r.id"
       :pagination="false"
+      :scroll="{ x: 860 }"
       size="small"
     >
+      <template #emptyText>
+        <div class="empty-block"><span class="empty-icon">📭</span><span class="empty-text">暂无数据</span></div>
+      </template>
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'action'">
           <a-button type="link" size="small" @click="openEdit(record)">编辑</a-button>
@@ -161,4 +165,35 @@ onMounted(fetchRoles)
 .roles-view { padding: 16px 24px; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .page-title { margin: 0; font-size: 20px; }
+
+/* 空状态统一 */
+.empty-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 0;
+  color: var(--text-tertiary);
+}
+.empty-icon { font-size: 26px; line-height: 1; opacity: 0.8; }
+.empty-text { font-size: 13px; }
+
+/* 文本编辑区:min-height 自适应、可纵向拉伸 */
+.roles-view :deep(textarea.ant-input) {
+  min-height: 160px;
+  resize: vertical;
+}
+
+/* 窄屏:页头换行、表格小按钮扩大热区 */
+@media (max-width: 768px) {
+  .roles-view .page-header { flex-wrap: wrap; row-gap: 12px; }
+  .roles-view .page-header .ant-btn { min-height: 40px; }
+  .roles-view :deep(.ant-btn-sm) { position: relative; }
+  .roles-view :deep(.ant-btn-sm)::after {
+    content: '';
+    position: absolute;
+    inset: -8px;
+    border-radius: inherit;
+  }
+}
 </style>

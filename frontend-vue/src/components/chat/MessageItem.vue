@@ -316,7 +316,7 @@ function handleMsgClick(e: MouseEvent) {
 /* 消息列：748px 内容宽（deepseek --dsh-chat-content-width），16px 节奏。
    注意：虚拟列表 item 为 absolute（left:0 right:0），此处不能设 width:100%，
    否则 left+width+right 超约束会让 right 失效、margin auto 退化为 0（消息列贴左） */
-.msg-row { padding: 6px 0; max-width: 748px; margin: 0 auto; }
+.msg-row { padding: 6px 0; max-width: min(720px, 92%); margin: 0 auto; }
 .msg-row.user { display: flex; justify-content: flex-end; }
 /* 轨迹跳转高亮闪烁（deepseek data-current 聚焦反馈） */
 .msg-row.highlighted { background: var(--primary-bg); border-radius: 12px; animation: trajectoryFlash 2s ease-out; }
@@ -334,7 +334,7 @@ function handleMsgClick(e: MouseEvent) {
 }
 @keyframes streamCursor { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
 /* UI/UX：日期分隔线（deepseek DateDivider） */
-.date-divider { display: flex; align-items: center; gap: 12px; max-width: 748px; margin: 18px auto; padding: 0 20px; }
+.date-divider { display: flex; align-items: center; gap: 12px; max-width: min(720px, 92%); margin: 18px auto; padding: 0 20px; }
 .date-divider-line { flex: 1; height: 1px; background: var(--border); opacity: 0.6; }
 .date-divider-text { font-size: 12px; color: var(--text-tertiary); white-space: nowrap; }
 /* 流式光标：assistant 正在输出时末尾闪烁（打字感） */
@@ -351,12 +351,12 @@ function handleMsgClick(e: MouseEvent) {
 .msg-row.user .msg-text {
   display: inline-block; padding: 10px 16px;
   background: var(--bubble-user); color: var(--bubble-user-text);
-  border-radius: 22px; border-bottom-right-radius: 6px; max-width: min(525px, 100%);
+  border-radius: 22px; border-bottom-right-radius: 6px; max-width: min(525px, 88%);
   line-height: 24px;
   transition: box-shadow 0.2s ease;
 }
 .msg-row.user .msg-text:hover { box-shadow: var(--shadow-md); }
-.turn-stats { max-width: 748px; margin: 0 auto; padding: 4px 0 10px; font-size: 11px; color: var(--text-muted); text-align: right; }
+.turn-stats { max-width: min(720px, 92%); margin: 0 auto; padding: 4px 0 10px; font-size: 11px; color: var(--text-muted); text-align: right; }
 /* markdown 正文（deepseek MarkdownText：16/28、标题层级、块 gap 16） */
 .msg-text :deep(p) { margin: 16px 0; }
 .msg-text :deep(p:first-child) { margin-top: 0; }
@@ -370,7 +370,7 @@ function handleMsgClick(e: MouseEvent) {
 .msg-text :deep(blockquote) { margin: 16px 0; padding: 6px 12px; border-left: 3px solid var(--primary); background: var(--bg-hover); border-radius: 6px; }
 .msg-text :deep(a) { color: var(--primary); text-decoration: none; }
 .msg-text :deep(a:hover) { text-decoration: underline; }
-.msg-text :deep(table) { border-collapse: collapse; margin: 16px 0; width: 100%; }
+.msg-text :deep(table) { border-collapse: collapse; margin: 16px 0; display: block; width: max-content; min-width: 100%; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .msg-text :deep(th), .msg-text :deep(td) { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
 .msg-text :deep(th) { background: var(--bg-secondary); font-weight: 600; }
 .msg-text :deep(img) { max-width: 100%; border-radius: 12px; }/* 行内代码（deepseek markdown-inline-code：bluish-100 底） */
@@ -388,7 +388,7 @@ function handleMsgClick(e: MouseEvent) {
 .msg-actions.user { justify-content: flex-end; }
 .msg-time { padding-right: 6px; font-size: 12px; color: var(--text-tertiary); opacity: 0; transition: opacity 80ms ease; }
 [data-time-hover-root]:hover .msg-time, [data-time-hover-root]:focus-within .msg-time { opacity: 1; }
-.msg-action { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; border-radius: 50%; background: transparent; color: var(--text-tertiary); cursor: pointer; opacity: 0; transition: opacity 80ms ease, background 0.15s ease; }
+.msg-action { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; border-radius: 50%; background: transparent; color: var(--text-tertiary); cursor: pointer; opacity: 0; transition: opacity 80ms ease, background 0.15s ease, transform 0.1s ease; }
 .msg-action:hover { background: var(--bg-hover); color: var(--text-primary); }
 .msg-action.active { color: var(--primary); opacity: 1; }
 .msg-action.continue-btn { width: auto; padding: 0 10px; border-radius: 14px; background: var(--primary); color: #fff; font-size: 12px; gap: 4px; opacity: 1; }
@@ -407,9 +407,34 @@ function handleMsgClick(e: MouseEvent) {
 /* P3-B: 长消息折叠 */
 .collapse-toggle { margin-top: 8px; padding: 4px 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-card); color: var(--text-secondary); font-size: 12px; cursor: pointer; transition: border-color 0.15s ease, color 0.15s ease; }
 .collapse-toggle:hover { border-color: var(--primary); color: var(--primary); }
+.collapse-toggle:active { transform: scale(0.97); }
+.msg-action:active { transform: scale(0.9); }
+.retry-btn:active { transform: scale(0.96); }
+.edit-btn:active { transform: scale(0.97); }
 [data-time-hover-root]:hover .msg-action, [data-time-hover-root]:focus-within .msg-action { opacity: 1; }
 @media (hover: none) { .msg-time, .msg-action { opacity: 1; } }
-@media (max-width: 768px) { .msg-row { padding: 6px 0; } }
+/* ── 移动端：间距压缩 + 操作按钮常驻（触控目标 ≥40px）+ 代码块横向滚动 ── */
+@media (max-width: 768px) {
+  .msg-row { padding: 4px 0; }
+  .msg-actions { gap: 4px; height: 40px; }
+  .msg-time { opacity: 1; font-size: 11px; padding-right: 4px; }
+  .msg-action { width: 40px; height: 40px; opacity: 1; }
+  .msg-action.continue-btn { width: auto; height: 40px; padding: 0 14px; border-radius: 20px; }
+  .msg-text :deep(pre) { white-space: pre; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .msg-text :deep(p) { margin: 10px 0; }
+  .msg-text :deep(ul), .msg-text :deep(ol) { padding-left: 20px; margin: 10px 0; }
+  .msg-text :deep(h1) { font-size: 20px; line-height: 28px; margin: 20px 0 10px; }
+  .msg-text :deep(h2) { font-size: 18px; line-height: 26px; margin: 18px 0 10px; }
+  .msg-text :deep(h3) { font-size: 16px; line-height: 24px; margin: 14px 0 8px; }
+  .msg-text :deep(blockquote) { margin: 10px 0; }
+  .msg-attachment-img { max-width: min(200px, 70vw); }
+  .retry-btn { min-height: 40px; } /* 失败重试触控目标 ≥40px */
+}
+@media (max-width: 576px) {
+  .msg-text { font-size: 15px; line-height: 25px; }
+  .msg-row.user .msg-text { padding: 8px 12px; line-height: 22px; }
+  .msg-error-banner { flex-wrap: wrap; }
+}
 
 /* ── P1-1 编辑重发 ── */
 .msg-edit { display: flex; flex-direction: column; gap: 8px; max-width: min(525px, 100%); margin-left: auto; }

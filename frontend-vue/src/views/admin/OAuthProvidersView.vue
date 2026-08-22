@@ -355,8 +355,12 @@ onMounted(() => {
         :data-source="providers"
         row-key="id"
         :pagination="false"
+        :scroll="{ x: 1000 }"
         size="middle"
       >
+        <template #emptyText>
+          <div class="empty-block"><span class="empty-icon">📭</span><span class="empty-text">暂无数据</span></div>
+        </template>
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'enabled'">
             <Tag :color="record.enabled ? 'green' : 'default'">{{ record.enabled ? '启用' : '停用' }}</Tag>
@@ -544,9 +548,47 @@ onMounted(() => {
   gap: 32px;
 }
 
-@media (max-width: 720px) {
+/* 空状态统一 */
+.empty-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 0;
+  color: var(--text-tertiary);
+}
+.empty-icon { font-size: 26px; line-height: 1; opacity: 0.8; }
+.empty-text { font-size: 13px; }
+
+/* 窄屏:表单单列、开关竖排、操作列吸底、触控目标 ≥ 40px */
+@media (max-width: 768px) {
   .form-grid {
     grid-template-columns: 1fr;
   }
+  .switch-row {
+    flex-direction: column;
+    gap: 0;
+  }
+  .switch-row .ant-form-item {
+    margin-bottom: 16px;
+  }
+  .oauth-providers-view .ant-btn:not(.ant-btn-sm) { min-height: 40px; }
+  .oauth-providers-view :deep(.ant-btn-sm) { position: relative; }
+  .oauth-providers-view :deep(.ant-btn-sm)::after {
+    content: '';
+    position: absolute;
+    inset: -8px;
+    border-radius: inherit;
+  }
+  /* 操作列固定在右缘,不挤压主列 */
+  .oauth-providers-view :deep(.ant-table-thead > tr > th:last-child),
+  .oauth-providers-view :deep(.ant-table-tbody > tr > td:last-child) {
+    position: sticky;
+    right: 0;
+    background: var(--bg-card);
+    z-index: 2;
+    box-shadow: -8px 0 12px -8px rgba(0, 0, 0, 0.12);
+  }
+  .oauth-providers-view :deep(.ant-table-thead > tr > th:last-child) { z-index: 3; }
 }
 </style>

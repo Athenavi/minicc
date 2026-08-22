@@ -354,6 +354,22 @@ function onSlashInput() {
 .send-btn:not(:disabled):hover { transform: scale(1.06); box-shadow: 0 4px 12px var(--primary-bg); }
 .send-btn:disabled { opacity: 0.45; }
 @media (max-width: 768px) { .input-area { padding: 0 12px 8px; } }
+/* ── 移动端：输入区贴底 + 安全区 + 触控目标放大 + 工具栏换行 ── */
+@media (max-width: 768px) {
+  .input-area { padding: 0 12px calc(8px + env(safe-area-inset-bottom)); }
+  .input-card { border-radius: 18px; }
+  .input-actions { gap: 8px; }
+  .input-hint { display: none; } /* 窄屏隐藏提示文字，占位符承担语义 */
+}
+@media (max-width: 576px) {
+  .input-area { padding: 0 8px calc(8px + env(safe-area-inset-bottom)); }
+  .input-card { padding: 8px 10px 10px; gap: 10px; }
+  .input-actions { flex-wrap: wrap; row-gap: 6px; }
+  .input-left { gap: 4px; }
+  .attach-btn.ant-btn { min-width: 40px; height: 40px; }
+  .send-btn.ant-btn { width: 40px; height: 40px; }
+  .paste-btn { min-height: 36px; }
+}
 
 /* P1-2 附件预览区 */
 .attachment-preview { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0 8px; }

@@ -320,6 +320,8 @@ async function loadRecentActivities() {
 
 .command-input {
   flex: 1;
+  min-width: 0;
+  min-height: 40px;
   padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -332,11 +334,16 @@ async function loadRecentActivities() {
 
 .command-input:focus {
   border-color: var(--primary);
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.1);
+  box-shadow: 0 0 0 3px var(--primary-bg);
+}
+
+.command-input::placeholder {
+  color: var(--text-muted);
 }
 
 .command-submit {
-  padding: 8px 16px;
+  min-height: 40px;
+  padding: 8px 18px;
   border: none;
   border-radius: 8px;
   background: var(--primary);
@@ -394,12 +401,12 @@ async function loadRecentActivities() {
   border-color: var(--primary);
   background: var(--bg-hover);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-md);
 }
 
 .workstation-card.active {
   border-color: var(--primary);
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), transparent);
+  background: linear-gradient(135deg, var(--primary-bg), transparent);
 }
 
 .ws-icon {
@@ -511,18 +518,18 @@ async function loadRecentActivities() {
 }
 
 .activity-status.completed {
-  color: var(--primary);
-  background: rgba(16, 185, 129, 0.1);
+  color: var(--success);
+  background: rgba(34, 197, 94, 0.12);
 }
 
 .activity-status.failed {
-  color: var(--danger);
-  background: rgba(239, 68, 68, 0.1);
+  color: var(--error);
+  background: rgba(239, 68, 68, 0.12);
 }
 
 .activity-status.running {
   color: var(--warning);
-  background: rgba(245, 158, 11, 0.1);
+  background: rgba(245, 158, 11, 0.12);
 }
 
 @media (max-width: 768px) {
@@ -542,6 +549,35 @@ async function loadRecentActivities() {
   
   .workstation-card {
     padding: 8px;
+  }
+}
+
+@media (max-width: 576px) {
+  .nav-header {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  .workstation-grid {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    padding: 12px;
+  }
+
+  .command-input {
+    font-size: 13px;
+  }
+
+  .activity-item {
+    padding: 10px 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .command-input,
+  .command-submit,
+  .workstation-card,
+  .activity-item {
+    transition: none;
   }
 }
 </style>
