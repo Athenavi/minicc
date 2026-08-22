@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/athenavi/minicc/internal/auth"
+	"github.com/athenavi/minicc/internal/db"
 )
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -15,9 +16,32 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleReadiness(w http.ResponseWriter, r *http.Request) {
+	// 产品决策(2026-08-22)：Redis 为必需依赖；就绪检查反映真实依赖状态，
+	// 供编排器(compose/K8s)在 Redis 故障时触发重启。
+	deps := map[string]string{
+		"postgres": "up",
+		"redis":    "up",
+	}
+	ready := true
+	if db.Pool == nil {
+		deps["postgres"] = "down"
+		ready = false
+	}
+	if db.Redis == nil {
+		deps["redis"] = "down"
+		ready = false
+	}
+	if !ready {
+		JSON(w, http.StatusServiceUnavailable, APIResponse{
+			Success: false,
+			Error:   "dependencies not ready",
+			Data:    deps,
+		})
+		return
+	}
 	JSON(w, http.StatusOK, APIResponse{
 		Success: true,
-		Data:    map[string]string{"status": "ready"},
+		Data:    deps,
 	})
 }
 

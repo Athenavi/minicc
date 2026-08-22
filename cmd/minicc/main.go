@@ -100,13 +100,15 @@ func main() {
 	}
 	redisClient, redisErr := db.NewRedisClient(redisCfg)
 	if redisErr != nil {
-		slog.Warn("redis not available", "error", redisErr)
-	} else {
-		atomicRedis = db.NewAtomicRedis(redisClient)
-		db.Redis = atomicRedis
-		defer atomicRedis.Close()
-		slog.Info("redis initialized", "mode", cfg.RedisMode)
+		// 产品决策(2026-08-22)：Redis 为必需依赖，无降级模式；挂掉必须立即重启。
+		slog.Error("FATAL: Redis is required (no degraded mode). Start Redis and restart gateway.", "error", redisErr)
+		exitCode = 1
+		return
 	}
+	atomicRedis = db.NewAtomicRedis(redisClient)
+	db.Redis = atomicRedis
+	defer atomicRedis.Close()
+	slog.Info("redis initialized", "mode", cfg.RedisMode)
 
 	// ── Audit Consumer: Redis Stream audit:events → PG audit_logs 批量落库 ──
 	if db.Redis != nil {

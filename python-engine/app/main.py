@@ -106,9 +106,9 @@ async def lifespan(app: FastAPI):
         _session_cache._redis = _redis
         logger.info("SessionStore switched to Redis backend")
     except Exception as e:
-        logger.warning("Redis not available: %s — running without Redis", e)
-        _redis = None
-
+        # 产品决策(2026-08-22)：Redis 为必需依赖，无降级模式；连不上直接拒启。
+        logger.critical("FATAL: Redis is required (no degraded mode). Start Redis and restart engine. error=%s", e)
+        raise RuntimeError(f"Redis required but unavailable: {e}") from e
     # ── 2.5. PostgreSQL ──
     if settings.postgres_dsn:
         from app.db import init_pool, ensure_tables
