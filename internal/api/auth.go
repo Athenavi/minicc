@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -317,11 +318,17 @@ func (h *AuthHandler) Profile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var settings map[string]interface{}
+	if err := db.ReadPool().QueryRow(r.Context(),
+		`SELECT COALESCE(settings, '{}'::jsonb) FROM users WHERE id = $1`, claims.UserID).Scan(&settings); err != nil {
+		settings = map[string]interface{}{}
+	}
 	OK(w, map[string]interface{}{
-		"user_id": claims.UserID,
-		"email":   claims.Email,
-		"role":    claims.Role,
-		"perms":   claims.Perms,
+		"user_id":  claims.UserID,
+		"email":    claims.Email,
+		"role":     claims.Role,
+		"perms":    claims.Perms,
+		"settings": settings,
 	})
 }
 
@@ -334,14 +341,15 @@ func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Email string `json:"email"`
-		Name  string `json:"name"`
+		Email    string                 `json:"email"`
+		Name     string                 `json:"name"`
+		Settings map[string]interface{} `json:"settings"` // 自定义换肤等用户设置（局部合并）
 	}
 	if err := DecodeJSON(w, r, &body); err != nil {
 		BadRequest(w, ErrInvalidReq)
 		return
 	}
-	if body.Email == "" && body.Name == "" {
+	if body.Email == "" && body.Name == "" && body.Settings == nil {
 		BadRequest(w, "no fields to update")
 		return
 	}
@@ -357,6 +365,17 @@ func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	if body.Name != "" {
 		setClauses += fmt.Sprintf("name = $%d, ", argIdx)
 		args = append(args, body.Name)
+		argIdx++
+	}
+	if body.Settings != nil {
+		settingsJSON, err := json.Marshal(body.Settings)
+		if err != nil {
+			InternalError(w, "invalid settings")
+			return
+		}
+		// 局部合并：settings = settings || $n（jsonb 合并保留未提及键）
+		setClauses += fmt.Sprintf("settings = COALESCE(settings, '{}'::jsonb) || $%d::jsonb, ", argIdx)
+		args = append(args, string(settingsJSON))
 		argIdx++
 	}
 	setClauses = strings.TrimSuffix(setClauses, ", ")

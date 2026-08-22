@@ -4,7 +4,13 @@ import { useRoute } from 'vue-router'
 import { Card, Button, Input, Form, FormItem, message, Popconfirm, Tag, Spin } from 'ant-design-vue'
 import { UserOutlined, SafetyOutlined, MobileOutlined } from '@ant-design/icons-vue'
 import EmptyState from '../components/common/EmptyState.vue'
+
+const themeStore = useThemeStore()
+// 自定义换肤：强调色预设（DeepSeek 蓝 / 翡翠绿 / 紫罗兰 / 朱红 / 琥珀）
+const ACCENT_PRESETS = ['#4176e6', '#10b981', '#8b5cf6', '#ef4444', '#f59e0b']
+
 import { useAuthStore } from '../stores/auth'
+import { useThemeStore } from '../stores/theme'
 import { api } from '../api'
 import {
   listIdentities,
@@ -246,7 +252,39 @@ async function handleSetPassword() {
       </Form>
     </Card>
 
-    <Card class="profile-card" title="三方账号绑定" style="margin-top: 16px">
+        <Card class="profile-card" title="外观与主题" style="margin-top: 16px">
+      <div class="appearance-row">
+        <div class="appearance-label">深浅模式</div>
+        <a-radio-group :value="themeStore.themePreference" @change="(e: any) => themeStore.toggleTheme()">
+          <a-radio-button :value="'dark'">深色</a-radio-button>
+          <a-radio-button :value="'light'">浅色</a-radio-button>
+        </a-radio-group>
+      </div>
+      <div class="appearance-row">
+        <div class="appearance-label">强调色</div>
+        <div class="accent-picker">
+          <button
+            v-for="c in ACCENT_PRESETS"
+            :key="c"
+            type="button"
+            class="accent-swatch"
+            :class="{ active: themeStore.accent === c }"
+            :style="{ backgroundColor: c }"
+            :title="c"
+            @click="themeStore.setAccent(c)"
+          />
+          <label class="accent-custom" :style="{ backgroundColor: themeStore.accent }" title="自定义颜色">
+            <input
+              type="color"
+              :value="themeStore.accent"
+              @input="(e: any) => themeStore.setAccent(e.target.value)"
+            />
+          </label>
+        </div>
+      </div>
+    </Card>
+
+<Card class="profile-card" title="三方账号绑定" style="margin-top: 16px">
       <Spin :spinning="bindingsLoading">
         <EmptyState v-if="!identities.length && !bindable.length" description="暂无可用的三方登录方式" />
         <template v-else>
@@ -465,4 +503,21 @@ async function handleSetPassword() {
   font-size: 12px;
   color: var(--text-tertiary, rgba(0, 0, 0, 0.45));
 }
+</style>
+
+<style scoped>
+.appearance-row { display: flex; align-items: center; gap: 16px; padding: 6px 0; flex-wrap: wrap; }
+.appearance-label { font-size: 13px; color: var(--text-secondary); min-width: 72px; }
+.accent-picker { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.accent-swatch {
+  width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent;
+  cursor: pointer; padding: 0; transition: transform 0.12s ease, border-color 0.12s ease;
+}
+.accent-swatch:hover { transform: scale(1.12); }
+.accent-swatch.active { border-color: var(--text-primary); }
+.accent-custom {
+  position: relative; width: 30px; height: 30px; border-radius: 50%; overflow: hidden;
+  border: 2px solid var(--border); display: inline-flex; align-items: center; justify-content: center;
+}
+.accent-custom input { position: absolute; inset: -6px; width: 42px; height: 42px; opacity: 0; cursor: pointer; }
 </style>
