@@ -222,6 +222,33 @@ def _build_node_fns(graph_json: dict, gateway: GatewayRouter) -> dict[str, NodeF
         result = await kb_search(kb_id, query, top_k=top_k)
         return {f"__out_{node_id}__": str(result)}
 
+    async def _agent_node(state: dict, node_id: str) -> dict:
+        """Agent 节点：调用已安装 Agent（任务取 config.task 或前置输出，配置可覆盖
+        system_prompt/model/max_turns；租户取自执行上下文）。"""
+        node = node_map[node_id]
+        config = node.get("config", {})
+        task = config.get("task", "") or _prev_output(state, node_id)
+        if not task:
+            return {f"__out_{node_id}__": "error: task is required"}
+        from app.agent.multi_agent import SubAgent
+        from app.tools.context import get_tenant_id
+        try:
+            agent = SubAgent(
+                name=config.get("name", "workflow_agent"),
+                description=config.get("description", "工作流 Agent 节点"),
+                system_prompt=config.get("system_prompt", "")
+                or "你是工作流中的智能体，完成指定任务并给出清晰、准确的结果。",
+                gateway=gateway,
+                model=config.get("model", "gpt-4o-mini"),
+                max_turns=int(config.get("max_turns", 6) or 6),
+            )
+            result = await agent.run(task=str(task), tenant_id=get_tenant_id() or "default")
+        except Exception as e:  # noqa: BLE001
+            return {f"__out_{node_id}__": f"agent error: {e}"}
+        if not result.success:
+            return {f"__out_{node_id}__": f"agent error: {result.error or 'unknown'}"}
+        return {f"__out_{node_id}__": str(result.output)}
+
     node_fn = {
         "input": _input_node,
         "llm": _llm_node,
@@ -230,8 +257,8 @@ def _build_node_fns(graph_json: dict, gateway: GatewayRouter) -> dict[str, NodeF
         "output": _output_node,
         "skill": _skill_node,
         "knowledge": _knowledge_node,
+        "agent": _agent_node,
     }
-
     node_fns: dict[str, NodeFn] = {}
     for node in nodes:
         node_id = node["id"]
