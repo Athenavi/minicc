@@ -26,14 +26,16 @@ class Settings(BaseSettings):
 
     # ── HTTP Server ──
     http_port: int = 8000
-    http_host: str = "0.0.0.0"
+    # 默认仅绑回环地址，避免误暴露到外网（生产需经反向代理/网关）
+    http_host: str = "127.0.0.1"
 
     # ── Redis ──
     redis_url: str = "redis://localhost:6379"
     redis_max_connections: int = 50
 
     # ── PostgreSQL ──
-    postgres_dsn: str = "postgres://postgres:123456@localhost:5432/minicc0710?sslmode=disable"
+    # 默认空：强制通过 .env / POSTGRES_DSN 环境变量提供，避免误用开发库
+    postgres_dsn: str = ""
 
     # ── Milvus ──
     milvus_address: str = "localhost:19530"
@@ -105,7 +107,13 @@ class Settings(BaseSettings):
     queue_worker_concurrency: int = 10
 
     # ── JWT ──
-    jwt_secret: str = "dev-secret-change-in-production"
+    # 默认空：生产必须在环境变量或 .env 中显式配置
+    jwt_secret: str = ""
+
+    # ── Go 网关内部互信 token ──
+    # 与 Go 网关共享，Python 仅在 X-Internal-Token 匹配时才接受
+    # 网关透传的 ?tenant_id= / ?user_id= query 身份（防直连绕过）
+    internal_token: str = ""
 
     # ── 可观测性 ──
     log_level: str = "INFO"
@@ -118,6 +126,49 @@ class Settings(BaseSettings):
     # extra="ignore"：项目根 .env 混有 Go 网关变量（PORT/CORS_ORIGINS 等），
     # Python 引擎只取自己声明的字段，其余忽略
     model_config = ConfigDict(env_prefix="", case_sensitive=False, extra="ignore", env_file=_find_env_file())
+
+    @model_validator(mode="after")
+    def _validate_security_defaults(self):
+        """P0 安全 fail-fast：JWT secret 必须显式配置且非弱值。
+
+        历史问题：默认 jwt_secret='dev-secret-change-in-production' 会导致
+        任何知道该值的攻击者可伪造任意租户身份的 JWT。Go 端已对弱值黑名单拒绝，
+        Python 端必须保持一致校验，否则一旦 Python 端口直连暴露即可被绕过。
+
+        生产模式（APP_ENV=production 或 PYTHON_ENV=production）下额外禁止
+        sslmode=disable；开发模式允许，便于本地 docker postgres。
+        """
+        import os
+        is_prod = os.getenv("APP_ENV", "").lower() == "production" or \
+                  os.getenv("PYTHON_ENV", "").lower() == "production"
+
+        WEAK_SECRETS = {
+            "",
+            "dev-secret-change-in-production",
+            "changeme",
+            "secret",
+            "test-secret",
+        }
+        if not self.jwt_secret or self.jwt_secret in WEAK_SECRETS:
+            raise ValueError(
+                "JWT_SECRET must be set to a strong value (>=32 chars) "
+                "via env or .env; weak/empty defaults are rejected"
+            )
+        if len(self.jwt_secret) < 32:
+            raise ValueError(
+                f"JWT_SECRET too short ({len(self.jwt_secret)} chars); "
+                "must be at least 32 characters for HMAC-SHA256 security"
+            )
+        if not self.postgres_dsn:
+            raise ValueError(
+                "POSTGRES_DSN must be explicitly set via env or .env"
+            )
+        if is_prod and "sslmode=disable" in self.postgres_dsn:
+            raise ValueError(
+                "POSTGRES_DSN with sslmode=disable is forbidden in production; "
+                "use sslmode=require or verify-full"
+            )
+        return self
 
     @model_validator(mode="after")
     def _resolve_llm_fallback(self):

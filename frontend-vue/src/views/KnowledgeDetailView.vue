@@ -12,7 +12,7 @@ import {
 import { api } from '../api'
 import { createChunkUpload } from '../utils/uploader'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080'
+const API_URL = import.meta.env.VITE_API_URL || ''
 
 const route = useRoute()
 const router = useRouter()

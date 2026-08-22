@@ -198,21 +198,27 @@ func AuthMiddleware(a *auth.Authenticator) func(http.Handler) http.Handler {
 					   AND (ak.expires_at IS NULL OR ak.expires_at > NOW())`,
 					hex.EncodeToString(keyHash[:])).Scan(&userID, &role, &tenantID)
 				if err == nil {
-					if tenantID == "" {
-						tenantID = db.DefaultTenantID // 单租户兼容
-					}
-					claims := &auth.Claims{
-						UserID:   userID,
-						Role:     role,
-						TenantID: tenantID,
-						Perms:    auth.RolePermissions[role],
-					}
-					ctx := auth.WithClaims(r.Context(), claims)
-					next.ServeHTTP(w, r.WithContext(ctx))
+				// P1-5: tenant_id 为空直接拒绝，不再回退 DefaultTenantID。
+				// 历史数据中 tenant_id=NULL 的 user 走 DefaultTenantID 会落到默认租户，
+				// 造成跨租户数据访问；多租户部署必须强制每个用户绑定租户。
+				if tenantID == "" {
+					slog.Warn("API key bound to user with null tenant_id, rejecting",
+						"user_id", userID)
+					Unauthorized(w, "user has no tenant binding; contact admin")
 					return
 				}
-				Unauthorized(w, "invalid API key")
+				claims := &auth.Claims{
+					UserID:   userID,
+					Role:     role,
+					TenantID: tenantID,
+					Perms:    auth.RolePermissions[role],
+				}
+				ctx := auth.WithClaims(r.Context(), claims)
+				next.ServeHTTP(w, r.WithContext(ctx))
 				return
+			}
+			Unauthorized(w, "invalid API key")
+			return
 			}
 		}
 

@@ -12,9 +12,21 @@ const props = defineProps<{
   focusToken?: number          // 递增触发跳转
   hasMore?: boolean            // P 性能：是否还有更早的消息
   loadingEarlier?: boolean     // P 性能：正在加载更早消息
+  /** P2-E: 首次加载会话历史时的骨架屏 */
+  initialLoading?: boolean
 }>()
 
-const emit = defineEmits<{ (e: 'load-earlier'): void }>()
+const emit = defineEmits<{
+  (e: 'load-earlier'): void
+  /** P1-1 用户消息编辑后重发 */
+  (e: 'retry-from', itemId: string, text: string): void
+  /** P1-1 助手消息重新生成 */
+  (e: 'regenerate', itemId: string): void
+  /** P2-F 停止后继续生成 */
+  (e: 'continue', itemId: string): void
+  /** P1-3 失败消息重试 */
+  (e: 'retry-failed', itemId: string): void
+}>()
 
 const scrollRef = ref<HTMLDivElement | null>(null)
 const stickToBottom = ref(true)
@@ -96,7 +108,17 @@ const badgeText = computed(() => (unseenCount.value > 99 ? '99+' : String(unseen
 
 <template>
   <div ref="scrollRef" class="message-list" @scroll.passive="onScroll">
-    <div v-if="items.length === 0" class="list-empty-placeholder" />
+    <!-- P2-E: 首次加载骨架屏 -->
+    <div v-if="initialLoading" class="skeleton-list">
+      <div v-for="n in 4" :key="n" class="skeleton-msg" :class="n % 2 === 0 ? 'user' : 'assistant'">
+        <div class="skeleton-avatar"></div>
+        <div class="skeleton-lines">
+          <div class="skeleton-line" :style="{ width: 60 + (n * 7) % 30 + '%' }"></div>
+          <div class="skeleton-line" :style="{ width: 80 + (n * 11) % 15 + '%' }"></div>
+        </div>
+      </div>
+    </div>
+    <div v-else-if="items.length === 0" class="list-empty-placeholder" />
 
     <!-- P 性能：触顶加载更早（infinite scroll） -->
     <div v-if="props.hasMore || props.loadingEarlier" class="earlier-loader">
@@ -123,6 +145,10 @@ const badgeText = computed(() => (unseenCount.value > 99 ? '99+' : String(unseen
           transform: `translateY(${vi.start}px)`,
         }"
         :ref="(el: any) => el && virtualizer.measureElement(el.$el ?? el)"
+        @retry-from="(id: string, text: string) => emit('retry-from', id, text)"
+        @regenerate="(id: string) => emit('regenerate', id)"
+        @continue="(id: string) => emit('continue', id)"
+        @retry-failed="(id: string) => emit('retry-failed', id)"
       />
     </div>
 
@@ -149,6 +175,18 @@ const badgeText = computed(() => (unseenCount.value > 99 ? '99+' : String(unseen
 <style scoped>
 .message-list { flex: 1; overflow-y: auto; position: relative; }
 .list-empty-placeholder { height: 24px; }
+
+/* P2-E: 首屏骨架屏 */
+.skeleton-list { padding: 16px 24px; }
+.skeleton-msg { display: flex; gap: 12px; margin-bottom: 24px; }
+.skeleton-msg.user { flex-direction: row-reverse; }
+.skeleton-avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--bg-hover); flex-shrink: 0; animation: skeleton-pulse 1.4s ease-in-out infinite; }
+.skeleton-lines { flex: 1; display: flex; flex-direction: column; gap: 8px; max-width: 70%; }
+.skeleton-msg.user .skeleton-lines { align-items: flex-end; }
+.skeleton-line { height: 14px; border-radius: 4px; background: var(--bg-hover); animation: skeleton-pulse 1.4s ease-in-out infinite; }
+.skeleton-line:nth-child(2) { animation-delay: 0.2s; }
+@keyframes skeleton-pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .skeleton-avatar, .skeleton-line { animation: none; } }
 .virtual-window { width: 100%; }
 .earlier-loader { display: flex; align-items: center; justify-content: center; gap: 6px; height: 36px; font-size: 12px; color: var(--text-tertiary); }
 .loading-indicator { display: flex; justify-content: center; gap: 6px; padding: 14px 0; }

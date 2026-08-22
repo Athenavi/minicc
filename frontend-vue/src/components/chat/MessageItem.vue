@@ -2,20 +2,35 @@
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 import 'katex/dist/katex.min.css'
+import 'highlight.js/styles/github.css'
+// P3-A: 暗色模式下的代码高亮配色覆盖（避免引入两个冲突的 hljs 主题）
 import texmath from 'markdown-it-texmath'
 import katex from 'katex'
-import { computed } from 'vue'
-import { message } from 'ant-design-vue'
-import { CopyOutlined } from '@ant-design/icons-vue'
+import hljs from 'highlight.js/lib/common'
+import { computed, ref } from 'vue'
+import { message, Input } from 'ant-design-vue'
+import { CopyOutlined, EditOutlined, ReloadOutlined, FileOutlined, LikeOutlined, DislikeOutlined, LikeFilled, DislikeFilled } from '@ant-design/icons-vue'
 import ReasoningBlock from './ReasoningBlock.vue'
 import ToolCallCard from './ToolCallCard.vue'
 import ToolResultBlock from './ToolResultBlock.vue'
-import type { ChatItem, ToolCallItem, ToolResultItem } from './chat-types'
+import type { ChatItem, ToolCallItem, ToolResultItem, TextItem } from './chat-types'
+import { formatSize } from './chat-types'
 
 const props = defineProps<{
   item: ChatItem
   anchorKey?: number
   highlighted?: boolean
+}>()
+
+const emit = defineEmits<{
+  /** 用户消息编辑后重发：删除该消息及其后所有消息，用新文本重发 */
+  (e: 'retry-from', itemId: string, text: string): void
+  /** P1-1 助手消息重新生成：删除该消息及其后所有消息，用上一条用户消息重发 */
+  (e: 'regenerate', itemId: string): void
+  /** P2-F 停止后继续生成 */
+  (e: 'continue', itemId: string): void
+  /** 失败消息重试：用原文本重发 */
+  (e: 'retry-failed', itemId: string): void
 }>()
 
 // 消息时间（hover 淡入显示，deepseek MessageIconActions timeEnd）
@@ -36,6 +51,71 @@ async function copyMessage() {
   }
 }
 
+// ── P1-1 消息重试/重新生成 ──
+// 用户消息：进入编辑模式，修改后"重发"会删除该消息及其后所有消息，用新文本重发
+const editing = ref(false)
+const editDraft = ref('')
+const editInputRef = ref()
+
+function startEdit() {
+  if (props.item.kind !== 'text' || props.item.role !== 'user') return
+  editDraft.value = props.item.content
+  editing.value = true
+  // 下一帧聚焦 textarea
+  requestAnimationFrame(() => editInputRef.value?.focus?.())
+}
+
+function cancelEdit() {
+  editing.value = false
+  editDraft.value = ''
+}
+
+function confirmEdit() {
+  if (props.item.kind !== 'text') return
+  const text = editDraft.value.trim()
+  if (!text) return
+  editing.value = false
+  emit('retry-from', props.item.id!, text)
+}
+
+// 助手消息：重新生成（删除该消息及其后所有，用上一条用户消息重发）
+function regenerate() {
+  if (props.item.kind !== 'text' || props.item.role !== 'assistant') return
+  emit('regenerate', props.item.id!)
+}
+
+// 失败消息：一键重试（用原文本重发）
+function retryFailed() {
+  if (props.item.kind !== 'text') return
+  emit('retry-failed', props.item.id!)
+}
+
+// ── P3-B 长消息折叠 ──
+// 助手消息超过阈值时默认折叠，显示前 N 行 + "展开全部"按钮
+const COLLAPSE_THRESHOLD = 2000  // 字符数阈值
+const COLLAPSE_PREVIEW = 600     // 折叠时显示的字符数
+const collapsed = ref(true)
+const isLongMessage = computed(() => {
+  if (props.item.kind !== 'text' || props.item.role !== 'assistant') return false
+  return props.item.content.length > COLLAPSE_THRESHOLD
+})
+const displayContent = computed(() => {
+  if (props.item.kind !== 'text') return ''
+  if (isLongMessage.value && collapsed.value) {
+    return props.item.content.slice(0, COLLAPSE_PREVIEW) + '\n\n... (已折叠，点击展开全部)'
+  }
+  return props.item.content
+})
+
+// ── P2-D 消息反馈（👍/👎） ──
+// 'up' | 'down' | null；切换反馈，再次点击同方向取消
+const feedback = ref<'up' | 'down' | null>(null)
+function setFeedback(dir: 'up' | 'down') {
+  feedback.value = feedback.value === dir ? null : dir
+  // TODO: 生产环境可调用后端 API 上报反馈用于模型评估
+  if (feedback.value) message.success(feedback.value === 'up' ? '感谢好评' : '已记录您的反馈')
+}
+
 // ── Markdown 引擎（迁移自原 ChatView） ──
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 md.use(texmath, { engine: katex, delimiters: 'dollars', katexOptions: { throwOnError: false, output: 'html' } })
@@ -43,11 +123,23 @@ md.renderer.rules.fence = (tokens: any[], idx: number) => {
   const token = tokens[idx]
   const lang = (token.info || '').trim().toLowerCase()
   const code = token.content
-  const escaped = md.utils.escapeHtml(code)
-  if (lang === 'mermaid') return `<div class="mermaid">${escaped}</div>`
+  if (lang === 'mermaid') return `<div class="mermaid">${md.utils.escapeHtml(code)}</div>`
+  // P2-A: 接入 highlight.js 语法高亮
+  let highlighted: string
   const safeLang = md.utils.escapeHtml(lang || 'code')
   const encoded = encodeURIComponent(code)
-  return `<div class="code-block-wrapper"><div class="code-block-header"><span class="code-lang">${safeLang}</span><button class="code-copy-btn" data-code="${encoded}">复制</button></div><pre><code class="language-${safeLang}">${escaped}</code></pre></div>`
+  try {
+    if (lang && hljs.getLanguage(lang)) {
+      highlighted = hljs.highlight(code, { language: lang }).value
+    } else {
+      // 未知语言：自动检测（hljs.highlightAuto 返回最可能的结果）
+      highlighted = hljs.highlightAuto(code).value
+    }
+  } catch {
+    // 高亮失败：回退到纯转义
+    highlighted = md.utils.escapeHtml(code)
+  }
+  return `<div class="code-block-wrapper"><div class="code-block-header"><span class="code-lang">${safeLang}</span><button class="code-copy-btn" data-code="${encoded}">复制</button></div><pre><code class="hljs language-${safeLang}">${highlighted}</code></pre></div>`
 }
 
 // P 性能：图片懒加载（长列表/历史中大量图片不阻塞首屏，滚动到才加载）
@@ -100,21 +192,107 @@ function handleMsgClick(e: MouseEvent) {
     v-if="item.kind === 'text'"
     v-bind="$attrs"
     class="msg-row"
-    :class="[item.role, { streaming: item.streaming, highlighted: highlighted }]"
+    :class="[item.role, { streaming: item.streaming, highlighted: highlighted, 'msg-error': (item as TextItem).error }]"
     :data-chat-anchor-key="anchorKey"
     @click="handleMsgClick"
     data-time-hover-root
   >
-    <div class="msg-content">
-      <!-- P 性能：流式期间纯文本渲染（零 markdown 开销），完成后一次性 markdown + 缓存 -->
-      <div v-if="item.streaming" class="msg-text streaming-text">{{ item.content }}</div>
-      <div v-else class="msg-text" v-html="renderMarkdown(item.content)"></div>
-      <div class="msg-actions" :class="item.role">
-        <span class="msg-time">{{ timeLabel }}</span>
-        <button class="msg-action" type="button" title="复制" @click.stop="copyMessage">
-          <CopyOutlined />
-        </button>
+    <div class="msg-content" :aria-live="item.streaming ? 'polite' : 'off'" :aria-busy="item.streaming">
+      <!-- 编辑模式（用户消息）：textarea + 保存/取消 -->
+      <div v-if="editing" class="msg-edit">
+        <Input.TextArea
+          ref="editInputRef"
+          v-model:value="editDraft"
+          :auto-size="{ minRows: 1, maxRows: 8 }"
+          class="edit-textarea"
+          @keydown.enter.exact.prevent="confirmEdit"
+          @keydown.esc.prevent="cancelEdit"
+        />
+        <div class="edit-actions">
+          <button class="edit-btn cancel" type="button" @click="cancelEdit">取消</button>
+          <button class="edit-btn save" type="button" @click="confirmEdit">保存并发送</button>
+        </div>
       </div>
+      <template v-else>
+        <!-- P 性能：流式期间纯文本渲染（零 markdown 开销），完成后一次性 markdown + 缓存 -->
+        <div v-if="item.streaming" class="msg-text streaming-text">{{ item.content }}</div>
+        <div v-else class="msg-text" v-html="renderMarkdown(displayContent)"></div>
+        <!-- P3-B: 长消息展开/折叠按钮 -->
+        <button
+          v-if="isLongMessage"
+          class="collapse-toggle" type="button"
+          @click.stop="collapsed = !collapsed"
+        >
+          {{ collapsed ? '展开全部' : '收起' }}
+        </button>
+        <!-- 附件展示：图片内联，文件显示卡片 -->
+        <div v-if="(item as TextItem).attachments?.length" class="msg-attachments">
+          <template v-for="att in (item as TextItem).attachments" :key="att.id">
+            <img v-if="att.isImage" :src="att.url" :alt="att.name" class="msg-attachment-img" loading="lazy" />
+            <a v-else :href="att.url" :download="att.name" class="msg-attachment-file">
+              <FileOutlined />
+              <span class="att-name">{{ att.name }}</span>
+              <span class="att-size">{{ formatSize(att.size) }}</span>
+            </a>
+          </template>
+        </div>
+        <!-- 失败消息错误提示 -->
+        <div v-if="(item as TextItem).error" class="msg-error-banner">
+          <span class="error-text">发送失败：{{ (item as TextItem).errorMsg || '网络错误' }}</span>
+          <button class="retry-btn" type="button" @click.stop="retryFailed">
+            <ReloadOutlined /> 重试
+          </button>
+        </div>
+        <div class="msg-actions" :class="item.role">
+          <span class="msg-time">{{ timeLabel }}</span>
+          <button class="msg-action" type="button" title="复制" @click.stop="copyMessage">
+            <CopyOutlined />
+          </button>
+          <!-- 用户消息：编辑重发（非流式、非错误态） -->
+          <button
+            v-if="item.role === 'user' && !item.streaming && !(item as TextItem).error"
+            class="msg-action" type="button" title="编辑并重发"
+            @click.stop="startEdit"
+          >
+            <EditOutlined />
+          </button>
+          <!-- 助手消息：重新生成（非流式、非错误态） -->
+          <button
+            v-if="item.role === 'assistant' && !item.streaming && !(item as TextItem).error && !(item as TextItem).stopped"
+            class="msg-action" type="button" title="重新生成"
+            @click.stop="regenerate"
+          >
+            <ReloadOutlined />
+          </button>
+          <!-- P2-F: 停止后显示"继续生成"按钮 -->
+          <button
+            v-if="item.role === 'assistant' && (item as TextItem).stopped"
+            class="msg-action continue-btn" type="button" title="继续生成"
+            @click.stop="emit('continue', item.id!)"
+          >
+            <ReloadOutlined /> 继续
+          </button>
+          <!-- P2-D: 助手消息反馈 👍/👎 -->
+          <template v-if="item.role === 'assistant' && !item.streaming && !(item as TextItem).error">
+            <button
+              class="msg-action" type="button" :class="{ active: feedback === 'up' }"
+              :title="feedback === 'up' ? '取消好评' : '好评'"
+              @click.stop="setFeedback('up')"
+            >
+              <LikeFilled v-if="feedback === 'up'" />
+              <LikeOutlined v-else />
+            </button>
+            <button
+              class="msg-action" type="button" :class="{ active: feedback === 'down' }"
+              :title="feedback === 'down' ? '取消差评' : '差评'"
+              @click.stop="setFeedback('down')"
+            >
+              <DislikeFilled v-if="feedback === 'down'" />
+              <DislikeOutlined v-else />
+            </button>
+          </template>
+        </div>
+      </template>
     </div>
   </div>
 
@@ -212,7 +390,49 @@ function handleMsgClick(e: MouseEvent) {
 [data-time-hover-root]:hover .msg-time, [data-time-hover-root]:focus-within .msg-time { opacity: 1; }
 .msg-action { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; border-radius: 50%; background: transparent; color: var(--text-tertiary); cursor: pointer; opacity: 0; transition: opacity 80ms ease, background 0.15s ease; }
 .msg-action:hover { background: var(--bg-hover); color: var(--text-primary); }
+.msg-action.active { color: var(--primary); opacity: 1; }
+.msg-action.continue-btn { width: auto; padding: 0 10px; border-radius: 14px; background: var(--primary); color: #fff; font-size: 12px; gap: 4px; opacity: 1; }
+.msg-action.continue-btn:hover { opacity: 0.9; background: var(--primary); color: #fff; }
+
+/* P3-A: 用 CSS 变量覆盖 hljs token 颜色，暗色模式自动跟随 .dark class */
+.hljs { color: var(--hljs-fg); background: var(--hljs-bg); }
+.hljs-keyword, .hljs-selector-tag, .hljs-deletion { color: var(--hljs-keyword); }
+.hljs-string, .hljs-attr, .hljs-template-string, .hljs-addition { color: var(--hljs-string); }
+.hljs-number, .hljs-literal, .hljs-variable, .hljs-template-variable, .hljs-type { color: var(--hljs-number); }
+.hljs-comment, .hljs-quote { color: var(--hljs-comment); }
+.hljs-title, .hljs-section, .hljs-function .hljs-title { color: var(--hljs-title); }
+.hljs-built_in, .hljs-class .hljs-title, .hljs-name { color: var(--hljs-built-in); }
+.hljs-meta, .hljs-symbol, .hljs-bullet, .hljs-link { color: var(--hljs-meta); }
+
+/* P3-B: 长消息折叠 */
+.collapse-toggle { margin-top: 8px; padding: 4px 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-card); color: var(--text-secondary); font-size: 12px; cursor: pointer; transition: border-color 0.15s ease, color 0.15s ease; }
+.collapse-toggle:hover { border-color: var(--primary); color: var(--primary); }
 [data-time-hover-root]:hover .msg-action, [data-time-hover-root]:focus-within .msg-action { opacity: 1; }
 @media (hover: none) { .msg-time, .msg-action { opacity: 1; } }
 @media (max-width: 768px) { .msg-row { padding: 6px 0; } }
+
+/* ── P1-1 编辑重发 ── */
+.msg-edit { display: flex; flex-direction: column; gap: 8px; max-width: min(525px, 100%); margin-left: auto; }
+.edit-textarea { border-radius: 12px !important; border-color: var(--primary) !important; }
+.edit-textarea :deep(textarea) { font-size: 16px !important; line-height: 24px !important; }
+.edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.edit-btn { padding: 4px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); transition: all 0.15s ease; }
+.edit-btn.save { background: var(--primary); color: #fff; border-color: var(--primary); }
+.edit-btn.save:hover { opacity: 0.9; }
+.edit-btn.cancel:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+/* ── P1-2 附件展示 ── */
+.msg-attachments { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.msg-attachment-img { max-width: 200px; max-height: 200px; border-radius: 8px; border: 1px solid var(--border); object-fit: cover; }
+.msg-attachment-file { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); text-decoration: none; font-size: 13px; transition: border-color 0.15s ease, color 0.15s ease; }
+.msg-attachment-file:hover { border-color: var(--primary); color: var(--primary); }
+.msg-attachment-file .att-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg-attachment-file .att-size { color: var(--text-tertiary); font-size: 12px; }
+
+/* ── P1-3 错误状态 ── */
+.msg-row.msg-error .msg-text { opacity: 0.6; }
+.msg-error-banner { display: flex; align-items: center; gap: 12px; margin-top: 8px; padding: 8px 12px; border-radius: 8px; background: rgba(220, 38, 38, 0.08); border: 1px solid rgba(220, 38, 38, 0.2); }
+.msg-error-banner .error-text { font-size: 13px; color: var(--danger, #dc2626); flex: 1; }
+.retry-btn { display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px; border-radius: 6px; border: 1px solid var(--danger, #dc2626); background: transparent; color: var(--danger, #dc2626); font-size: 12px; cursor: pointer; transition: background 0.15s ease, color 0.15s ease; }
+.retry-btn:hover { background: var(--danger, #dc2626); color: #fff; }
 </style>

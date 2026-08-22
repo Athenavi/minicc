@@ -8,16 +8,18 @@ import {
 } from '../api'
 import type { ShareInfo } from '../api'
 import { useAuthStore } from '../stores/auth'
+import { useThemeStore } from '../stores/theme'
 import ChatSidePanel from '../components/chat/ChatSidePanel.vue'
 import MessageList from '../components/chat/MessageList.vue'
 import ChatEmptyHero from '../components/chat/ChatEmptyHero.vue'
 import ChatInput from '../components/chat/ChatInput.vue'
 import CallChainTimeline from '../components/CallChainTimeline.vue'
-import { HistoryOutlined } from '@ant-design/icons-vue'
-import { splitThinking, stripUserInputTag, throttleRaf, formatClock } from '../components/chat/chat-types'
-import type { ChatItem, ChatSession } from '../components/chat/chat-types'
+import { HistoryOutlined, ExportOutlined, BulbOutlined, BulbFilled } from '@ant-design/icons-vue'
+import { splitThinking, stripUserInputTag, throttleRaf, formatClock, formatSize } from '../components/chat/chat-types'
+import type { ChatItem, ChatSession, ChatAttachment } from '../components/chat/chat-types'
 
 const authStore = useAuthStore()
+const themeStore = useThemeStore()
 
 // ── 会话状态 ──
 const sessions = ref<ChatSession[]>([])
@@ -105,12 +107,161 @@ onMounted(async () => {
   if (sessions.value.length > 0) {
     await switchSession(sessions.value[0].id)
   }
+  // P2-G: 监听网络在线/离线状态
+  window.addEventListener('online', onOnline)
+  window.addEventListener('offline', onOffline)
+  // P2-H: 全局键盘快捷键
+  window.addEventListener('keydown', onGlobalKeydown)
 })
 
 onUnmounted(() => {
   stopTurnTimer()
   if (activeSSE) { activeSSE.close(); activeSSE = null }
+  window.removeEventListener('online', onOnline)
+  window.removeEventListener('offline', onOffline)
+  window.removeEventListener('keydown', onGlobalKeydown)
 })
+
+// P2-G: 离线监听 + 自动重连
+const isOnline = ref(navigator.onLine)
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+let reconnectAttempts = 0
+
+function onOffline() {
+  isOnline.value = false
+  connectionLost.value = true
+  // 离线时停止 SSE 重试
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
+}
+
+function onOnline() {
+  isOnline.value = true
+  // 上线后指数退避重连，恢复会话
+  if (reconnectTimer) clearTimeout(reconnectTimer)
+  reconnectAttempts = 0
+  attemptReconnect()
+}
+
+async function attemptReconnect() {
+  if (!isOnline.value) return
+  reconnectAttempts++
+  // 指数退避：1s, 2s, 4s, 8s, 16s（最多 16s）
+  const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 16000)
+  if (reconnectAttempts > 1) {
+    // 非首次重连，先等待
+    await new Promise(r => setTimeout(r, delay))
+  }
+  if (!isOnline.value) return
+  try {
+    // 探测后端是否可达
+    await api.get('/health', { timeout: 5000 })
+    connectionLost.value = false
+    reconnectAttempts = 0
+    // 重连成功后重新加载当前会话（可能错过 SSE 事件）
+    if (activeSessionId.value) {
+      await switchSession(activeSessionId.value)
+    }
+  } catch {
+    // 仍未可达，安排下一次重试（最多 5 次）
+    if (reconnectAttempts < 5) {
+      reconnectTimer = setTimeout(attemptReconnect, delay)
+    }
+  }
+}
+
+// P2-I: 导出当前会话为 Markdown 文件
+function exportMarkdown() {
+  if (!items.value.length) {
+    message.warning('当前没有可导出的消息')
+    return
+  }
+  const session = sessions.value.find(s => s.id === activeSessionId.value)
+  const title = session?.title || '对话导出'
+  const lines: string[] = [`# ${title}`, '']
+  for (const it of items.value) {
+    if (it.kind !== 'text') continue
+    const role = it.role === 'user' ? '🧑 用户' : '🤖 助手'
+    lines.push(`## ${role}`, '')
+    lines.push(it.content || '(空消息)')
+    if (it.attachments?.length) {
+      lines.push('')
+      for (const a of it.attachments) {
+        if (a.isImage) lines.push(`![${a.name}](${a.url})`)
+        else lines.push(`- 📎 [${a.name}](${a.url}) (${formatSize(a.size)})`)
+      }
+    }
+    lines.push('')
+  }
+  // 工具调用也导出（便于审计）
+  const toolCalls = items.value.filter(i => i.kind === 'tool_call')
+  if (toolCalls.length) {
+    lines.push('---', '', '## 工具调用记录', '')
+    for (const tc of toolCalls) {
+      if (tc.kind !== 'tool_call') continue
+      lines.push(`### ${tc.name || 'tool'}`, '```json', JSON.stringify(tc.args || {}, null, 2), '```', '')
+    }
+  }
+  const md = lines.join('\n')
+  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${title.replace(/[\\/:*?"<>|]/g, '_')}.md`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+  message.success('已导出 Markdown')
+}
+
+// P3-C: 斜杠命令处理
+function onSlashCommand(cmd: string) {
+  switch (cmd) {
+    case '/clear':
+      items.value = []
+      activeSessionId.value = ''
+      message.info('已清空当前对话')
+      break
+    case '/export':
+      exportMarkdown()
+      break
+    case '/new':
+      items.value = []
+      activeSessionId.value = ''
+      panelOpen.value = false
+      message.info('已新建会话')
+      break
+    case '/theme':
+      themeStore.toggleTheme()
+      message.success(themeStore.isDark ? '已切换到暗色模式' : '已切换到亮色模式')
+      break
+    case '/stop':
+      stopGeneration()
+      break
+    default:
+      message.warning(`未知命令: ${cmd}`)
+  }
+}
+
+// P2-H: 全局键盘快捷键
+// Ctrl/Cmd+K: 打开侧边栏 + 切到会话历史视图
+// Esc: 关闭侧边栏（若打开）
+function onGlobalKeydown(e: KeyboardEvent) {
+  // Ctrl/Cmd + K
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault()
+    panelOpen.value = true
+    panelView.value = 'sessions'
+    nextTick(() => {
+      const searchInput = document.querySelector('.panel-search .search-input') as HTMLInputElement | null
+      searchInput?.focus()
+    })
+  }
+  // Esc 关闭侧边栏
+  if (e.key === 'Escape' && panelOpen.value) {
+    panelOpen.value = false
+  }
+}
 
 async function loadSessions() {
   try {
@@ -145,6 +296,7 @@ async function switchSession(id: string) {
   if (id === activeSessionId.value) return
   activeSessionId.value = id; items.value = []; loading.value = true
   hasMore.value = false; earliestCursor.value = ''; loadingEarlier.value = false
+  initialLoading.value = true  // P2-E: 显示骨架屏
   try {
     const res = await api.get(`/v1/conversations/${id}?limit=${HISTORY_PAGE_SIZE}`)
     const data = res.data?.data || res.data
@@ -155,6 +307,7 @@ async function switchSession(id: string) {
     }
   } catch { /* fallback */ } finally {
     loading.value = false
+    initialLoading.value = false  // P2-E: 隐藏骨架屏
   }
 }
 
@@ -163,6 +316,7 @@ const HISTORY_PAGE_SIZE = 50
 const hasMore = ref(false)
 const earliestCursor = ref('')
 const loadingEarlier = ref(false)
+const initialLoading = ref(false)  // P2-E: 首次加载会话历史的骨架屏
 
 function mergeHistory(messages: any[], toolCalls: any[]): ChatItem[] {
   // 重构：工具调用双源渲染 — tool_calls 表为主源，messages 内联 tool_calls 列兜底
@@ -348,6 +502,15 @@ async function togglePin(id: string, pinned: boolean) {
   }
 }
 
+// P3-D: 设置会话标签（前端 localStorage 持久化，无需后端支持）
+function setSessionTag(id: string, tag: string) {
+  const s = sessions.value.find(x => x.id === id)
+  if (!s) return
+  s.tag = tag || undefined
+  persistSessions()
+  message.success(tag ? `已设置标签：${tag}` : '已清除标签')
+}
+
 // ── 分享（chat.deepseek.com/share/{id} 风格：选消息 → 生成链接 → 可取消） ──
 const shareOpen = ref(false)
 const shareTarget = ref<ChatSession | null>(null)
@@ -445,8 +608,8 @@ function resetStreamState() {
   streamReasonId = ''
 }
 
-function appendUserText(text: string) {
-  items.value.push({ kind: 'text', role: 'user', content: text, id: genItemId() })
+function appendUserText(text: string, attachments?: ChatAttachment[]) {
+  items.value.push({ kind: 'text', role: 'user', content: text, id: genItemId(), attachments })
 }
 
 // P 性能/正确性：稳定 id（虚拟列表 key + 流式定位，loadEarlier 头部插入不错位）
@@ -555,12 +718,13 @@ function onSSEMessage(raw: any) {
   }
 }
 
-async function sendMessage(text: string) {
+async function sendMessage(text: string, attachments?: ChatAttachment[]) {
   loading.value = true
   startTurnTimer()
   resetStreamState()
   connectionLost.value = false
-  appendUserText(text)
+  appendUserText(text, attachments)
+  const userItemId = items.value[items.value.length - 1]?.id
   const sessionId = activeSessionId.value || crypto.randomUUID()
   currentTraceId.value = ''  // 清空上一次 trace_id
   try {
@@ -573,17 +737,85 @@ async function sendMessage(text: string) {
         stopTurnTimer()
         connectionLost.value = true   // SSE 断线 → 顶部横幅（deepseek ConnectionBanner）
         activeSSE?.close(); activeSSE = null
+        // P1-3: 标记用户消息为失败，展示重试按钮
+        markMessageFailed(userItemId, '连接已断开')
       },
     )
     const body: any = { content: text, session_id: sessionId, llm_config: { mode: mode.value } }
+    if (attachments?.length) {
+      body.attachments = attachments.map(a => ({ id: a.id, name: a.name, mime_type: a.mimeType, url: a.url, is_image: a.isImage }))
+    }
     await api.post('/submit', body)
     activeSessionId.value = sessionId
   } catch (e: any) {
     loading.value = false
     stopTurnTimer()
     flushStreamingFlags()
+    // P1-3: 标记用户消息为失败，展示重试按钮（而非仅 toast）
+    markMessageFailed(userItemId, e.message || '网络错误')
     message.error('发送失败: ' + (e.message || '网络错误'))
   }
+}
+
+// ── P1-3 失败消息标记 ──
+function markMessageFailed(itemId: string | undefined, errorMsg: string) {
+  if (!itemId) return
+  const it = items.value.find(i => i.id === itemId)
+  if (it && it.kind === 'text') {
+    it.error = true
+    it.errorMsg = errorMsg
+  }
+}
+
+// ── P1-1 消息重试/重新生成 ──
+/** 删除指定 itemId 及其后所有消息，返回被删除的用户消息文本（如有） */
+function truncateFrom(itemId: string): { text?: string; attachments?: ChatAttachment[] } {
+  const idx = items.value.findIndex(i => i.id === itemId)
+  if (idx < 0) return {}
+  const removed = items.value.slice(idx)
+  items.value = items.value.slice(0, idx)
+  // 找到被删除的用户消息文本（用于 regenerate：取上一条用户消息）
+  const userMsg = removed.find(i => i.kind === 'text' && i.role === 'user') as any
+  return userMsg ? { text: userMsg.content, attachments: userMsg.attachments } : {}
+}
+
+/** 用户消息编辑后重发：删除该消息及之后所有，用新文本重发 */
+function retryFromUserMessage(itemId: string, newText: string) {
+  truncateFrom(itemId)
+  sendMessage(newText)
+}
+
+/** 助手消息重新生成：删除该消息及之后所有，取上一条用户消息重发 */
+function regenerateAssistant(itemId: string) {
+  // 找到这条助手消息之前的最后一条用户消息
+  const idx = items.value.findIndex(i => i.id === itemId)
+  if (idx < 0) return
+  // 向前找最近一条用户消息
+  let userMsg: any = null
+  for (let i = idx - 1; i >= 0; i--) {
+    const it = items.value[i]
+    if (it.kind === 'text' && it.role === 'user') { userMsg = it; break }
+  }
+  truncateFrom(itemId)
+  if (userMsg) {
+    // 连同附件一起重发（注意：这里也删掉了之前的用户消息，所以要带回去）
+    sendMessage(userMsg.content, userMsg.attachments)
+  } else {
+    message.warning('未找到对应的用户消息，无法重新生成')
+  }
+}
+
+/** P1-3 失败消息重试：清除错误状态，用原文本重发 */
+function retryFailedMessage(itemId: string) {
+  const idx = items.value.findIndex(i => i.id === itemId)
+  if (idx < 0) return
+  const it = items.value[idx]
+  if (it.kind !== 'text') return
+  const text = it.content
+  const attachments = it.attachments
+  // 删除该失败消息及之后所有，重发
+  truncateFrom(itemId)
+  sendMessage(text, attachments)
 }
 
 function stopGeneration() {
@@ -591,13 +823,29 @@ function stopGeneration() {
   if (activeSSE) { activeSSE.close(); activeSSE = null }
   loading.value = false
   flushStreamingFlags()
+  // P2-F: 标记最后一条助手消息为"已停止"，在下方显示"继续生成"提示
+  const last = items.value[items.value.length - 1]
+  if (last && last.kind === 'text' && last.role === 'assistant') {
+    last.stopped = true
+  }
+}
+
+// P2-F: 继续生成（停止后）— 等价于重新生成最后一条助手消息
+function continueGeneration() {
+  const last = items.value[items.value.length - 1]
+  if (last && last.kind === 'text' && last.role === 'assistant' && last.stopped) {
+    // 用 regenerate 逻辑：删除该消息及之后所有，用上一条用户消息重发
+    regenerateAssistant(last.id!)
+  }
 }
 </script>
 
 <template>
   <div class="chat-layout">
     <div class="chat-main">
-      <div v-if="connectionLost" class="connection-banner">连接已断开，请重试发送消息</div>
+      <div v-if="connectionLost" class="connection-banner">
+        {{ isOnline ? '与服务器的连接已断开，正在尝试重连…' : '网络已断开，请检查网络连接' }}
+      </div>
       <div class="chat-body">
         <!-- 内容区工具条：对话名称居中（避开左上角品牌胶囊），右侧会话/轨迹入口 -->
         <div class="chat-toolbar">
@@ -625,6 +873,27 @@ function stopGeneration() {
               <template #icon><HistoryOutlined /></template>
               轨迹
             </Button>
+            <!-- P2-I: 导出当前会话为 Markdown -->
+            <Button
+              type="text" size="small" class="toolbar-btn"
+              title="导出为 Markdown"
+              :disabled="!items.length"
+              @click="exportMarkdown"
+            >
+              <template #icon><ExportOutlined /></template>
+              导出
+            </Button>
+            <!-- P3-A: 暗色模式切换 -->
+            <Button
+              type="text" size="small" class="toolbar-btn"
+              :title="themeStore.isDark ? '切换到亮色模式' : '切换到暗色模式'"
+              @click="themeStore.toggleTheme()"
+            >
+              <template #icon>
+                <BulbFilled v-if="themeStore.isDark" />
+                <BulbOutlined v-else />
+              </template>
+            </Button>
           </div>
         </div>
 
@@ -634,11 +903,16 @@ function stopGeneration() {
           <MessageList
             :items="items"
             :loading="loading"
+            :initial-loading="initialLoading"
             :focus-index="trajectoryFocus"
             :focus-token="trajectoryToken"
             :has-more="hasMore"
             :loading-earlier="loadingEarlier"
             @load-earlier="loadEarlier"
+            @retry-from="retryFromUserMessage"
+            @regenerate="regenerateAssistant"
+            @continue="continueGeneration"
+            @retry-failed="retryFailedMessage"
           />
           <!-- ── Trace 调用链时间线 (仅在有 trace_id 且非 loading 时显示) ── -->
           <CallChainTimeline
@@ -667,9 +941,11 @@ function stopGeneration() {
         :loading="loading"
         :mode="mode"
         :mode-options="modeOptions"
+        :session-id="activeSessionId"
         @send="sendMessage"
         @stop="stopGeneration"
         @update:mode="(m: string) => (mode = m)"
+        @command="onSlashCommand"
       />
     </div>
 
@@ -694,6 +970,7 @@ function stopGeneration() {
       @rename="openRename"
       @pin="togglePin"
       @share="openShare"
+      @tag="setSessionTag"
     />
 
     <!-- 重命名对话框 -->

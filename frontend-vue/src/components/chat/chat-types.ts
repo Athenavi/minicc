@@ -5,6 +5,8 @@ export interface ChatSession {
   title: string
   /** 置顶会话固定在列表顶部（登录用户存 DB，guest 随 localStorage 持久化） */
   pinned?: boolean
+  /** P3-D: 会话标签（前端 localStorage 存储，用于分类筛选） */
+  tag?: string
   created_at: string
   updated_at: string
 }
@@ -31,6 +33,25 @@ export interface TextItem extends ChatItemBase {
   role: 'user' | 'assistant'
   content: string
   streaming?: boolean
+  /** 消息发送失败（网络/服务端错误），UI 展示重试按钮 */
+  error?: boolean
+  /** 失败消息的错误提示文案 */
+  errorMsg?: string
+  /** 附件列表（用户消息可携带图片/文件，发送时一并上传） */
+  attachments?: ChatAttachment[]
+  /** P2-F: 生成被用户手动停止，显示"继续生成"提示 */
+  stopped?: boolean
+}
+
+export interface ChatAttachment {
+  id: string
+  name: string
+  size: number
+  mimeType: string
+  /** 上传后的资源 URL（如 /v1/media/{id}/download 或 data: URL 预览） */
+  url: string
+  /** 是否为图片（图片在消息气泡内内联展示） */
+  isImage: boolean
 }
 
 export interface ReasoningItem extends ChatItemBase {

@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -45,7 +46,21 @@ func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 	fileSize := int64(len(fileData))
 
-	mimeType := truncateMIME(header.Header.Get("Content-Type"))
+	// P1-6: 用 magic bytes 检测真实 MIME，避免客户端伪造 Content-Type 上传可执行文件
+	declaredMIME := truncateMIME(header.Header.Get("Content-Type"))
+	detectedMIME := truncateMIME(http.DetectContentType(fileData))
+	// 优先采用检测到的 MIME；声明与检测不一致时以检测为准（更安全）
+	mimeType := detectedMIME
+	if declaredMIME != "" && declaredMIME == detectedMIME {
+		// 声明与检测一致，保留声明的（可能更精确，如 image/png vs image/jpeg）
+		mimeType = declaredMIME
+	}
+	// 拒绝可执行/脚本类 MIME（即使客户端伪装为图片）
+	// P1-6: 传入文件名以便扩展名兜底（PE/ELF magic bytes 只检测为 octet-stream）
+	if isExecutableMIME(mimeType, header.Filename) {
+		BadRequest(w, "file type not allowed: "+mimeType)
+		return
+	}
 	assetType := detectType(mimeType)
 	category := r.FormValue("category")
 	parentID := r.FormValue("parent_id") // 当前目录；空 = 根目录
@@ -241,4 +256,46 @@ func truncateMIME(mime string) string {
 		return mime[:64]
 	}
 	return mime
+}
+
+// isExecutableMIME 拦截可执行/脚本类 MIME，防止伪装为图片上传恶意文件。
+// P1-6: 即使 magic bytes 检测出真实类型，仍需拒绝危险类型落地存储。
+// fileName 用于扩展名兜底（net/http 的 DetectContentType 对 PE/ELF/Mach-O
+// 通常返回 application/octet-stream，无法区分可执行文件与普通二进制）。
+func isExecutableMIME(mime string, fileName string) bool {
+	// 归一化小写并去掉参数
+	m := strings.ToLower(strings.TrimSpace(mime))
+	if i := strings.Index(m, ";"); i >= 0 {
+		m = strings.TrimSpace(m[:i])
+	}
+	switch m {
+	case "application/x-msdownload",
+		"application/x-msdos-program",
+		"application/x-msi",
+		"application/x-sh",
+		"application/x-shar",
+		"application/x-csh",
+		"application/x-bat",
+		"application/x-batch",
+		"application/vnd.microsoft.portable-executable",
+		"application/x-elf",
+		"application/x-executable",
+		"application/x-mach-o-executable",
+		"application/x-mach-binary":
+		return true
+	}
+	// 扩展名兜底：octet-stream（PE/ELF/Mach-O magic bytes 通用回退）或 text/plain
+	// （shell 脚本检测为 text/plain）+ 危险扩展名 → 拒绝
+	if m == "application/octet-stream" || m == "" || m == "text/plain" || m == "text/html" {
+		ext := strings.ToLower(filepath.Ext(fileName))
+		switch ext {
+		case ".exe", ".dll", ".msi", ".sh", ".bat", ".cmd", ".com", ".scr",
+			".so", ".dylib", ".app", ".jar", ".class", ".py", ".rb", ".pl",
+			".ps1", ".vbs", ".wsf", ".htm", ".html":
+			return true
+		}
+	}
+	// text/plain 可能是任何脚本，但 magic bytes 只能识别文本；
+	// 这里只拦截明确的可执行二进制类型，text/plain 由业务层判断扩展名
+	return false
 }

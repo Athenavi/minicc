@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, markRaw } from 'vue'
 import {
   Button, Tabs, TabPane, Modal, Input, InputNumber, Switch, Tag,
-  Empty, Spin, Alert, Dropdown, Menu, MenuItem, message,
+  Alert, Dropdown, Menu, MenuItem, message,
 } from 'ant-design-vue'
 import {
   PlusOutlined, PlayCircleOutlined, EditOutlined, DeleteOutlined,
@@ -14,19 +14,25 @@ import {
   runAgent, listAgentSessions, getAgentSession,
 } from '../api'
 import type { Agent, AgentSession } from '../api'
+import PageSkeleton from '../components/common/PageSkeleton.vue'
+import EmptyState from '../components/common/EmptyState.vue'
 
 // ── 数据 ──
 const agents = ref<Agent[]>([])
 const loadingAgents = ref(true)
+const errorAgents = ref(false)
 const sessions = ref<AgentSession[]>([])
 const loadingSessions = ref(false)
+const errorSessions = ref(false)
 const activeTab = ref('agents')
 
 async function loadAgents() {
   loadingAgents.value = true
+  errorAgents.value = false
   try {
     agents.value = await listAgents()
   } catch {
+    errorAgents.value = true
     message.error('获取 Agent 列表失败')
   } finally {
     loadingAgents.value = false
@@ -35,9 +41,11 @@ async function loadAgents() {
 
 async function loadSessions() {
   loadingSessions.value = true
+  errorSessions.value = false
   try {
     sessions.value = await listAgentSessions()
   } catch {
+    errorSessions.value = true
     message.error('获取运行记录失败')
   } finally {
     loadingSessions.value = false
@@ -288,10 +296,28 @@ function toolCount(a: Agent): number {
     <Tabs v-model:activeKey="activeTab" class="agents-tabs">
       <!-- ── Tab 1：我的 Agent ── -->
       <TabPane key="agents" tab="我的 Agent">
-        <Spin v-if="loadingAgents" class="page-spin" />
-        <Empty v-else-if="agents.length === 0" description="还没有 Agent，点击右上角新建">
-          <template #image><RobotOutlined style="font-size: 44px; color: var(--primary)" /></template>
-        </Empty>
+        <PageSkeleton v-if="loadingAgents" variant="cards" :columns="3" :rows="6" :header="false" />
+        <EmptyState
+          v-else-if="errorAgents"
+          size="page"
+          :icon="markRaw(RobotOutlined)"
+          description="加载失败"
+          hint="无法获取 Agent 列表，请稍后重试"
+        >
+          <Button type="primary" @click="loadAgents">重试</Button>
+        </EmptyState>
+        <EmptyState
+          v-else-if="agents.length === 0"
+          size="page"
+          :icon="markRaw(RobotOutlined)"
+          description="还没有 Agent"
+          hint="点击右上角「新建 Agent」，定义提示词与工具，开始派发任务"
+        >
+          <Button type="primary" @click="openCreate">
+            <template #icon><PlusOutlined /></template>
+            新建 Agent
+          </Button>
+        </EmptyState>
         <div v-else class="agent-grid">
           <div v-for="a in agents" :key="a.id" class="agent-card" :class="{ disabled: !a.enabled }">
             <div class="card-top">
@@ -333,10 +359,23 @@ function toolCount(a: Agent): number {
 
       <!-- ── Tab 2：运行记录 ── -->
       <TabPane key="sessions" tab="运行记录">
-        <Spin v-if="loadingSessions" class="page-spin" />
-        <Empty v-else-if="sessions.length === 0" description="暂无运行记录">
-          <template #image><HistoryOutlined style="font-size: 44px; color: var(--primary)" /></template>
-        </Empty>
+        <PageSkeleton v-if="loadingSessions" variant="list" :rows="6" :header="false" />
+        <EmptyState
+          v-else-if="errorSessions"
+          size="page"
+          :icon="markRaw(HistoryOutlined)"
+          description="加载失败"
+          hint="无法获取运行记录，请稍后重试"
+        >
+          <Button type="primary" @click="loadSessions">重试</Button>
+        </EmptyState>
+        <EmptyState
+          v-else-if="sessions.length === 0"
+          size="page"
+          :icon="markRaw(HistoryOutlined)"
+          description="暂无运行记录"
+          hint="从「我的 Agent」派发任务后，运行结果将在此显示"
+        />
         <div v-else class="session-list">
           <div v-for="s in sessions" :key="s.id" class="session-row">
             <span class="session-status-icon" :class="s.status">
@@ -520,7 +559,6 @@ function toolCount(a: Agent): number {
 .page-title { font-size: 24px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
 .page-sub { margin: 4px 0 0; color: var(--text-tertiary); font-size: 13px; }
 .agents-tabs :deep(.ant-tabs-nav) { margin-bottom: 20px; }
-.page-spin { display: flex; justify-content: center; padding: 80px 0; }
 
 /* ── Agent 卡片 ── */
 .agent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }

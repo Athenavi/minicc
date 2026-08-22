@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, markRaw } from 'vue'
 import {
   Card,
   Button,
@@ -12,7 +12,6 @@ import {
   List,
   Tag,
   Popconfirm,
-  Empty,
   Spin,
   Modal,
   message,
@@ -29,6 +28,7 @@ import {
   ThunderboltOutlined,
   DatabaseOutlined,
 } from '@ant-design/icons-vue'
+import EmptyState from '../components/common/EmptyState.vue'
 import {
   listMemory,
   upsertMemory,
@@ -47,6 +47,7 @@ import {
 } from '../api/memory'
 
 const loading = ref(false)
+const error = ref(false)
 const entries = ref<MemoryEntry[]>([])
 const counts = ref<Record<string, number>>({})
 const total = ref(0)
@@ -236,6 +237,7 @@ async function runOrganize() {
 // ── 加载 ──
 async function loadProfile() {
   loading.value = true
+  error.value = false
   try {
     const data = await listMemory()
     entries.value = data.entries
@@ -243,6 +245,7 @@ async function loadProfile() {
     total.value = data.total
     organize.value = data.organize
   } catch (e: any) {
+    error.value = true
     if (e.response?.status === 503) {
       message.error('记忆服务不可用（需要 PostgreSQL）')
     } else {
@@ -359,7 +362,23 @@ function pct(n: number): string {
         </TabPane>
       </Tabs>
 
-      <Empty v-if="filteredEntries.length === 0 && !loading" description="暂无该分类记忆，点击右上角「新建记忆」" />
+      <EmptyState
+        v-if="error && !loading"
+        size="page"
+        :icon="markRaw(DatabaseOutlined)"
+        description="加载失败"
+        hint="无法获取记忆数据，请稍后重试"
+      >
+        <Button type="primary" @click="loadProfile">重试</Button>
+      </EmptyState>
+
+      <EmptyState
+        v-else-if="filteredEntries.length === 0 && !loading"
+        size="page"
+        :icon="markRaw(DatabaseOutlined)"
+        description="暂无该分类记忆"
+        hint="点击右上角「新建记忆」，记录用户偏好与长期上下文"
+      />
 
       <List v-else :data-source="filteredEntries">
         <template #renderItem="{ item }">

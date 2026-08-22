@@ -13,6 +13,31 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, 'src'),
     },
+    // 强制 Vue 单实例：pnpm 为 ant-design-vue/@ant-design/icons-vue 解析到
+    // node_modules/.pnpm 下的 vue@3.5.41，与 app 的 vue@3.5.39 不一致，
+    // 导致 provide/inject 上下文断裂（prefixCls undefined）
+    dedupe: ['vue'],
+  },
+  server: {
+    // 代理后端 API：避免开发时 CORS 跨域问题（后端 CORS_ORIGINS 仅含 5173）
+    proxy: {
+      '/v1': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+      '/events': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+      '/ws': {
+        target: 'ws://localhost:8080',
+        ws: true,
+      },
+      '/metrics': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+    },
   },
   build: {
     rollupOptions: {

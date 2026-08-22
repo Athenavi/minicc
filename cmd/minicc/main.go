@@ -158,6 +158,10 @@ func main() {
 		}
 		if len(addrs) > 0 {
 			pythonClient = engine.NewPythonClient(addrs...)
+			pythonClient.SetInternalToken(cfg.InternalToken)
+			if cfg.InternalToken == "" {
+				slog.Warn("INTERNAL_TOKEN not set; Python engine will reject gateway-impersonated requests")
+			}
 			slog.Info("python engine configured", "addresses", addrs)
 		}
 	} else {

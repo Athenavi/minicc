@@ -35,6 +35,10 @@ type Config struct {
 	// Auth
 	JWTSecret     string
 	JWTExpiration time.Duration
+	// InternalToken：Go 网关 ↔ Python 引擎共享密钥。
+	// Go 转发请求时注入 X-Internal-Token header，Python 据此校验 ?tenant_id= 透传身份。
+	// 未配置时 Python 侧 fail-close 拒绝 query 透传身份（强制走 JWT/API Key）。
+	InternalToken string
 
 	// Registration
 	DisableRegistration bool // 生产单租户可关闭公开注册（S 安全加固）
@@ -61,7 +65,8 @@ type Config struct {
 	S3UseSSL       bool   // S3/MinIO use SSL
 
 	// Rate Limit
-	RateLimitRPM    int // requests per minute per user
+	RateLimitRPM        int  // requests per minute per user
+	RateLimitFailClose  bool // P1-2: Redis 不可用时是否拒绝写操作（生产=true，开发=false）
 	RateLimitGlobal int // global requests per minute
 
 	// Log
@@ -119,7 +124,8 @@ func Load() *Config {
 		ReadTimeout:     getDuration("READ_TIMEOUT", 10*time.Second),
 		WriteTimeout:    getDuration("WRITE_TIMEOUT", 60*time.Second),
 		IdleTimeout:     getDuration("IDLE_TIMEOUT", 120*time.Second),
-		PostgresDSN:      getEnv("POSTGRES_DSN", "postgres://minicc:minicc@localhost:5432/minicc?sslmode=disable"),
+		// P2-4: 默认空，强制通过 env 提供；与 Python 端 config.py 保持一致
+		PostgresDSN:      getEnv("POSTGRES_DSN", ""),
 		PostgresMaxConn:  getInt("POSTGRES_MAX_CONN", 20),
 		PostgresMinConn:  getInt("POSTGRES_MIN_CONN", 2),
 		PostgresReadDSNs: getStringSlice("POSTGRES_READ_DSNS", []string{}),
@@ -133,6 +139,7 @@ func Load() *Config {
 		RedisPoolSize:      getInt("REDIS_POOL_SIZE", 50),
 		JWTSecret:       getEnv("JWT_SECRET", ""),
 		JWTExpiration:   getDuration("JWT_EXPIRATION", 24*time.Hour),
+		InternalToken:   getEnv("INTERNAL_TOKEN", ""),
 		DisableRegistration: isTruthy(getEnv("DISABLE_REGISTRATION", "")),
 		CookieSecure:    isTruthy(getEnv("COOKIE_SECURE", "")),
 		CORSOrigins:     getEnv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173"),
@@ -147,7 +154,8 @@ func Load() *Config {
 		S3AccessKey:     getEnv("S3_ACCESS_KEY", ""),
 		S3SecretKey:     getEnv("S3_SECRET_KEY", ""),
 		S3UseSSL:        isTruthy(getEnv("S3_USE_SSL", "")),
-		RateLimitRPM:    getInt("RATE_LIMIT_RPM", 100),
+		RateLimitRPM:       getInt("RATE_LIMIT_RPM", 100),
+		RateLimitFailClose: isTruthy(getEnv("RATE_LIMIT_FAIL_CLOSE", "")),
 		RateLimitGlobal: getInt("RATE_LIMIT_GLOBAL", 10000),
 		LogLevel:        getEnv("LOG_LEVEL", "info"),
 		StripeSecretKey:   getEnv("STRIPE_SECRET_KEY", ""),

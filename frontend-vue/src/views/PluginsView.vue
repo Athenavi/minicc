@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, markRaw } from 'vue'
 import {
-  Button, Input, Modal, Switch, Tag, Empty, Spin, Popconfirm, message,
+  Button, Input, Modal, Switch, Tag, Popconfirm, message,
 } from 'ant-design-vue'
 import {
   ThunderboltOutlined, PlusOutlined, DeleteOutlined, SearchOutlined,
   EditOutlined, ExperimentOutlined, DownOutlined, UpOutlined,
 } from '@ant-design/icons-vue'
 import { api } from '../api'
+import PageSkeleton from '../components/common/PageSkeleton.vue'
+import EmptyState from '../components/common/EmptyState.vue'
 
 interface Plugin {
   name: string
@@ -20,6 +22,7 @@ interface Plugin {
 }
 
 const loading = ref(true)
+const error = ref(false)
 const plugins = ref<Plugin[]>([])
 const searchQuery = ref('')
 const expanded = ref<Set<string>>(new Set())
@@ -47,10 +50,12 @@ const filtered = computed(() => {
 
 async function loadPlugins() {
   loading.value = true
+  error.value = false
   try {
     const res = await api.get('/v1/plugins')
     plugins.value = res.data?.data || []
   } catch {
+    error.value = true
     message.error('获取插件列表失败')
   } finally {
     loading.value = false
@@ -199,12 +204,30 @@ async function testPlugin(p: Plugin) {
       </Input>
     </div>
 
-    <Spin :spinning="loading">
-      <Empty v-if="!loading && filtered.length === 0" description="暂无插件，点击右上角新建" class="page-empty">
-        <template #image><ThunderboltOutlined style="font-size: 44px; color: var(--primary)" /></template>
-      </Empty>
+    <PageSkeleton v-if="loading" variant="cards" :columns="3" :rows="6" :header="false" />
+    <EmptyState
+      v-else-if="error"
+      size="page"
+      :icon="markRaw(ThunderboltOutlined)"
+      description="加载失败"
+      hint="无法获取插件列表，请稍后重试"
+    >
+      <Button type="primary" @click="loadPlugins">重试</Button>
+    </EmptyState>
+    <EmptyState
+      v-else-if="filtered.length === 0"
+      size="page"
+      :icon="markRaw(ThunderboltOutlined)"
+      :description="searchQuery ? '暂无匹配的插件' : '暂无插件'"
+      :hint="searchQuery ? '尝试调整搜索关键词' : '点击右上角「新建插件」，配置命令行工具集成'"
+    >
+      <Button v-if="!searchQuery" type="primary" @click="openCreate">
+        <template #icon><PlusOutlined /></template>
+        新建插件
+      </Button>
+    </EmptyState>
 
-      <div v-else class="plugin-grid">
+    <div v-else class="plugin-grid">
         <div v-for="p in filtered" :key="p.name" class="plugin-card" :class="{ inactive: p.status !== 'active' }">
           <div class="card-top">
             <span class="card-icon"><ThunderboltOutlined /></span>
@@ -270,10 +293,9 @@ async function testPlugin(p: Plugin) {
                 <div v-for="(v, k) in p.env" :key="k" class="detail-line">{{ k }}={{ v }}</div>
               </div>
             </div>
-          </div>
         </div>
       </div>
-    </Spin>
+    </div>
 
     <!-- 新建/编辑 Modal -->
     <Modal

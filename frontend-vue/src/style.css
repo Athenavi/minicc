@@ -56,6 +56,18 @@
   --shadow-md: 0 4px 12px 0 rgba(0, 0, 0, 0.02), 0 2px 8px 0 rgba(0, 0, 0, 0.04); /* lv2 */
   --shadow-lg: 0 2px 4px 0 rgba(0, 0, 0, 0.05), 0 12px 32px 0 rgba(0, 0, 0, 0.1);
 
+  /* P3-A: 亮色模式 highlight.js 配色变量（github.css 默认值，仅作占位） */
+  --hljs-fg: #24292f;
+  --hljs-bg: transparent;
+  --hljs-keyword: #cf222e;
+  --hljs-string: #0a3069;
+  --hljs-number: #0550ae;
+  --hljs-comment: #6e7781;
+  --hljs-title: #6639ba;
+  --hljs-attr: #0550ae;
+  --hljs-built-in: #953800;
+  --hljs-meta: #6e7781;
+
   /* ── 圆角 — 复刻 deepseek：输入胶囊 22 / 卡片 8-12 / 控件 6 ── */
   --radius-sm: 4px;
   --radius-md: 6px;
@@ -106,6 +118,18 @@
 
   --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.35);
   --shadow-lg: 0 2px 4px rgba(0, 0, 0, 0.45), 0 12px 32px rgba(0, 0, 0, 0.4);
+
+  /* P3-A: 暗色模式下 highlight.js 代码高亮配色覆盖（github.css → github-dark 风格） */
+  --hljs-fg: #c9d1d9;
+  --hljs-bg: transparent;
+  --hljs-keyword: #ff7b72;
+  --hljs-string: #a5d6ff;
+  --hljs-number: #79c0ff;
+  --hljs-comment: #8b949e;
+  --hljs-title: #d2a8ff;
+  --hljs-attr: #79c0ff;
+  --hljs-built-in: #ffa657;
+  --hljs-meta: #8b949e;
 }
 
 * {
@@ -149,4 +173,27 @@ body, body * { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb, va
 ::selection {
   background: var(--primary);
   color: #fff;
+}
+
+/* ── 移动端表格横向滚动 ── */
+@media (max-width: 768px) {
+  .ant-table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .ant-table-wrapper .ant-table {
+    min-width: 600px;
+  }
+}
+
+/* ── 微交互：按钮 active 态 ── */
+.ant-btn:not(:disabled):active {
+  transform: scale(0.97);
+  transition: transform 0.08s ease;
+}
+
+/* ── 微交互：表格行 hover 高亮 ── */
+.ant-table-tbody > tr.ant-table-row:hover > td,
+.ant-table-tbody > tr:hover > td {
+  background: var(--bg-secondary, rgba(0, 0, 0, 0.02)) !important;
 }

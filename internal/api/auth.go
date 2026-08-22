@@ -154,8 +154,13 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 多租户隔离：将用户记录的 tenant_id 写入 JWT，后续所有 SQL 用 claims.TenantID
+	// P1-5: tenant_id 为空直接拒绝登录，不再回退 DefaultTenantID。
+	// 历史数据中 tenant_id=NULL 的 user 走 DefaultTenantID 会落到默认租户，
+	// 造成跨租户数据访问；多租户部署必须强制每个用户绑定租户。
 	if tenantID == "" {
-		tenantID = DefaultTenantID // 单租户兼容：历史数据无 tenant_id 时回退默认租户
+		slog.Warn("login rejected: user has null tenant_id", "user_id", user.ID)
+		Unauthorized(w, "user has no tenant binding; contact admin")
+		return
 	}
 	token, err := h.auth.GenerateToken(user.ID, user.Email, user.Role, tenantID, auth.RolePermissions[user.Role])
 	if err != nil {

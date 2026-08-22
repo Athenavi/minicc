@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, markRaw } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  Button, Modal, Input, Radio, Spin, Empty, Tag, Popconfirm, message,
+  Button, Modal, Input, Radio, Tag, Popconfirm, message,
 } from 'ant-design-vue'
-import { BookOutlined, PlusOutlined, DeleteOutlined, SearchOutlined, EditOutlined } from '@ant-design/icons-vue'
+import { BookOutlined, PlusOutlined, DeleteOutlined, SearchOutlined, EditOutlined, FileTextOutlined, DatabaseOutlined } from '@ant-design/icons-vue'
 import { api } from '../api'
+import PageSkeleton from '../components/common/PageSkeleton.vue'
+import EmptyState from '../components/common/EmptyState.vue'
 
 interface KnowledgeBase {
   id: string
@@ -149,12 +151,24 @@ function formatDate(iso: string): string {
       </Input>
     </div>
 
-    <Spin :spinning="loading">
-      <Empty v-if="!loading && knowledgeBases.length === 0" description="暂无知识库" class="page-empty">
-        <template #image><BookOutlined style="font-size: 44px; color: var(--primary)" /></template>
-      </Empty>
+    <!-- 加载骨架（替代 Spin 空白） -->
+    <PageSkeleton v-if="loading" variant="cards" :columns="3" :header="false" />
 
-      <div v-else class="kb-sections">
+    <!-- 空状态：统一 EmptyState 组件，带引导 CTA -->
+    <EmptyState
+      v-else-if="knowledgeBases.length === 0"
+      size="page"
+      :icon="markRaw(BookOutlined)"
+      description="暂无知识库"
+      hint="创建第一个知识库，开始文档检索与 RAG 问答"
+    >
+      <Button type="primary" @click="showCreateModal = true">
+        <template #icon><PlusOutlined /></template>
+        创建知识库
+      </Button>
+    </EmptyState>
+
+    <div v-else class="kb-sections">
         <div v-if="privateKbs.length > 0" class="kb-section">
           <h2 class="section-title">我的知识库</h2>
           <div class="kb-grid">
@@ -173,8 +187,8 @@ function formatDate(iso: string): string {
                 <Tag :color="kb.type === 'rag' ? 'success' : 'blue'" class="type-tag">{{ kb.type.toUpperCase() }}</Tag>
               </div>
               <div class="kb-stats">
-                <span class="stat">📄 {{ kb.document_count }} 文档</span>
-                <span class="stat">💾 {{ formatSize(kb.total_size_bytes) }}</span>
+                <span class="stat"><FileTextOutlined /> {{ kb.document_count }} 文档</span>
+                <span class="stat"><DatabaseOutlined /> {{ formatSize(kb.total_size_bytes) }}</span>
                 <Tag :color="kb.status === 'active' ? 'green' : kb.status === 'building' ? 'processing' : 'default'">{{ kb.status }}</Tag>
               </div>
               <div class="kb-footer">
@@ -212,8 +226,8 @@ function formatDate(iso: string): string {
                 <Tag color="warning">公共</Tag>
               </div>
               <div class="kb-stats">
-                <span class="stat">📄 {{ kb.document_count }} 文档</span>
-                <span class="stat">💾 {{ formatSize(kb.total_size_bytes) }}</span>
+                <span class="stat"><FileTextOutlined /> {{ kb.document_count }} 文档</span>
+                <span class="stat"><DatabaseOutlined /> {{ formatSize(kb.total_size_bytes) }}</span>
               </div>
               <div class="kb-footer">
                 <span class="kb-time">更新于 {{ formatDate(kb.updated_at) }}</span>
@@ -232,7 +246,6 @@ function formatDate(iso: string): string {
           </div>
         </div>
       </div>
-    </Spin>
 
     <!-- 创建 Modal -->
     <Modal
@@ -342,7 +355,8 @@ function formatDate(iso: string): string {
 }
 .type-tag { flex: none; }
 .kb-stats { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.stat { font-size: 12px; color: var(--text-secondary); }
+.stat { font-size: 12px; color: var(--text-secondary); display: inline-flex; align-items: center; gap: 4px; }
+.stat :deep(svg) { font-size: 12px; color: var(--text-tertiary); }
 .kb-footer { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-card); padding-top: 10px; }
 .kb-time { font-size: 11px; color: var(--text-tertiary); }
 .footer-actions { display: flex; gap: 2px; }

@@ -438,7 +438,12 @@ def _setup_middleware(app: FastAPI, redis: aioredis.Redis, limiter) -> None:
     app.add_middleware(ErrorHandlerMiddleware)
     app.add_middleware(MetricsMiddleware)
     app.add_middleware(RateLimitMiddleware, limiter=limiter)
-    app.add_middleware(AuthMiddleware, redis_client=redis, jwt_secret=settings.jwt_secret)
+    app.add_middleware(
+        AuthMiddleware,
+        redis_client=redis,
+        jwt_secret=settings.jwt_secret,
+        internal_token=settings.internal_token,
+    )
     app.add_middleware(RequestContextMiddleware)
 
 

@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { authGuard } from './guard'
+import { setupRouteProgress } from './progress'
 
 const routes = [
   {
@@ -228,5 +229,8 @@ const router = createRouter({
 
 // 路由守卫（逻辑在 guard.ts，独立可测）
 router.beforeEach(authGuard)
+
+// 路由进度条
+setupRouteProgress(router)
 
 export default router

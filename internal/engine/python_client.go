@@ -17,9 +17,10 @@ import (
 // PythonClient calls the Python AI engine via HTTP SSE.
 // Supports multiple addresses with round-robin load balancing.
 type PythonClient struct {
-	addresses []string
-	counter   uint64
-	client    *http.Client
+	addresses     []string
+	counter       uint64
+	client        *http.Client
+	internalToken string // Go↔Python 共享内部 token，用于网关代理身份校验
 }
 
 // NewPythonClient creates a client for the Python engine HTTP API.
@@ -39,6 +40,22 @@ func NewPythonClient(addresses ...string) *PythonClient {
 	return &PythonClient{
 		addresses: addrs,
 		client:    &http.Client{Timeout: 5 * time.Minute},
+	}
+}
+
+// SetInternalToken 配置 Go↔Python 共享内部 token。
+// 转发到 Python 的请求会自动注入 X-Internal-Token header，
+// Python 侧据此校验 ?tenant_id= 透传身份的合法性（P0-3 防伪造）。
+func (c *PythonClient) SetInternalToken(token string) {
+	c.internalToken = token
+}
+
+// injectInternalToken 把 X-Internal-Token header 注入到出站请求。
+// 未配置 token 时为 no-op（部署侧未启用内部互信时降级，但 Python 侧会
+// fail-close 拒绝 query 透传身份，强制走 JWT/API Key 鉴权）。
+func (c *PythonClient) injectInternalToken(req *http.Request) {
+	if c.internalToken != "" {
+		req.Header.Set("X-Internal-Token", c.internalToken)
 	}
 }
 
@@ -108,6 +125,7 @@ func (c *PythonClient) Run(ctx context.Context, req PythonRunRequest) (<-chan Py
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "text/event-stream")
+	c.injectInternalToken(httpReq)
 
 	resp, err := c.client.Do(httpReq)
 	if err != nil {
@@ -177,6 +195,7 @@ func (c *PythonClient) GetJSON(ctx context.Context, path string, out any) error 
 	if err != nil {
 		return err
 	}
+	c.injectInternalToken(req)
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return err
@@ -200,6 +219,7 @@ func (c *PythonClient) PostJSON(ctx context.Context, path string, in any, out an
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	c.injectInternalToken(req)
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return err
@@ -223,6 +243,7 @@ func (c *PythonClient) PutJSON(ctx context.Context, path string, in any, out any
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	c.injectInternalToken(req)
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return err
@@ -255,6 +276,8 @@ func (c *PythonClient) ForwardRequest(w http.ResponseWriter, r *http.Request, pa
 			req.Header.Add(k, v)
 		}
 	}
+	// 注入 Go↔Python 内部 token，Python 侧据此接受 ?tenant_id= 透传身份
+	c.injectInternalToken(req)
 	resp, err := c.client.Do(req)
 	if err != nil {
 		// S 安全：不向客户端泄露后端连接细节
@@ -279,6 +302,7 @@ func (c *PythonClient) DeleteJSON(ctx context.Context, path string, out any) err
 	if err != nil {
 		return err
 	}
+	c.injectInternalToken(req)
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return err
@@ -307,6 +331,7 @@ func (c *PythonClient) RunSSE(ctx context.Context, path string, body any, extraH
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "text/event-stream")
+	c.injectInternalToken(httpReq)
 	// 可选附加 header（如网关注入的用户身份 X-User-ID，供 Python 引擎信任）
 	for _, h := range extraHeaders {
 		for k, v := range h {

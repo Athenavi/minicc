@@ -49,7 +49,14 @@ func newTestConversationHandler() *ConversationHandler {
 }
 
 func userClaims(userID string) *auth.Claims {
-	return &auth.Claims{UserID: userID, Role: "user"}
+	// 默认 tenant-id-1，保证多租户隔离 helper（claimsOf）通过校验。
+	// 跨租户隔离测试可调用 tenantClaims 显式指定不同 tenant_id。
+	return &auth.Claims{UserID: userID, Role: "user", TenantID: "tenant-id-1"}
+}
+
+// tenantClaims 构造指定租户的 claims，用于跨租户隔离测试。
+func tenantClaims(userID, tenantID string) *auth.Claims {
+	return &auth.Claims{UserID: userID, Role: "user", TenantID: tenantID}
 }
 
 // ── List：DB 不可用时的降级行为 ──

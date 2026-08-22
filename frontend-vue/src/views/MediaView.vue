@@ -1,19 +1,21 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
+import { ref, computed, onMounted, watch, onUnmounted, markRaw } from 'vue'
 import {
-  Button, Input, Select, Segmented, Pagination, Empty, Spin, Table, message,
+  Button, Input, Select, Segmented, Pagination, Table, message,
   Drawer, Modal, Popconfirm, Upload, Checkbox, Tree, Tag,
 } from 'ant-design-vue'
 import {
   SearchOutlined, CloudUploadOutlined, FolderOutlined, FileOutlined,
-  FolderAddOutlined, LeftOutlined, RightOutlined, TagOutlined,
+  FolderAddOutlined, LeftOutlined, RightOutlined, TagOutlined, PictureOutlined,
 } from '@ant-design/icons-vue'
 import { api } from '../api'
 import { createChunkUpload } from '../utils/uploader'
 import { FileViewer } from '@file-viewer/vue3'
 import allPreset from '@file-viewer/preset-all'
+import PageSkeleton from '../components/common/PageSkeleton.vue'
+import EmptyState from '../components/common/EmptyState.vue'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080'
+const API_URL = import.meta.env.VITE_API_URL || ''
 
 interface MediaItem {
   id: string
@@ -27,6 +29,7 @@ interface MediaItem {
 }
 
 const loading = ref(true)
+const error = ref(false)
 const items = ref<MediaItem[]>([])
 const total = ref(0)
 const page = ref(1)
@@ -80,6 +83,7 @@ function absUrl(url: string): string {
 
 async function fetchItems() {
   loading.value = true
+  error.value = false
   try {
     const params: Record<string, string | number> = {
       page: page.value,
@@ -97,6 +101,7 @@ async function fetchItems() {
   } catch {
     items.value = []
     total.value = 0
+    error.value = true
     message.error('加载媒体库失败')
   } finally {
     loading.value = false
@@ -488,9 +493,43 @@ onUnmounted(() => {
       <Button size="small" type="text" @click="selectedIds = new Set()">取消选择</Button>
     </div>
 
-    <Spin :spinning="loading">
-      <Empty v-if="!loading && items.length === 0" description="暂无文件，拖拽或点击上传" />
-      <div v-else-if="viewMode === 'grid'" class="file-grid">
+    <!-- 加载骨架（替代 Spin 空白） -->
+    <PageSkeleton
+      v-if="loading"
+      :variant="viewMode === 'grid' ? 'cards' : 'table'"
+      :columns="4"
+      :rows="8"
+      :header="false"
+    />
+
+    <!-- 错误态 -->
+    <EmptyState
+      v-else-if="error"
+      size="page"
+      :icon="markRaw(CloudUploadOutlined)"
+      description="加载失败"
+      hint="无法连接媒体服务，请检查网络后重试"
+    >
+      <Button type="primary" @click="fetchItems">重试</Button>
+    </EmptyState>
+
+    <!-- 空状态 -->
+    <EmptyState
+      v-else-if="items.length === 0"
+      size="page"
+      :icon="markRaw(PictureOutlined)"
+      description="暂无文件"
+      hint="拖拽文件到此处或点击上传，开始管理你的媒体库"
+    >
+      <Button type="primary" @click="showUpload = true">
+        <template #icon><CloudUploadOutlined /></template>
+        上传文件
+      </Button>
+    </EmptyState>
+
+    <!-- 数据视图 -->
+    <template v-else>
+      <div v-if="viewMode === 'grid'" class="file-grid">
         <div
           v-for="item in items"
           :key="item.id"
@@ -527,7 +566,7 @@ onUnmounted(() => {
         :row-class-name="(record: MediaItem) => (selectedIds.has(record.id) ? 'row-selected' : '')"
         @row-click="(record: MediaItem) => onCardClick(record)"
       />
-    </Spin>
+    </template>
 
     <div v-if="total > pageSize" class="pagination-bar">
       <Pagination

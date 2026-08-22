@@ -1,18 +1,23 @@
 <script setup lang="ts">
-import { ref, computed, h } from 'vue'
+import { ref, computed, h, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
+import { useThemeStore } from '../../stores/theme'
 import {
   Layout,
   LayoutSider,
   LayoutHeader,
   LayoutContent,
   Menu,
+  MenuDivider,
+  MenuItem,
+  MenuItemGroup,
   Breadcrumb,
   BreadcrumbItem,
   Button,
   Badge,
   Dropdown,
+  Avatar,
 } from 'ant-design-vue'
 import {
   DashboardOutlined,
@@ -34,48 +39,105 @@ import {
   ControlOutlined,
   ShopOutlined,
   FileTextOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
+  BulbOutlined,
 } from '@ant-design/icons-vue'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const themeStore = useThemeStore()
 
+// 折叠态：桌面端用 v-model，移动端用抽屉
 const collapsed = ref(false)
+// 移动端抽屉可见性（< 960px 触发抽屉模式）
+const isMobile = ref(false)
+const drawerOpen = ref(false)
+
+function checkMobile() {
+  isMobile.value = window.innerWidth < 960
+  if (!isMobile.value) drawerOpen.value = false
+}
+if (typeof window !== 'undefined') {
+  checkMobile()
+  window.addEventListener('resize', checkMobile)
+}
+
+// 路由切换时关闭移动端抽屉
+watch(() => route.path, () => { drawerOpen.value = false })
 
 const breadcrumbs = computed(() => {
-  const matched = route.matched
+  const matched = route.matched.filter(r => r.meta?.title || r.name)
   return matched.map(item => ({
     path: item.path,
-    title: item.meta?.title || item.name || '',
+    title: (item.meta?.title as string) || (item.name as string) || '',
   }))
 })
 
-const menuItems: any[] = [
-  { key: '/admin/dashboard', label: '仪表盘', icon: () => h(DashboardOutlined) },
-  { key: '/admin/tenants', label: '租户管理', icon: () => h(TeamOutlined) },
-  { key: '/admin/api-keys', label: 'API Key 管理', icon: () => h(KeyOutlined) },
-  { key: '/admin/domains', label: '域名管理', icon: () => h(GlobalOutlined) },
-  { key: '/admin/oauth-providers', label: '三方登录', icon: () => h(SafetyOutlined) },
-  { key: '/admin/redis', label: 'Redis 管理', icon: () => h(DatabaseOutlined) },
-  { key: '/admin/database', label: '数据库管理', icon: () => h(DatabaseOutlined) },
-  { key: '/admin/queue', label: '队列监控', icon: () => h(OrderedListOutlined) },
-  { key: '/admin/cache', label: '缓存监控', icon: () => h(DatabaseOutlined) },
-  { key: '/admin/performance', label: '性能监控', icon: () => h(ThunderboltOutlined) },
-  { key: '/admin/settings', label: '系统设置', icon: () => h(SettingOutlined) },
-  { key: '/admin/audit', label: '操作审计', icon: () => h(FileSearchOutlined) },
-  { key: '/admin/roles', label: '角色管理', icon: () => h(IdcardOutlined) },
-  { key: '/admin/groups', label: '群组管理', icon: () => h(ClusterOutlined) },
-  { key: '/admin/costcenter', label: '成本中心', icon: () => h(WalletOutlined) },
-  { key: '/admin/privacy', label: '隐私模式管控', icon: () => h(SafetyOutlined) },
-  { key: '/admin/model-policy', label: '模型策略管控', icon: () => h(ControlOutlined) },
-  { key: '/admin/market', label: '企业能力市场', icon: () => h(ShopOutlined) },
-  { key: '/admin/api-docs', label: 'API 文档', icon: () => h(FileTextOutlined) },
-]
+// 菜单分组：核心 / 访问控制 / 基础设施 / 安全合规 / 系统
+// 使用 MenuItemGroup 分组，缓解 18 项平铺的信息密度问题
+const menuGroups = computed(() => [
+  {
+    key: 'g-core', label: '核心',
+    children: [
+      { key: '/admin/dashboard', label: '仪表盘', icon: () => h(DashboardOutlined) },
+      { key: '/admin/tenants', label: '租户管理', icon: () => h(TeamOutlined) },
+      { key: '/admin/api-keys', label: 'API Key 管理', icon: () => h(KeyOutlined) },
+    ],
+  },
+  {
+    key: 'g-access', label: '访问控制',
+    children: [
+      { key: '/admin/domains', label: '域名管理', icon: () => h(GlobalOutlined) },
+      { key: '/admin/oauth-providers', label: '三方登录', icon: () => h(SafetyOutlined) },
+      { key: '/admin/roles', label: '角色管理', icon: () => h(IdcardOutlined) },
+      { key: '/admin/groups', label: '群组管理', icon: () => h(ClusterOutlined) },
+    ],
+  },
+  {
+    key: 'g-infra', label: '基础设施',
+    children: [
+      { key: '/admin/redis', label: 'Redis 管理', icon: () => h(DatabaseOutlined) },
+      { key: '/admin/database', label: '数据库管理', icon: () => h(DatabaseOutlined) },
+      { key: '/admin/queue', label: '队列监控', icon: () => h(OrderedListOutlined) },
+      { key: '/admin/cache', label: '缓存监控', icon: () => h(DatabaseOutlined) },
+      { key: '/admin/performance', label: '性能监控', icon: () => h(ThunderboltOutlined) },
+    ],
+  },
+  {
+    key: 'g-compliance', label: '安全合规',
+    children: [
+      { key: '/admin/audit', label: '操作审计', icon: () => h(FileSearchOutlined) },
+      { key: '/admin/privacy', label: '隐私模式管控', icon: () => h(SafetyOutlined) },
+      { key: '/admin/model-policy', label: '模型策略管控', icon: () => h(ControlOutlined) },
+      { key: '/admin/costcenter', label: '成本中心', icon: () => h(WalletOutlined) },
+    ],
+  },
+  {
+    key: 'g-system', label: '系统',
+    children: [
+      { key: '/admin/settings', label: '系统设置', icon: () => h(SettingOutlined) },
+      { key: '/admin/market', label: '企业能力市场', icon: () => h(ShopOutlined) },
+      { key: '/admin/api-docs', label: 'API 文档', icon: () => h(FileTextOutlined) },
+    ],
+  },
+])
 
-const userMenuItems: any[] = [
-  { key: 'profile', label: '个人设置', icon: () => h(UserOutlined) },
+// 当前路由命中的菜单项（用于侧边栏 selectedKeys）
+const selectedKeys = computed(() => {
+  const hit = menuGroups.value
+    .flatMap(g => g.children)
+    .find(m => route.path === m.key || route.path.startsWith(m.key + '/'))
+  return [hit?.key ?? route.path]
+})
+
+const userMenuItems = computed<any[]>(() => [
+  { key: 'profile', label: '个人资料', icon: () => h(UserOutlined) },
+  { key: 'toggle-theme', label: themeStore.isDark ? '浅色模式' : '深色模式', icon: () => h(BulbOutlined) },
+  { type: 'divider' as const },
   { key: 'logout', label: '退出登录', icon: () => h(LogoutOutlined) },
-]
+])
 
 function handleMenuClick(info: any) {
   router.push(info.key)
@@ -88,52 +150,106 @@ async function handleUserAction(info: any) {
     router.push('/login')
   } else if (info.key === 'profile') {
     router.push('/profile')
+  } else if (info.key === 'toggle-theme') {
+    themeStore.toggleTheme()
   }
 }
+
+const userInitial = computed(() => authStore.user?.name?.charAt(0)?.toUpperCase() || 'A')
 </script>
 
 <template>
-  <Layout style="height: 100%" class="admin-root-layout">
+  <Layout class="admin-root">
+    <!-- 桌面端固定 Sider -->
     <LayoutSider
+      v-if="!isMobile"
       v-model:collapsed="collapsed"
       collapsible
+      :trigger="null"
       :width="240"
-      theme="dark"
+      :collapsed-width="72"
+      class="admin-sider"
     >
-      <div class="logo">
-        <span v-if="!collapsed" class="logo-text">MiniCC Admin</span>
-        <span v-else class="logo-text-mini">MC</span>
+      <div class="sider-brand">
+        <span class="sider-logo">MC</span>
+        <span v-if="!collapsed" class="sider-name">MiniCC Admin</span>
       </div>
-      <Menu
-        theme="dark"
-        mode="inline"
-        :selectedKeys="[route.path]"
-        :items="menuItems"
-        @click="handleMenuClick"
-      />
+      <div class="sider-menu">
+        <Menu mode="inline" :selected-keys="selectedKeys" :inline-collapsed="collapsed" @click="handleMenuClick">
+          <template v-for="g in menuGroups" :key="g.key">
+            <MenuItemGroup :title="collapsed ? '' : g.label">
+              <MenuItem v-for="m in g.children" :key="m.key">
+                <template #icon><component :is="m.icon" /></template>
+                {{ m.label }}
+              </MenuItem>
+            </MenuItemGroup>
+          </template>
+        </Menu>
+      </div>
     </LayoutSider>
-    <Layout>
+
+    <!-- 移动端抽屉 Sider -->
+    <LayoutSider
+      v-else
+      v-model:collapsed="drawerOpen"
+      :trigger="null"
+      :width="260"
+      class="admin-sider admin-sider--drawer"
+      :class="{ 'admin-sider--drawer-open': drawerOpen }"
+    >
+      <div class="sider-brand">
+        <span class="sider-logo">MC</span>
+        <span v-if="!collapsed" class="sider-name">MiniCC Admin</span>
+      </div>
+      <div class="sider-menu">
+        <Menu mode="inline" :selected-keys="selectedKeys" @click="handleMenuClick">
+          <template v-for="g in menuGroups" :key="g.key">
+            <MenuItemGroup :title="g.label">
+              <MenuItem v-for="m in g.children" :key="m.key">
+                <template #icon><component :is="m.icon" /></template>
+                {{ m.label }}
+              </MenuItem>
+            </MenuItemGroup>
+          </template>
+        </Menu>
+      </div>
+    </LayoutSider>
+    <div v-if="isMobile && drawerOpen" class="admin-drawer-mask" @click="drawerOpen = false" />
+
+    <Layout class="admin-main">
       <LayoutHeader class="admin-header">
-        <Breadcrumb>
-          <BreadcrumbItem v-for="item in breadcrumbs" :key="item.path">
-            {{ item.title }}
-          </BreadcrumbItem>
-        </Breadcrumb>
+        <div class="header-left">
+          <Button
+            type="text"
+            class="header-collapse-btn"
+            :aria-label="collapsed ? '展开侧边栏' : '收起侧边栏'"
+            @click="isMobile ? (drawerOpen = !drawerOpen) : (collapsed = !collapsed)"
+          >
+            <component :is="isMobile ? (drawerOpen ? MenuUnfoldOutlined : MenuFoldOutlined) : (collapsed ? MenuUnfoldOutlined : MenuFoldOutlined)" />
+          </Button>
+          <Breadcrumb class="header-breadcrumb">
+            <BreadcrumbItem v-for="item in breadcrumbs" :key="item.path">
+              {{ item.title }}
+            </BreadcrumbItem>
+          </Breadcrumb>
+        </div>
         <div class="header-actions">
           <Badge :count="0" :overflow-count="99">
-            <Button type="text" class="header-btn">
+            <Button type="text" class="header-btn" aria-label="通知">
               <template #icon><BellOutlined /></template>
             </Button>
           </Badge>
-          <Dropdown :menu="{ items: userMenuItems, onClick: handleUserAction }">
-            <Button type="text" class="header-btn">
-              <template #icon><UserOutlined /></template>
-              Admin
-            </Button>
+          <Dropdown :menu="{ items: userMenuItems, onClick: handleUserAction }" placement="bottomRight">
+            <div class="header-user">
+              <Avatar :size="30" :style="{ backgroundColor: 'var(--primary)', color: '#fff' }">
+                {{ userInitial }}
+              </Avatar>
+              <span class="header-user-name">{{ authStore.user?.name || 'Admin' }}</span>
+            </div>
           </Dropdown>
         </div>
       </LayoutHeader>
-      <LayoutContent :style="{ padding: '24px', overflow: 'auto' }">
+      <LayoutContent class="admin-content">
         <router-view v-slot="{ Component }">
           <Transition name="fade" mode="out-in">
             <component :is="Component" />
@@ -145,59 +261,161 @@ async function handleUserAction(info: any) {
 </template>
 
 <style scoped>
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s ease;
+/* ── 设计系统接入：Sider 使用 CSS 变量，不再硬编码颜色 ── */
+.admin-root { height: 100vh; background: var(--bg-page); }
+
+.admin-sider {
+  background: var(--bg-card) !important;
+  border-right: 1px solid var(--border);
+  position: relative;
+  z-index: 20;
 }
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
+.admin-sider :deep(.ant-layout-sider-children) { display: flex; flex-direction: column; }
+
+/* 移动端抽屉：脱离布局，固定定位 */
+.admin-sider--drawer {
+  position: fixed !important;
+  top: 0; left: 0; bottom: 0;
+  transform: translateX(-100%);
+  transition: transform 0.25s ease;
+  z-index: 50;
+  box-shadow: var(--shadow-lg);
+}
+.admin-sider--drawer-open { transform: translateX(0); }
+.admin-drawer-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 40;
 }
 
-.logo {
-  height: 64px;
+/* 品牌区 */
+.sider-brand {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  gap: 10px;
+  height: 56px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
-
-.logo-text {
-  font-size: 18px;
-  font-weight: 600;
+.sider-logo {
+  width: 28px; height: 28px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
   color: #fff;
-}
-
-.logo-text-mini {
-  font-size: 16px;
+  font-size: 11px;
   font-weight: 700;
-  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.sider-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 
+/* 菜单滚动区 */
+.sider-menu { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 8px 8px 16px; }
+.sider-menu :deep(.ant-menu) {
+  background: transparent !important;
+  border: none !important;
+}
+.sider-menu :deep(.ant-menu-item-group-title) {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 14px 12px 4px;
+}
+.sider-menu :deep(.ant-menu-item) {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  line-height: 36px;
+  margin: 2px 0;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.sider-menu :deep(.ant-menu-item:hover) {
+  background: var(--bg-hover) !important;
+  color: var(--text-primary) !important;
+}
+.sider-menu :deep(.ant-menu-item-selected) {
+  background: var(--primary-bg) !important;
+  color: var(--primary) !important;
+  font-weight: 600;
+}
+.sider-menu :deep(.ant-menu-item-selected::after) { display: none; }
+
+/* ── Header ── */
 .admin-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 24px;
-  background: #fff;
-  border-bottom: 1px solid #f0f0f0;
+  padding: 0 16px 0 12px;
+  height: 56px;
+  background: var(--bg-card) !important;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.header-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.header-collapse-btn { flex-shrink: 0; color: var(--text-secondary); }
+.header-collapse-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
+.header-breadcrumb { min-width: 0; }
+.header-breadcrumb :deep(.ant-breadcrumb-link) {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.header-breadcrumb :deep(.ant-breadcrumb-link:last-child) {
+  color: var(--text-primary);
+  font-weight: 500;
 }
 
-:root.dark .admin-header {
-  background: #1e1e1e;
-  border-color: #333;
-}
+.header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.header-btn { color: var(--text-secondary); display: flex; align-items: center; }
+.header-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
 
-.header-actions {
+.header-user {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 4px 10px 4px 4px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.header-user:hover { background: var(--bg-hover); }
+.header-user-name {
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+@media (max-width: 480px) {
+  .header-user-name { display: none; }
 }
 
-.header-btn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+/* ── Content ── */
+.admin-content {
+  padding: 20px;
+  overflow: auto;
+  background: var(--bg-page);
 }
+@media (max-width: 768px) {
+  .admin-content { padding: 12px; }
+}
+
+/* 过渡 */
+.fade-enter-active, .fade-leave-active { transition: opacity 0.18s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
 </style>

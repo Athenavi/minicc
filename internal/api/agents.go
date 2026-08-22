@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -13,7 +14,6 @@ import (
 	"github.com/athenavi/minicc/internal/db"
 	"github.com/athenavi/minicc/internal/engine"
 	"github.com/athenavi/minicc/internal/id"
-	"github.com/athenavi/minicc/internal/session"
 )
 
 // AgentHandler 管理自定义 Agent（DB agents 表）+ 运行会话（agent_sessions）。
@@ -79,8 +79,15 @@ func (h *AgentHandler) seedPresetAgents() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	// 仅在 owner 租户下播种预置 Agent（避免每个租户重复播种）
+	ownerTenantID, err := h.resolveOwnerTenantID(ctx)
+	if err != nil {
+		slog.Warn("seed preset agents: resolve owner tenant failed", "error", err)
+		return
+	}
+
 	var n int
-	if err := db.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM agents`).Scan(&n); err != nil || n > 0 {
+	if err := db.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM agents WHERE tenant_id = $1`, ownerTenantID).Scan(&n); err != nil || n > 0 {
 		return
 	}
 
@@ -136,8 +143,8 @@ func (h *AgentHandler) seedPresetAgents() {
 		llmJSON, _ := json.Marshal(p.llm)
 		if _, err := db.Pool.Exec(ctx,
 			`INSERT INTO agents (id, tenant_id, name, description, system_prompt, tools, llm_config, max_turns, timeout_seconds, enabled)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)`,
-			agentID, session.DefaultTenantID, p.name, p.description, p.prompt,
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)`,
+			agentID, ownerTenantID, p.name, p.description, p.prompt,
 			string(toolsJSON), string(llmJSON), p.turns, 120); err != nil {
 			slog.Warn("seed preset agent", "name", p.name, "error", err)
 		}
@@ -146,11 +153,12 @@ func (h *AgentHandler) seedPresetAgents() {
 
 // ── CRUD ──────────────────────────────────────────────────────
 
-// List 返回全部 Agent（按创建时间倒序）。
+// List 返回当前租户的全部 Agent（按创建时间倒序）。
 func (h *AgentHandler) List(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
 	rows, err := db.Pool.Query(r.Context(),
 		`SELECT id::text, name, COALESCE(description,''), COALESCE(system_prompt,''), COALESCE(tools,'[]'::jsonb), COALESCE(llm_config,'{}'::jsonb), max_turns, timeout_seconds, enabled, created_at, updated_at
-		 FROM agents ORDER BY created_at DESC`)
+		 FROM agents WHERE tenant_id = $1 ORDER BY created_at DESC`, claims.TenantID)
 	if err != nil {
 		logAndRespond(w, err, http.StatusInternalServerError, "list agents failed")
 		return
@@ -170,8 +178,9 @@ func (h *AgentHandler) List(w http.ResponseWriter, r *http.Request) {
 	OK(w, agents)
 }
 
-// Create 新建一个 Agent。
+// Create 新建一个 Agent（绑定当前租户）。
 func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
 	var body Agent
 	if err := DecodeJSON(w, r, &body); err != nil {
 		BadRequest(w, "invalid request")
@@ -206,7 +215,7 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 	_, err = db.Pool.Exec(r.Context(),
 		`INSERT INTO agents (id, tenant_id, name, description, system_prompt, tools, llm_config, max_turns, timeout_seconds, enabled)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-		id, session.DefaultTenantID, body.Name, body.Description, body.SystemPrompt,
+		id, claims.TenantID, body.Name, body.Description, body.SystemPrompt,
 		string(toolsJSON), string(llmJSON), body.MaxTurns, body.TimeoutSeconds, body.Enabled)
 	if err != nil {
 		logAndRespond(w, err, http.StatusInternalServerError, "create agent failed")
@@ -218,14 +227,15 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 	OK(w, body)
 }
 
-// Get 返回单个 Agent。
+// Get 返回单个 Agent（必须归属当前租户）。
 func (h *AgentHandler) Get(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
 	agentID := r.PathValue("id")
 	if agentID == "" {
 		BadRequest(w, "id is required")
 		return
 	}
-	a, err := h.queryAgent(r, agentID)
+	a, err := h.queryAgent(r.Context(), claims.TenantID, agentID)
 	if err != nil {
 		NotFound(w, "agent not found")
 		return
@@ -235,6 +245,7 @@ func (h *AgentHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 // Update 更新 Agent 字段（name/description/system_prompt/tools/llm_config/max_turns/timeout_seconds/enabled）。
 func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
 	agentID := r.PathValue("id")
 	if agentID == "" {
 		BadRequest(w, "id is required")
@@ -245,7 +256,7 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, ErrInvalidReq)
 		return
 	}
-	
+
 	// 动态 SET：非零字段才更新（避免把空值当“清除”）
 	sets := []string{}
 	args := []any{}
@@ -273,18 +284,19 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		push("timeout_seconds = $"+itoa(len(args)+1), body.TimeoutSeconds)
 	}
 	push("enabled = $"+itoa(len(args)+1), body.Enabled)
-	args = append(args, agentID)
+	// WHERE tenant_id = $N+1 AND id = $N+2 —— 双重校验防跨租户
+	args = append(args, claims.TenantID, agentID)
 
 	if len(sets) == 0 {
 		BadRequest(w, "nothing to update")
 		return
 	}
 	if _, err := db.Pool.Exec(r.Context(),
-		`UPDATE agents SET `+joinComma(sets)+`, updated_at = NOW() WHERE id = $`+itoa(len(args)), args...); err != nil {
+		`UPDATE agents SET `+joinComma(sets)+`, updated_at = NOW() WHERE tenant_id = $`+itoa(len(args)-1)+` AND id = $`+itoa(len(args)), args...); err != nil {
 		logAndRespond(w, err, http.StatusInternalServerError, "update agent failed")
 		return
 	}
-	a, err := h.queryAgent(r, agentID)
+	a, err := h.queryAgent(r.Context(), claims.TenantID, agentID)
 	if err != nil {
 		NotFound(w, "agent not found")
 		return
@@ -292,14 +304,15 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 	OK(w, a)
 }
 
-// Delete 删除 Agent 及其运行记录（agent_sessions 级联删除）。
+// Delete 删除 Agent 及其运行记录（仅当归属当前租户）。
 func (h *AgentHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
 	agentID := r.PathValue("id")
 	if agentID == "" {
 		BadRequest(w, "id is required")
 		return
 	}
-	if _, err := db.Pool.Exec(r.Context(), `DELETE FROM agents WHERE id = $1`, agentID); err != nil {
+	if _, err := db.Pool.Exec(r.Context(), `DELETE FROM agents WHERE tenant_id = $1 AND id = $2`, claims.TenantID, agentID); err != nil {
 		logAndRespond(w, err, http.StatusInternalServerError, "delete agent failed")
 		return
 	}
@@ -329,7 +342,7 @@ func (h *AgentHandler) Run(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	agent, err := h.queryAgent(r, agentID)
+	agent, err := h.queryAgent(r.Context(), claims.TenantID, agentID)
 	if err != nil {
 		NotFound(w, "agent not found")
 		return
@@ -346,9 +359,9 @@ func (h *AgentHandler) Run(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now()
 	if _, err := db.Pool.Exec(r.Context(),
-		`INSERT INTO agent_sessions (id, user_id, agent_id, name, task, status, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, 'pending', $6, $6)`,
-		sessionID, claims.UserID, agent.ID, agent.Name, body.Task, now); err != nil {
+		`INSERT INTO agent_sessions (id, tenant_id, user_id, agent_id, name, task, status, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $7)`,
+		sessionID, claims.TenantID, claims.UserID, agent.ID, agent.Name, body.Task, now); err != nil {
 		logAndRespond(w, err, http.StatusInternalServerError, "create session failed")
 		return
 	}
@@ -418,13 +431,13 @@ func (h *AgentHandler) executeAgent(agent *Agent, task, sessionID, userID, tenan
 		status, string(resultJSON), sessionID)
 }
 
-// ListSessions 返回当前用户的运行记录（倒序）。
+// ListSessions 返回当前用户在当前租户下的运行记录（倒序）。
 func (h *AgentHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	rows, err := db.Pool.Query(r.Context(),
 		`SELECT s.id, COALESCE(s.agent_id::text,''), COALESCE(a.name,''), s.task, s.status, COALESCE(s.result,''), s.created_at, s.updated_at
 		 FROM agent_sessions s LEFT JOIN agents a ON a.id = s.agent_id
-		 WHERE s.user_id = $1 ORDER BY s.created_at DESC LIMIT 100`, claims.UserID)
+		 WHERE s.user_id = $1 AND s.tenant_id = $2 ORDER BY s.created_at DESC LIMIT 100`, claims.UserID, claims.TenantID)
 	if err != nil {
 		logAndRespond(w, err, http.StatusInternalServerError, "list sessions failed")
 		return
@@ -455,7 +468,7 @@ func (h *AgentHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 	err := db.Pool.QueryRow(r.Context(),
 		`SELECT s.id, COALESCE(s.agent_id::text,''), COALESCE(a.name,''), s.task, s.status, COALESCE(s.result,''), s.created_at, s.updated_at
 		 FROM agent_sessions s LEFT JOIN agents a ON a.id = s.agent_id
-		 WHERE s.id = $1 AND s.user_id = $2`, sessionID, claims.UserID).
+		 WHERE s.id = $1 AND s.user_id = $2 AND s.tenant_id = $3`, sessionID, claims.UserID, claims.TenantID).
 		Scan(&s.ID, &s.AgentID, &s.AgentName, &s.Task, &s.Status, &s.Result, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		NotFound(w, "session not found")
@@ -466,17 +479,29 @@ func (h *AgentHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 
 // ── helpers ───────────────────────────────────────────────────
 
-func (h *AgentHandler) queryAgent(r *http.Request, agentID string) (*Agent, error) {
+func (h *AgentHandler) queryAgent(ctx context.Context, tenantID, agentID string) (*Agent, error) {
 	var a Agent
-	err := db.Pool.QueryRow(r.Context(),
+	err := db.Pool.QueryRow(ctx,
 		`SELECT id::text, name, COALESCE(description,''), COALESCE(system_prompt,''), COALESCE(tools,'[]'::jsonb), COALESCE(llm_config,'{}'::jsonb), max_turns, timeout_seconds, enabled, created_at, updated_at
-		 FROM agents WHERE id = $1`, agentID).
+		 FROM agents WHERE tenant_id = $1 AND id = $2`, tenantID, agentID).
 		Scan(&a.ID, &a.Name, &a.Description, &a.SystemPrompt, &a.Tools, &a.LLMConfig,
 			&a.MaxTurns, &a.TimeoutSeconds, &a.Enabled, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
 	return &a, nil
+}
+
+// resolveOwnerTenantID 查询系统首个 owner 角色用户的 tenant_id，用作预置 Agent 的归属租户。
+// 多租户场景下预置 Agent 仅在 owner 租户播种一次（其它租户需自行通过 API 创建）。
+func (h *AgentHandler) resolveOwnerTenantID(ctx context.Context) (string, error) {
+	var tenantID string
+	err := db.Pool.QueryRow(ctx,
+		`SELECT tenant_id FROM users WHERE role = 'owner' ORDER BY created_at LIMIT 1`).Scan(&tenantID)
+	if err != nil {
+		return "", fmt.Errorf("no owner found: %w", err)
+	}
+	return tenantID, nil
 }
 
 // ── 通用小工具（字符串/数值拼接与 llm_config 取值） ──

@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { ConfigProvider, theme } from 'ant-design-vue'
 import AppLayout from './components/AppLayout.vue'
+import RouteProgressBar from './components/common/RouteProgressBar.vue'
+import ErrorBoundary from './components/common/ErrorBoundary.vue'
 import { useThemeStore } from './stores/theme'
 
 const route = useRoute()
@@ -61,8 +63,11 @@ const themeConfig = computed(() => ({
 
 <template>
   <ConfigProvider :theme="themeConfig">
-    <AppLayout v-if="showLayout" />
-    <router-view v-else />
+    <RouteProgressBar />
+    <ErrorBoundary>
+      <AppLayout v-if="showLayout" />
+      <router-view v-else />
+    </ErrorBoundary>
   </ConfigProvider>
 </template>
 

@@ -392,9 +392,13 @@ async def _run_in_process(code: str, timeout: int) -> dict[str, Any]:
     }
     src = f"async def _main():\n{body}\n"
 
+    # P1-7: 同进程降级模式不再对主进程设置 RLIMIT_AS。
+    # 历史问题：fallback 路径调用 setrlimit(RLIMIT_AS, 512MB) 会限制整个 Python
+    # 引擎进程，而非仅限制用户代码；用户代码一旦 OOM 会拖垮整个 AI 引擎服务。
+    # 修复：仅保留 CPU/FSIZE 限制（影响小），RLIMIT_AS 不在主进程设置；
+    # 内存隔离依赖 subprocess 模式（_run_in_sandbox），fallback 模式无内存硬隔离。
     if _HAS_RESOURCE:
         try:
-            _resource.setrlimit(_resource.RLIMIT_AS, (_MEM_LIMIT_BYTES, _MEM_LIMIT_BYTES))
             _resource.setrlimit(_resource.RLIMIT_CPU, (_CPU_LIMIT_SECONDS, _CPU_LIMIT_SECONDS))
             _resource.setrlimit(_resource.RLIMIT_FSIZE, (_FILE_LIMIT_BYTES, _FILE_LIMIT_BYTES))
         except (ValueError, OSError) as e:

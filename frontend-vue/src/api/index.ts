@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080'
+const API_URL = import.meta.env.VITE_API_URL || ''
 
 // 注意：不要在这里设置默认 Content-Type！
 // - 对 JSON 对象 axios 的 transformRequest 会自动设置 application/json
@@ -196,6 +196,34 @@ api.interceptors.response.use(
     return Promise.reject(error)
   }
 )
+
+// P1-2 文件上传：调用后端 POST /v1/media/upload（multipart）
+// 后端返回 { id, name, type, file_url, size }，这里归一化为 ChatAttachment 所需结构
+export async function uploadFile(file: File): Promise<{
+  id: string
+  url: string
+  name: string
+  size: number
+  mimeType: string
+}> {
+  const form = new FormData()
+  form.append('file', file)
+  const resp = await api.post('/v1/media/upload', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  const d = resp.data?.asset || resp.data || {}
+  const id = d.id || d.asset_id || String(Date.now())
+  // 后端返回字段 file_url；兜底 /v1/media/{id}/download
+  const url = d.file_url || d.url || d.download_url || `/v1/media/${id}/download`
+  return {
+    id,
+    url,
+    name: d.name || d.filename || file.name,
+    size: Number(d.size) || file.size,
+    // 后端不返回 mime_type，用客户端声明的 file.type 兜底
+    mimeType: d.mime_type || d.contentType || file.type,
+  }
+}
 
 // SSE 连接
 export function createSSEConnection(sessionId: string, onMessage: (data: any) => void, onError?: () => void) {

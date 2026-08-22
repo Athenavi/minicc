@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Button, Avatar, Dropdown, Menu, MenuItem, MenuDivider } from 'ant-design-vue'
+import { Button, Avatar, Dropdown, Menu, MenuItem, MenuDivider, SubMenu } from 'ant-design-vue'
 import {
   SearchOutlined, CloseOutlined, LeftOutlined, DownOutlined,
   PlusOutlined, EllipsisOutlined, EditOutlined, PushpinOutlined,
-  ShareAltOutlined, DeleteOutlined,
+  ShareAltOutlined, DeleteOutlined, TagOutlined,
 } from '@ant-design/icons-vue'
 import { formatRelativeTime } from './chat-types'
 import type { ChatItem, ChatSession } from './chat-types'
@@ -30,6 +30,8 @@ const emit = defineEmits<{
   (e: 'rename', id: string, currentTitle: string): void
   (e: 'pin', id: string, pinned: boolean): void
   (e: 'share', id: string): void
+  /** P3-D: 设置会话标签 */
+  (e: 'tag', id: string, tag: string): void
 }>()
 
 const trajectoryQuery = ref('')
@@ -37,6 +39,43 @@ const sessionQuery = ref('')
 const hoveredIndex = ref<number | null>(null)
 // 当前展开菜单的会话行 id：菜单打开时行保持 hover 态
 const menuSessionId = ref<string | null>(null)
+
+// ── 移动端左滑关闭手势 ──
+const dragX = ref(0)
+const dragStartX = ref(0)
+const dragging = ref(false)
+const SWIPE_THRESHOLD = 80 // 拖拽超过 80px 触发关闭
+
+function onTouchStart(e: TouchEvent) {
+  if (!props.open) return
+  const touch = e.touches[0]
+  dragStartX.value = touch.clientX
+  dragging.value = true
+}
+
+function onTouchMove(e: TouchEvent) {
+  if (!dragging.value) return
+  const touch = e.touches[0]
+  const delta = touch.clientX - dragStartX.value
+  // 仅跟随向左拖拽（delta < 0），向右拖拽不超出
+  dragX.value = Math.min(0, delta)
+}
+
+function onTouchEnd() {
+  if (!dragging.value) return
+  dragging.value = false
+  if (dragX.value < -SWIPE_THRESHOLD) {
+    emit('close')
+  }
+  dragX.value = 0
+}
+
+const panelStyle = computed(() => {
+  if (dragX.value !== 0) {
+    return { transform: `translateX(${dragX.value}px)`, transition: dragging.value ? 'none' : 'transform 0.25s ease' }
+  }
+  return undefined
+})
 
 const activeSession = computed(() => props.sessions.find(s => s.id === props.activeSessionId) || null)
 
@@ -68,8 +107,55 @@ function summary(index: number): string {
 const filteredSessions = computed(() => {
   const q = sessionQuery.value.trim().toLowerCase()
   const all = props.sessions || []
-  if (!q) return all
-  return all.filter(s => (s.title || '').toLowerCase().includes(q))
+  let list = all
+  // P3-D: 按标签筛选
+  if (activeTag.value) {
+    list = list.filter(s => (s.tag || '') === activeTag.value)
+  }
+  if (!q) return list
+  return list.filter(s => (s.title || '').toLowerCase().includes(q))
+})
+
+// P3-D: 会话标签筛选
+const TAGS = ['工作', '学习', '项目', '其他']
+const activeTag = ref('')
+// 从所有会话中提取已使用的标签
+const usedTags = computed(() => {
+  const set = new Set<string>()
+  for (const s of props.sessions || []) {
+    if (s.tag) set.add(s.tag)
+  }
+  return Array.from(set)
+})
+function toggleTag(tag: string) {
+  activeTag.value = activeTag.value === tag ? '' : tag
+}
+
+// P2-B: 会话按时间分组（置顶单独一组，其余按 今日/昨天/7天/更早）
+interface SessionGroup { label: string; sessions: any[] }
+const groupedSessions = computed<SessionGroup[]>(() => {
+  const list = filteredSessions.value
+  // 置顶组始终在最前
+  const pinned = list.filter(s => s.pinned)
+  const rest = list.filter(s => !s.pinned)
+  const now = new Date()
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const startOfYesterday = startOfToday - 86400000
+  const startOf7Days = startOfToday - 7 * 86400000
+  const groups: SessionGroup[] = []
+  if (pinned.length) groups.push({ label: '置顶', sessions: pinned })
+  const buckets: Record<string, any[]> = { '今天': [], '昨天': [], '7 天内': [], '更早': [] }
+  for (const s of rest) {
+    const ts = new Date(s.updated_at || s.created_at || 0).getTime()
+    if (ts >= startOfToday) buckets['今天'].push(s)
+    else if (ts >= startOfYesterday) buckets['昨天'].push(s)
+    else if (ts >= startOf7Days) buckets['7 天内'].push(s)
+    else buckets['更早'].push(s)
+  }
+  for (const label of ['今天', '昨天', '7 天内', '更早']) {
+    if (buckets[label].length) groups.push({ label, sessions: buckets[label] })
+  }
+  return groups
 })
 
 function onMenuOpenChange(open: boolean, id: string) {
@@ -84,7 +170,16 @@ function pickSession(id: string) {
 </script>
 
 <template>
-  <div class="side-panel" :class="{ open }" role="complementary" :aria-hidden="!open">
+  <div
+    class="side-panel"
+    :class="{ open, dragging }"
+    :style="panelStyle"
+    role="complementary"
+    :aria-hidden="!open"
+    @touchstart.passive="onTouchStart"
+    @touchmove.passive="onTouchMove"
+    @touchend.passive="onTouchEnd"
+  >
     <!-- 顶部：会话选择器（主从钻取入口）+ 关闭 -->
     <div class="panel-toolbar">
       <button
@@ -165,44 +260,66 @@ function pickSession(id: string) {
           <input v-model="sessionQuery" class="search-input" placeholder="搜索会话" />
           <CloseOutlined v-if="sessionQuery" class="search-clear" @click="sessionQuery = ''" />
         </div>
+        <!-- P3-D: 标签筛选 chips -->
+        <div v-if="usedTags.length" class="tag-filter">
+          <button
+            v-for="tag in usedTags" :key="tag"
+            class="tag-chip" :class="{ active: activeTag === tag }"
+            type="button"
+            @click="toggleTag(tag)"
+          >{{ tag }}</button>
+        </div>
       </div>
 
       <div class="session-list">
         <div v-if="filteredSessions.length === 0" class="list-empty">暂无对话</div>
-        <div
-          v-for="s in filteredSessions"
-          :key="s.id"
-          class="session-row"
-          :class="{ active: s.id === activeSessionId, pinned: s.pinned, 'menu-open': menuSessionId === s.id }"
-          @click="pickSession(s.id)"
-        >
-          <div class="session-info">
-            <div class="session-title-line">
-              <PushpinOutlined v-if="s.pinned" class="pin-icon" />
-              <span class="session-title">{{ s.title || '新对话' }}</span>
-            </div>
-            <span class="session-time">{{ formatRelativeTime(s.updated_at || s.created_at) }}</span>
-          </div>
-          <Dropdown
-            trigger="click"
-            placement="bottomRight"
-            @open-change="(v: boolean) => onMenuOpenChange(v, s.id)"
+        <!-- P2-B: 按时间分组渲染（置顶/今天/昨天/7天内/更早） -->
+        <template v-for="group in groupedSessions" :key="group.label">
+          <div class="session-group-label">{{ group.label }}</div>
+          <div
+            v-for="s in group.sessions"
+            :key="s.id"
+            class="session-row"
+            :class="{ active: s.id === activeSessionId, pinned: s.pinned, 'menu-open': menuSessionId === s.id }"
+            @click="pickSession(s.id)"
           >
-            <Button
-              type="text" size="small" class="session-more-btn"
-              :aria-label="`会话操作：${s.title || '新对话'}`"
-              @click.stop
+            <div class="session-info">
+              <div class="session-title-line">
+                <PushpinOutlined v-if="s.pinned" class="pin-icon" />
+                <span class="session-title">{{ s.title || '新对话' }}</span>
+                <span v-if="s.tag" class="session-tag">{{ s.tag }}</span>
+              </div>
+              <span class="session-time">{{ formatRelativeTime(s.updated_at || s.created_at) }}</span>
+            </div>
+            <Dropdown
+              trigger="click"
+              placement="bottomRight"
+              @open-change="(v: boolean) => onMenuOpenChange(v, s.id)"
             >
-              <template #icon><EllipsisOutlined /></template>
-            </Button>
-            <template #overlay>
-              <Menu class="session-menu">
-                <MenuItem key="rename" @click="emit('rename', s.id, s.title || '')">
-                  <EditOutlined class="menu-icon" />重命名
-                </MenuItem>
-                <MenuItem key="pin" @click="emit('pin', s.id, !s.pinned)">
-                  <PushpinOutlined class="menu-icon" />{{ s.pinned ? '取消置顶' : '置顶' }}
-                </MenuItem>
+              <Button
+                type="text" size="small" class="session-more-btn"
+                :aria-label="`会话操作：${s.title || '新对话'}`"
+                @click.stop
+              >
+                <template #icon><EllipsisOutlined /></template>
+              </Button>
+              <template #overlay>
+                <Menu class="session-menu">
+                  <MenuItem key="rename" @click="emit('rename', s.id, s.title || '')">
+                    <EditOutlined class="menu-icon" />重命名
+                  </MenuItem>
+                  <MenuItem key="pin" @click="emit('pin', s.id, !s.pinned)">
+                    <PushpinOutlined class="menu-icon" />{{ s.pinned ? '取消置顶' : '置顶' }}
+                  </MenuItem>
+                  <!-- P3-D: 标签设置（用 MenuDivider 分组，避免 SubMenu 在 Dropdown overlay 中丢失上下文） -->
+                  <MenuDivider />
+                  <MenuItem v-for="t in TAGS" :key="'tag-'+t" @click="emit('tag', s.id, t)">
+                    <TagOutlined class="menu-icon" />标签：{{ t }}
+                  </MenuItem>
+                  <MenuItem key="tag-clear" @click="emit('tag', s.id, '')">
+                    <CloseOutlined class="menu-icon" />清除标签
+                  </MenuItem>
+                  <MenuDivider />
                 <MenuItem key="share" @click="emit('share', s.id)">
                   <ShareAltOutlined class="menu-icon" />分享
                 </MenuItem>
@@ -213,7 +330,8 @@ function pickSession(id: string) {
               </Menu>
             </template>
           </Dropdown>
-        </div>
+          </div>
+        </template>
       </div>
 
       <div class="panel-foot">
@@ -241,8 +359,11 @@ function pickSession(id: string) {
   transform: translateX(100%);
   visibility: hidden;
   transition: transform 0.25s ease, visibility 0.25s;
+  touch-action: pan-y; /* 允许纵向滚动，横向交给手势 */
+  will-change: transform;
 }
 .side-panel.open { transform: translateX(0); visibility: visible; }
+.side-panel.dragging { transition: none; }
 @media (max-width: 768px) { .side-panel { width: 100%; } }
 
 /* 顶部工具栏：会话选择器（主从钻取）+ 关闭 */
@@ -312,6 +433,14 @@ function pickSession(id: string) {
 /* ── 从视图：会话历史列表 ── */
 .sessions-head { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 0; }
 .session-list { flex: 1; overflow-y: auto; padding: 6px; scrollbar-width: thin; scrollbar-color: var(--text-disabled) transparent; }
+
+/* P3-D: 标签筛选与展示 */
+.tag-filter { display: flex; gap: 6px; padding: 4px 12px 8px; flex-wrap: wrap; }
+.tag-chip { padding: 2px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-tertiary); font-size: 11px; cursor: pointer; transition: all 0.15s ease; }
+.tag-chip:hover { border-color: var(--primary); color: var(--primary); }
+.tag-chip.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.session-tag { display: inline-block; padding: 0 6px; border-radius: 8px; background: var(--bg-hover); color: var(--text-tertiary); font-size: 10px; line-height: 16px; margin-left: 4px; flex-shrink: 0; }
+.session-group-label { font-size: 11px; font-weight: 600; color: var(--text-tertiary); padding: 12px 8px 4px; text-transform: uppercase; letter-spacing: 0.5px; }
 .session-row {
   display: flex; align-items: center; gap: 4px;
   padding: 0 10px; height: 40px; border-radius: 8px;

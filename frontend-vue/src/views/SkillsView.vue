@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, markRaw } from 'vue'
 import {
   Button, Input, Tabs, TabPane, Switch, Tag, Modal, InputNumber,
-  Empty, Spin, Select, Alert, Dropdown, Menu, MenuItem, message,
+  Select, Alert, Dropdown, Menu, MenuItem, message,
 } from 'ant-design-vue'
 import {
   ThunderboltOutlined, DownloadOutlined, DeleteOutlined, PlayCircleOutlined,
   SearchOutlined, CodeOutlined,
 } from '@ant-design/icons-vue'
 import { api } from '../api'
+import PageSkeleton from '../components/common/PageSkeleton.vue'
+import EmptyState from '../components/common/EmptyState.vue'
 
 interface SkillParam {
   name: string
@@ -33,6 +35,7 @@ interface Skill {
 
 const skills = ref<Skill[]>([])
 const loading = ref(true)
+const error = ref(false)
 const activeTab = ref('list')
 const searchQuery = ref('')
 const typeFilter = ref('all')
@@ -47,10 +50,12 @@ const execColors: Record<string, string> = {
 // ── 加载 ──
 async function loadSkills() {
   loading.value = true
+  error.value = false
   try {
     const response = await api.get('/v1/skills')
     skills.value = response.data?.data?.skills || []
   } catch {
+    error.value = true
     message.error('获取技能列表失败，请检查网络连接')
   } finally {
     loading.value = false
@@ -235,8 +240,23 @@ async function handleGenerate() {
           <Select v-model:value="typeFilter" class="type-filter" :options="[{ value: 'all', label: '全部类型' }, ...execTypes.map(t => ({ value: t, label: t }))]" />
         </div>
 
-        <Spin v-if="loading" class="page-spin" />
-        <Empty v-else-if="filteredSkills.length === 0" description="暂无匹配的技能" />
+        <PageSkeleton v-if="loading" variant="cards" :columns="3" :rows="6" :header="false" />
+        <EmptyState
+          v-else-if="error"
+          size="page"
+          :icon="markRaw(CodeOutlined)"
+          description="加载失败"
+          hint="无法获取技能列表，请稍后重试"
+        >
+          <Button type="primary" @click="loadSkills">重试</Button>
+        </EmptyState>
+        <EmptyState
+          v-else-if="filteredSkills.length === 0"
+          size="page"
+          :icon="markRaw(CodeOutlined)"
+          :description="searchQuery || typeFilter !== 'all' ? '暂无匹配的技能' : '暂无技能'"
+          :hint="searchQuery || typeFilter !== 'all' ? '尝试调整搜索关键词或类型筛选' : '从市场安装技能或上传本地技能包'"
+        />
 
         <div v-else class="skill-grid">
           <div v-for="s in filteredSkills" :key="s.name" class="skill-card" :class="{ disabled: s.enabled === false }">
@@ -416,7 +436,6 @@ async function handleGenerate() {
 .page-title { font-size: 24px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
 .page-sub { margin: 4px 0 0; color: var(--text-tertiary); font-size: 13px; }
 .skills-tabs :deep(.ant-tabs-nav) { margin-bottom: 20px; }
-.page-spin { display: flex; justify-content: center; padding: 80px 0; }
 
 .list-toolbar { display: flex; gap: 10px; margin-bottom: 16px; }
 .search-input { max-width: 320px; }
