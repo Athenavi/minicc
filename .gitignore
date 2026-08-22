@@ -292,3 +292,5 @@ frontend-vue/-1)
 # Runtime audit logs (never commit)
 *.jsonl
 logs/
+# legacy root plugin config (unused; per-user config in data/plugins/)
+/plugins.json

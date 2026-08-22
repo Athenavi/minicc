@@ -202,7 +202,7 @@ const displayContent = computed(() => {
 const feedback = ref<'up' | 'down' | null>(null)
 function setFeedback(dir: 'up' | 'down') {
   feedback.value = feedback.value === dir ? null : dir
-  // TODO: 生产环境可调用后端 API 上报反馈用于模型评估
+  // 设计说明：反馈上报留待模型评估链路接入后端 API
   if (feedback.value) message.success(feedback.value === 'up' ? '感谢好评' : '已记录您的反馈')
 }
 
