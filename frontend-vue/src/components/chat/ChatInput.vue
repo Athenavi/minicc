@@ -382,7 +382,7 @@ function onSlashInput() {
 @media (max-width: 768px) {
   .input-area { padding: 0 12px calc(8px + env(safe-area-inset-bottom)); }
   .input-card { border-radius: 18px; }
-  .input-actions { gap: 8px; }
+  .input-actions { gap: 8px; flex-wrap: wrap; row-gap: 6px; }
   .input-hint { display: none; } /* 窄屏隐藏提示文字，占位符承担语义 */
 }
 @media (max-width: 576px) {
@@ -390,6 +390,7 @@ function onSlashInput() {
   .input-card { padding: 8px 10px 10px; gap: 10px; }
   .input-actions { flex-wrap: wrap; row-gap: 6px; }
   .input-left { gap: 4px; }
+  .input-left:last-child { margin-left: auto; } /* 发送组靠右，避免与左侧工具组抢行 */
   .attach-btn.ant-btn { min-width: 40px; height: 40px; }
   .send-btn.ant-btn { width: 40px; height: 40px; }
   .paste-btn { min-height: 36px; }

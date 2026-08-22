@@ -129,16 +129,18 @@ async function handleUserMenuClick(info: any) {
 interface DockItem {
   key: string
   label: string
+  /** 一句描述（tooltip 副行，与 WorkstationNav workstations.description 对齐） */
+  desc: string
   icon: any
 }
 
 const dockItems: DockItem[] = [
-  { key: '/chat', label: '对话', icon: MessageOutlined },
-  { key: '/agents', label: 'Agent', icon: RobotOutlined },
-  { key: '/workflow', label: '工作流', icon: ApartmentOutlined },
-  { key: '/skills', label: '技能', icon: ThunderboltOutlined },
-  { key: '/knowledge', label: '知识库', icon: BookOutlined },
-  { key: '/plugins', label: '插件', icon: AppstoreOutlined },
+  { key: '/chat', label: '对话', desc: '智能对话助手', icon: MessageOutlined },
+  { key: '/agents', label: 'Agent', desc: '多智能体协同', icon: RobotOutlined },
+  { key: '/workflow', label: '工作流', desc: 'DAG 流程编排', icon: ApartmentOutlined },
+  { key: '/skills', label: '技能', desc: '工具与 MCP', icon: ThunderboltOutlined },
+  { key: '/knowledge', label: '知识库', desc: 'RAG 检索增强', icon: BookOutlined },
+  { key: '/plugins', label: '插件', desc: '扩展能力', icon: AppstoreOutlined },
 ]
 
 // 仅登录用户可见；首页（/）已有完整工作台总览（WorkstationNav），停靠坞不重复展示
@@ -205,6 +207,7 @@ async function runQuickCommand() {
   try {
     // 与 WorkstationNav 同一套逻辑：创建 uni 会话 → /v1/quick-execute → 跳转 /chat?task=
     await executeQuickCommand(command)
+    message.success('任务已提交，正在对话页展示结果')
     closeQuickCommand()
   } catch {
     // executeQuickCommand 已携带 error query 跳转 /chat，无需额外处理
@@ -248,7 +251,10 @@ async function runQuickCommand() {
           @click="goDock(item.key)"
         >
           <component :is="item.icon" class="dock-icon" />
-          <span class="dock-tip" role="tooltip">{{ item.label }}</span>
+          <span class="dock-tip" role="tooltip">
+            <span class="dock-tip-name">{{ item.label }}</span>
+            <span class="dock-tip-desc">{{ item.desc }}</span>
+          </span>
         </button>
       </div>
 
@@ -495,10 +501,33 @@ async function runQuickCommand() {
 }
 .dock-item:hover { background: var(--bg-hover); color: var(--text-primary); }
 .dock-item:active { transform: scale(0.94); }
+.dock-item:focus-visible,
+.dock-command-btn:focus-visible,
+.brand-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
 .dock-item.active {
   background: var(--primary);
   color: #fff;
   box-shadow: 0 4px 14px var(--primary-bg), inset 0 1px 1px hsla(0, 0%, 100%, 0.25);
+}
+/* 激活项 2px 指示条（桌面：左侧竖向；scaleY 入场动画） */
+.dock-item.active::before {
+  content: '';
+  position: absolute;
+  left: -9px;
+  top: 50%;
+  width: 2px;
+  height: 20px;
+  border-radius: 1px;
+  background: var(--primary);
+  transform: translateY(-50%) scaleY(0);
+  transform-origin: center;
+  animation: dockBarIn 0.22s ease-out forwards;
+}
+@keyframes dockBarIn {
+  to { transform: translateY(-50%) scaleY(1); }
 }
 .dock-icon { font-size: 18px; }
 
@@ -508,7 +537,10 @@ async function runQuickCommand() {
   left: calc(100% + 10px);
   top: 50%;
   transform: translateY(-50%) translateX(-4px);
-  padding: 4px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 10px;
   border-radius: 6px;
   background: var(--menu-bg);
   backdrop-filter: blur(12px);
@@ -524,6 +556,8 @@ async function runQuickCommand() {
   transition: opacity 0.15s ease, transform 0.15s ease;
   z-index: 25;
 }
+.dock-tip-name { line-height: 16px; }
+.dock-tip-desc { font-size: 11px; font-weight: 400; color: var(--text-tertiary); line-height: 15px; }
 .dock-item:hover .dock-tip { opacity: 1; transform: translateY(-50%) translateX(0); }
 @media (hover: none) { .dock-tip { display: none; } }
 
@@ -666,6 +700,18 @@ async function runQuickCommand() {
     min-width: 0;
   }
   .dock-item { width: 40px; height: 40px; }
+  /* 移动端：指示条改为顶部横向（scaleX 入场） */
+  .dock-item.active::before {
+    left: 50%;
+    top: -7px;
+    width: 20px;
+    height: 2px;
+    transform: translateX(-50%) scaleX(0);
+    animation-name: dockBarInX;
+  }
+  @keyframes dockBarInX {
+    to { transform: translateX(-50%) scaleX(1); }
+  }
   .dock-tip { display: none; }
   .dock-command { margin-top: 0; }
   .dock-command-btn { width: 40px; height: 40px; }
@@ -689,6 +735,10 @@ async function runQuickCommand() {
   .dock-command-go,
   .dock-tip {
     transition: none;
+  }
+  .dock-item.active::before { animation: none; transform: translateY(-50%) scaleY(1); }
+  @media (max-width: 768px) {
+    .dock-item.active::before { animation: none; transform: translateX(-50%) scaleX(1); }
   }
 }
 

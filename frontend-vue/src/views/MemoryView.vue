@@ -453,7 +453,7 @@ function pct(n: number): string {
 .memory-view {
   max-width: 920px;
   margin: 0 auto;
-  padding: 24px 16px;
+  padding: 28px 24px 60px;
 }
 .page-header {
   display: flex;
@@ -461,14 +461,15 @@ function pct(n: number): string {
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 .title {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 20px;
-  font-weight: 600;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 .title .subtitle {
   font-size: 12px;
@@ -506,13 +507,13 @@ function pct(n: number): string {
 /* 移动端：检索框占满、标题区换行 */
 @media (max-width: 768px) {
   .memory-view {
-    padding: 16px 12px;
+    padding: 20px 16px 48px;
   }
   .search-card :deep(.ant-input-affix-wrapper) {
     width: 100% !important;
   }
   .title {
-    font-size: 18px;
+    font-size: 20px;
   }
   .title .subtitle {
     display: none;

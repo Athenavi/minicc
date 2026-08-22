@@ -120,6 +120,7 @@ async function launchUnified() {
     if (res?.success === false) q.error = res.error || 'execution failed'
     unifiedTaskInput.value = ''
     await router.push({ path: '/chat', query: q })
+    message.success('任务已提交，正在对话页展示结果')
   } catch (e: any) {
     message.error('发起统一任务失败: ' + (e?.message || '网络错误'))
   } finally {

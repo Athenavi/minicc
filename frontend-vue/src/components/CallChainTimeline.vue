@@ -163,9 +163,10 @@ function capitalize(str: string): string {
 <style scoped>
 .callchain-timeline {
   margin-top: 12px;
-  border: 1px solid #e8e8e8;
-  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   overflow: hidden;
+  background: var(--bg-card);
 }
 
 .timeline-header {
@@ -173,28 +174,28 @@ function capitalize(str: string): string {
   justify-content: space-between;
   align-items: center;
   padding: 10px 16px;
-  background: #fafafa;
+  background: var(--bg-secondary);
   cursor: pointer;
   user-select: none;
-  transition: background 0.2s;
+  transition: background 0.15s ease;
 }
 
 .timeline-header:hover {
-  background: #f0f0f0;
+  background: var(--bg-hover);
 }
 
 .header-title {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  color: #333;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 .header-icon {
   font-size: 12px;
-  color: #999;
+  color: var(--text-tertiary);
 }
 
 .timeline-body {
@@ -210,7 +211,7 @@ function capitalize(str: string): string {
 }
 
 .complete {
-  color: #52c41a;
+  color: var(--success);
   font-weight: 500;
 }
 
@@ -219,15 +220,15 @@ function capitalize(str: string): string {
   align-items: center;
   gap: 12px;
   padding: 8px 12px;
-  background: #fff;
-  border: 1px solid #e8e8e8;
-  border-left: 3px solid #d9d9d9;
-  border-radius: 4px;
-  transition: all 0.2s;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 8px;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .node-line:hover {
-  background: #f9f9f9;
+  background: var(--bg-hover);
 }
 
 .node-line.type-llm {
@@ -248,23 +249,31 @@ function capitalize(str: string): string {
 
 .node-content {
   flex: 1;
+  min-width: 0;
 }
 
 .node-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
 }
 
 .node-name {
   font-size: 13px;
   font-weight: 500;
-  color: #333;
+  color: var(--text-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .node-duration {
   font-size: 12px;
-  color: #999;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .node-details {
@@ -272,30 +281,54 @@ function capitalize(str: string): string {
 }
 
 .metadata-json {
-  background: #f5f5f5;
+  background: var(--bg-secondary);
   padding: 8px 12px;
-  border-radius: 4px;
-  font-family: 'Fira Code', monospace;
+  border-radius: 6px;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.5;
   overflow-x: auto;
   max-height: 200px;
   overflow-y: auto;
+  color: var(--text-secondary);
+  word-break: break-all;
 }
 
 .details-toggle {
-  padding: 4px 8px;
+  padding: 4px 10px;
   font-size: 12px;
-  color: #1890ff;
+  color: var(--primary);
   background: none;
-  border: 1px solid #1890ff;
-  border-radius: 4px;
+  border: 1px solid var(--primary);
+  border-radius: 6px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background 0.15s ease, color 0.15s ease;
+  flex-shrink: 0;
 }
 
 .details-toggle:hover {
-  background: #1890ff;
+  background: var(--primary);
   color: #fff;
+}
+
+.details-toggle:focus-visible,
+.timeline-header:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* 移动端：行内元素压缩，详情按钮触控目标放大 */
+@media (max-width: 768px) {
+  .timeline-body { padding: 10px; }
+  .node-line { gap: 8px; padding: 8px 10px; }
+  .details-toggle { min-height: 32px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timeline-header,
+  .node-line,
+  .details-toggle {
+    transition: none;
+  }
 }
 </style>

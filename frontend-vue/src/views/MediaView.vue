@@ -624,6 +624,7 @@ onUnmounted(() => {
         :data-source="items"
         :row-key="'id'"
         :pagination="false"
+        :scroll="{ x: 640 }"
         size="small"
         :row-class-name="(record: MediaItem) => (selectedIds.has(record.id) ? 'row-selected' : '')"
         @row-click="(record: MediaItem) => onCardClick(record)"
@@ -741,7 +742,7 @@ onUnmounted(() => {
           <span class="lb-name">{{ lightboxItem.name }}</span>
           <span class="lb-count">{{ lightboxIndex + 1 }} / {{ lightboxList.length }}</span>
         </div>
-        <button type="button" class="lb-close" @click="lightboxOpen = false">✕</button>
+        <button type="button" class="lb-close" title="关闭" aria-label="关闭" @click="lightboxOpen = false">✕</button>
       </div>
     </Modal>
 
@@ -816,14 +817,20 @@ onUnmounted(() => {
 .toolbar-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .file-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; overflow-y: auto; padding-bottom: 24px; }
 .file-card { border: 1px solid var(--border-card); border-radius: var(--radius-lg); background: var(--bg-card); padding: 10px; cursor: pointer; transition: all 0.15s; display: flex; flex-direction: column; gap: 6px; }
-.file-card:hover { border-color: var(--primary); box-shadow: var(--shadow-md); }
+.file-card:hover { border-color: var(--primary); transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.file-card:focus-visible,
+.lb-btn:focus-visible,
+.lb-close:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
 .file-card.selected { border-color: var(--primary); background: var(--primary-bg); }
 .card-thumb { height: 84px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-md); background: var(--bg-secondary); overflow: hidden; }
 .card-thumb img { max-width: 100%; max-height: 100%; object-fit: cover; }
 .thumb-icon { font-size: 32px; color: var(--text-tertiary); }
 .thumb-icon.folder { color: var(--primary); }
 .card-name { font-size: 13px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.card-meta { font-size: 11px; color: var(--text-muted); }
+.card-meta { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .pagination-bar { display: flex; justify-content: flex-end; padding-top: 8px; border-top: 1px solid var(--border); }
 :deep(.row-selected) { background: var(--primary-bg) !important; }
 .batch-bar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: var(--bg-card); border: 1px solid var(--primary); border-radius: var(--radius-md); box-shadow: var(--shadow-md); }
@@ -857,6 +864,7 @@ onUnmounted(() => {
 .lb-name { max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lb-count { color: rgba(255, 255, 255, 0.7); }
 .lb-close { position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; border: none; border-radius: 50%; background: rgba(0, 0, 0, 0.5); color: #fff; cursor: pointer; }
+.lb-close:hover { background: rgba(0, 0, 0, 0.7); }
 @media (max-width: 768px) {
   .media-page { padding: 12px; height: auto; min-height: 100%; overflow: visible; }
   .file-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; overflow: visible; padding-bottom: 16px; }

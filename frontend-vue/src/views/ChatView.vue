@@ -126,6 +126,14 @@ const errorBanner = ref('')          // query.error 提示条
 const unifiedSessionId = ref('')     // 统一任务会话 id（query.task）
 const unifiedSubmitMode = ref('auto') // 会话创建时的 mode（shared_context.mode 优先）
 const unifiedMode = computed(() => !!unifiedSessionId.value)
+// 纯展示 flag：任务提交成功 → 徽标短暂过渡到“完成”态后复位
+const unifiedJustFinished = ref(false)
+let unifiedDoneTimer: ReturnType<typeof setTimeout> | null = null
+function flashUnifiedDone() {
+  unifiedJustFinished.value = true
+  if (unifiedDoneTimer) clearTimeout(unifiedDoneTimer)
+  unifiedDoneTimer = setTimeout(() => { unifiedJustFinished.value = false }, 1600)
+}
 let appliedQueryKey = ''
 
 async function applyRouteQuery() {
@@ -360,6 +368,7 @@ async function sendUnified(text: string, attachments?: ChatAttachment[]) {
     if (d.success === false) throw new Error(d.error || '请求失败')
     currentTraceId.value = d.trace_id || ''
     appendAssistantWithKb(d.output || '', d.metadata || {})
+    flashUnifiedDone()
   } catch (e: any) {
     markMessageFailed(userItemId, e.message || '网络错误')
     message.error('发送失败: ' + (e.message || '网络错误'))
@@ -459,6 +468,7 @@ onMounted(async () => {
 onUnmounted(() => {
   stopTurnTimer()
   if (activeSSE) { activeSSE.close(); activeSSE = null }
+  if (unifiedDoneTimer) { clearTimeout(unifiedDoneTimer); unifiedDoneTimer = null }
   window.removeEventListener('online', onOnline)
   window.removeEventListener('offline', onOffline)
   window.removeEventListener('keydown', onGlobalKeydown)
@@ -1287,9 +1297,11 @@ function continueGeneration() {
 
         <!-- 互联互通：统一任务模式（WorkstationNav 发起；POST /v1/chat/submit，不走 SSE） -->
         <template v-if="unifiedMode">
-          <!-- 统一任务标识 + 会话 mode 标签 + 清空/退出 -->
+          <!-- 统一任务标识 + 会话 mode 标签 + 清空/退出（编排中脉冲 + 完成态过渡） -->
           <div class="unified-bar">
-            <span class="ub-badge">统一任务</span>
+            <span class="ub-badge" :class="{ running: loading, done: unifiedJustFinished }">
+              {{ loading ? '编排中' : unifiedJustFinished ? '完成' : '统一任务' }}
+            </span>
             <span class="ub-mode">{{ unifiedSubmitMode || 'auto' }}</span>
             <span class="ub-spacer" />
             <button type="button" class="ub-btn" :disabled="!items.length" @click="clearUnifiedMessages">清空</button>
@@ -1632,8 +1644,20 @@ function continueGeneration() {
   padding: 1px 10px; border-radius: 10px;
   background: var(--primary); color: #fff;
   font-size: 11px; font-weight: 600; line-height: 18px;
+  transition: background 0.3s ease;
 }
 .ub-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: rgba(255, 255, 255, 0.85); }
+/* 编排中：圆点脉冲 + 徽标呼吸（与 .unified-exec-hint 同一语言） */
+.ub-badge.running::before {
+  animation: uehPulse 1.1s ease-in-out infinite;
+  box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.5);
+}
+.ub-badge.running { animation: uehPulse 1.1s ease-in-out infinite; }
+/* 完成态：短促过渡到成功色 */
+.ub-badge.done {
+  background: var(--success);
+}
+.ub-badge.done::before { animation: none; }
 .ub-mode {
   flex: none; font-size: 11px; color: var(--text-secondary);
   background: var(--bg-secondary); padding: 1px 8px; border-radius: 10px; line-height: 18px;
@@ -1645,6 +1669,13 @@ function continueGeneration() {
   font-size: 11px; line-height: 18px; padding: 1px 10px; cursor: pointer;
   transition: all 0.15s ease;
 }
+.ub-btn:focus-visible,
+.ueb-close:focus-visible,
+.approval-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.ueb-close:focus-visible { border-radius: 4px; }
 .ub-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
 .ub-btn.exit:hover:not(:disabled) { border-color: var(--danger, #ef4444); color: var(--danger, #ef4444); }
 .ub-btn:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -1663,6 +1694,11 @@ function continueGeneration() {
 }
 @keyframes uehPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 @media (prefers-reduced-motion: reduce) { .ueh-dot { animation: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .ub-badge.running,
+  .ub-badge.running::before { animation: none; }
+  .ub-badge { transition: none; }
+}
 
 /* ── 互联互通：统一任务消息列表（复用 MessageItem 渲染 user/assistant）── */
 .unified-list { flex: 1; overflow-y: auto; padding: 12px 0 24px; scrollbar-width: thin; scrollbar-color: var(--text-disabled) transparent; }

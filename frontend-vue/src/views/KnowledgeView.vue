@@ -355,7 +355,7 @@ function formatDate(iso: string): string {
 }
 .type-tag { flex: none; }
 .kb-stats { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.stat { font-size: 12px; color: var(--text-secondary); display: inline-flex; align-items: center; gap: 4px; }
+.stat { font-size: 12px; color: var(--text-secondary); display: inline-flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
 .stat :deep(svg) { font-size: 12px; color: var(--text-tertiary); }
 .kb-footer { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-card); padding-top: 10px; }
 .kb-time { font-size: 11px; color: var(--text-tertiary); }

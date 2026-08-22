@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, markRaw } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Card, Button, Upload, Table, Spin, Empty, Tag, Space,
@@ -12,6 +12,7 @@ import {
 } from '@ant-design/icons-vue'
 import { api, resolveMediaUrl } from '../api'
 import { createChunkUpload } from '../utils/uploader'
+import EmptyState from '../components/common/EmptyState.vue'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
@@ -420,7 +421,13 @@ function formatSize(bytes: number): string {
             </Space>
           </template>
 
-          <Empty v-if="filteredDocs.length === 0" description="暂无文档，请上传文档或从媒体库选取" />
+          <EmptyState
+            v-if="filteredDocs.length === 0"
+            size="list"
+            :icon="markRaw(CloudUploadOutlined)"
+            description="暂无文档"
+            hint="上传文档或从媒体库选取，构建索引后即可检索"
+          />
           <Table
             v-else
             :columns="docColumns"

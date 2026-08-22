@@ -20,7 +20,12 @@
         :key="ws.id"
         class="workstation-card"
         :class="{ active: activeWorkstation === ws.id }"
+        role="button"
+        tabindex="0"
+        :aria-label="`进入${ws.name}工作台`"
         @click="switchWorkstation(ws.id)"
+        @keydown.enter="switchWorkstation(ws.id)"
+        @keydown.space.prevent="switchWorkstation(ws.id)"
       >
         <div class="ws-icon" :style="{ backgroundColor: ws.color }">
           <component :is="iconMap[ws.icon] || MessageOutlined" />
@@ -81,7 +86,9 @@ export async function executeQuickCommand(command: string): Promise<QuickCommand
 
 <script setup lang="ts">
 import { defineComponent, h, onMounted, onUnmounted, ref, type PropType } from 'vue'
+import { message } from 'ant-design-vue'
 import { MessageOutlined, RobotOutlined, ApartmentOutlined, ThunderboltOutlined, BookOutlined, AppstoreOutlined } from '@ant-design/icons-vue'
+import EmptyState from './common/EmptyState.vue'
 
 // api / router 由上方普通 <script> 块提供（同模块作用域，避免重复 import 造成重名）
 
@@ -179,7 +186,11 @@ const RecentActivities = defineComponent({
     return () => h('div', { class: 'recent-activity' }, [
       h('div', { class: 'activity-header' }, '最近活动'),
       props.activities.length === 0
-        ? h('div', { class: 'activity-empty' }, '暂无活动')
+        ? h(EmptyState, {
+            size: 'list',
+            description: '暂无最近活动',
+            hint: '执行快速命令或在各工作台完成操作后，活动会显示在这里',
+          })
         : props.activities.map((a) => h('div', {
             class: 'activity-item',
             onClick: () => actEmit('select', a),
@@ -291,6 +302,8 @@ async function handleQuickCommand(command: string) {
   emit('commandSubmit', command)
   try {
     const result = await executeQuickCommand(command)
+    // 统一任务跳转后的轻量成功反馈
+    message.success('任务已提交，正在对话页展示结果')
     // 添加到最近活动
     addRecentActivity({
       id: `act_${Date.now()}`,
@@ -495,6 +508,11 @@ onUnmounted(() => {
   box-shadow: var(--shadow-md);
 }
 
+.workstation-card:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
 .workstation-card.active {
   border-color: var(--primary);
   background: linear-gradient(135deg, var(--primary-bg), transparent);
@@ -554,13 +572,6 @@ onUnmounted(() => {
   font-weight: 600;
   color: var(--text-primary);
   margin-bottom: 12px;
-}
-
-:deep(.activity-empty) {
-  padding: 16px 8px;
-  text-align: center;
-  font-size: 13px;
-  color: var(--text-muted);
 }
 
 :deep(.activity-item) {
@@ -678,5 +689,6 @@ onUnmounted(() => {
   :deep(.activity-item) {
     transition: none;
   }
+  .workstation-card { transform: none; }
 }
 </style>
