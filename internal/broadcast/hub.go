@@ -89,6 +89,13 @@ func (h *Hub) Publish(event Event) {
 		default:
 			// Slow subscriber: spawn goroutine so fast subscribers aren't blocked
 			go func(c chan Event) {
+				// S 并发安全：Unsubscribe/Subscribe 可能 close channel，
+				// 向 closed channel 发送会 panic，recover 防止进程崩溃
+				defer func() {
+					if r := recover(); r != nil {
+						// channel 已关闭，丢弃事件即可
+					}
+				}()
 				select {
 				case c <- event:
 				case <-time.After(3 * time.Second):

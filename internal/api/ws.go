@@ -1,4 +1,4 @@
-﻿package api
+package api
 
 import (
 	"encoding/json"
@@ -18,22 +18,27 @@ import (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
+	// CheckOrigin 严格校验：CORS_ORIGINS 未配置则拒绝所有带 Origin 的浏览器请求，
+	// 仅放行无 Origin 的非浏览器（curl/python websockets）客户端。
+	// 生产部署必须显式配置 CORS_ORIGINS 为前端域名白名单。
 	CheckOrigin: func(r *http.Request) bool {
-		// Allow requests with no Origin header (direct curl/ws clients)
 		origin := r.Header.Get("Origin")
 		if origin == "" {
-			return true
+			return true // curl / 服务端 ws 客户端无 Origin
 		}
-		// Allow configured CORS origins from environment
 		allowed := os.Getenv("CORS_ORIGINS")
-		if allowed == "" {
-			return true // no restriction configured
+		if allowed == "" || allowed == "*" {
+			slog.Warn("websocket origin rejected: CORS_ORIGINS not configured",
+				"origin", origin, "path", r.URL.Path)
+			return false
 		}
 		for _, o := range strings.Split(allowed, ",") {
 			if strings.TrimSpace(o) == origin {
 				return true
 			}
 		}
+		slog.Warn("websocket origin rejected: not in allowlist",
+			"origin", origin, "path", r.URL.Path)
 		return false
 	},
 }

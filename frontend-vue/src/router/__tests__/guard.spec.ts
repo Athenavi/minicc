@@ -24,22 +24,22 @@ describe('authGuard', () => {
     localStorage.clear()
   })
 
-  it('requiresAuth 路由无 token 时重定向 /login', () => {
-    localStorage.removeItem('token')
+  it('requiresAuth 路由无 user 时重定向 /login', () => {
+    seedUser(null)
     const next = fakeNext()
     authGuard(fakeRoute({ requiresAuth: true }), {} as RouteLocationNormalized, next)
     expect(next).toHaveBeenCalledWith('/login')
   })
 
-  it('requiresAuth 路由有 token 时放行', () => {
-    localStorage.setItem('token', 'tok')
+  it('requiresAuth 路由有 user 时放行', () => {
+    seedUser('user')
     const next = fakeNext()
     authGuard(fakeRoute({ requiresAuth: true }), {} as RouteLocationNormalized, next)
     expect(next).toHaveBeenCalledWith()
   })
 
-  it('公开路由无 token 放行', () => {
-    localStorage.removeItem('token')
+  it('公开路由无 user 放行', () => {
+    seedUser(null)
     const next = fakeNext()
     authGuard(fakeRoute({}), {} as RouteLocationNormalized, next)
     expect(next).toHaveBeenCalledWith()
@@ -47,7 +47,6 @@ describe('authGuard', () => {
 
   describe('requiresAdmin', () => {
     it('admin 角色放行', () => {
-      localStorage.setItem('token', 'tok')
       seedUser('admin')
       const next = fakeNext()
       authGuard(fakeRoute({ requiresAuth: true, requiresAdmin: true }), {} as RouteLocationNormalized, next)
@@ -55,39 +54,27 @@ describe('authGuard', () => {
     })
 
     it('普通用户（已登录）重定向首页 /', () => {
-      localStorage.setItem('token', 'tok')
       seedUser('user')
       const next = fakeNext()
       authGuard(fakeRoute({ requiresAuth: true, requiresAdmin: true }), {} as RouteLocationNormalized, next)
       expect(next).toHaveBeenCalledWith('/')
     })
 
-    it('未登录（无 token）重定向 /login', () => {
-      localStorage.removeItem('token')
-      seedUser('admin')
+    it('未登录（无 user）重定向 /login', () => {
+      seedUser(null)
       const next = fakeNext()
       authGuard(fakeRoute({ requiresAuth: true, requiresAdmin: true }), {} as RouteLocationNormalized, next)
       expect(next).toHaveBeenCalledWith('/login')
     })
 
-    it('user localStorage 缺失（仅 token）重定向首页', () => {
-      localStorage.setItem('token', 'tok')
-      seedUser(null)
-      const next = fakeNext()
-      authGuard(fakeRoute({ requiresAuth: true, requiresAdmin: true }), {} as RouteLocationNormalized, next)
-      expect(next).toHaveBeenCalledWith('/')
-    })
-
-    it('user localStorage 损坏（非法 JSON）重定向首页而非崩溃', () => {
-      localStorage.setItem('token', 'tok')
+    it('user localStorage 损坏（非法 JSON）重定向 /login 而非崩溃', () => {
       localStorage.setItem('user', '{broken json')
       const next = fakeNext()
       authGuard(fakeRoute({ requiresAuth: true, requiresAdmin: true }), {} as RouteLocationNormalized, next)
-      expect(next).toHaveBeenCalledWith('/')
+      expect(next).toHaveBeenCalledWith('/login')
     })
 
     it('非 admin 路由不受 user 角色影响', () => {
-      localStorage.setItem('token', 'tok')
       seedUser('user')
       const next = fakeNext()
       authGuard(fakeRoute({ requiresAuth: true }), {} as RouteLocationNormalized, next)

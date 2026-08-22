@@ -18,10 +18,11 @@ import (
 
 func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
-	if claims == nil {
+	if claims == nil || claims.TenantID == "" {
 		Unauthorized(w, ErrAuthRequired)
 		return
 	}
+	tenantID := claims.TenantID
 
 	r.Body = http.MaxBytesReader(w, r.Body, 200<<20) // 200MB 上传上限
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
@@ -61,7 +62,7 @@ func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		`INSERT INTO media_assets (id, tenant_id, user_id, type, name, file_url, mime_type, category, size, parent_id, created_at, updated_at)
 		 VALUES (gen_random_uuid(), $1, $2, $3, $4, '', $5, $6, $7, $8, NOW(), NOW())
 		 RETURNING id`,
-		DefaultTenantID, claims.UserID, assetType, name, mimeType, nullableStr(category), fileSize, parentID,
+		tenantID, claims.UserID, assetType, name, mimeType, nullableStr(category), fileSize, parentID,
 	).Scan(&assetID)
 	if err != nil {
 		logAndRespond(w, err, http.StatusInternalServerError, "create asset failed")
@@ -77,8 +78,8 @@ func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 
 	// 更新 file_url
 	_, err = db.Pool.Exec(r.Context(),
-		`UPDATE media_assets SET file_url = $1 WHERE id = $2`,
-		fileURL, assetID)
+		`UPDATE media_assets SET file_url = $1 WHERE id = $2 AND tenant_id = $3`,
+		fileURL, assetID, tenantID)
 	if err != nil {
 		slog.Warn("update file_url", "error", err)
 	}
@@ -149,10 +150,11 @@ func (h *MediaHandler) PresignUpload(w http.ResponseWriter, r *http.Request) {
 
 func (h *MediaHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
-	if claims == nil {
+	if claims == nil || claims.TenantID == "" {
 		Unauthorized(w, ErrAuthRequired)
 		return
 	}
+	tenantID := claims.TenantID
 
 	var body struct {
 		ID       string `json:"id"`
@@ -206,7 +208,7 @@ func (h *MediaHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
 	_, err = db.Pool.Exec(r.Context(),
 		`INSERT INTO media_assets (id, tenant_id, user_id, type, name, file_url, mime_type, category, size, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())`,
-		assetID, DefaultTenantID, claims.UserID, body.Type, body.Name, body.FileURL, truncateMIME(body.MimeType), nullableStr(body.Category), body.Size)
+		assetID, tenantID, claims.UserID, body.Type, body.Name, body.FileURL, truncateMIME(body.MimeType), nullableStr(body.Category), body.Size)
 	if err != nil {
 		logAndRespond(w, err, http.StatusInternalServerError, "create asset failed")
 		return

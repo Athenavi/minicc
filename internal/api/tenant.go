@@ -18,7 +18,9 @@ const (
 )
 
 // TenantMiddleware 租户隔离中间件
-// 从 JWT Claims 中提取用户信息并注入 context
+// 从 JWT Claims 中提取 tenant_id 与 user_id 并注入 context。
+// claims.TenantID 必须非空（由 GenerateToken 在签发时填入），
+// 空值表示上游签发链路异常，按未认证处理。
 func TenantMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		claims := auth.GetClaims(r.Context())
@@ -26,9 +28,13 @@ func TenantMiddleware(next http.Handler) http.Handler {
 			Unauthorized(w, ErrAuthRequired)
 			return
 		}
+		if claims.TenantID == "" {
+			Unauthorized(w, "missing tenant context")
+			return
+		}
 
-		// 注入用户上下文（当前 auth.Claims 没有 TenantID，使用 UserID 作为隔离键）
-		ctx := context.WithValue(r.Context(), CtxKeyUserID, claims.UserID)
+		ctx := context.WithValue(r.Context(), CtxKeyTenantID, claims.TenantID)
+		ctx = context.WithValue(ctx, CtxKeyUserID, claims.UserID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -65,4 +71,10 @@ func RequireRole(roles ...string) func(http.Handler) http.Handler {
 func GetUserID(r *http.Request) string {
 	userID, _ := r.Context().Value(CtxKeyUserID).(string)
 	return userID
+}
+
+// GetTenantID 从请求中获取租户 ID（多租户隔离键）
+func GetTenantID(r *http.Request) string {
+	tenantID, _ := r.Context().Value(CtxKeyTenantID).(string)
+	return tenantID
 }

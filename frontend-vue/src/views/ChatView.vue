@@ -357,7 +357,7 @@ const shareRevoking = ref(false)
 const shareError = ref('')
 const shareMessageIds = ref<string[]>([])
 
-const isGuest = computed(() => !localStorage.getItem('token'))
+const isGuest = computed(() => !authStore.user)
 
 // 分享候选：会话中所有文本消息（用户可勾选；工具调用/思考块不分享）
 const shareCandidates = computed(() => items.value

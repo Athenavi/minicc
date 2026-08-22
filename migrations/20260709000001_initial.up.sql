@@ -7,6 +7,26 @@ create table if not exists schema_migrations
     applied_at timestamp with time zone default now() not null
 );
 
+-- 触发器函数：自动更新 updated_at 列（被各表的 before update 触发器调用）
+create or replace function update_updated_at_column()
+    returns trigger as
+$$
+begin
+    new.updated_at = now();
+    return new;
+end;
+$$ language 'plpgsql';
+
+-- 触发器函数：knowledge_chunks 全文搜索向量（insert/update 时从 content 生成 search_vector）
+create or replace function knowledge_chunks_search_vector_update()
+    returns trigger as
+$$
+begin
+    new.search_vector = to_tsvector('english', coalesce(new.content, ''));
+    return new;
+end;
+$$ language 'plpgsql';
+
 create table if not exists agent_registry
 (
     agent_type  varchar(32)                               not null

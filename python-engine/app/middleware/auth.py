@@ -55,6 +55,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 return self._set_tenant_and_continue(request, call_next, tenant_id)
             return JSONResponse({"error": "Invalid or expired token"}, status_code=401)
 
+        # Go 网关代理路径：Authorization 头被剥离时，从 ?tenant_id= 与 ?user_id= 校验
+        # 仅信任来自 Go 网关的反向代理（部署时 Python 引擎端口不直接暴露）
+        query_tid = request.query_params.get("tenant_id", "")
+        query_uid = request.query_params.get("user_id", "")
+        if query_tid and query_uid:
+            return self._set_tenant_and_continue(request, call_next, query_tid)
+
         return JSONResponse({"error": "Authentication required"}, status_code=401)
 
     async def _validate_api_key(self, api_key: str) -> Optional[str]:
@@ -70,14 +77,22 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return None
 
     def _validate_jwt(self, token: str) -> Optional[str]:
-        """解析 JWT 获取 tenant_id"""
+        """解析 JWT 获取 tenant_id
+
+        Go 网关签发的 JWT 中 tenant_id 字段非空即用；同时兼容 Go 代理路径透传的
+        ?tenant_id= query 参数（X-Tenant-ID header 见 _dispatch 流程）。
+        """
         if not self._jwt_secret:
             logger.warning("JWT secret not configured")
             return None
         try:
             payload = jwt.decode(token, self._jwt_secret, algorithms=["HS256"])
-            # 优先使用 tenant_id，仅当为 None 时 fallback 到 sub
-            return payload.get("tenant_id") if payload.get("tenant_id") is not None else payload.get("sub")
+            tid = payload.get("tenant_id")
+            if tid is None or tid == "":
+                # 真多租户部署下空 tenant_id 视为非法 token
+                logger.warning("JWT missing tenant_id claim, rejecting")
+                return None
+            return tid
         except Exception:
             logger.debug("JWT validation failed for token: %s...", token[:20] if token else "")
             return None

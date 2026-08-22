@@ -16,8 +16,9 @@ type AuthService interface {
 	// GetUser retrieves a user by ID.
 	GetUser(ctx context.Context, userID string) (*User, error)
 
-	// GetUserByEmail retrieves a user by email.
-	GetUserByEmail(ctx context.Context, email string) (*User, error)
+	// GetUserByEmail retrieves a user by email within the given tenant.
+	// tenantID 防止跨租户同 email 误登录。
+	GetUserByEmail(ctx context.Context, email, tenantID string) (*User, error)
 
 	// ValidateToken validates a JWT token and returns claims.
 	ValidateToken(ctx context.Context, token string) (*Claims, error)
@@ -31,6 +32,6 @@ type AuthService interface {
 	// DeleteUser deletes a user by ID.
 	DeleteUser(ctx context.Context, userID string) error
 
-	// ListUsers lists all users (admin only).
-	ListUsers(ctx context.Context) ([]User, error)
+	// ListUsers lists users in the given tenant (admin only).
+	ListUsers(ctx context.Context, tenantID string) ([]User, error)
 }

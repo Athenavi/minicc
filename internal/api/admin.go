@@ -100,9 +100,15 @@ type AdminUser struct {
 }
 
 func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
+	tenantID := GetTenantID(r)
+	if tenantID == "" {
+		Unauthorized(w, "missing tenant context")
+		return
+	}
 	rows, err := db.ReadPool().Query(r.Context(),
 		`SELECT id, email, name, role, created_at, updated_at
-		 FROM users ORDER BY created_at DESC LIMIT 100`)
+		 FROM users WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 100`,
+		tenantID)
 	if err != nil {
 		logAndRespond(w, err, http.StatusInternalServerError, "query users failed")
 		return
@@ -134,12 +140,17 @@ func (h *AdminHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "id is required")
 		return
 	}
+	tenantID := GetTenantID(r)
+	if tenantID == "" {
+		Unauthorized(w, "missing tenant context")
+		return
+	}
 
 	var u AdminUser
 	var createdAt, updatedAt time.Time
 	err := db.ReadPool().QueryRow(r.Context(),
 		`SELECT id, email, name, role, created_at, updated_at
-		 FROM users WHERE id = $1`, id).
+		 FROM users WHERE id = $1 AND tenant_id = $2`, id, tenantID).
 		Scan(&u.ID, &u.Email, &u.Name, &u.Role, &createdAt, &updatedAt)
 	if err != nil {
 		NotFound(w, "user not found")
@@ -155,6 +166,11 @@ func (h *AdminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
 		BadRequest(w, "id is required")
+		return
+	}
+	tenantID := GetTenantID(r)
+	if tenantID == "" {
+		Unauthorized(w, "missing tenant context")
 		return
 	}
 
@@ -174,7 +190,7 @@ func (h *AdminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build dynamic UPDATE
+	// Build dynamic UPDATE — tenant_id 作为额外 WHERE 条件防越权
 	setClauses := ""
 	args := []interface{}{}
 	argIdx := 1
@@ -201,9 +217,9 @@ func (h *AdminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	setClauses += fmt.Sprintf("updated_at = NOW()")
-	args = append(args, id)
+	args = append(args, id, tenantID)
 
-	query := fmt.Sprintf("UPDATE users SET %s WHERE id = $%d", setClauses, argIdx)
+	query := fmt.Sprintf("UPDATE users SET %s WHERE id = $%d AND tenant_id = $%d", setClauses, argIdx, argIdx+1)
 	result, err := db.Pool.Exec(r.Context(), query, args...)
 	if err != nil {
 		logAndRespond(w, err, http.StatusInternalServerError, "update user failed")
@@ -223,6 +239,11 @@ func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "id is required")
 		return
 	}
+	tenantID := GetTenantID(r)
+	if tenantID == "" {
+		Unauthorized(w, "missing tenant context")
+		return
+	}
 
 	// Prevent deleting yourself
 	claims := auth.GetClaims(r.Context())
@@ -231,7 +252,8 @@ func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := db.Pool.Exec(r.Context(), `DELETE FROM users WHERE id = $1`, id)
+	_, err := db.Pool.Exec(r.Context(),
+		`DELETE FROM users WHERE id = $1 AND tenant_id = $2`, id, tenantID)
 	if err != nil {
 		logAndRespond(w, err, http.StatusInternalServerError, "delete user failed")
 		return

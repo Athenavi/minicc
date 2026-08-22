@@ -125,10 +125,11 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	var user UserResponse
 	var passwordHash string
+	var tenantID string
 	err = tx.QueryRow(ctx,
-		`SELECT id, email, name, role, password_hash FROM users WHERE email = $1 AND tenant_id = $2`,
+		`SELECT id, email, name, role, tenant_id, password_hash FROM users WHERE email = $1 AND tenant_id = $2`,
 		req.Email, DefaultTenantID,
-	).Scan(&user.ID, &user.Email, &user.Name, &user.Role, &passwordHash)
+	).Scan(&user.ID, &user.Email, &user.Name, &user.Role, &tenantID, &passwordHash)
 	if err != nil {
 		slog.Warn("login failed", "email", req.Email, "error", err)
 		db.AuditLog(r.Context(), "", "login_failed", "/v1/auth/login", "email="+req.Email, r.RemoteAddr, nil)
@@ -152,7 +153,11 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		h.captcha.ClearFailures(r.Context(), r)
 	}
 
-	token, err := h.auth.GenerateToken(user.ID, user.Email, user.Role, auth.RolePermissions[user.Role])
+	// 多租户隔离：将用户记录的 tenant_id 写入 JWT，后续所有 SQL 用 claims.TenantID
+	if tenantID == "" {
+		tenantID = DefaultTenantID // 单租户兼容：历史数据无 tenant_id 时回退默认租户
+	}
+	token, err := h.auth.GenerateToken(user.ID, user.Email, user.Role, tenantID, auth.RolePermissions[user.Role])
 	if err != nil {
 		InternalError(w, "authentication failed")
 		return
@@ -271,7 +276,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := h.auth.GenerateToken(userID, req.Email, "user", auth.RolePermissions["user"])
+	token, err := h.auth.GenerateToken(userID, req.Email, "user", DefaultTenantID, auth.RolePermissions["user"])
 	if err != nil {
 		InternalError(w, "authentication failed")
 		return
@@ -408,10 +413,31 @@ func (h *AuthHandler) Session(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
-	// Read token from cookie
 	cookie, err := r.Cookie(tokenCookieName)
 	if err != nil {
 		Unauthorized(w, "not authenticated")
+		return
+	}
+
+	// 1) 校验旧 token 未被加入黑名单（已登出/已撤销）
+	oldClaims, err := h.auth.ValidateToken(cookie.Value)
+	if err != nil {
+		Unauthorized(w, "session expired")
+		return
+	}
+	if oldClaims.ID != "" && db.Redis != nil {
+		if n, err := db.Redis.Exists(r.Context(), "jwt:blacklist:"+oldClaims.ID).Result(); err == nil && n > 0 {
+			Unauthorized(w, "token revoked")
+			return
+		}
+	}
+
+	// 2) 校验用户仍然存在（防止已删除用户刷 token）
+	var userExists bool
+	err = db.ReadPool().QueryRow(r.Context(),
+		`SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)`, oldClaims.UserID).Scan(&userExists)
+	if err != nil || !userExists {
+		Unauthorized(w, "user not found")
 		return
 	}
 

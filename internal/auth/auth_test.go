@@ -16,7 +16,7 @@ func TestNewAuthenticator(t *testing.T) {
 func TestGenerateAndValidateToken(t *testing.T) {
 	a := NewAuthenticator("test-secret-at-least-16-chars", time.Hour)
 
-	token, err := a.GenerateToken("user-1", "user@test.com", "admin", []string{"chat:write", "admin:read"})
+	token, err := a.GenerateToken("user-1", "user@test.com", "admin", "tenant-test", []string{"chat:write", "admin:read"})
 	if err != nil {
 		t.Fatalf("GenerateToken: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestGenerateAndValidateToken(t *testing.T) {
 func TestGenerateToken_WithPermissions(t *testing.T) {
 	a := NewAuthenticator("test-secret-at-least-16-chars", time.Hour)
 	perms := []string{"chat:write", "admin:read"}
-	token, _ := a.GenerateToken("user-1", "", "user", perms)
+	token, _ := a.GenerateToken("user-1", "", "user", "tenant-test", perms)
 
 	parsed, _ := a.ValidateToken(token)
 	if len(parsed.Perms) != 2 {
@@ -62,7 +62,7 @@ func TestValidateToken_WrongSecret(t *testing.T) {
 	a1 := NewAuthenticator("secret-one-at-least-16-chars", time.Hour)
 	a2 := NewAuthenticator("secret-two-at-least-16-chars", time.Hour)
 
-	token, _ := a1.GenerateToken("user-1", "", "user", nil)
+	token, _ := a1.GenerateToken("user-1", "", "user", "tenant-test", nil)
 
 	_, err := a2.ValidateToken(token)
 	if err == nil {
@@ -72,7 +72,7 @@ func TestValidateToken_WrongSecret(t *testing.T) {
 
 func TestRefreshToken(t *testing.T) {
 	a := NewAuthenticator("test-secret-at-least-16-chars", time.Hour)
-	token, _ := a.GenerateToken("user-1", "", "user", nil)
+	token, _ := a.GenerateToken("user-1", "", "user", "tenant-test", nil)
 
 	refreshed, err := a.RefreshToken(token)
 	if err != nil {

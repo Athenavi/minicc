@@ -228,6 +228,10 @@ async function handlePurchase() {
     if (provider.value === 'paypal') {
       // PayPal：跳转授权页
       if (data.checkout_url) {
+        // S 安全：校验协议为 http/https，防 javascript:/data: 等 XSS 向量
+        if (!/^https?:\/\//i.test(data.checkout_url)) {
+          throw new Error('非法的支付链接')
+        }
         window.location.href = data.checkout_url
       } else {
         throw new Error('未获取到 PayPal 支付链接')

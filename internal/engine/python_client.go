@@ -1,4 +1,4 @@
-﻿package engine
+package engine
 
 import (
 	"bufio"
@@ -244,7 +244,9 @@ func (c *PythonClient) PutJSON(ctx context.Context, path string, in any, out any
 func (c *PythonClient) ForwardRequest(w http.ResponseWriter, r *http.Request, path string) {
 	req, err := http.NewRequestWithContext(r.Context(), r.Method, c.pickAddress()+path, r.Body)
 	if err != nil {
-		http.Error(w, "create forward request: "+err.Error(), http.StatusInternalServerError)
+		// S 安全：不向客户端泄露内部错误细节（含地址/路径），仅记录日志
+		slog.Error("create forward request", "path", path, "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	// Copy relevant headers
@@ -255,7 +257,9 @@ func (c *PythonClient) ForwardRequest(w http.ResponseWriter, r *http.Request, pa
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {
-		http.Error(w, "forward to python engine: "+err.Error(), http.StatusInternalServerError)
+		// S 安全：不向客户端泄露后端连接细节
+		slog.Error("forward to python engine", "path", path, "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	defer resp.Body.Close()

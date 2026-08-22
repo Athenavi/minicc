@@ -70,16 +70,19 @@ return "ok"
 `
 
 // Allow 检查是否允许请求 — 单次原子 eval 完成三级检查
+// fail-close 策略：Redis 不可用或 Eval 错误时拒绝请求（生产安全优先）
 func (l *DistributedRateLimiter) Allow(ctx context.Context, tenantID, userID string) (bool, error) {
 	if l.rdb == nil {
-		return true, nil // Redis 不可用时放行
+		return false, fmt.Errorf("限流 Redis 不可用，按 fail-close 拒绝请求")
+	}
+	if tenantID == "" {
+		// 未认证公开端点（install/login/register/health 等）共用 public 桶限流，
+		// 防止单一来源滥用，但不拒绝（否则 install 首次部署无法完成）
+		tenantID = "public"
 	}
 
 	globalKey := "ratelimit:global:minute"
-	tenantKey := ""
-	if tenantID != "" {
-		tenantKey = fmt.Sprintf("ratelimit:tenant:%s:minute", tenantID)
-	}
+	tenantKey := fmt.Sprintf("ratelimit:tenant:%s:minute", tenantID)
 	userKey := ""
 	if userID != "" {
 		userKey = fmt.Sprintf("ratelimit:user:%s:minute", userID)
@@ -87,9 +90,6 @@ func (l *DistributedRateLimiter) Allow(ctx context.Context, tenantID, userID str
 
 	// 限流失效的参数（limit≤0）直接跳过
 	tenantLim := l.tenantLimit
-	if tenantKey == "" {
-		tenantLim = 0
-	}
 	userLim := l.userLimit
 	if userKey == "" {
 		userLim = 0
@@ -99,8 +99,8 @@ func (l *DistributedRateLimiter) Allow(ctx context.Context, tenantID, userID str
 		[]string{globalKey, tenantKey, userKey},
 		l.globalLimit, tenantLim, userLim, 60).Text()
 	if err != nil {
-		slog.Warn("限流检查失败", "error", err)
-		return true, nil // Redis 错误时放行
+		slog.Error("限流检查失败（fail-close）", "error", err, "tenant", tenantID)
+		return false, fmt.Errorf("限流服务暂时不可用: %w", err)
 	}
 
 	switch result {
@@ -119,14 +119,15 @@ func (l *DistributedRateLimiter) Allow(ctx context.Context, tenantID, userID str
 func DistributedRateLimitMiddleware(limiter *DistributedRateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// 提取用户 ID
-			var userID string
-			claims := auth.GetClaims(r.Context())
-			if claims != nil {
-				userID = claims.UserID
-			}
+			// 提取 tenant_id 与 user_id（多租户隔离键）
+		var tenantID, userID string
+		claims := auth.GetClaims(r.Context())
+		if claims != nil {
+			tenantID = claims.TenantID
+			userID = claims.UserID
+		}
 
-			allowed, err := limiter.Allow(r.Context(), "", userID)
+		allowed, err := limiter.Allow(r.Context(), tenantID, userID)
 			if err != nil {
 				slog.Warn("限流触发",
 					"error", err,

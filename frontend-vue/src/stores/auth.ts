@@ -29,11 +29,14 @@ function persistUserToStorage(u: User | null) {
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<User | null>(loadUserFromStorage())
-  const token = ref<string>(localStorage.getItem('token') || '')
+  // S 安全：token 不再持久化到 localStorage（XSS 偷不走）。
+  // 仅保留内存态用于登录后即时判断；刷新后凭 user 持久态判断登录（isAuthenticated）。
+  const token = ref<string>('')
   const loading = ref(false)
 
-  const isAuthenticated = computed(() => !!token.value)
-  const isAdmin = computed(() => user.value?.role === 'admin')
+  const isAuthenticated = computed(() => !!user.value)
+  // S 修复：owner 角色拥有全部 admin 权限，isAdmin 须同时识别 admin + owner
+  const isAdmin = computed(() => user.value?.role === 'admin' || user.value?.role === 'owner')
 
   async function login(email: string, password: string, captcha?: { token: string; randstr?: string }) {
     loading.value = true
@@ -46,9 +49,9 @@ export const useAuthStore = defineStore('auth', () => {
       })
       const d = response.data?.data
       if (!d) throw new Error('invalid login response')
+      // S 安全：token 不进 localStorage，鉴权凭 httpOnly cookie（后端 SetTokenCookie 已下发）
       token.value = d.token
       user.value = d.user
-      localStorage.setItem('token', token.value)
       persistUserToStorage(d.user)
       return d
     } finally {
@@ -70,7 +73,6 @@ export const useAuthStore = defineStore('auth', () => {
       if (!d) throw new Error('invalid register response')
       token.value = d.token
       user.value = d.user
-      localStorage.setItem('token', token.value)
       persistUserToStorage(d.user)
       return d
     } finally {
@@ -79,7 +81,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function fetchProfile() {
-    if (!token.value) return
+    if (!user.value) return
     try {
       const response = await api.get('/v1/auth/profile')
       const data = response.data?.data
@@ -93,20 +95,20 @@ export const useAuthStore = defineStore('auth', () => {
       }
       persistUserToStorage(user.value)
     } catch (error) {
-      // Token 无效，清除
-      logout()
+      // Cookie 无效，清除本地态
+      await logout()
     }
   }
 
-  /** SSO 回跳引导：用 httpOnly cookie 换取 Bearer token（SSO 登录后前端建立本地会话） */
+  /** SSO 回跳引导：凭 httpOnly cookie 换取会话信息（SSO 登录后建立本地 user 态） */
   async function bootstrapSession(): Promise<boolean> {
     try {
       const response = await api.get('/v1/auth/session', { withCredentials: true })
       const d = response.data?.data
       if (!d?.token) return false
+      // S 安全：token 不进 localStorage，鉴权持续凭 httpOnly cookie
       token.value = d.token
       user.value = d.user
-      localStorage.setItem('token', d.token)
       persistUserToStorage(d.user)
       return true
     } catch {
@@ -119,14 +121,18 @@ export const useAuthStore = defineStore('auth', () => {
     if (!t) throw new Error('invalid session: empty token')
     token.value = t
     user.value = u
-    localStorage.setItem('token', t)
     persistUserToStorage(u)
   }
 
-  function logout() {
+  // S 安全：logout 调后端清 httpOnly cookie（否则登出后 cookie 仍有效，鉴权不失效）
+  async function logout() {
+    try {
+      await api.post('/v1/auth/logout')
+    } catch {
+      // 网络失败仍清理本地态
+    }
     token.value = ''
     user.value = null
-    localStorage.removeItem('token')
     persistUserToStorage(null)
   }
 

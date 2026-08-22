@@ -409,7 +409,13 @@ func (h *SSOHandler) Callback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 6. 复用现有登录的会话颁发逻辑（GenerateToken + SetTokenCookie）
-	token, err := h.auth.GenerateToken(user.ID, user.Email, user.Role, auth.RolePermissions[user.Role])
+	// 多租户隔离：SSO 用户的 tenant_id 来自 sso_provider 表配置（ent_oidc_providers.tenant_id），
+	// 与自动建号 provisionAndBind 使用的 provider.TenantID 一致，保证 JWT 与 DB 行为对齐
+	if provider.TenantID == "" {
+		InternalError(w, "sso provider missing tenant_id configuration")
+		return
+	}
+	token, err := h.auth.GenerateToken(user.ID, user.Email, user.Role, provider.TenantID, auth.RolePermissions[user.Role])
 	if err != nil {
 		InternalError(w, "authentication failed")
 		return

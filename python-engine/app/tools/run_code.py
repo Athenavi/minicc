@@ -10,6 +10,13 @@
   ``ToolCallError(name, message)``
 - stdout 捕获 → logs；``return`` 值 → result
 - 超时/异常 → 结构化 ``{isError, message, logs}`` 返回模型自纠
+
+S5 沙箱隔离（subprocess + IPC 代理）：
+- 模型代码在独立子进程内执行，通过 stdin/stdout JSON-line 协议
+  代理 tools 调用回主进程；子进程无直接访问宿主文件/socket/DB 的能力
+- 子进程应用 RLIMIT_AS/CPU/FSIZE（POSIX）+ 主进程 wall-clock SIGKILL
+- 静态守卫（code_guard.check_static）在子进程内再次执行（纵深防御）
+- 子进程启动失败时降级到同进程加固模式（rlimit + 收紧 imports）
 """
 from __future__ import annotations
 
@@ -18,8 +25,18 @@ import contextlib
 import io
 import json
 import logging
+import subprocess
+import sys
+import threading
+import time
 import types
 from typing import Any
+
+try:
+    import resource as _resource  # POSIX only
+    _HAS_RESOURCE = True
+except ImportError:
+    _HAS_RESOURCE = False
 
 from app.tools.code_guard import (  # noqa: F401 — 向后兼容再导出（tests 直接从本模块导入 _check_static）
     BLOCKED_BUILTINS as _BLOCKED_BUILTINS,
@@ -34,6 +51,11 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT_SECONDS = 60
 MAX_LOG_CHARS = 20_000
+
+# 资源限制（POSIX；同进程降级模式下使用）
+_MEM_LIMIT_BYTES = 512 * 1024 * 1024  # 512MB
+_CPU_LIMIT_SECONDS = 30
+_FILE_LIMIT_BYTES = 10 * 1024 * 1024  # 10MB
 
 # 历史别名：run_code 曾自带守卫常量（2026-08-21 抽取到 code_guard.py 单一事实来源）
 DANGEROUS_ATTRS = ("os.", "subprocess.", "sys.", "socket.", "ctypes.")
@@ -57,7 +79,7 @@ async def _dispatch(name: str, args: dict[str, Any]) -> Any:
 
 
 def _build_sdk() -> types.SimpleNamespace:
-    """构造 tools 命名空间：每个注册工具一个 async 方法。"""
+    """构造 tools 命名空间：每个注册工具一个 async 方法（同进程降级模式用）。"""
     ns = types.SimpleNamespace()
 
     async def _make_tool(name: str, *args: Any, **kwargs: Any) -> Any:
@@ -97,22 +119,263 @@ def _render_result(value: Any) -> Any:
         return str(value)
 
 
-async def run_code(code: str, description: str = "", timeout: int = DEFAULT_TIMEOUT_SECONDS) -> dict[str, Any]:
-    """Execute a Python async program against the tool SDK.
+# ── subprocess 隔离模式 ──────────────────────────────────────────────
 
-    Parameters
-    ----------
-    code:
-        Body of ``async def _main():``. May use the injected ``tools``
-        namespace and ``return`` a JSON-serializable value.
-    description:
-        Short summary of what the program does (for the model's own bookkeeping).
+
+def _resolve_worker_cmd() -> list[str] | None:
+    """构造启动 _sandbox_worker 子进程的命令。失败时返回 None（触发降级）。"""
+    # 优先以模块方式启动：python -m app.tools._sandbox_worker
+    # 要求主进程在 python-engine/ 目录下启动（与现有部署一致）
+    return [sys.executable, "-m", "app.tools._sandbox_worker"]
+
+
+def _run_subprocess_sync(
+    code: str,
+    tool_names: list[str],
+    timeout: int,
+    loop: asyncio.AbstractEventLoop,
+    context_snapshot: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """同步子进程执行器（在 executor 线程中运行）。
+
+    用 subprocess.Popen + 阻塞 readline 主循环；工具调用通过
+    ``asyncio.run_coroutine_threadsafe`` 调度回主 asyncio loop 执行
+    registry.execute，避免 Windows ProactorEventLoop 下 asyncio.subprocess
+    的 buffering 问题（同步 subprocess 的 stdout 行缓冲更可靠）。
     """
-    if not code.strip():
-        return {"error": "code is required"}
-    timeout = max(1, min(timeout, 300))
+    cmd = _resolve_worker_cmd()
+    if cmd is None:
+        return None
 
-    # 静态安全检查（S 安全修复：禁止模型代码直接访问宿主文件/命令/网络）
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,  # 行缓冲
+        )
+    except (OSError, FileNotFoundError) as e:
+        logger.warning("subprocess start failed, will fallback to in-process: %s", e)
+        return None
+    except Exception as e:  # noqa: BLE001 — 任何启动异常都降级
+        logger.warning("subprocess start unexpected error, will fallback: %s", e)
+        return None
+
+    deadline = time.time() + timeout
+
+    try:
+        # 1) 写 init 消息
+        init_msg = json.dumps({
+            "type": "init",
+            "code": code,
+            "tools": tool_names,
+        }, ensure_ascii=False) + "\n"
+        try:
+            proc.stdin.write(init_msg)
+            proc.stdin.flush()
+        except (BrokenPipeError, OSError) as e:
+            stderr = _read_stderr_sync(proc)
+            return {
+                "isError": True,
+                "message": f"subprocess stdin write failed: {e}; stderr: {stderr[:500]}",
+                "logs": "",
+            }
+
+        # 2) 主循环：阻塞读 stdout，处理 tool_call，写 tool_result
+        while True:
+            line = _readline_with_deadline(proc, deadline)
+            if line is None:
+                # 超时
+                _kill_proc_sync(proc)
+                return {
+                    "isError": True,
+                    "message": f"subprocess timed out after {timeout}s",
+                    "logs": "",
+                }
+            if line == "":
+                # EOF：子进程退出但无 done/error
+                stderr = _read_stderr_sync(proc)
+                return {
+                    "isError": True,
+                    "message": f"subprocess exited unexpectedly: {stderr[:500]}",
+                    "logs": "",
+                }
+
+            try:
+                msg = json.loads(line)
+            except json.JSONDecodeError as e:
+                logger.warning("invalid IPC line from subprocess: %s (line=%r)", e, line[:200])
+                continue
+
+            mtype = msg.get("type")
+            if mtype == "tool_call":
+                call_id = msg.get("call_id")
+                name = msg.get("name", "")
+                args = msg.get("args", {}) or {}
+
+                # 调度 async registry.execute 到主 asyncio loop（带 contextvar 快照）
+                future = asyncio.run_coroutine_threadsafe(
+                    _safe_tool_call(name, args, context_snapshot), loop,
+                )
+                try:
+                    result_obj = future.result(timeout=max(1, deadline - time.time()))
+                except Exception as e:  # noqa: BLE001 — 工具调用失败
+                    resp: dict[str, Any] = {
+                        "type": "tool_error",
+                        "call_id": call_id,
+                        "error": f"{type(e).__name__}: {e}",
+                    }
+                else:
+                    if isinstance(result_obj, dict) and result_obj.get("error"):
+                        resp = {
+                            "type": "tool_error",
+                            "call_id": call_id,
+                            "error": str(result_obj["error"]),
+                        }
+                    else:
+                        resp = {
+                            "type": "tool_result",
+                            "call_id": call_id,
+                            "result": _render_result(result_obj),
+                        }
+
+                try:
+                    proc.stdin.write(json.dumps(resp, ensure_ascii=False, default=str) + "\n")
+                    proc.stdin.flush()
+                except (BrokenPipeError, OSError):
+                    return {
+                        "isError": True,
+                        "message": "subprocess died during tool call",
+                        "logs": "",
+                    }
+            elif mtype == "done":
+                _wait_proc_sync(proc)
+                return {
+                    "logs": str(msg.get("logs", ""))[-MAX_LOG_CHARS:],
+                    "result": _render_result(msg.get("result")),
+                }
+            elif mtype == "error":
+                _wait_proc_sync(proc)
+                return {
+                    "isError": True,
+                    "message": str(msg.get("message", "unknown subprocess error")),
+                    "logs": str(msg.get("logs", ""))[-MAX_LOG_CHARS:],
+                }
+            else:
+                logger.warning("unknown IPC message type: %s", mtype)
+    except Exception as e:  # noqa: BLE001 — 主循环意外异常
+        _kill_proc_sync(proc)
+        return {
+            "isError": True,
+            "message": f"orchestrator error: {type(e).__name__}: {e}",
+            "logs": "",
+        }
+
+
+async def _safe_tool_call(name: str, args: dict[str, Any], context_snapshot: dict[str, Any] | None) -> Any:
+    """异步包装 registry.execute，供 run_coroutine_threadsafe 调度。
+
+    contextvars 不跨线程传播：本函数在调度时显式 restore 主进程捕获的
+    tool_context 快照（user_id/tenant_id/session_id），否则子进程代理调用的
+    工具会看到空上下文（workspace_dir 解析到 default/anonymous）。
+    """
+    if context_snapshot is not None:
+        from app.tools.context import restore_context
+        restore_context(context_snapshot)
+    return await registry.execute(name, args)
+
+
+async def _run_in_subprocess(code: str, tool_names: list[str], timeout: int) -> dict[str, Any] | None:
+    """在 executor 线程中运行同步子进程执行器，避免阻塞主 asyncio loop。
+
+    工具调用通过 ``asyncio.run_coroutine_threadsafe`` 回调主 loop 执行。
+    主 loop 的 contextvar 快照在调度前捕获，传入 _safe_tool_call restore。
+    """
+    from app.tools.context import get_all
+
+    loop = asyncio.get_event_loop()
+    # 在主 loop 当前 task 的 contextvar 中捕获快照（测试或 agent runtime 设置的 user_id 等）
+    context_snapshot = get_all()
+    return await loop.run_in_executor(
+        None, _run_subprocess_sync, code, tool_names, timeout, loop, context_snapshot,
+    )
+
+
+def _kill_proc_sync(proc: "subprocess.Popen[str]") -> None:
+    """SIGKILL 子进程。"""
+    try:
+        proc.kill()
+    except (ProcessLookupError, OSError):
+        pass
+
+
+def _readline_with_deadline(proc: "subprocess.Popen[str]", deadline: float) -> str | None:
+    """读一行 stdout，带 deadline 超时。
+
+    返回 None 表示超时；返回空串表示 EOF；否则返回一行（含末尾 \\n）。
+    使用 daemon thread 读，避免 readline 在子进程无输出时永久阻塞。
+    """
+    result: list[str | None] = [None]
+    done = threading.Event()
+
+    def _reader():
+        try:
+            result[0] = proc.stdout.readline()
+        except Exception:  # noqa: BLE001
+            result[0] = ""
+        finally:
+            done.set()
+
+    t = threading.Thread(target=_reader, daemon=True)
+    t.start()
+
+    remaining = deadline - time.time()
+    if remaining <= 0:
+        return None
+    if done.wait(remaining):
+        return result[0]
+    # 超时：杀子进程让 reader 因 EOF 返回
+    _kill_proc_sync(proc)
+    done.wait(2.0)  # 等 reader 收到 EOF 退出
+    return None
+
+
+def _wait_proc_sync(proc: "subprocess.Popen[str]", timeout: float = 2.0) -> None:
+    """best-effort 等待子进程退出。"""
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_proc_sync(proc)
+
+
+def _read_stderr_sync(proc: "subprocess.Popen[str]") -> str:
+    """读取子进程 stderr（非阻塞）。"""
+    try:
+        import select
+        # POSIX 路径
+        if hasattr(select, "select"):
+            r, _, _ = select.select([proc.stderr], [], [], 0.5)
+            if r:
+                return proc.stderr.read() or ""
+            return ""
+        # Windows：read() 在子进程退出后会立即返回，否则阻塞
+        return proc.stderr.read() or ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+# ── 同进程降级模式（fallback）──────────────────────────────────────
+
+
+async def _run_in_process(code: str, timeout: int) -> dict[str, Any]:
+    """同进程加固模式：subprocess 不可用时降级使用。
+
+    保留 RLIMIT + 静态守卫 + safe_builtins，但无 OS 级隔离。
+    """
     denied = _check_static(code)
     if denied:
         return {
@@ -121,11 +384,21 @@ async def run_code(code: str, description: str = "", timeout: int = DEFAULT_TIME
             "logs": "",
         }
 
-    # 缩进程序体并包装为 async 函数
     body = "\n".join("    " + line if line.strip() else line for line in code.splitlines())
-    # SaaS 安全：运行时守卫 — 受控 builtins（白名单 import + 危险 builtin stub）
-    ns: dict[str, Any] = {"tools": _build_sdk(), "ToolCallError": ToolCallError, "__builtins__": _safe_builtins()}
+    ns: dict[str, Any] = {
+        "tools": _build_sdk(),
+        "ToolCallError": ToolCallError,
+        "__builtins__": _safe_builtins(),
+    }
     src = f"async def _main():\n{body}\n"
+
+    if _HAS_RESOURCE:
+        try:
+            _resource.setrlimit(_resource.RLIMIT_AS, (_MEM_LIMIT_BYTES, _MEM_LIMIT_BYTES))
+            _resource.setrlimit(_resource.RLIMIT_CPU, (_CPU_LIMIT_SECONDS, _CPU_LIMIT_SECONDS))
+            _resource.setrlimit(_resource.RLIMIT_FSIZE, (_FILE_LIMIT_BYTES, _FILE_LIMIT_BYTES))
+        except (ValueError, OSError) as e:
+            logger.warning("setrlimit failed (in-process sandbox relaxed): %s", e)
 
     log_buf = io.StringIO()
     try:
@@ -137,7 +410,6 @@ async def run_code(code: str, description: str = "", timeout: int = DEFAULT_TIME
             return result
         result = await asyncio.wait_for(_run(), timeout=timeout)
     except RuntimeError as e:
-        # 运行时守卫拦截（SaaS 安全：堵静态守卫绕过，如 __builtins__['ope'+'n'] 动态构造）
         if "blocked by runtime guard" in str(e):
             return {
                 "isError": True,
@@ -156,16 +428,57 @@ async def run_code(code: str, description: str = "", timeout: int = DEFAULT_TIME
             "logs": log_buf.getvalue()[-MAX_LOG_CHARS:],
         }
     except asyncio.TimeoutError:
-        return {"isError": True, "message": f"run_code timed out after {timeout}s", "logs": log_buf.getvalue()[-MAX_LOG_CHARS:]}
+        return {
+            "isError": True,
+            "message": f"run_code timed out after {timeout}s",
+            "logs": log_buf.getvalue()[-MAX_LOG_CHARS:],
+        }
     except SyntaxError as e:
         return {"isError": True, "message": f"program syntax error: {e}", "logs": ""}
     except Exception as e:  # noqa: BLE001 — 模型程序异常按结构化错误返回
-        return {"isError": True, "message": f"program raised {type(e).__name__}: {e}", "logs": log_buf.getvalue()[-MAX_LOG_CHARS:]}
+        return {
+            "isError": True,
+            "message": f"program raised {type(e).__name__}: {e}",
+            "logs": log_buf.getvalue()[-MAX_LOG_CHARS:],
+        }
 
     return {
         "logs": log_buf.getvalue()[-MAX_LOG_CHARS:],
         "result": _render_result(result),
     }
+
+
+# ── 主入口（先尝试 subprocess，失败降级到同进程）─────────────────────
+
+
+async def run_code(code: str, description: str = "", timeout: int = DEFAULT_TIMEOUT_SECONDS) -> dict[str, Any]:
+    """Execute a Python async program against the tool SDK.
+
+    优先在独立子进程中执行（OS 级隔离 + IPC 代理 tools 调用）；
+    子进程启动失败时降级到同进程加固模式（rlimit + 收紧 imports）。
+
+    Parameters
+    ----------
+    code:
+        Body of ``async def _main():``. May use the injected ``tools``
+        namespace and ``return`` a JSON-serializable value.
+    description:
+        Short summary of what the program does (for the model's own bookkeeping).
+    """
+    if not code.strip():
+        return {"error": "code is required"}
+    timeout = max(1, min(timeout, 300))
+
+    tool_names = registry.list_names()
+
+    # 优先 subprocess 隔离模式
+    result = await _run_in_subprocess(code, tool_names, timeout)
+    if result is not None:
+        return result
+
+    # 降级到同进程加固模式
+    logger.warning("run_code falling back to in-process sandbox (subprocess unavailable)")
+    return await _run_in_process(code, timeout)
 
 
 # ── Register ─────────────────────────────────────────────────────

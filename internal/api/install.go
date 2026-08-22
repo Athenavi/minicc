@@ -97,7 +97,7 @@ func (h *InstallHandler) Setup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate token and set cookie
-	token, err := h.auth.GenerateToken(userID, req.Email, "owner", auth.RolePermissions["owner"])
+	token, err := h.auth.GenerateToken(userID, req.Email, "owner", DefaultTenantID, auth.RolePermissions["owner"])
 	if err != nil {
 		InternalError(w, "authentication failed")
 		return

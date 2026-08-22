@@ -14,16 +14,14 @@ import {
   AlignCenterOutlined, HistoryOutlined,
 } from '@ant-design/icons-vue'
 import { api } from '../api'
+import { useAuthStore } from '../stores/auth'
 import type { Node, Edge, Connection } from '@vue-flow/core'
 
- // 从 JWT token 中解析 user_id
+const authStore = useAuthStore()
+
+ // S 安全：user_id 从 authStore.user 读取（token 已迁至 httpOnly cookie，JS 不可读）
 function getUserIdFromToken(): string | null {
-  const token = localStorage.getItem('token')
-  if (!token) return null
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]))
-    return (payload as Record<string, any>).uid || null
-  } catch { return null }
+  return authStore.user?.id || null
 }
 
 function formatDate(dateStr: string | null | undefined): string {

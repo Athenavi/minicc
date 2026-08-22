@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/athenavi/minicc/internal/db"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -37,15 +38,20 @@ func (s *LocalAuthService) GetUser(ctx context.Context, userID string) (*User, e
 	return &user, nil
 }
 
-func (s *LocalAuthService) GetUserByEmail(ctx context.Context, email string) (*User, error) {
+// GetUserByEmail 多租户查询：email+tenant_id 双键定位，防止跨租户登录。
+// tenantID 为空时回退 DefaultTenantID（单租户兼容，未来收紧）。
+func (s *LocalAuthService) GetUserByEmail(ctx context.Context, email, tenantID string) (*User, error) {
 	if s.db == nil {
 		return nil, fmt.Errorf("database not available")
+	}
+	if tenantID == "" {
+		tenantID = db.DefaultTenantID
 	}
 
 	var user User
 	err := s.db.QueryRow(ctx,
 		`SELECT id, COALESCE(email, ''), COALESCE(name, ''), COALESCE(role, 'user'), COALESCE(tenant_id, '')
-		 FROM users WHERE email = $1`, email).
+		 FROM users WHERE email = $1 AND tenant_id = $2`, email, tenantID).
 		Scan(&user.ID, &user.Email, &user.Name, &user.Role, &user.TenantID)
 	if err != nil {
 		return nil, fmt.Errorf("get user by email: %w", err)
@@ -113,14 +119,19 @@ func (s *LocalAuthService) DeleteUser(ctx context.Context, userID string) error 
 	return nil
 }
 
-func (s *LocalAuthService) ListUsers(ctx context.Context) ([]User, error) {
+// ListUsers 多租户隔离：仅返回指定租户的用户。
+func (s *LocalAuthService) ListUsers(ctx context.Context, tenantID string) ([]User, error) {
 	if s.db == nil {
 		return nil, fmt.Errorf("database not available")
+	}
+	if tenantID == "" {
+		return nil, fmt.Errorf("tenant_id is required for ListUsers")
 	}
 
 	rows, err := s.db.Query(ctx,
 		`SELECT id, COALESCE(email, ''), COALESCE(name, ''), COALESCE(role, 'user'), COALESCE(tenant_id, '')
-		 FROM users ORDER BY created_at DESC LIMIT 100`)
+		 FROM users WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 100`,
+		tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("list users: %w", err)
 	}

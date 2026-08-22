@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -106,19 +107,24 @@ func RecoverMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// CORSMiddleware 处理 CORS。allowOrigin 是逗号分隔白名单；"*" 在 AllowCredentials=true
+// 下违反 CORS 规范且高危，显式拒绝。
 func CORSMiddleware(allowOrigin string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")
 			allowed := false
-			for _, o := range strings.Split(allowOrigin, ",") {
-				if strings.TrimSpace(o) == origin || allowOrigin == "*" {
-					allowed = true
-					break
+			if allowOrigin != "*" && origin != "" {
+				for _, o := range strings.Split(allowOrigin, ",") {
+					if strings.TrimSpace(o) == origin {
+						allowed = true
+						break
+					}
 				}
 			}
 			if allowed {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Vary", "Origin")
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
 			}
 			w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
@@ -134,12 +140,22 @@ func CORSMiddleware(allowOrigin string) func(http.Handler) http.Handler {
 	}
 }
 
+// SecurityHeadersMiddleware 注入通用安全响应头。
+// CSP_CONNECT_SRC 通过 env 注入（默认留空则不强制 connect-src 白名单，
+// 由部署方按生产域名配置，避免 localhost 写死导致生产环境被阻断）。
 func SecurityHeadersMiddleware(next http.Handler) http.Handler {
+	cspConnectSrc := strings.TrimSpace(os.Getenv("CSP_CONNECT_SRC"))
+	if cspConnectSrc == "" {
+		cspConnectSrc = "'self'"
+	}
+	csp := "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+		"img-src 'self' data: blob:; connect-src " + cspConnectSrc + "; " +
+		"font-src 'self' https://fonts.gstatic.com; frame-ancestors 'none'"
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' http://localhost:3000 http://localhost:8080 ws://localhost:8080; font-src 'self' https://fonts.gstatic.com; frame-ancestors 'none'")
+		w.Header().Set("Content-Security-Policy", csp)
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
@@ -168,29 +184,37 @@ func AuthMiddleware(a *auth.Authenticator) func(http.Handler) http.Handler {
 			}
 
 			// 2. Try X-API-Key header
-			if tokenStr == "" {
-				if key := r.Header.Get("X-API-Key"); key != "" {
-					// Validate API key against PostgreSQL
-					var userID, role string
-					keyHash := sha256.Sum256([]byte(key))
-					err := db.ReadPool().QueryRow(r.Context(),
-						`SELECT u.id, u.role FROM users u
-						 JOIN api_keys ak ON ak.user_id = u.id
-						 WHERE ak.key_hash = $1`, hex.EncodeToString(keyHash[:])).Scan(&userID, &role)
-					if err == nil {
-						claims := &auth.Claims{
-							UserID: userID,
-							Role:   role,
-							Perms:  auth.RolePermissions[role],
-						}
-						ctx := auth.WithClaims(r.Context(), claims)
-						next.ServeHTTP(w, r.WithContext(ctx))
-						return
+		if tokenStr == "" {
+			if key := r.Header.Get("X-API-Key"); key != "" {
+				// Validate API key against PostgreSQL（含 tenant_id 与 revoked 状态校验，多租户隔离）
+				var userID, role, tenantID string
+				keyHash := sha256.Sum256([]byte(key))
+				err := db.ReadPool().QueryRow(r.Context(),
+					`SELECT u.id, u.role, COALESCE(u.tenant_id, '') AS tenant_id
+					 FROM users u
+					 JOIN api_keys ak ON ak.user_id = u.id
+					 WHERE ak.key_hash = $1
+					   AND COALESCE(ak.revoked, false) = false
+					   AND (ak.expires_at IS NULL OR ak.expires_at > NOW())`,
+					hex.EncodeToString(keyHash[:])).Scan(&userID, &role, &tenantID)
+				if err == nil {
+					if tenantID == "" {
+						tenantID = db.DefaultTenantID // 单租户兼容
 					}
-					Unauthorized(w, "invalid API key")
+					claims := &auth.Claims{
+						UserID:   userID,
+						Role:     role,
+						TenantID: tenantID,
+						Perms:    auth.RolePermissions[role],
+					}
+					ctx := auth.WithClaims(r.Context(), claims)
+					next.ServeHTTP(w, r.WithContext(ctx))
 					return
 				}
+				Unauthorized(w, "invalid API key")
+				return
 			}
+		}
 
 			if tokenStr == "" {
 				Unauthorized(w, "missing authorization")

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/athenavi/minicc/internal/auth"
+	"github.com/athenavi/minicc/internal/db"
 	"github.com/athenavi/minicc/internal/storage"
 )
 
@@ -63,7 +64,7 @@ func TestMediaHandler_Delete_NoAuth(t *testing.T) {
 
 func TestMediaHandler_PresignUpload_LocalBackend(t *testing.T) {
 	h, authenticator := newTestMediaHandler(t)
-	token, err := authenticator.GenerateToken("user-1", "test@test.com", "user", nil)
+	token, err := authenticator.GenerateToken("user-1", "test@test.com", "user", db.DefaultTenantID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +95,7 @@ func TestMediaHandler_CompleteUpload_NoAuth(t *testing.T) {
 func TestMediaHandler_Create_NoClaimsInContext(t *testing.T) {
 	h, auth := newTestMediaHandler(t)
 	// Generate a JWT token
-	token, err := auth.GenerateToken("user-1", "test@test.com", "user", nil)
+	token, err := auth.GenerateToken("user-1", "test@test.com", "user", db.DefaultTenantID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

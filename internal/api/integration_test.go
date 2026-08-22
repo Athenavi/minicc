@@ -1,4 +1,4 @@
-﻿package api
+package api
 
 import (
 	"bytes"
@@ -13,6 +13,7 @@ import (
 	"github.com/athenavi/minicc/config"
 	"github.com/athenavi/minicc/internal/auth"
 	"github.com/athenavi/minicc/internal/broadcast"
+	"github.com/athenavi/minicc/internal/db"
 	"github.com/athenavi/minicc/internal/session"
 )
 
@@ -40,7 +41,7 @@ func testToken(t *testing.T) string {
 	os.Setenv("JWT_SECRET", "test-secret-that-is-at-least-32-bytes-long!")
 	cfg := config.Load()
 	authenticator := auth.NewAuthenticator(cfg.JWTSecret, cfg.JWTExpiration)
-	token, err := authenticator.GenerateToken("test-user-id", "test@example.com", "user", auth.RolePermissions["user"])
+	token, err := authenticator.GenerateToken("test-user-id", "test@example.com", "user", db.DefaultTenantID, auth.RolePermissions["user"])
 	if err != nil {
 		t.Fatalf("generate token: %v", err)
 	}
@@ -191,7 +192,7 @@ func TestIntegration_SystemTraces(t *testing.T) {
 	// admin 可访问
 	os.Setenv("JWT_SECRET", "test-secret-that-is-at-least-32-bytes-long!")
 	adminAuth := auth.NewAuthenticator(config.Load().JWTSecret, time.Hour)
-	adminToken, err := adminAuth.GenerateToken("admin-id", "admin@example.com", "admin", auth.RolePermissions["admin"])
+	adminToken, err := adminAuth.GenerateToken("admin-id", "admin@example.com", "admin", db.DefaultTenantID, auth.RolePermissions["admin"])
 	if err != nil {
 		t.Fatalf("generate admin token: %v", err)
 	}

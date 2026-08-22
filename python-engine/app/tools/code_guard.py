@@ -73,10 +73,14 @@ def check_static(code: str) -> str | None:
 # __import__ 白名单化（仅安全标准库）。沙箱代码无法拿到 os/subprocess 模块，
 # 动态构造 builtin 调用也被 stub 拦截。（settrace/monitoring 对 asyncio 协程与
 # builtin 调用均不可靠，实测弃用。）
+# S4 强化：移除 io/copy/operator/enum — 这些模块提供元编程链可触达 os/socket，
+# 导致沙箱逃逸。模型代码不需要它们（文件 IO 由 tools 注入 namespace 提供）。
+# asyncio 保留：模型代码常需 `await asyncio.sleep()`/`asyncio.gather()`，且
+# 危险子模块（asyncio.subprocess）由 DANGEROUS_ATTRS 静态守卫拦截。
 SAFE_IMPORTS = frozenset({
     "json", "math", "random", "datetime", "re", "collections",
-    "itertools", "asyncio", "typing", "time", "functools", "decimal",
-    "string", "io", "copy", "operator", "enum",
+    "itertools", "typing", "time", "functools", "decimal",
+    "string", "asyncio",
 })
 BLOCKED_BUILTINS = frozenset({"open", "exec", "eval", "compile", "input", "breakpoint"})
 # 反射攻击函数

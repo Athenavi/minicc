@@ -9,6 +9,9 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080'
 export const api = axios.create({
   baseURL: API_URL,
   timeout: 30000,
+  // S 安全：鉴权凭 httpOnly cookie（由后端 SetTokenCookie 下发），JS 不可读，
+  // 避免 XSS 偷取 localStorage 中的 token。所有请求自动携带同源 cookie。
+  withCredentials: true,
 })
 
 // 工具确认（S 安全修复：三态栅栏“确认”态 — 前端确认卡片回调）
@@ -160,18 +163,10 @@ export async function getPublicShare(shareId: string): Promise<PublicShare> {
   return data?.data
 }
 
-// 请求拦截器：添加 Token
+// 请求拦截器：鉴权凭 httpOnly cookie 自动携带（withCredentials），无需手动设置 Authorization
 api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('token')
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`
-    }
-    return config
-  },
-  (error) => {
-    return Promise.reject(error)
-  }
+  (config) => config,
+  (error) => Promise.reject(error)
 )
 
 // 响应拦截器：处理错误
@@ -179,8 +174,8 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Token 过期，清除并跳转登录
-      localStorage.removeItem('token')
+      // Cookie 过期/失效：清本地 user 态，跳转登录（后端 cookie 由 /v1/auth/logout 清除）
+      localStorage.removeItem('user')
       window.dispatchEvent(new CustomEvent('api:error', {
         detail: { message: '登录已过期，请重新登录' }
       }))

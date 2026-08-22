@@ -11,7 +11,6 @@ import difflib
 from typing import Any
 
 from app.tools.registry import registry
-from app.tools.core import _safe_path
 
 
 async def edit_file(

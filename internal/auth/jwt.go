@@ -32,13 +32,15 @@ func NewAuthenticator(secret string, expiration time.Duration) *Authenticator {
 	}
 }
 
-func (a *Authenticator) GenerateToken(userID, email, role string, perms []string) (string, error) {
+// GenerateToken 签发 JWT。tenantID 必须由调用方从用户记录中传入（多租户隔离键）。
+func (a *Authenticator) GenerateToken(userID, email, role, tenantID string, perms []string) (string, error) {
 	now := time.Now()
 	claims := &Claims{
-		UserID: userID,
-		Email:  email,
-		Role:   role,
-		Perms:  perms,
+		UserID:   userID,
+		Email:    email,
+		Role:     role,
+		TenantID: tenantID,
+		Perms:    perms,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(a.expiration)),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -76,7 +78,7 @@ func (a *Authenticator) RefreshToken(tokenStr string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return a.GenerateToken(claims.UserID, claims.Email, claims.Role, claims.Perms)
+	return a.GenerateToken(claims.UserID, claims.Email, claims.Role, claims.TenantID, claims.Perms)
 }
 
 type contextKey string
@@ -136,12 +138,18 @@ var (
 	PermAdminWrite  = "admin:write"
 	PermToolsExec   = "tools:execute"
 	PermUsersManage = "users:manage"
+	// 企业功能权限点（owner/admin 默认拥有）
+	PermAuditRead   = "audit:read"
+	PermEntManage   = "ent:manage"
+	PermPolicyManage = "policy:manage"
+	PermMarketManage = "market:manage"
+	PermSSOManage   = "sso:manage"
 )
 
 // RolePermissions maps roles to permission sets
 var RolePermissions = map[string][]string{
-	"owner": {PermChatWrite, PermChatRead, PermAdminRead, PermAdminWrite, PermToolsExec, PermUsersManage},
-	"admin": {PermChatWrite, PermChatRead, PermAdminRead, PermAdminWrite, PermToolsExec},
+	"owner": {PermChatWrite, PermChatRead, PermAdminRead, PermAdminWrite, PermToolsExec, PermUsersManage, PermAuditRead, PermEntManage, PermPolicyManage, PermMarketManage, PermSSOManage},
+	"admin": {PermChatWrite, PermChatRead, PermAdminRead, PermAdminWrite, PermToolsExec, PermAuditRead, PermEntManage, PermPolicyManage, PermMarketManage, PermSSOManage},
 	"user":  {PermChatWrite, PermChatRead, PermToolsExec},
 }
 

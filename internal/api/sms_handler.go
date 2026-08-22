@@ -401,7 +401,7 @@ func (h *SmsHandler) Login(w http.ResponseWriter, r *http.Request) {
 	if h.captcha != nil {
 		h.captcha.ClearFailures(ctx, r)
 	}
-	token, err := h.auth.GenerateToken(user.ID, user.Email, user.Role, auth.RolePermissions[user.Role])
+	token, err := h.auth.GenerateToken(user.ID, user.Email, user.Role, db.DefaultTenantID, auth.RolePermissions[user.Role])
 	if err != nil {
 		InternalError(w, "authentication failed")
 		return
