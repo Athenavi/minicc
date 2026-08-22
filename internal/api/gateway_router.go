@@ -245,6 +245,12 @@ func NewGatewayRouter(
 	userMarketHandler := NewUserMarketHandler(cfg, pythonClient)
 	registerUserMarketRoutes(mux, userMarketHandler, authMW, rlMW)
 
+	// 模型路由：对话可用模型列表
+	mux.Handle("GET /v1/models", authMW(rlMW(http.HandlerFunc(ListUserModels))))
+
+	// 定时自动化：Webhook 触发（token 即鉴权，公开但限流）
+	mux.Handle("POST /v1/hooks/{jobID}", rlMW(http.HandlerFunc(HandleCronWebhook)))
+
 	// Billing handler (uses the same billingMgr as /submit to avoid split-brain cache)
 	billingHandler := NewBillingHandler(billingMgr, authenticator, cfg)
 

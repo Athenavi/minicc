@@ -167,6 +167,8 @@ func main() {
 		}
 		if len(addrs) > 0 {
 			pythonClient = engine.NewPythonClient(addrs...)
+	// 定时自动化：cron_jobs 调度器（Webhook/手动触发复用同一执行器）
+	api.StartCronScheduler(ctx, pythonClient)
 			pythonClient.SetInternalToken(cfg.InternalToken)
 			if cfg.InternalToken == "" {
 				slog.Warn("INTERNAL_TOKEN not set; Python engine will reject gateway-impersonated requests")

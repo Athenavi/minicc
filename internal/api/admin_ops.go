@@ -65,6 +65,7 @@ func (h *AdminHandler) registerOpsRoutes(r *http.ServeMux) {
 	r.HandleFunc("POST /cron-jobs", h.CreateCronJob)
 	r.HandleFunc("PUT /cron-jobs/{id}", h.UpdateCronJob)
 	r.HandleFunc("DELETE /cron-jobs/{id}", h.DeleteCronJob)
+	r.HandleFunc("POST /cron-jobs/{id}/trigger", h.HandleCronTrigger)
 }
 
 // ── 租户管理 ──
@@ -660,6 +661,32 @@ func (h *AdminHandler) DeleteModel(w http.ResponseWriter, r *http.Request) {
 	OK(w, map[string]string{"status": "deleted"})
 }
 
+// ListUserModels 用户侧可用模型（仅 enabled）：GET /v1/models
+func ListUserModels(w http.ResponseWriter, r *http.Request) {
+	rows, err := db.ReadPool().Query(r.Context(),
+		`SELECT provider, name, display_name, context_window FROM llm_models
+		 WHERE enabled = true ORDER BY provider, name`)
+	if err != nil {
+		logAndRespond(w, err, http.StatusInternalServerError, "list models failed")
+		return
+	}
+	defer rows.Close()
+	type model struct {
+		Provider      string `json:"provider"`
+		Name          string `json:"name"`
+		DisplayName   string `json:"display_name"`
+		ContextWindow int    `json:"context_window"`
+	}
+	out := []model{}
+	for rows.Next() {
+		var m model
+		if rows.Scan(&m.Provider, &m.Name, &m.DisplayName, &m.ContextWindow) == nil {
+			out = append(out, m)
+		}
+	}
+	OK(w, map[string]interface{}{"models": out})
+}
+
 // ── 定时任务 ──
 
 type cronRow struct {
@@ -670,12 +697,13 @@ type cronRow struct {
 	Enabled    bool       `json:"enabled"`
 	LastRunAt  *time.Time `json:"last_run_at"`
 	LastStatus string     `json:"last_status"`
+	WebhookToken string   `json:"webhook_token"`
 	CreatedAt  time.Time  `json:"created_at"`
 }
 
 func (h *AdminHandler) ListCronJobs(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.ReadPool().Query(r.Context(),
-		`SELECT id::text, name, schedule, task, enabled, last_run_at, last_status, created_at FROM cron_jobs ORDER BY created_at DESC`)
+		`SELECT id::text, name, schedule, task, enabled, last_run_at, last_status, webhook_token, created_at FROM cron_jobs ORDER BY created_at DESC`)
 	if err != nil {
 		logAndRespond(w, err, http.StatusInternalServerError, "list cron jobs failed")
 		return
@@ -684,7 +712,7 @@ func (h *AdminHandler) ListCronJobs(w http.ResponseWriter, r *http.Request) {
 	out := []cronRow{}
 	for rows.Next() {
 		var c cronRow
-		if rows.Scan(&c.ID, &c.Name, &c.Schedule, &c.Task, &c.Enabled, &c.LastRunAt, &c.LastStatus, &c.CreatedAt) == nil {
+		if rows.Scan(&c.ID, &c.Name, &c.Schedule, &c.Task, &c.Enabled, &c.LastRunAt, &c.LastStatus, &c.WebhookToken, &c.CreatedAt) == nil {
 			out = append(out, c)
 		}
 	}
@@ -702,14 +730,15 @@ func (h *AdminHandler) CreateCronJob(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "name, schedule and task are required")
 		return
 	}
-	id, _ := id.UUID()
+	jobID, _ := id.UUID()
+	token, _ := id.UUID()
 	if _, err := db.Pool.Exec(r.Context(),
-		`INSERT INTO cron_jobs (id, name, schedule, task, enabled) VALUES ($1, $2, $3, $4, $5)`,
-		id, body.Name, body.Schedule, body.Task, body.Enabled); err != nil {
+		`INSERT INTO cron_jobs (id, name, schedule, task, enabled, webhook_token) VALUES ($1, $2, $3, $4, $5, $6)`,
+		jobID, body.Name, body.Schedule, body.Task, body.Enabled, token); err != nil {
 		logAndRespond(w, err, http.StatusInternalServerError, "create cron job failed")
 		return
 	}
-	OK(w, map[string]interface{}{"id": id, "name": body.Name, "schedule": body.Schedule})
+	OK(w, map[string]interface{}{"id": jobID, "name": body.Name, "schedule": body.Schedule, "webhook_token": token})
 }
 
 func (h *AdminHandler) UpdateCronJob(w http.ResponseWriter, r *http.Request) {

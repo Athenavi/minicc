@@ -309,3 +309,26 @@ export async function resolveMediaUrl(asset: { id?: string; file_url?: string })
 }
 
 
+// ── 模型路由 / 定时自动化（2026-08-23）──
+export interface LlmModel {
+  provider: string
+  name: string
+  display_name: string
+  context_window: number
+}
+
+export async function listModels(): Promise<LlmModel[]> {
+  const resp = await api.get('/v1/models')
+  return resp.data?.models || []
+}
+
+export async function triggerCronJob(id: string): Promise<any> {
+  const resp = await api.post(`/v1/admin/cron-jobs/${id}/trigger`)
+  return resp.data
+}
+
+/** 生成 cron job 的 Webhook 触发 URL（POST，token 为鉴权） */
+export function cronWebhookUrl(id: string, token: string): string {
+  return `${location.origin}/v1/hooks/${id}?token=${encodeURIComponent(token)}`
+}
+
