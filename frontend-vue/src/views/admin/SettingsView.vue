@@ -313,20 +313,25 @@ const copyKernel = () => {
 .settings { padding: 0; }
 
 .code-block {
-  background: #f5f5f5;
-  border: 1px solid #e0e0e0;
+  background: var(--bg-code, #f5f5f5);
+  border: 1px solid var(--border-card, #e0e0e0);
   border-radius: 6px;
   padding: 16px;
-  font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+  font-family: var(--font-mono, 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace);
   font-size: 12px;
   line-height: 1.6;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   white-space: pre;
+  color: var(--text-code, var(--text-primary));
 }
 
-:root.dark .code-block {
-  background: #1e1e1e;
-  border-color: #333;
-  color: #d4d4d4;
+/* 移动端 */
+@media (max-width: 640px) {
+  .code-block { padding: 12px; font-size: 11px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .code-block { transition: none; }
 }
 </style>

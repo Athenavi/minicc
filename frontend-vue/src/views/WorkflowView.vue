@@ -899,4 +899,26 @@ function statusClass(nodeProps: any): string {
 .history-result { border-top: 1px dashed var(--border); padding-top: 6px; }
 .history-node { font-size: 11px; font-weight: 600; color: var(--primary); }
 .history-output { margin: 4px 0 0; font-size: 11px; color: var(--text-secondary); white-space: pre-wrap; word-break: break-all; }
+
+/* 移动端：节点面板和属性面板收窄，toolbar 允许换行 */
+@media (max-width: 768px) {
+  .toolbar { flex-wrap: wrap; padding: 8px 12px; gap: 6px; }
+  .toolbar-left, .toolbar-right { flex-wrap: wrap; gap: 6px; }
+  .node-palette { width: 120px; padding: 8px; }
+  .palette-item { padding: 6px 8px; font-size: 12px; }
+  .palette-hint { display: none; }
+  .property-panel { width: 240px; }
+  .execution-bar { max-height: 140px; padding: 6px 12px; font-size: 11px; }
+}
+
+/* 超小屏：隐藏节点面板（通过 toolbar 按钮触发浮层） */
+@media (max-width: 480px) {
+  .node-palette { display: none; }
+  .property-panel { position: absolute; right: 0; top: 0; bottom: 0; z-index: 20; width: 80%; max-width: 280px; box-shadow: var(--shadow-lg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .custom-node.status-running { animation: none; }
+  .palette-item, .workflow-item { transition: none; }
+}
 </style>

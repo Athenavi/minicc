@@ -124,17 +124,17 @@ onMounted(() => {
           </Col>
           <Col :span="6">
             <Statistic title="正常" :value="stats.active">
-              <template #prefix><CheckCircleOutlined style="color: #18a058" /></template>
+              <template #prefix><CheckCircleOutlined class="status-ok" /></template>
             </Statistic>
           </Col>
           <Col :span="6">
             <Statistic title="限流中" :value="stats.rateLimited">
-              <template #prefix><WarningOutlined style="color: #f0a020" /></template>
+              <template #prefix><WarningOutlined class="status-warn" /></template>
             </Statistic>
           </Col>
           <Col :span="6">
             <Statistic title="熔断" :value="stats.circuitOpen">
-              <template #prefix><CloseCircleOutlined style="color: #d03050" /></template>
+              <template #prefix><CloseCircleOutlined class="status-error" /></template>
             </Statistic>
           </Col>
         </Row>
@@ -178,4 +178,12 @@ onMounted(() => {
 
 <style scoped>
 .api-keys { padding: 0; }
+.status-ok { color: var(--colorSuccess, #18a058); }
+.status-warn { color: var(--colorWarning, #f0a020); }
+.status-error { color: var(--colorError, #d03050); }
+
+/* 移动端：统计四列改两列 */
+@media (max-width: 640px) {
+  .api-keys :deep(.ant-col) { flex: 0 0 50%; max-width: 50%; margin-bottom: 12px; }
+}
 </style>

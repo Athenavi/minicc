@@ -164,4 +164,9 @@ onMounted(() => {
 
 <style scoped>
 .cache-monitor { padding: 0; }
+
+/* 移动端 */
+@media (max-width: 640px) {
+  .cache-monitor :deep(.ant-col) { flex: 0 0 50%; max-width: 50%; margin-bottom: 12px; }
+}
 </style>
