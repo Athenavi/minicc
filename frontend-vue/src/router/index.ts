@@ -211,6 +211,12 @@ const routes = [
         component: () => import('../views/admin/MarketView.vue'),
         meta: { title: '企业能力市场' },
       },
+      {
+        path: 'api-docs',
+        name: 'AdminApiDocs',
+        component: () => import('../views/admin/ApiDocsView.vue'),
+        meta: { title: 'API 文档' },
+      },
     ],
   },
 ]

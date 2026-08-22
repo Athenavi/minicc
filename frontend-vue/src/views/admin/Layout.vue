@@ -33,6 +33,7 @@ import {
   WalletOutlined,
   ControlOutlined,
   ShopOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons-vue'
 
 const router = useRouter()
@@ -68,6 +69,7 @@ const menuItems: any[] = [
   { key: '/admin/privacy', label: '隐私模式管控', icon: () => h(SafetyOutlined) },
   { key: '/admin/model-policy', label: '模型策略管控', icon: () => h(ControlOutlined) },
   { key: '/admin/market', label: '企业能力市场', icon: () => h(ShopOutlined) },
+  { key: '/admin/api-docs', label: 'API 文档', icon: () => h(FileTextOutlined) },
 ]
 
 const userMenuItems: any[] = [

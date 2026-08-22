@@ -1,0 +1,511 @@
+openapi: 3.0.3
+info:
+  title: MiniCC API
+  description: |
+    多租户 SaaS AI Agent 平台 API 文档。
+
+    ## 认证
+    - 登录后端点设置 `minicc_token` httpOnly cookie
+    - 后续请求自动携带 cookie（`withCredentials: true`）
+    - SSO 登录通过 `/v1/auth/sso/login/{providerID}` 发起
+
+    ## 多租户
+    - JWT claims 含 `tenant_id`，所有查询自动按租户隔离
+    - 企业功能需 `audit:read`/`ent:manage`/`policy:manage`/`market:manage`/`sso:manage` 权限点
+  version: 1.0.0
+  contact:
+    name: MiniCC
+servers:
+  - url: http://localhost:8080
+    description: 本地开发
+  - url: https://api.minicc.example.com
+    description: 生产
+
+tags:
+  - name: auth
+    description: 认证与会话
+  - name: chat
+    description: AI 对话
+  - name: enterprise
+    description: 企业功能（需企业权限点）
+  - name: sso
+    description: 单点登录
+  - name: system
+    description: 系统监控
+
+paths:
+  # ── 认证 ──
+  /v1/auth/login:
+    post:
+      tags: [auth]
+      summary: 邮箱密码登录
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+                captcha_id: { type: string }
+                captcha_code: { type: string }
+      responses:
+        '200':
+          description: 登录成功，设置 httpOnly cookie
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      token: { type: string }
+                      user: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /v1/auth/register:
+    post:
+      tags: [auth]
+      summary: 用户注册
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, name]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+                name: { type: string }
+      responses:
+        '201': { description: 注册成功 }
+        '409': { description: 邮箱已存在 }
+
+  /v1/auth/logout:
+    post:
+      tags: [auth]
+      summary: 登出（清除 httpOnly cookie）
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: 登出成功 }
+
+  /v1/auth/me:
+    get:
+      tags: [auth]
+      summary: 获取当前用户
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ── SSO ──
+  /v1/auth/sso/providers:
+    get:
+      tags: [sso]
+      summary: 列出 SSO provider（公开）
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/SSOProvider' }
+
+  /v1/auth/sso/login/{providerID}:
+    get:
+      tags: [sso]
+      summary: 发起 SSO 登录（重定向到 IdP）
+      parameters:
+        - name: providerID
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '302': { description: 重定向到 IdP 授权 URL }
+        '404': { description: provider 不存在 }
+
+  # ── 聊天 ──
+  /v1/agent/submit:
+    post:
+      tags: [chat]
+      summary: 提交对话
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id, content]
+              properties:
+                session_id: { type: string }
+                content: { type: string }
+                model: { type: string, example: deepseek-chat }
+      responses:
+        '200':
+          description: 对话已提交，通过 SSE 流式返回
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /v1/agent/events:
+    get:
+      tags: [chat]
+      summary: SSE 事件流（流式响应）
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: session_id
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: SSE 流（text/event-stream）
+
+  # ── 企业功能 ──
+  /v1/ent/audit:
+    get:
+      tags: [enterprise]
+      summary: 操作审计日志
+      description: 需要 `audit:read` 权限
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: start, in: query, schema: { type: string, format: date-time } }
+        - { name: end, in: query, schema: { type: string, format: date-time } }
+        - { name: user_id, in: query, schema: { type: string } }
+        - { name: action, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 50 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      logs:
+                        type: array
+                        items: { $ref: '#/components/schemas/AuditLog' }
+                      total: { type: integer }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /v1/ent/roles:
+    get:
+      tags: [enterprise]
+      summary: 角色列表
+      description: 需要 `ent:manage` 权限
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Role' }
+    post:
+      tags: [enterprise]
+      summary: 创建角色
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoleInput' }
+      responses:
+        '201': { description: 创建成功 }
+        '409': { description: 角色名已存在 }
+
+  /v1/ent/groups:
+    get:
+      tags: [enterprise]
+      summary: 群组列表
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Group' }
+
+  /v1/ent/cost/summary:
+    get:
+      tags: [enterprise]
+      summary: 成本汇总
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: start, in: query, schema: { type: string, format: date } }
+        - { name: end, in: query, schema: { type: string, format: date } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/CostSummary' }
+
+  /v1/ent/quotas:
+    get:
+      tags: [enterprise]
+      summary: 配额池列表
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/QuotaPool' }
+
+  /v1/ent/privacy:
+    get:
+      tags: [enterprise]
+      summary: 隐私模式配置
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/PrivacyConfig' }
+    put:
+      tags: [enterprise]
+      summary: 更新隐私模式
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PrivacyConfig' }
+      responses:
+        '200': { description: 更新成功 }
+
+  /v1/ent/model-policies:
+    get:
+      tags: [enterprise]
+      summary: 模型策略列表
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/ModelPolicy' }
+
+  /v1/ent/market/items:
+    get:
+      tags: [enterprise]
+      summary: 能力市场条目
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/MarketItem' }
+
+  # ── 系统 ──
+  /health:
+    get:
+      tags: [system]
+      summary: 健康检查
+      responses:
+        '200':
+          description: ok
+
+  /metrics:
+    get:
+      tags: [system]
+      summary: Prometheus 指标
+      responses:
+        '200':
+          content:
+            text/plain:
+              schema: { type: string }
+
+  /v1/system/health:
+    get:
+      tags: [system]
+      summary: 系统健康评分
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/HealthScores' }
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: minicc_token
+      description: httpOnly cookie，登录后自动设置
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        email: { type: string }
+        name: { type: string }
+        role: { type: string, enum: [owner, admin, user] }
+        tenant_id: { type: string }
+
+    SSOProvider:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        protocol: { type: string, enum: [oidc, saml] }
+        display_name: { type: string }
+        enabled: { type: boolean }
+
+    AuditLog:
+      type: object
+      properties:
+        id: { type: string }
+        user_id: { type: string }
+        action: { type: string }
+        resource_type: { type: string }
+        resource_id: { type: string }
+        ip: { type: string }
+        created_at: { type: string, format: date-time }
+        details: { type: object }
+
+    Role:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        display_name: { type: string }
+        is_builtin: { type: boolean }
+        permissions: { type: array, items: { type: string } }
+
+    RoleInput:
+      type: object
+      properties:
+        name: { type: string }
+        display_name: { type: string }
+        permissions: { type: array, items: { type: string } }
+
+    Group:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        member_count: { type: integer }
+
+    CostSummary:
+      type: object
+      properties:
+        total_cost: { type: number }
+        token_usage: { type: integer }
+        period: { type: string }
+
+    QuotaPool:
+      type: object
+      properties:
+        id: { type: string }
+        resource_type: { type: string }
+        total_amount: { type: number }
+        period: { type: string, enum: [daily, weekly, monthly] }
+
+    PrivacyConfig:
+      type: object
+      properties:
+        privacy_mode: { type: boolean }
+        data_retention_days: { type: integer }
+        training_allowed: { type: boolean }
+
+    ModelPolicy:
+      type: object
+      properties:
+        id: { type: string }
+        role_id: { type: string }
+        allowed_models: { type: array, items: { type: string } }
+        rate_limit: { type: object }
+
+    MarketItem:
+      type: object
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [plugin, skill] }
+        name: { type: string }
+        version: { type: string }
+        status: { type: string, enum: [draft, published, retired] }
+
+    HealthScores:
+      type: object
+      properties:
+        uptime: { type: number }
+        requests_total: { type: integer }
+        requests_active: { type: integer }
+        llm_calls: { type: integer }
+        llm_errors: { type: integer }
+
+  responses:
+    Unauthorized:
+      description: 未认证
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string }
+
+    Forbidden:
+      description: 权限不足
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string }
+
+    TooManyRequests:
+      description: 限流
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string }

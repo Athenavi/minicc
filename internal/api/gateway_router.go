@@ -302,6 +302,8 @@ func registerPublicEndpoints(
 	mux.Handle("GET /health", rlMW(publicMW(http.HandlerFunc(handleHealth))))
 	// Prometheus 指标端点（公开，供 Prometheus 抓取；生产建议加内网限制）
 	mux.Handle("GET /metrics", rlMW(publicMW(http.HandlerFunc(systemHandler.PrometheusMetrics))))
+	// API 文档（OpenAPI spec，公开，供 Swagger/Redoc 展示）
+	mux.Handle("GET /docs/", publicMW(http.StripPrefix("/docs/", http.FileServer(http.Dir("docs")))))
 	mux.Handle("GET /ready", rlMW(publicMW(http.HandlerFunc(handleReadiness))))
 }
 
