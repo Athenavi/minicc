@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -64,6 +65,32 @@ func (h *SystemHandler) HealthScores(w http.ResponseWriter, r *http.Request) {
 // Metrics returns the live monitor snapshot as a key-value map.
 func (h *SystemHandler) Metrics(w http.ResponseWriter, r *http.Request) {
 	OK(w, monitor.Snapshot())
+}
+
+// PrometheusMetrics 输出 Prometheus 文本格式指标（供 Prometheus 抓取）。
+// 端点 /metrics 公开暴露（生产部署建议加内网限制或 basicauth）。
+func (h *SystemHandler) PrometheusMetrics(w http.ResponseWriter, r *http.Request) {
+	s := monitor.Snapshot()
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	// counter 类型指标（snapshot key → prometheus metric name）
+	counters := [][2]string{
+		{"requests_total", "Total HTTP requests"},
+		{"llm_calls", "Total LLM API calls"},
+		{"llm_errors", "Total LLM API errors"},
+		{"tool_calls", "Total tool executions"},
+		{"tool_errors", "Total tool execution errors"},
+	}
+	for _, c := range counters {
+		fmt.Fprintf(w, "# HELP minicc_%s %s\n# TYPE minicc_%s counter\nminicc_%s %v\n", c[0], c[1], c[0], c[0], s[c[0]])
+	}
+	// gauge 类型指标
+	gauges := [][2]string{
+		{"requests_active", "Active HTTP requests"},
+		{"uptime_seconds", "Process uptime in seconds"},
+	}
+	for _, g := range gauges {
+		fmt.Fprintf(w, "# HELP minicc_%s %s\n# TYPE minicc_%s gauge\nminicc_%s %v\n", g[0], g[1], g[0], g[0], s[g[0]])
+	}
 }
 
 // Spans returns completed tracing spans for debugging.

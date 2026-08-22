@@ -70,6 +70,21 @@ services:
       postgres:
         condition: service_healthy
 
+  # ── 数据库迁移（初始化 + 启动时执行）──
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_DSN: "postgres://minicc:minicc@postgres:5432/minicc?sslmode=disable"
+    # 迁移完成后退出，gateway 依赖 migrate 成功
+    command: ["./migrate", "up"]
+    restart: "no"
+
   # ── Go 服务（网关 + 业务） ──
 
   gateway:
@@ -85,6 +100,8 @@ services:
         condition: service_healthy
       temporal:
         condition: service_started
+      migrate:
+        condition: service_completed_successfully
     environment:
       PORT: "8080"
       POSTGRES_DSN: "postgres://minicc:minicc@postgres:5432/minicc?sslmode=disable"
@@ -94,7 +111,8 @@ services:
       S3_BUCKET: "minicc-media"
       S3_ACCESS_KEY: "minioadmin"
       S3_SECRET_KEY: "minioadmin123"
-      JWT_SECRET: "minicc-dev-jwt-secret-2026"
+      JWT_SECRET: "${JWT_SECRET:-minicc-dev-jwt-secret-2026}"
+      COOKIE_SECURE: "${COOKIE_SECURE:-false}"
       # Python AI 引擎地址
       PYTHON_ENGINE_ADDRESS: "python-engine:8000"
       # Temporal 地址
@@ -107,6 +125,13 @@ services:
       STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:-}"
     volumes:
       - workspace:/app/workspace
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   # ── Python AI 引擎（自研 LLM Gateway） ──
 
@@ -133,6 +158,13 @@ services:
       # 可观测性
       LOG_LEVEL: "INFO"
       OTEL_ENDPOINT: ""
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   # ── Milvus 向量数据库 ──
 
@@ -150,12 +182,14 @@ services:
   minio-setup:
     image: minio/minio:latest
     depends_on:
-      - minio
+      minio:
+        condition: service_healthy
     entrypoint: >
       /bin/sh -c "
       mc alias set myminio http://minio:9000 minioadmin minioadmin123;
       mc mb --ignore-existing myminio/minicc-media;
       "
+    restart: "no"
 
   milvus-standalone:
     image: milvusdb/milvus:latest
@@ -186,10 +220,26 @@ services:
     ports:
       - "3000:80"
     depends_on:
-      - gateway
+      gateway:
+        condition: service_healthy
     environment:
       VITE_API_URL: "http://localhost:8080"
       VITE_WS_URL: "ws://localhost:8080"
+    restart: unless-stopped
+
+  # ── Prometheus 监控 ──
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheusdata:/prometheus
+    depends_on:
+      gateway:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   pgdata:
@@ -198,3 +248,4 @@ volumes:
   workspace:
   etcddata:
   milvusdata:
+  prometheusdata:

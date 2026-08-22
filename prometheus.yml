@@ -1,0 +1,26 @@
+# Prometheus 抓取配置
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # MiniCC Go 网关
+  - job_name: 'minicc-gateway'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['gateway:8080']
+        labels:
+          service: 'gateway'
+
+  # Python AI 引擎（如有 /metrics 端点）
+  - job_name: 'minicc-python-engine'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['python-engine:8000']
+        labels:
+          service: 'python-engine'
+
+  # Prometheus 自监控
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
