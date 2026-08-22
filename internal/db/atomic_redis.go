@@ -57,6 +57,10 @@ func (a *AtomicRedis) Close() error {
 	return a.load().Close()
 }
 
+func (a *AtomicRedis) Do(ctx context.Context, args ...interface{}) *redis.Cmd {
+	return a.load().Do(ctx, args...)
+}
+
 func (a *AtomicRedis) Stats() *redis.PoolStats {
 	return a.load().Stats()
 }

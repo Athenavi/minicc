@@ -1,0 +1,5 @@
+-- 20260823000002_admin_ops: down
+DROP TABLE IF EXISTS cron_jobs;
+DROP TABLE IF EXISTS llm_models;
+DROP TABLE IF EXISTS domains;
+ALTER TABLE tenants DROP COLUMN IF EXISTS status;

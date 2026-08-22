@@ -21,6 +21,8 @@ type RedisClient interface {
 	Subscribe(ctx context.Context, channels ...string) *redis.PubSub
 	Close() error
 	Stats() *redis.PoolStats
+	// Do 执行任意 Redis 命令（慢日志/FLUSH 等管理操作）
+	Do(ctx context.Context, args ...interface{}) *redis.Cmd
 	Scan(ctx context.Context, cursor uint64, match string, count int64) *redis.ScanCmd
 	Eval(ctx context.Context, script string, keys []string, args ...interface{}) *redis.Cmd
 	EvalSha(ctx context.Context, sha1 string, keys []string, args ...interface{}) *redis.Cmd
@@ -103,6 +105,10 @@ func (s *SingleRedis) Subscribe(ctx context.Context, channels ...string) *redis.
 
 func (s *SingleRedis) Close() error {
 	return s.client.Close()
+}
+
+func (s *SingleRedis) Do(ctx context.Context, args ...interface{}) *redis.Cmd {
+	return s.client.Do(ctx, args...)
 }
 
 func (s *SingleRedis) Stats() *redis.PoolStats {
@@ -233,6 +239,10 @@ func (c *ClusterRedis) Close() error {
 	return c.client.Close()
 }
 
+func (c *ClusterRedis) Do(ctx context.Context, args ...interface{}) *redis.Cmd {
+	return c.client.Do(ctx, args...)
+}
+
 func (c *ClusterRedis) Stats() *redis.PoolStats {
 	return c.client.PoolStats()
 }
@@ -361,6 +371,10 @@ func (f *FailoverRedis) Subscribe(ctx context.Context, channels ...string) *redi
 
 func (f *FailoverRedis) Close() error {
 	return f.client.Close()
+}
+
+func (f *FailoverRedis) Do(ctx context.Context, args ...interface{}) *redis.Cmd {
+	return f.client.Do(ctx, args...)
 }
 
 func (f *FailoverRedis) Stats() *redis.PoolStats {

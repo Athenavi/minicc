@@ -68,6 +68,8 @@ func (h *AdminHandler) RegisterRoutes(r *http.ServeMux) {
 
 	// 新增端点：API Key 管理
 	r.HandleFunc("GET /api-keys", h.ListApiKeys)
+	// 运维类端点（租户/域名/数据库/Redis/模型/定时任务）—— /admin 全栈实装
+	h.registerOpsRoutes(r)
 	r.HandleFunc("POST /api-keys", h.AddApiKey)
 	r.HandleFunc("PUT /api-keys/{id}", h.UpdateApiKey)
 	r.HandleFunc("DELETE /api-keys/{id}", h.DeleteApiKey)
