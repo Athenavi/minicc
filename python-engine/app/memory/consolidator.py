@@ -20,7 +20,7 @@ import logging
 import re
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any, Awaitable, Callable, Optional
 
 from app.memory.layers import SummaryEntry, cosine_similarity
@@ -43,7 +43,7 @@ class ConsolidateResult:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "summary": self.summary.to_dict() if self.summary else None,
+            "summary": asdict(self.summary) if self.summary else None,
             "deduplicated": self.deduplicated,
             "near_duplicate_of": self.near_duplicate_of,
             "error": self.error or None,
@@ -98,7 +98,10 @@ class Consolidator:
 
         # ③ 去重：精确 hash
         ch = compute_hash(tenant_id, user_id, content)
-        existing = await self._store.get_by_hash(tenant_id, user_id, ch)
+        try:
+            existing = await self._store.get_by_hash(tenant_id, user_id, ch)
+        except Exception:
+            existing = None
         if existing is not None:
             result.summary = existing
             result.deduplicated = True
@@ -134,6 +137,8 @@ class Consolidator:
             turn_start=turn_start,
             turn_end=turn_end,
             content_hash=ch,
+            access_count=0,
+            last_accessed_at=None,
         )
         try:
             created = await self._store.insert(entry, embedding)

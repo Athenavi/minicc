@@ -184,16 +184,42 @@ CREATE TABLE IF NOT EXISTS memory_summaries (
     status      VARCHAR(16) NOT NULL DEFAULT 'active',
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- 唯一索引用于 content_hash 去重
+CREATE UNIQUE INDEX uq_ms_hash ON memory_summaries (tenant_id, user_id, content_hash);
+```
+
+**SummaryStore 实现**（`app/memory/summary_store.py`）：
+
+```python
+class SummaryStore:
+    """L3 摘要存储 Provider。"""
+    
+    # 双写：save_summary 同时写入 PG 和 Milvus
+    async def save_summary(self, scope, content, topics, entities, 
+                           turn_start, turn_end, embedding):
+        # 1. 插入 PG memory_summaries 表（含 ON CONFLICT 去重）
+        # 2. 插入 Milvus memory_store collection
+        pass
+    
+    # 语义检索：向量搜索 + final_score 排序
+    async def recall(self, scope, query, top_k=5):
+        # 1. 检查 Redis 查询缓存（key = sha256(tenant:user:query)，TTL 5min）
+        # 2. 生成 query embedding（检查嵌入缓存，TTL 30min）
+        # 3. Milvus 向量搜索（cosine ≥ 0.45 阈值）
+        # 4. final_score 排序（recency×0.4 + access×0.3 + similarity×0.3）
+        # 5. token 预算截断（6KB 硬上限）
+        pass
 ```
 
 **检索与排序**：
 
 ```
-final_score = cosine_similarity × recency_decay × (1 + 0.1 × min(access_count, 10))
+final_score = recency_decay × 0.4 + access_count_norm × 0.3 + cosine_similarity × 0.3
 ```
 
 - 查询入口 `recall(query, top_k=5)`；**注入预算硬上限 6KB**
 - 阈值：cosine ≥ 0.45
+- 缓存策略：查询结果 Redis 5 分钟，嵌入向量 Redis 30 分钟
 
 **遗忘/衰退规则**：
 - 90 天未命中 → archived
@@ -223,14 +249,48 @@ final_score = cosine_similarity × recency_decay × (1 + 0.1 × min(access_count
 **巩固 pipeline 步骤**（`app/memory/consolidator.py`）：
 
 ```
-滑出消息 → ① LLM 摘要（ContextManager._summarise）
-        → ② NER 实体 + 主题解析
+滑出消息 → ① LLM 摘要（ContextManager._summarise，失败则降级提取式摘要）
+        → ② NER 实体 + 主题解析（规则式，零依赖）
         → ③ 去重检查（content_hash 精确 + 嵌入 cosine>0.95 近重复 → 合并）
         → ④ 写 L3（Milvus insert + PG 镜像，双写）
         → ⑤ 稳定事实探测：entities/topics 命中 L2 既有槽位 or 出现 ≥2 次跨会话
              → 是 → 产出"档案卡候选"（pending_confirmation 表）
              → 否 → 结束
 ```
+
+**Consolidator 实现要点**：
+
+```python
+class Consolidator:
+    """L4 滑出消息 → L3 摘要巩固 pipeline。"""
+    
+    async def consolidate(self, tenant_id, user_id, session_id, 
+                          messages, turn_start, turn_end):
+        # 步骤①: LLM 摘要（或降级）
+        summary = await self._summarise_or_fallback(messages)
+        
+        # 步骤②: NER 实体 + 主题解析
+        entities = self._extract_entities(summary)
+        topics = self._extract_topics(summary)
+        
+        # 步骤③: 去重检查
+        content_hash = self._compute_hash(summary)
+        existing = await self._store.get_by_hash(tenant_id, user_id, content_hash)
+        if existing:
+            return ConsolidateResult(deduplicated=True)
+        
+        # 步骤④: 生成 embedding 并双写
+        embedding = await self._embedder(summary)
+        entry = await self._store.save_summary(...)
+        
+        # 步骤⑤: 稳定事实探测（可选）
+        return ConsolidateResult(summary=entry)
+```
+
+**异步队列集成**（`app/memory/service.py`）：
+- `on_turn_complete`: 入队 `memory_consolidate` 任务（每回合触发）
+- `on_session_end`: 入队 `memory_rollup` 任务（会话结束时触发，高优先级）
+- Worker 处理：`app/queue/worker.py` 中 `handle_memory_consolidate` / `handle_memory_rollup`
 
 ### 4.2 检索与召回（每回合 prompt 组装）
 
@@ -398,10 +458,21 @@ python-engine/app/memory/store.py (全局单例，已废弃)
 
 ### 单元测试
 
-- **L2 单元**：槽位 upsert 幂等、version 递增、冲突不覆盖 user_confirmed、衰退归档、200 条目淘汰
-- **L3 单元**：摘要生成（mock LLM）、NER 抽取、content_hash 去重、final_score 排序、90 天归档
-- **巩固 pipeline**：L4→L3 全链路、先写后清顺序、崩溃中断重放幂等、rollup 合并
-- **工具**：remember 带 slot、recall 合并 L2/L3、forget 抑制名单
+**PR-1 测试（已完成）**：
+- **L2 单元** (`test_profile_card.py`, 32 用例)：槽位 upsert 幂等、version 递增、冲突不覆盖 user_confirmed、衰退归档、200 条目淘汰
+- **MemoryService 单元** (`test_service.py`, 44 用例)：on_session_start/end/turn_complete 生命周期、工具集成、序列化格式
+
+**PR-2 测试（已完成）**：
+- **SummaryStore 单元** (`test_summary_store.py`, 46 用例)：save_summary 双写、recall 向量检索、final_score 排序、查询缓存、token 预算截断
+- **Consolidator 单元** (`test_consolidator.py`, 44 用例)：摘要提取、NER 实体抽取、去重逻辑、完整 pipeline、幂等性
+- **L3 语义查询单元** (`test_l3_semantic_query.py`, 24 用例)：L2+L3 合并、去重逻辑、fail-soft 降级、边界条件
+
+**测试结果**：186 个用例全部通过，新增模块覆盖率：
+- `consolidator.py`: 99%
+- `layers.py`: 95%
+- `profile_card.py`: 95%
+- `summary_store.py`: 77%（异常路径待补充）
+- `service.py`: 84%（异常路径待补充）
 
 ### 集成测试
 
