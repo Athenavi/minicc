@@ -134,6 +134,26 @@ class ConflictRef:
 
 
 @dataclass
+class SummaryEntry:
+    """L3 对话摘要条目（存储用）。"""
+    id: str
+    tenant_id: str
+    user_id: str
+    session_id: str
+    content: str
+    topics: list[str]
+    entities: dict[str, list[str]]
+    turn_start: int
+    turn_end: int
+    content_hash: str
+    access_count: int
+    last_accessed_at: float | None
+    status: str = "active"
+    created_at: float = 0.0
+    embedding: list[float] | None = None
+
+
+@dataclass
 class RecalledItem:
     """L3 召回的单个摘要项。"""
     id: str
@@ -200,3 +220,23 @@ class TokenUsage:
     @property
     def tokens_out(self) -> int:
         return self.completion_tokens
+
+
+# ── 工具函数 ─────────────────────────────────────────────────────────────
+
+
+def cosine_similarity(a: list[float], b: list[float]) -> float:
+    """计算两个向量的余弦相似度。"""
+    import math
+
+    if len(a) != len(b):
+        return 0.0
+
+    dot_product = sum(x * y for x, y in zip(a, b))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(x * x for x in b))
+
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+
+    return dot_product / (norm_a * norm_b)

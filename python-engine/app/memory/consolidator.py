@@ -19,11 +19,12 @@ import json
 import logging
 import re
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Optional
 
 from app.memory.layers import SummaryEntry, cosine_similarity
-from app.memory.summaries import SummaryStore, compute_hash, new_summary_id
+from app.memory.summary_store import SummaryStore
 
 logger = logging.getLogger(__name__)
 
@@ -235,3 +236,14 @@ def _extract_topics(text: str) -> list[str]:
         freq[w] = freq.get(w, 0) + 1
     sorted_topics = sorted(freq.items(), key=lambda x: -x[1])
     return [t[0] for t in sorted_topics[:5] if t[1] >= 2]
+
+
+def new_summary_id() -> str:
+    """生成新的摘要 ID。"""
+    return f"sms_{uuid.uuid4().hex[:20]}"
+
+
+def compute_hash(tenant_id: str, user_id: str, content: str) -> str:
+    """计算内容哈希。"""
+    raw = f"{tenant_id}:{user_id}:{content}"
+    return f"sha256:{hashlib.sha256(raw.encode()).hexdigest()[:40]}"

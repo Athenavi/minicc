@@ -41,18 +41,21 @@ class MemoryService:
         self,
         session_meta_store: SessionMetaStore,
         profile_card: ProfileCard,
-        summary_store: Any = None,  # L3 层占位，后续实现
+        summary_store: Any = None,
+        producer: Any = None,
     ) -> None:
         """初始化 MemoryService。
 
         Args:
             session_meta_store: L1 会话元数据存储。
             profile_card: L2 用户档案卡 Provider。
-            summary_store: L3 摘要存储（占位，Task 12 实现）。
+            summary_store: L3 摘要存储（Task 12 后启用）。
+            producer: 队列生产者（Task 14 后启用，用于异步巩固）。
         """
         self._session_meta = session_meta_store
         self._profile_card = profile_card
-        self._summary_store = summary_store  # Task 12 后启用
+        self._summary_store = summary_store
+        self._producer = producer
 
     # ── 生命周期钩子 ──────────────────────────────────────────────────
 
@@ -116,7 +119,7 @@ class MemoryService:
         """回合完成时调用。
 
         1. 在 L1 记账（turn_count + token 累计）
-        2. 触发 L3 巩固流程（Task 13 实现后启用）
+        2. 触发 L3 异步巩固（通过队列）
 
         Args:
             session_id: 会话 ID。
@@ -129,9 +132,14 @@ class MemoryService:
             meta.mark_turn_complete(tokens_in, tokens_out)
             self._session_meta.update(session_id)
 
-        # L3: 巩固流程（占位，Task 13 实现后启用）
-        # if self._summary_store:
-        #     await self._consolidate(session_id)
+        # L3: 异步巩固（入队）
+        if meta and self._producer:
+            await self._enqueue_consolidate(
+                tenant_id=meta.tenant_id,
+                user_id=meta.user_id,
+                session_id=session_id,
+                turn_count=meta.turn_count,
+            )
 
         logger.debug(
             "Turn completed: session=%s, tokens_in=%d, tokens_out=%d",
@@ -141,18 +149,23 @@ class MemoryService:
     async def on_session_end(self, session_id: str) -> None:
         """会话结束时调用。
 
-        1. 从 L1 丢弃 SessionMeta
-        2. 触发 L3 会话级 rollup（Task 13 实现后启用）
+        1. 触发 L3 会话级 rollup（异步入队）
+        2. 从 L1 丢弃 SessionMeta
 
         Args:
             session_id: 会话 ID。
         """
+        # L3: 会话级 rollup（异步入队，在丢弃前获取 meta）
+        meta = self._session_meta.get(session_id)
+        if meta and self._producer:
+            await self._enqueue_rollup(
+                tenant_id=meta.tenant_id,
+                user_id=meta.user_id,
+                session_id=session_id,
+            )
+
         # L1: 丢弃
         self._session_meta.delete(session_id)
-
-        # L3: 会话级 rollup（占位）
-        # if self._summary_store:
-        #     await self._rollup(session_id)
 
         logger.info("Session ended: %s", session_id)
 
@@ -361,6 +374,67 @@ class MemoryService:
             text = text[:1400] + "\n... (已截断)"
 
         return text
+
+    # ── 异步队列集成 ──────────────────────────────────────────────────
+
+    async def _enqueue_consolidate(
+        self,
+        tenant_id: str,
+        user_id: str,
+        session_id: str,
+        turn_count: int,
+    ) -> None:
+        """入队巩固任务（每回合完成后调用）。"""
+        if not self._producer:
+            return
+
+        try:
+            payload = {
+                "session_id": session_id,
+                "user_id": user_id,
+                "turn_count": turn_count,
+                "trigger": "turn_complete",
+            }
+            await self._producer.enqueue(
+                task_type="memory_consolidate",
+                tenant_id=tenant_id,
+                payload=payload,
+                priority=0,
+            )
+            logger.debug(
+                "Enqueued consolidate task: session=%s, turn=%d",
+                session_id, turn_count,
+            )
+        except Exception as e:
+            logger.warning("Failed to enqueue consolidate task: %s", e)
+
+    async def _enqueue_rollup(
+        self,
+        tenant_id: str,
+        user_id: str,
+        session_id: str,
+    ) -> None:
+        """入队 rollup 任务（会话结束时调用）。"""
+        if not self._producer:
+            return
+
+        try:
+            payload = {
+                "session_id": session_id,
+                "user_id": user_id,
+                "trigger": "session_end",
+            }
+            await self._producer.enqueue(
+                task_type="memory_rollup",
+                tenant_id=tenant_id,
+                payload=payload,
+                priority=1,  # 高优先级
+            )
+            logger.debug(
+                "Enqueued rollup task: session=%s", session_id,
+            )
+        except Exception as e:
+            logger.warning("Failed to enqueue rollup task: %s", e)
 
 
 # ── 全局单例工厂 ──────────────────────────────────────────────────────────

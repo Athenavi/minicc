@@ -14,7 +14,7 @@
     - 2.3: 创建 `migrations/20260823000006_user_memory_profile.down.sql`，定义回滚逻辑
     - 2.4: 在 `python-engine/app/db.py` 的 ensure_tables 中同步补建表结构（双轨约定）
 
-- [ ] Task 3: 实现 L2 ProfileCard provider
+- [✓] Task 3: 实现 L2 ProfileCard provider
     - 3.1: 创建 `python-engine/app/memory/profile_card.py`，实现 ProfileCard 类
     - 3.2: 实现 get_profile 方法（整卡读取 + Redis 缓存，TTL 60s）
     - 3.3: 实现 upsert_item 方法（槽位级 upsert，处理冲突规则）
@@ -22,14 +22,14 @@
     - 3.5: 实现 archive_low_confidence 方法（180天未引用且低置信度归档）
     - 3.6: 实现 evict_over_limit 方法（200条目软限淘汰）
 
-- [ ] Task 4: 实现 L1 SessionMeta store
+- [✓] Task 4: 实现 L1 SessionMeta store
     - 4.1: 在 `layers.py` 中实现 SessionMetaStore 类
     - 4.2: 实现 create 方法（进程内存 dict 存储）
     - 4.3: 实现 get/update 方法
     - 4.4: 实现 15 分钟空闲 TTL 清理机制
     - 4.5: 实现 delete 方法（会话结束时调用）
 
-- [ ] Task 5: 实现 MemoryService 门面骨架
+- [✓] Task 5: 实现 MemoryService 门面骨架
     - 5.1: 创建 `python-engine/app/memory/service.py`，定义 MemoryService 类
     - 5.2: 实现 __init__ 方法（组合 session_meta_store、profile_card、summaries 等依赖）
     - 5.3: 实现 on_session_start 方法（L1 建立 + L2 预取）
@@ -37,13 +37,13 @@
     - 5.5: 实现 on_session_end 方法（L1 丢弃）
     - 5.6: 实现占位方法：recall、save_summary、update_profile、forget、list_conflicts、resolve_conflict
 
-- [ ] Task 6: 改造 memory 工具
+- [✓] Task 6: 改造 memory 工具
     - 6.1: 修改 `python-engine/app/tools/memory.py`，将 remember 工具改接 MemoryService.update_profile
     - 6.2: 修改 recall 工具，实现 L2 精确匹配（暂不接入 L3）
     - 6.3: 修改 forget 工具，改接 MemoryService.forget
     - 6.4: 新增 memory_search 工具占位（暂返回空列表）
 
-- [ ] Task 7: 单元测试 - L2 ProfileCard
+- [✓] Task 7: 单元测试 - L2 ProfileCard
     - 7.1: 创建 `python-engine/tests/memory/test_profile_card.py`
     - 7.2: 测试槽位 upsert 幂等性
     - 7.3: 测试 version 递增逻辑
@@ -51,19 +51,19 @@
     - 7.5: 测试 Redis 缓存穿透失效
     - 7.6: 测试 200 条目淘汰逻辑（confidence × recency 排序）
 
-- [ ] Task 8: 单元测试 - MemoryService 基础
+- [✓] Task 8: 单元测试 - MemoryService 基础
     - 8.1: 创建 `python-engine/tests/memory/test_service.py`
     - 8.2: 测试 on_session_start（L1 建立 + L2 预取）
     - 8.3: 测试 on_turn_complete（turn_count 递增、token 累计）
     - 8.4: 测试 on_session_end（L1 丢弃）
     - 8.5: 测试工具集成（remember/recall/forget）
 
-- [ ] Task 9: 移除废弃的 MemoryStore
+- [✓] Task 9: 移除废弃的 MemoryStore
     - 9.1: 删除 `python-engine/app/memory/store.py`（全局单例）
     - 9.2: 从 `python-engine/app/skill/store.py` 中移除对 store.py 的引用
     - 9.3: 检查代码库中其他对 store.py 的引用并清理
 
-- [ ] Task 10: 验证与文档
+- [✓] Task 10: 验证与文档
     - 10.1: 运行 pytest，确保所有测试通过
     - 10.2: 检查测试覆盖率（新增模块 ≥90%）
     - 10.3: 更新 API 文档（如有相关端点）
@@ -77,14 +77,14 @@
     - 11.3: 创建 `migrations/20260821000004_memory_summaries.down.sql`，定义回滚逻辑
     - 11.4: 在 `python-engine/app/db.py` 的 ensure_tables 中同步补建表结构
 
-- [ ] Task 12: 实现 L3 SummaryStore provider
+- [✓] Task 12: 实现 L3 SummaryStore provider
     - 12.1: 创建 `python-engine/app/memory/summary_store.py`，实现 SummaryStore 类
     - 12.2: 实现 save_summary 方法（Milvus insert + PG 镜像双写）
     - 12.3: 实现 recall 方法（向量检索 + final_score 排序，token 预算硬上限 6KB）
     - 12.4: 实现查询缓存（Redis 5 分钟，key = sha256(query + user_id)）
     - 12.5: 实现嵌入向量缓存（Redis 30 分钟）
 
-- [ ] Task 13: 实现 Consolidator 巩固 pipeline
+- [✓] Task 13: 实现 Consolidator 巩固 pipeline
     - 13.1: 创建 `python-engine/app/memory/consolidator.py`，实现 Consolidator 类
     - 13.2: 实现步骤①：调用 ContextManager._summarise 生成摘要（复用现有）
     - 13.3: 实现步骤②：调用 TaskRouter NER 抽取实体（复用现有）
@@ -93,7 +93,7 @@
     - 13.6: 实现步骤⑤：稳定事实探测（entities/topics 命中 L2 或跨会话≥2次）
     - 13.7: 实现 rollup 合并（同主题>20条触发）
 
-- [ ] Task 14: 实现异步队列集成
+- [✓] Task 14: 实现异步队列集成
     - 14.1: 在 MemoryService.on_turn_complete 中添加巩固任务入队逻辑
     - 14.2: 在 MemoryService.on_session_end 中添加会话级 rollup 入队逻辑
     - 14.3: 实现定期 rollup 后台任务（每凌晨触发）

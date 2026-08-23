@@ -208,6 +208,10 @@ class QueueWorker:
             await self._handle_rag_index(payload)
         elif task_type == "memory_save":
             await self._handle_memory_save(payload, tenant_id)
+        elif task_type == "memory_consolidate":
+            await self._handle_memory_consolidate(payload, tenant_id)
+        elif task_type == "memory_rollup":
+            await self._handle_memory_rollup(payload, tenant_id)
         elif task_type == "embed_batch":
             await self._handle_embed_batch(payload)
         else:
@@ -343,6 +347,128 @@ class QueueWorker:
             source=source,
         )
         logger.info("memory_save 完成: key=%s tenant=%s", key, tenant_id)
+
+    async def _handle_memory_consolidate(self, payload: dict, tenant_id: str) -> None:
+        """处理记忆巩固任务：将对话消息巩固为 L3 摘要。
+
+        payload: {session_id, user_id, turn_count, trigger}
+        """
+        if not self._memory_service:
+            raise RuntimeError("memory_consolidate 需要 memory_service 支持")
+
+        session_id = payload.get("session_id")
+        user_id = payload.get("user_id", "")
+        if not session_id:
+            raise ValueError("memory_consolidate payload 缺少 session_id")
+
+        # 从会话历史获取消息（简化：后续集成 ContextManager）
+        messages = await self._get_session_messages(tenant_id, user_id, session_id)
+        if not messages:
+            logger.warning("No messages to consolidate: session=%s", session_id)
+            return
+
+        # 调用 Consolidator 进行巩固
+        from app.memory.consolidator import Consolidator
+        from app.memory.summary_store import SummaryStore
+
+        if self._memory_service._summary_store is None:
+            logger.debug("SummaryStore not available, skip consolidate")
+            return
+
+        consolidator = Consolidator(store=self._memory_service._summary_store)
+        turn_count = payload.get("turn_count", 0)
+        result = await consolidator.consolidate(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            session_id=session_id,
+            messages=messages,
+            turn_start=max(0, turn_count - 10),
+            turn_end=turn_count,
+        )
+
+        if result.error:
+            logger.error("Consolidate failed: %s", result.error)
+        elif result.deduplicated:
+            logger.debug("Consolidate deduplicated: session=%s", session_id)
+        else:
+            logger.info(
+                "Consolidate completed: session=%s, summary_id=%s",
+                session_id,
+                result.summary.id if result.summary else None,
+            )
+
+    async def _handle_memory_rollup(self, payload: dict, tenant_id: str) -> None:
+        """处理记忆 rollup 任务：会话结束时的总结归档。
+
+        payload: {session_id, user_id, trigger}
+        """
+        if not self._memory_service:
+            raise RuntimeError("memory_rollup 需要 memory_service 支持")
+
+        session_id = payload.get("session_id")
+        user_id = payload.get("user_id", "")
+        if not session_id:
+            raise ValueError("memory_rollup payload 缺少 session_id")
+
+        # 获取会话全部消息
+        messages = await self._get_session_messages(tenant_id, user_id, session_id)
+        if not messages:
+            logger.debug("No messages to rollup: session=%s", session_id)
+            return
+
+        # 调用 Consolidator 进行完整 rollup
+        from app.memory.consolidator import Consolidator
+
+        if self._memory_service._summary_store is None:
+            logger.debug("SummaryStore not available, skip rollup")
+            return
+
+        consolidator = Consolidator(store=self._memory_service._summary_store)
+        result = await consolidator.consolidate(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            session_id=session_id,
+            messages=messages,
+            turn_start=0,
+            turn_end=len(messages),
+        )
+
+        if result.error:
+            logger.error("Rollup failed: %s", result.error)
+        else:
+            logger.info(
+                "Rollup completed: session=%s, messages=%d, summary_id=%s",
+                session_id,
+                len(messages),
+                result.summary.id if result.summary else None,
+            )
+
+    async def _get_session_messages(
+        self, tenant_id: str, user_id: str, session_id: str
+    ) -> list[dict]:
+        """获取会话消息（从数据库）。"""
+        from app.db import get_pool
+
+        try:
+            pool = get_pool()
+            rows = await pool.fetch(
+                """SELECT role, content, created_at
+                   FROM unified_messages
+                   WHERE session_id = $1
+                   ORDER BY created_at ASC""",
+                session_id,
+            )
+            return [
+                {
+                    "role": row["role"],
+                    "content": row["content"],
+                }
+                for row in rows
+                if row["content"] and isinstance(row["content"], str)
+            ]
+        except Exception as e:
+            logger.warning("Failed to get session messages: %s", e)
+            return []
 
     async def _handle_embed_batch(self, payload: dict) -> None:
         """处理批量嵌入任务：批量计算嵌入并存储向量
