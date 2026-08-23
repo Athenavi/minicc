@@ -110,7 +110,7 @@
     - 16.3: 实现去重（摘要覆盖的 turn_range 与窗口重叠则丢弃）
     - 16.4: 实现 fail-soft 降级（Milvus 不可用时返回空 L3）
 
-- [ ] Task 17: 单元测试 - SummaryStore
+- [✓] Task 17: 单元测试 - SummaryStore
     - 17.1: 创建 `python-engine/tests/memory/test_summary_store.py`
     - 17.2: 测试 save_summary 双写（Milvus + PG）
     - 17.3: 测试 recall 向量检索（mock gateway embed）
