@@ -190,7 +190,6 @@ func Load() *Config {
 		AgentMaxTokens:        getInt("AGENT_MAX_TOKENS", 8192),
 		AgentContextLimit:     getInt("AGENT_CONTEXT_LIMIT", 20),
 		AgentMaxConcurrency:   getInt("AGENT_MAX_CONCURRENCY", 20),
-		AgentContextLimit:     getInt("AGENT_CONTEXT_LIMIT", 20),
 
 		// Python AI 引擎（连接池配置）
 

@@ -40,8 +40,9 @@ func NewPythonClient(addresses ...string) *PythonClient {
 		addrs = []string{"http://localhost:8000"}
 	}
 	return &PythonClient{
-		addresses: addrs,
-		client:    &http.Client{Timeout: 5 * time.Minute},
+		addresses:     addrs,
+		client:        &http.Client{Timeout: 5 * time.Minute},
+		cooldownUntil: make([]int64, len(addrs)),
 	}
 }
 

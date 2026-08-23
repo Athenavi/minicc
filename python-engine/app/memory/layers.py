@@ -98,6 +98,16 @@ class SourceType(str, Enum):
     TOOL_WRITTEN = "tool_written"  # 工具写入
 
 
+SLOTS: list[str] = [s.value for s in SlotType]
+
+SLOT_LABELS: dict[str, str] = {
+    "identity": "身份信息",
+    "preference": "偏好设置",
+    "decision": "关键决策",
+    "fact": "长期事实",
+}
+
+
 @dataclass
 class ProfileItem:
     """L2 档案卡单个条目。"""
@@ -111,6 +121,24 @@ class ProfileItem:
     last_referenced_at: float | None  # 最近被召回引用时间
     created_at: float
     updated_at: float
+    id: str | None = None  # 唯一标识符（用于 API 路由）
+
+    def to_dict(self) -> dict[str, Any]:
+        slot_val = self.slot.value if isinstance(self.slot, SlotType) else self.slot
+        source_val = self.source.value if isinstance(self.source, SourceType) else self.source
+        return {
+            "id": self.id or f"{slot_val}:{self.item_key}",
+            "slot": slot_val,
+            "item_key": self.item_key,
+            "item_value": self.item_value,
+            "confidence": self.confidence,
+            "source": source_val,
+            "version": self.version,
+            "confirmed_at": self.confirmed_at,
+            "last_referenced_at": self.last_referenced_at,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
 
 
 @dataclass
@@ -131,6 +159,18 @@ class ConflictRef:
     new_value: Any
     old_source: SourceType
     old_confirmed_at: float | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "conflict_id": self.conflict_id,
+            "slot": self.slot.value,
+            "item_key": self.item_key,
+            "old_value": self.old_value,
+            "new_value": self.new_value,
+            "old_source": self.old_source.value,
+            "old_confirmed_at": self.old_confirmed_at,
+            "status": "pending",
+        }
 
 
 # ── L3: 对话摘要相关类型 ────────────────────────────────────────────────

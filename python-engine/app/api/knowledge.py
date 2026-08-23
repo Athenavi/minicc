@@ -207,8 +207,8 @@ async def update_knowledge_base(
         params.append(kb_type)
         idx += 1
     if visibility is not None:
-    if visibility not in ("public", "private", "tenant"):
-        raise HTTPException(status_code=400, detail="visibility must be 'public', 'private', or 'tenant'")
+        if visibility not in ("public", "private", "tenant"):
+            raise HTTPException(status_code=400, detail="visibility must be 'public', 'private', or 'tenant'")
         updates.append(f"visibility = ${idx}")
         params.append(visibility)
         idx += 1

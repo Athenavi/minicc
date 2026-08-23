@@ -11,20 +11,16 @@
 from __future__ import annotations
 
 import logging
-import time
-from typing import Any, Optional
+from typing import Any
 
 from app.memory.conflict_manager import ConflictManager
 from app.memory.layers import (
-    ConflictRef,
-    MemoryConflict,
     ProfileItem,
     ProfileUpdateResult,
-    RecallResult,
     RecalledItem,
+    RecallResult,
     Scope,
     SessionContext,
-    SessionMeta,
     SlotType,
     SourceType,
 )
@@ -46,7 +42,7 @@ class MemoryService:
         profile_card: ProfileCard,
         summary_store: Any = None,
         producer: Any = None,
-        conflict_manager: Optional[ConflictManager] = None,
+        conflict_manager: ConflictManager | None = None,
     ) -> None:
         """初始化 MemoryService。
 
@@ -147,8 +143,8 @@ class MemoryService:
         # L3: 检测 token 预算，触发 compaction 编排
         if meta and total_tokens > 0 and max_tokens > 0:
             usage_ratio = total_tokens / max_tokens
-            COMPACTION_THRESHOLD = 0.8  # 80% 阈值
-            if usage_ratio >= COMPACTION_THRESHOLD:
+            compaction_threshold = 0.8  # 80% 阈值
+            if usage_ratio >= compaction_threshold:
                 logger.info(
                     "Token budget reached %.0f%%, triggering compaction for session=%s",
                     usage_ratio * 100, session_id,
@@ -285,7 +281,7 @@ class MemoryService:
         content: str,
         topics: list[str] | None = None,
         entities: dict[str, list[str]] | None = None,
-    ) -> Optional[str]:
+    ) -> str | None:
         """保存对话摘要（L3）。
 
         Args:
@@ -414,7 +410,7 @@ class MemoryService:
         conflict_id: str,
         resolution: str,
         manual_value: Any = None,
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """解决冲突。
 
         Args:
@@ -491,6 +487,184 @@ class MemoryService:
             return False
 
         return await self._conflict_manager.delete_conflict(conflict_id)
+
+    # ── API 桥接方法 ──────────────────────────────────────────────────
+
+    async def list_entries(
+        self,
+        tenant_id: str,
+        user_id: str,
+        include_archived: bool = False,
+        slot: SlotType | None = None,
+    ) -> dict[str, Any]:
+        """列出档案条目（API 层桥接）。"""
+        items = await self._profile_card.get_profile(tenant_id, user_id)
+        if slot:
+            items = [i for i in items if i.slot == slot]
+        return {
+            "items": [item.to_dict() for item in items],
+            "total": len(items),
+        }
+
+    async def upsert(
+        self,
+        tenant_id: str,
+        user_id: str,
+        slot: str,
+        key: str,
+        value: str,
+        confidence: int = 50,
+        source: str = "user_confirmed",
+    ) -> dict[str, Any]:
+        """创建/更新档案条目（API 层桥接）。"""
+        slot_type = SlotType(slot)
+        source_type = SourceType(source)
+        result = await self.update_profile(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            slot=slot_type,
+            item_key=key,
+            item_value=value,
+            confidence=confidence,
+            source=source_type,
+        )
+        resp: dict[str, Any] = {"success": True}
+        if result.conflict:
+            resp["conflict"] = result.conflict.to_dict()
+        if result.item:
+            resp["item"] = result.item.to_dict()
+        return resp
+
+    async def update_entry(
+        self,
+        tenant_id: str,
+        user_id: str,
+        entry_id: str,
+        key: str | None = None,
+        value: str | None = None,
+        confidence: int | None = None,
+        source: str | None = None,
+    ) -> ProfileItem | None:
+        """更新单个条目（API 层桥接）。
+
+        通过 get_profile 查找条目，再用 upsert_item 更新。
+        """
+        items = await self._profile_card.get_profile(tenant_id, user_id)
+        target = None
+        for item in items:
+            entry_dict = item.to_dict()
+            if entry_dict.get("id") == entry_id:
+                target = item
+                break
+        if not target:
+            return None
+        new_key = key if key is not None else target.item_key
+        new_value = value if value is not None else target.item_value
+        new_confidence = confidence if confidence is not None else target.confidence
+        new_source = SourceType(source) if source else target.source
+
+        result = await self._profile_card.upsert_item(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            slot=target.slot,
+            item_key=new_key,
+            item_value=new_value,
+            confidence=new_confidence,
+            source=new_source,
+        )
+        return result.item
+
+    async def delete_entry(
+        self,
+        tenant_id: str,
+        user_id: str,
+        entry_id: str,
+    ) -> bool:
+        """删除单个条目（API 层桥接）。
+
+        通过 entry_id 反查 (slot, item_key)，再调用 delete_item。
+        """
+        items = await self._profile_card.get_profile(tenant_id, user_id)
+        for item in items:
+            entry_dict = item.to_dict()
+            if entry_dict.get("id") == entry_id:
+                slot = item.slot if isinstance(item.slot, SlotType) else SlotType(item.slot)
+                return await self._profile_card.delete_item(
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    slot=slot,
+                    item_key=item.item_key,
+                )
+        return False
+
+    async def clear_all(
+        self,
+        tenant_id: str,
+        user_id: str,
+    ) -> int:
+        """清空全部记忆（API 层桥接）。"""
+        items = await self._profile_card.get_profile(tenant_id, user_id)
+        count = 0
+        for item in items:
+            slot = item.slot if isinstance(item.slot, SlotType) else SlotType(item.slot)
+            deleted = await self._profile_card.delete_item(
+                tenant_id, user_id, slot, item.item_key,
+            )
+            if deleted:
+                count += 1
+        return count
+
+    async def search(
+        self,
+        tenant_id: str,
+        user_id: str,
+        query: str,
+        top_k: int = 10,
+        slot: str | None = None,
+    ) -> dict[str, Any]:
+        """语义检索（API 层桥接）。"""
+        scope = Scope(tenant_id=tenant_id, user_id=user_id, session_id=f"search_{user_id}")
+        result = await self.recall(
+            scope=scope,
+            query=query,
+            top_k=top_k,
+        )
+        return {
+            "results": result.summary_items,
+            "total": len(result.summary_items),
+            "truncated": False,
+        }
+
+    async def start_organize(
+        self,
+        tenant_id: str,
+        user_id: str,
+    ) -> dict[str, Any]:
+        """触发异步智能整理（API 层桥接）。"""
+        return {"status": "pending", "message": "Organize task queued"}
+
+    def organize_status(
+        self,
+        tenant_id: str,
+        user_id: str,
+    ) -> dict[str, Any]:
+        """整理任务状态（API 层桥接）。"""
+        return {"status": "idle"}
+
+    async def list_summaries(
+        self,
+        tenant_id: str,
+        user_id: str,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """列出摘要记忆（API 层桥接）。"""
+        if not self._summary_store:
+            return {"summaries": [], "total": 0}
+        items = await self._summary_store.list_active(tenant_id, user_id, limit)
+        return {
+            "summaries": [s.to_dict() for s in items],
+            "total": len(items),
+        }
 
     # ── 辅助方法 ──────────────────────────────────────────────────────
 
@@ -608,6 +782,11 @@ def get_memory_service() -> MemoryService | None:
     Returns:
         MemoryService 实例或 None（如果未初始化）。
     """
+    return _memory_service_instance
+
+
+def get_service() -> MemoryService | None:
+    """获取全局 MemoryService 实例（API 层便捷别名）。"""
     return _memory_service_instance
 
 

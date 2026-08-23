@@ -14,7 +14,8 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any, Optional
+from datetime import UTC
+from typing import Any
 
 import redis.asyncio as aioredis
 
@@ -22,7 +23,6 @@ from app.db import get_pool
 from app.memory.conflict_manager import ConflictManager
 from app.memory.layers import (
     ConflictRef,
-    MemoryConflict,
     ProfileItem,
     ProfileUpdateResult,
     SlotType,
@@ -49,7 +49,7 @@ class ProfileCard:
     - derived 二次出现自动写入
     """
 
-    def __init__(self, redis: aioredis.Redis, conflict_manager: Optional[ConflictManager] = None):
+    def __init__(self, redis: aioredis.Redis, conflict_manager: ConflictManager | None = None):
         """初始化 ProfileCard。
 
         Args:
@@ -358,6 +358,7 @@ class ProfileCard:
         item_key: str,
     ) -> ProfileItem | None:
         """获取单个条目。"""
+        slot_value = slot.value if isinstance(slot, SlotType) else slot
         query = """
             SELECT slot, item_key, item_value, confidence, source,
                    version, confirmed_at, last_referenced_at,
@@ -366,7 +367,7 @@ class ProfileCard:
             WHERE tenant_id = $1 AND user_id = $2
               AND slot = $3 AND item_key = $4
         """
-        row = await self._pool.fetchrow(query, tenant_id, user_id, slot.value, item_key)
+        row = await self._pool.fetchrow(query, tenant_id, user_id, slot_value, item_key)
         if not row:
             return None
         return ProfileItem(
@@ -394,8 +395,8 @@ class ProfileCard:
         now: float,
     ) -> None:
         """插入新条目。"""
-        from datetime import datetime, timezone
-        now_ts = datetime.fromtimestamp(now, tz=timezone.utc)
+        from datetime import datetime
+        now_ts = datetime.fromtimestamp(now, tz=UTC)
 
         query = """
             INSERT INTO user_memory_profile
@@ -408,9 +409,9 @@ class ProfileCard:
         """
         await self._pool.execute(
             query,
-            tenant_id, user_id, slot.value, item_key,
+            tenant_id, user_id, slot.value if isinstance(slot, SlotType) else slot, item_key,
             json.dumps(item_value) if not isinstance(item_value, (str, int, float, bool)) else item_value,
-            confidence, source.value, now_ts,
+            confidence, source.value if isinstance(source, SourceType) else source, now_ts,
         )
 
     async def _update_item(
@@ -426,8 +427,8 @@ class ProfileCard:
         now: float,
     ) -> None:
         """更新现有条目。"""
-        from datetime import datetime, timezone
-        now_ts = datetime.fromtimestamp(now, tz=timezone.utc)
+        from datetime import datetime
+        now_ts = datetime.fromtimestamp(now, tz=UTC)
 
         query = """
             UPDATE user_memory_profile
@@ -445,9 +446,9 @@ class ProfileCard:
         """
         await self._pool.execute(
             query,
-            tenant_id, user_id, slot.value, item_key,
+            tenant_id, user_id, slot.value if isinstance(slot, SlotType) else slot, item_key,
             json.dumps(item_value) if not isinstance(item_value, (str, int, float, bool)) else item_value,
-            confidence, source.value, new_version, now_ts,
+            confidence, source.value if isinstance(source, SourceType) else source, new_version, now_ts,
         )
 
     async def _invalidate_cache(self, tenant_id: str, user_id: str) -> None:
@@ -458,12 +459,14 @@ class ProfileCard:
     @staticmethod
     def _item_to_dict(item: ProfileItem) -> dict:
         """将 ProfileItem 转换为字典（用于缓存）。"""
+        slot_val = item.slot.value if isinstance(item.slot, SlotType) else item.slot
+        source_val = item.source.value if isinstance(item.source, SourceType) else item.source
         return {
-            "slot": item.slot.value,
+            "slot": slot_val,
             "item_key": item.item_key,
             "item_value": item.item_value,
             "confidence": item.confidence,
-            "source": item.source.value,
+            "source": source_val,
             "version": item.version,
             "confirmed_at": item.confirmed_at,
             "last_referenced_at": item.last_referenced_at,

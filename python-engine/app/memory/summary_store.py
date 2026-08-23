@@ -13,7 +13,7 @@ import hashlib
 import json
 import logging
 import time
-from typing import Any, Optional
+from typing import Any
 
 import redis.asyncio as aioredis
 
@@ -86,7 +86,7 @@ class SummaryStore:
 
     # ── 嵌入向量缓存 ──────────────────────────────────────────────────────
 
-    async def _get_embedding(self, query: str) -> Optional[list[float]]:
+    async def _get_embedding(self, query: str) -> list[float] | None:
         """获取嵌入向量（带缓存）。
 
         Args:
@@ -141,10 +141,10 @@ class SummaryStore:
         self,
         scope: Scope,
         content: str,
-        topics: Optional[list[str]] = None,
-        entities: Optional[dict[str, list[str]]] = None,
+        topics: list[str] | None = None,
+        entities: dict[str, list[str]] | None = None,
         turn_range: tuple[int, int] = (0, 0),
-    ) -> Optional[str]:
+    ) -> str | None:
         """保存摘要（PG + Milvus 双写）。
 
         Args:
@@ -218,8 +218,8 @@ class SummaryStore:
         content: str,
         embedding: list[float],
         turn_range: tuple[int, int],
-        topics: Optional[list[str]],
-        entities: Optional[dict[str, list[str]]],
+        topics: list[str] | None,
+        entities: dict[str, list[str]] | None,
     ) -> None:
         """插入向量到 Milvus（fail-soft：失败只警告）。"""
         coll = self._get_milvus_collection()
@@ -418,7 +418,6 @@ class SummaryStore:
                     + w_similarity * similarity_factor
         """
         now = time.time()
-        max_created = max((it.created_at for it in items), default=now) or now
 
         for item in items:
             # recency_factor: 越新越好（0-1）
@@ -472,7 +471,7 @@ class SummaryStore:
 
     async def _get_query_cache(
         self, tenant_id: str, user_id: str, query: str
-    ) -> Optional[list[RecalledItem]]:
+    ) -> list[RecalledItem] | None:
         """获取查询缓存。"""
         cache_key = self._query_cache_key(tenant_id, user_id, query)
         cached = await self._redis.get(cache_key)
@@ -504,7 +503,7 @@ class SummaryStore:
     async def _invalidate_query_cache(self, tenant_id: str, user_id: str) -> None:
         """失效指定用户的所有查询缓存。"""
         try:
-            pattern = f"memory:l3:query:*"
+            pattern = "memory:l3:query:*"
             async for key in self._redis.scan_iter(match=pattern):
                 await self._redis.delete(key)
         except Exception as e:
@@ -575,7 +574,7 @@ class SummaryStore:
         tenant_id: str,
         user_id: str,
         content_hash: str,
-    ) -> Optional[SummaryEntry]:
+    ) -> SummaryEntry | None:
         """根据 content_hash 查询摘要（供 Consolidator 去重使用）。"""
         try:
             row = await self._pool.fetchrow(
@@ -596,7 +595,7 @@ class SummaryStore:
     async def insert(
         self,
         entry: SummaryEntry,
-        embedding: Optional[list[float]] = None,
+        embedding: list[float] | None = None,
     ) -> SummaryEntry:
         """插入摘要（供 Consolidator 使用，兼容旧接口）。"""
         result = await self.save_summary(
@@ -633,7 +632,7 @@ class SummaryStore:
         tenant_id: str,
         user_id: str,
         summary_id: str,
-    ) -> Optional[SummaryEntry]:
+    ) -> SummaryEntry | None:
         """根据 ID 查询摘要（供 Consolidator 使用）。"""
         try:
             row = await self._pool.fetchrow(
