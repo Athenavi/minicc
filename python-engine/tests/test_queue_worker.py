@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.memory.layers import SlotType, SourceType
 from app.queue.worker import DLQ_STREAM, MAX_RETRIES, TASK_STREAM, QueueWorker
 
 
@@ -216,19 +217,30 @@ class TestHandleRagIndex:
 class TestHandleMemorySave:
     """memory_save handler"""
 
-    async def test_saves_to_memory_store(self):
-        worker = make_worker()
-        fake_store = MagicMock()
-        with patch("app.memory.store.MemoryStore", return_value=fake_store):
-            await worker._handle_memory_save({"key": "k1", "value": "v1", "source": "ai"})
-        fake_store.save.assert_called_once_with("k1", "v1", "ai")
+    async def test_saves_to_memory_service(self):
+        fake_memory = AsyncMock()
+        worker = QueueWorker(redis=AsyncMock(), memory_service=fake_memory)
+        await worker._handle_memory_save({"key": "k1", "value": "v1", "source": "derived"}, tenant_id="t1")
+        fake_memory.update_profile.assert_awaited_once_with(
+            tenant_id="t1",
+            user_id="",
+            slot=SlotType.FACT,
+            item_key="k1",
+            item_value="v1",
+            confidence=50,
+            source=SourceType.DERIVED,
+        )
 
     async def test_missing_key_raises(self):
+        fake_memory = AsyncMock()
+        worker = QueueWorker(redis=AsyncMock(), memory_service=fake_memory)
+        with pytest.raises(ValueError, match="key"):
+            await worker._handle_memory_save({"value": "v1"})
+
+    async def test_missing_memory_service_raises(self):
         worker = make_worker()
-        with patch("app.memory.store.MemoryStore") as mock_cls:
-            with pytest.raises(ValueError, match="key"):
-                await worker._handle_memory_save({"value": "v1"})
-        mock_cls.assert_not_called()
+        with pytest.raises(RuntimeError, match="memory_service"):
+            await worker._handle_memory_save({"key": "k1", "value": "v1"})
 
 
 class TestHandleEmbedBatch:

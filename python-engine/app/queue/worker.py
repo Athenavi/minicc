@@ -40,10 +40,11 @@ class QueueWorker:
       - 关闭: 停止消费 → 等待 in-flight → 退出
     """
 
-    def __init__(self, redis: aioredis.Redis, concurrency: int = 10, gateway=None):
+    def __init__(self, redis: aioredis.Redis, concurrency: int = 10, gateway=None, memory_service=None):
         self._redis = redis
         self._concurrency = concurrency
         self._gateway = gateway  # GatewayRouter（用于 RAG 构建/嵌入），可为 None
+        self._memory_service = memory_service  # MemoryService（用于记忆存储），可为 None
         self._running = False
         self._semaphore = asyncio.Semaphore(concurrency)
         self._in_flight: set[asyncio.Task] = set()
@@ -162,7 +163,7 @@ class QueueWorker:
         start = time.monotonic()
         try:
             payload = json.loads(payload_raw)
-            await self._dispatch(task_type, payload)
+            await self._dispatch(task_type, payload, tenant_id)
 
             # 成功 → ACK
             await self._redis.xack(TASK_STREAM, GROUP_NAME, stream_id)
@@ -201,12 +202,12 @@ class QueueWorker:
                 QUEUE_RETRY_TOTAL.labels(task_type=task_type).inc()
                 logger.info("Task re-queued for retry: id=%s (retry=%d/%d)", task_id, retry_count, MAX_RETRIES)
 
-    async def _dispatch(self, task_type: str, payload: dict) -> None:
+    async def _dispatch(self, task_type: str, payload: dict, tenant_id: str = "") -> None:
         """分发任务到具体处理器"""
         if task_type == "rag_index":
             await self._handle_rag_index(payload)
         elif task_type == "memory_save":
-            await self._handle_memory_save(payload)
+            await self._handle_memory_save(payload, tenant_id)
         elif task_type == "embed_batch":
             await self._handle_embed_batch(payload)
         else:
@@ -314,20 +315,34 @@ class QueueWorker:
         if errors:
             logger.warning("rag_index 部分文档失败，KB 置 error: %s", errors)
 
-    async def _handle_memory_save(self, payload: dict) -> None:
+    async def _handle_memory_save(self, payload: dict, tenant_id: str = "") -> None:
         """处理记忆持久化任务
 
-        payload: {key, value, source}
+        payload: {key, value, source, user_id?, slot?, confidence?}
         """
-        from app.memory.store import MemoryStore
-
         key = payload.get("key")
         if not key:
             raise ValueError("memory_save payload 缺少 key")
-        await asyncio.to_thread(
-            MemoryStore().save, key, str(payload.get("value", "")), payload.get("source", "ai")
+        if not self._memory_service:
+            raise RuntimeError("memory_save 需要 memory_service 支持")
+
+        from app.memory.layers import SlotType, SourceType
+
+        slot = SlotType(payload.get("slot", "fact"))
+        source = SourceType(payload.get("source", "derived"))
+        confidence = int(payload.get("confidence", 50))
+        user_id = payload.get("user_id", "")
+
+        await self._memory_service.update_profile(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            slot=slot,
+            item_key=key,
+            item_value=str(payload.get("value", "")),
+            confidence=confidence,
+            source=source,
         )
-        logger.info("memory_save 完成: key=%s", key)
+        logger.info("memory_save 完成: key=%s tenant=%s", key, tenant_id)
 
     async def _handle_embed_batch(self, payload: dict) -> None:
         """处理批量嵌入任务：批量计算嵌入并存储向量

@@ -187,6 +187,24 @@ async def ensure_tables():
             updated_at TIMESTAMPTZ DEFAULT NOW(),
             UNIQUE(tenant_id)
         )""",
+        # ── 用户记忆档案卡（L2 层，与 migrations/20260823000006_user_memory_profile 双轨同步）──
+        """CREATE TABLE IF NOT EXISTS user_memory_profile (
+            tenant_id   VARCHAR(64)  NOT NULL,
+            user_id     VARCHAR(64)  NOT NULL,
+            slot        VARCHAR(32)  NOT NULL,
+            item_key    VARCHAR(128) NOT NULL,
+            item_value  JSONB        NOT NULL,
+            confidence  SMALLINT     NOT NULL DEFAULT 50,
+            source      VARCHAR(16)  NOT NULL DEFAULT 'derived',
+            version     INTEGER      NOT NULL DEFAULT 1,
+            confirmed_at TIMESTAMPTZ,
+            last_referenced_at TIMESTAMPTZ,
+            created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+            updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (tenant_id, user_id, slot, item_key)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_ump_reference ON user_memory_profile(tenant_id, user_id, last_referenced_at)",
+        "CREATE INDEX IF NOT EXISTS idx_ump_conflict ON user_memory_profile(tenant_id, user_id, source) WHERE source = 'user_confirmed'",
         # ── 用户长期记忆条目（L2 档案卡，与 migrations/20260821000003 双轨同步）──
         """CREATE TABLE IF NOT EXISTS user_memory_entries (
             id VARCHAR(64) PRIMARY KEY,
