@@ -407,6 +407,10 @@ class AgentRuntime:
             yield AgentEvent(type="guardrail_blocked", content="输入包含不允许的指令，已拒绝本次请求", trace_id=trace_id)
             return
         
+        # ── 记忆会话上下文（用于 finally 中的 on_session_end）────────────
+        memory_started = False
+        memory_scope = None
+        
         try:
             # ── 0. 解析运行模式（persona/工具集/上下文/压缩策略） ──
             mode_cfg: ModeConfig = get_mode_config((task.llm_config or {}).get("mode"))
@@ -424,11 +428,42 @@ class AgentRuntime:
                 subagent_depth=task.subagent_depth,
             )
 
-            # ── 0.6 记忆召回（L2 档案卡 + L3 摘要，注入系统提示） ──
+            # ── 0.6 MemoryService.on_session_start（L1 建立 + L2/L3 预取） ──
+            if self._memory is not None and task.session_id and task.user_id:
+                try:
+                    from app.memory.layers import Scope
+                    memory_scope = Scope(
+                        tenant_id=task.tenant_id or "default",
+                        user_id=task.user_id,
+                        session_id=task.session_id,
+                    )
+                    session_ctx = await self._memory.on_session_start(
+                        session_id=task.session_id,
+                        tenant_id=task.tenant_id or "default",
+                        user_id=task.user_id,
+                        entry_channel=task.llm_config.get("entry_channel", "web") if task.llm_config else "web",
+                        mode=mode_cfg.mode.value if hasattr(mode_cfg.mode, 'value') else str(mode_cfg.mode),
+                    )
+                    memory_started = True
+                    logger.info(
+                        "Memory session started: %s (profile_cached=%s, summaries=%d)",
+                        task.session_id, session_ctx.profile_cached, session_ctx.summaries_prefetched,
+                    )
+                except Exception as e:
+                    logger.warning("Memory on_session_start failed (non-blocking): %s", e)
+
+            # ── 0.7 记忆召回（L2 档案卡 + L3 摘要，注入系统提示） ──
             if self._memory is not None and task.user_id and task.content:
                 try:
+                    from app.memory.layers import Scope
+                    scope = memory_scope or Scope(
+                        tenant_id=task.tenant_id or "default",
+                        user_id=task.user_id,
+                        session_id=task.session_id or "",
+                    )
                     recalled = await self._memory.recall(
-                        task.tenant_id or "default", task.user_id, task.content,
+                        scope=scope,
+                        query=task.content,
                     )
                     if recalled.has_content:
                         mem_parts: list[str] = []
@@ -437,15 +472,21 @@ class AgentRuntime:
                         if recalled.summary_items:
                             sum_lines = []
                             for s in recalled.summary_items[:5]:
-                                score = s.get("score", 0)
-                                content = (s.get("content") or "")[:300]
-                                mem_parts.append(f"- (score {score:.2f}) {content}")
-                            mem_parts.insert(-1 if not recalled.profile_block else -1, "## 相关历史")
+                                score = s.score if hasattr(s, 'score') else s.get("score", 0)
+                                content = (s.content if hasattr(s, 'content') else s.get("content", ""))[:300]
+                                topics = s.topics if hasattr(s, 'topics') else s.get("topics", [])
+                                topics_str = f" [{', '.join(topics[:3])}]" if topics else ""
+                                sum_lines.append(f"- (score {score:.2f}){topics_str} {content}")
+                            if recalled.profile_block:
+                                mem_parts.append("## 相关历史")
+                            else:
+                                mem_parts.insert(0, "## 相关历史")
+                            mem_parts.append("\n".join(sum_lines))
                         mem_block = "\n\n".join(mem_parts)
                         if task.system_prompt:
-                            task.system_prompt = f"{task.system_prompt}\n\n## 记忆上下文\n{mem_block}"
+                            task.system_prompt = f"{task.system_prompt}\n\n{mem_block}"
                         else:
-                            task.system_prompt = f"## 记忆上下文\n{mem_block}"
+                            task.system_prompt = mem_block
                 except Exception as e:
                     logger.warning("Memory recall failed (non-blocking): %s", e)
 
@@ -734,24 +775,28 @@ class AgentRuntime:
                 _cache_saved = True
                 logger.info("Session cache saved: %s (%d messages)", task.session_id, len(messages))
 
-            # ── 记忆巩固（异步、非阻塞）：本轮对话消息 → L3 摘要 ──
-            if self._memory is not None and task.user_id and task.session_id:
+            # ── MemoryService.on_turn_complete（记账 + 异步巩固入队 + compaction 检测） ──
+            if self._memory is not None and memory_started and task.session_id:
                 try:
-                    # 只巩固 user+assistant 对（跳过 system/tool 纯工具消息）
-                    convo_msgs = [
-                        m for m in messages
-                        if m.get("role") in ("user", "assistant") and m.get("content")
-                    ]
-                    if len(convo_msgs) >= 4:  # 至少 2 轮对话才值得巩固
-                        asyncio.create_task(
-                            self._memory.save_summary(
-                                task.tenant_id or "default", task.user_id,
-                                task.session_id, convo_msgs,
-                                turn_start=0, turn_end=len(convo_msgs),
-                            )
-                        )
+                    # 估算当前总 token 数（用于 compaction 预算检测）
+                    current_total_tokens = _estimate_tokens(messages)
+                    max_ctx_tokens = (task.llm_config or {}).get(
+                        "max_context_tokens", MAX_CONTEXT_TOKENS
+                    )
+                    await self._memory.on_turn_complete(
+                        session_id=task.session_id,
+                        tokens_in=total_input_tokens,
+                        tokens_out=total_output_tokens,
+                        total_tokens=current_total_tokens,
+                        max_tokens=max_ctx_tokens,
+                    )
+                    logger.debug(
+                        "Memory turn completed: %s (tokens_in=%d, tokens_out=%d, usage=%.0f%%)",
+                        task.session_id, total_input_tokens, total_output_tokens,
+                        (current_total_tokens / max_ctx_tokens * 100) if max_ctx_tokens > 0 else 0,
+                    )
                 except Exception as e:
-                    logger.warning("Memory consolidation trigger failed (non-blocking): %s", e)
+                    logger.warning("Memory on_turn_complete failed (non-blocking): %s", e)
             
             # 发送完成事件 (含完整链路 trace_id)
             total_duration = int((time.time() - start_time) * 1000)
@@ -771,6 +816,16 @@ class AgentRuntime:
                 error=str(e),
             )
         finally:
+            # ── MemoryService.on_session_end（会话 rollup + L1 丢弃） ──
+            if self._memory is not None and memory_started and task.session_id:
+                try:
+                    # 仅在会话明确结束时调用（非错误路径）
+                    if not _cache_saved:  # 如果缓存未保存，说明会话异常结束
+                        logger.info("Memory on_session_end: %s (session will be rolled up)", task.session_id)
+                        await self._memory.on_session_end(task.session_id)
+                except Exception as e:
+                    logger.warning("Memory on_session_end failed (non-blocking): %s", e)
+            
             # S 修复：上下文丢失 — 任何退出路径（异常/SSE 中断/GeneratorExit）都保存缓存，
             # 保证"继续"时历史可续（用户消息不丢）
             if not _cache_saved and self._session_store and task.session_id and messages:

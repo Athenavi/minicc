@@ -89,13 +89,19 @@ class PromptEngine:
     async def assemble(self, task: AgentTask, tools: list) -> str:
         """Assemble the full system prompt for the given *task* and *tools*.
 
+        记忆区块注入顺序（遵循架构文档）：
+        [系统提示]
+        ── 记忆：用户档案 ──        ← L2 整卡紧凑序列化（≤1.5KB）
+        ── 记忆：相关历史 ──        ← L3 top_k=5 按 final_score 排序（≤6KB）
+        [L4 原始窗口消息（前缀稳定）]
+        [本轮用户输入]
+        
         If the task already carries a non-empty ``system_prompt`` it is used as
         the base persona; otherwise the default template is used.
         """
         root = self._resolve_root(task)
 
-        # Gather all sections in parallel is unnecessary – they are cheap and
-        # some are synchronous.  We just collect them sequentially.
+        # Gather all sections
         tools_section = self._format_tools(tools)
         project_context_section = self._load_claude_md(root)
         memory_section = await self._get_memory_context(task.user_id, task.content)
@@ -110,8 +116,9 @@ class PromptEngine:
                 parts.append(f"\n## Available Tools\n\n{tools_section}")
             if project_context_section:
                 parts.append(f"\n## Project Context (CLAUDE.md)\n\n{project_context_section}")
+            # 记忆区块在系统提示之后、其他上下文之前
             if memory_section:
-                parts.append(f"\n## Relevant Memories\n\n{memory_section}")
+                parts.append(memory_section)
             if skills_section:
                 parts.append(f"\n## Relevant Skills\n\n{skills_section}")
             if rag_section:
@@ -199,11 +206,15 @@ class PromptEngine:
         """Retrieve relevant memories for the given *query*.
 
         优先使用 MemoryService（L2 档案卡 + L3 摘要），降级到 MemoryManager。
+        格式遵循架构文档：
+        ── 记忆：用户档案 ──    ← L2 整卡紧凑序列化（≤1.5KB）
+        ── 记忆：相关历史 ──    ← L3 top_k=5 按 final_score 排序（≤6KB）
         """
         # L2+L3 路径（新）
         svc = _memory_service
         if svc is not None and user_id:
             try:
+                from app.memory.layers import Scope
                 tenant_id = "default"
                 # 尝试从工具上下文获取 tenant_id
                 try:
@@ -213,20 +224,27 @@ class PromptEngine:
                         tenant_id = tid
                 except Exception:
                     pass
-                result = await svc.recall(tenant_id, user_id, query)
+                scope = Scope(
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    session_id="",  # recall 不需要 session_id
+                )
+                result = await svc.recall(scope=scope, query=query)
                 if result.has_content:
                     parts: list[str] = []
+                    # L2 档案卡区块
                     if result.profile_block:
-                        parts.append(f"## 用户档案\n{result.profile_block}")
+                        parts.append(f"── 记忆：用户档案 ──\n{result.profile_block}")
+                    # L3 相关历史区块
                     if result.summary_items:
                         lines = []
                         for s in result.summary_items[:5]:
-                            score = s.get("score", 0)
-                            content = s.get("content", "")[:300]
-                            topics = s.get("topics", [])
+                            score = s.score if hasattr(s, 'score') else s.get("score", 0)
+                            content = (s.content if hasattr(s, 'content') else s.get("content", ""))[:300]
+                            topics = s.topics if hasattr(s, 'topics') else s.get("topics", [])
                             t_str = f" [{', '.join(topics[:3])}]" if topics else ""
                             lines.append(f"- (score {score:.2f}){t_str} {content}")
-                        parts.append(f"## 相关历史\n" + "\n".join(lines))
+                        parts.append(f"── 记忆：相关历史 ──\n" + "\n".join(lines))
                     return "\n\n".join(parts)
             except Exception as exc:
                 logger.warning("MemoryService recall failed: %s", exc)
@@ -255,7 +273,7 @@ class PromptEngine:
             relevance = mem.get("relevance", 0)
             mem_type = mem.get("memory_type", "unknown")
             lines.append(f"- [{mem_type}] {content} (relevance: {relevance:.2f})")
-        return "\n".join(lines)
+        return f"── 记忆：相关历史 ──\n" + "\n".join(lines)
 
     async def _get_skills_context(self, query: str) -> str:
         """Return a summary of installed skills that may be relevant to *query*."""

@@ -211,23 +211,49 @@ async def forget(key: str, slot: Optional[str] = None) -> dict[str, Any]:
         return {"error": f"Failed to forget: {str(e)}"}
 
 
+# memory_search token 预算硬上限（字符数）
+_MEMORY_SEARCH_MAX_CHARS = 6000
+# 单次 query 最大字符数，防止超长 query 导致嵌入失败
+_MEMORY_SEARCH_MAX_QUERY = 500
+
+
 async def memory_search(query: str, limit: int = 10) -> dict[str, Any]:
-    """记忆搜索工具：语义搜索记忆（L3 占位实现）。
+    """记忆搜索工具：语义搜索记忆（L3 实现）。
 
     Args:
         query: 查询文本。
-        limit: 返回数量限制。
+        limit: 返回数量限制（1–20，默认 10）。
 
     Returns:
-        操作结果。
+        操作结果，包含 output / results / count。
     """
+    # 输入校验
+    if not query:
+        return {"error": "query is required", "results": []}
+
+    if len(query) > _MEMORY_SEARCH_MAX_QUERY:
+        return {
+            "error": f"query exceeds {_MEMORY_SEARCH_MAX_QUERY} chars limit",
+            "results": [],
+        }
+
+    # 规范化 limit 范围
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        limit = 10
+    if limit < 1:
+        limit = 1
+    if limit > 20:
+        limit = 20
+
     svc = _get_memory_service()
     if svc is None:
         return {"output": "Memory service not available.", "results": []}
 
     user_id = get_user_id()
     if not user_id:
-        return {"error": "memory service requires user context"}
+        return {"error": "memory service requires user context", "results": []}
 
     tenant_id = get_tenant_id() or "default"
     session_id = get_session_id() or "unknown"
@@ -239,31 +265,47 @@ async def memory_search(query: str, limit: int = 10) -> dict[str, Any]:
     )
 
     try:
-        # 调用 recall 方法（L2 + L3 合并）
-        result = await svc.recall(scope=scope, query=query)
+        # 调用 recall 方法并显式传递 top_k
+        result = await svc.recall(scope=scope, query=query, top_k=limit)
 
         # 从 summary_items 中提取 L3 结果
         l3_results = result.summary_items[:limit] if hasattr(result, 'summary_items') else []
 
         if not l3_results:
-            return {"output": f"No semantic memories found for: {query}", "results": []}
+            return {
+                "output": f"No semantic memories found for: {query}",
+                "results": [],
+                "count": 0,
+            }
 
-        # 格式化结果
-        formatted = []
+        # 格式化结果，严格执行 token 字符预算
+        formatted: list[dict[str, Any]] = []
+        total_chars = 0
         for item in l3_results:
-            formatted.append({
+            content = item.content or ""
+            # 单条截断，避免超长单条（含省略号总长度 ≤ 600）
+            if len(content) > 597:
+                content = content[:597] + "…"
+            entry = {
                 "id": item.id,
-                "content": item.content,
+                "content": content,
                 "topics": item.topics,
                 "score": item.score,
                 "session_id": item.session_id,
                 "created_at": item.created_at,
-            })
+            }
+            entry_chars = len(content)
+            # 保留至少 1 条结果，后续条目若超出预算则停止
+            if formatted and total_chars + entry_chars > _MEMORY_SEARCH_MAX_CHARS:
+                break
+            formatted.append(entry)
+            total_chars += entry_chars
 
         return {
             "output": f"Found {len(formatted)} memories for: {query}",
             "results": formatted,
             "count": len(formatted),
+            "truncated": len(formatted) < len(l3_results),
         }
 
     except Exception as e:

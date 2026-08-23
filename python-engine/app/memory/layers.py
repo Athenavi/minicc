@@ -177,6 +177,14 @@ class RecallResult:
     profile_block: str  # L2 档案卡紧凑序列化（≤1.5KB）
     summary_items: list[RecalledItem]  # L3 召回的摘要（≤6KB）
 
+    @property
+    def has_content(self) -> bool:
+        """是否有有效内容（L2 档案卡或 L3 摘要）。"""
+        # 注意：profile_block 中的 "暂无用户档案信息" 是无档案时的占位文本，
+        # 不应视为有效内容。
+        has_profile = bool(self.profile_block.strip()) and "暂无用户档案信息" not in self.profile_block
+        return has_profile or len(self.summary_items) > 0
+
 
 # ── 事件类型 ─────────────────────────────────────────────────────────────
 

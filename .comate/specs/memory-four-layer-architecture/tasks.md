@@ -118,7 +118,7 @@
     - 17.5: 测试查询缓存（同 query 重放零检索）
     - 17.6: 测试 token 预算截断（超出按 final_score 截断）
 
-- [ ] Task 18: 单元测试 - Consolidator
+- [✓] Task 18: 单元测试 - Consolidator
     - 18.1: 创建 `python-engine/tests/memory/test_consolidator.py`
     - 18.2: 测试完整 pipeline（fake queue + mock LLM/NER）
     - 18.3: 测试去重逻辑（content_hash + cosine>0.95）
@@ -126,12 +126,12 @@
     - 18.5: 测试崩溃中断重放幂等（重复调用不重复写入）
     - 18.6: 测试 rollup 合并
 
-- [ ] Task 19: 单元测试 - L3 语义查询
+- [✓] Task 19: 单元测试 - L3 语义查询
     - 19.1: 测试 recall 方法（L2 + L3 合并）
     - 19.2: 测试去重逻辑（摘要与窗口重叠）
     - 19.3: 测试 fail-soft 降级（Milvus 异常）
 
-- [ ] Task 20: 验证与文档
+- [✓] Task 20: 验证与文档
     - 20.1: 运行 pytest，确保所有测试通过（包括 PR-1）
     - 20.2: 检查测试覆盖率（新增模块 ≥90%）
     - 20.3: 更新架构文档（L3 层说明）
@@ -139,59 +139,59 @@
 
 # PR-3：主循环集成
 
-- [ ] Task 21: 改造 AgentRuntime - 生命周期集成
+- [✓] Task 21: 改造 AgentRuntime - 生命周期集成
     - 21.1: 修改 `python-engine/app/agent/runtime.py`，在 __init__ 中添加 memory: MemoryService 可选参数
     - 21.2: 在 execute 方法开头调用 memory.on_session_start
     - 21.3: 在 execute 方法中调用 memory.recall 获取 recalled
     - 21.4: 在 execute 方法结尾调用 memory.on_turn_complete
     - 21.5: 实现 memory=None 时的行为回归一致（兼容性）
 
-- [ ] Task 22: 改造 PromptEngine - 记忆分段注入
+- [✓] Task 22: 改造 PromptEngine - 记忆分段注入
     - 22.1: 修改 `python-engine/app/agent/prompt_engine.py`，build 方法增加 recalled 参数
     - 22.2: 实现 L2 档案卡注入（"── 记忆：用户档案 ──" 区块，≤1.5KB）
     - 22.3: 实现 L3 相关历史注入（"── 记忆：相关历史 ──" 区块，≤6KB）
     - 22.4: 确保记忆区块在系统提示之后、L4 窗口之前
 
-- [ ] Task 23: 编排 compaction 与巩固
+- [✓] Task 23: 编排 compaction 与巩固
     - 23.1: 在 MemoryService.on_turn_complete 中检测 token 预算是否达到 80%
     - 23.2: 触发 compaction 时，先调用 consolidator.save_summary 确认
     - 23.3: 等待 memory_id 返回后，才用摘要块替换窗口内容
     - 23.4: 实现降级链：LLM 摘要失败 → 重试1次 → trim_to_fit + degraded 标记
 
-- [ ] Task 24: 实现降级链
+- [✓] Task 24: 实现降级链
     - 24.1: 在 Consolidator 中捕获 LLM 摘要异常
     - 24.2: 实现重试逻辑（最多1次）
     - 24.3: 重试仍失败则标记 L1.degraded=True
     - 24.4: 回合结束后将待摘内容补交后台巩固队列
 
-- [ ] Task 25: 集成测试 - 前缀稳定
+- [✓] Task 25: 集成测试 - 前缀稳定
     - 25.1: 创建 `python-engine/tests/integration/test_memory_prefix_stable.py`
     - 25.2: 测试 compaction 后 messages[:retain] 与之前逐字节一致
     - 25.3: 测试缓存命中率不受影响
 
-- [ ] Task 26: 集成测试 - 降级链
+- [✓] Task 26: 集成测试 - 降级链
     - 26.1: 创建 `python-engine/tests/integration/test_memory_degradation.py`
     - 26.2: 测试 LLM 摘要失败 → 重试 → trim 流程
     - 26.3: 测试 degraded 标记正确设置
     - 26.4: 测试后台补交逻辑
 
-- [ ] Task 27: 集成测试 - 兼容性
+- [✓] Task 27: 集成测试 - 兼容性
     - 27.1: 创建 `python-engine/tests/integration/test_memory_compat.py`
     - 27.2: 测试 memory=None 时行为回归一致
     - 27.3: 测试现有对话不受影响
 
-- [ ] Task 28: 集成测试 - 多租户隔离
+- [✓] Task 28: 集成测试 - 多租户隔离
     - 28.1: 创建 `python-engine/tests/integration/test_memory_isolation.py`
     - 28.2: 测试 PG 行级 tenant_id 过滤
     - 28.3: 测试 Milvus expr 过滤
     - 28.4: 测试跨租户零泄漏（双租户场景）
 
-- [ ] Task 29: 完善工具 memory_search
+- [✓] Task 29: 完善工具 memory_search
     - 29.1: 修改 memory_search 工具，直查 L3 语义层
     - 29.2: 实现 token 预算控制
     - 29.3: 添加单元测试
 
-- [ ] Task 30: 验证与文档
+- [✓] Task 30: 验证与文档
     - 30.1: 运行 pytest，确保所有测试通过（包括 PR-1/2）
     - 30.2: 检查测试覆盖率（新增模块 ≥90%）
     - 30.3: 运行集成测试（前缀稳定、降级链、兼容性、多租户）

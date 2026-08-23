@@ -115,22 +115,39 @@ class MemoryService:
         session_id: str,
         tokens_in: int = 0,
         tokens_out: int = 0,
+        total_tokens: int = 0,
+        max_tokens: int = 8192,
     ) -> None:
         """回合完成时调用。
 
         1. 在 L1 记账（turn_count + token 累计）
-        2. 触发 L3 异步巩固（通过队列）
+        2. 检测 token 预算是否达到 80%，触发 compaction 编排
+        3. 触发 L3 异步巩固（通过队列）
 
         Args:
             session_id: 会话 ID。
             tokens_in: 输入 token 数。
             tokens_out: 输出 token 数。
+            total_tokens: 当前总 token 数（用于预算检测）。
+            max_tokens: 最大 token 预算（用于预算检测）。
         """
         # L1: 记账
         meta = self._session_meta.get(session_id)
         if meta:
             meta.mark_turn_complete(tokens_in, tokens_out)
             self._session_meta.update(session_id)
+
+        # L3: 检测 token 预算，触发 compaction 编排
+        if meta and total_tokens > 0 and max_tokens > 0:
+            usage_ratio = total_tokens / max_tokens
+            COMPACTION_THRESHOLD = 0.8  # 80% 阈值
+            if usage_ratio >= COMPACTION_THRESHOLD:
+                logger.info(
+                    "Token budget reached %.0f%%, triggering compaction for session=%s",
+                    usage_ratio * 100, session_id,
+                )
+                meta.mark_degraded("compaction_triggered")
+                self._session_meta.update(session_id)
 
         # L3: 异步巩固（入队）
         if meta and self._producer:
@@ -142,8 +159,9 @@ class MemoryService:
             )
 
         logger.debug(
-            "Turn completed: session=%s, tokens_in=%d, tokens_out=%d",
+            "Turn completed: session=%s, tokens_in=%d, tokens_out=%d, usage=%.0f%%",
             session_id, tokens_in, tokens_out,
+            (total_tokens / max_tokens * 100) if max_tokens > 0 else 0,
         )
 
     async def on_session_end(self, session_id: str) -> None:

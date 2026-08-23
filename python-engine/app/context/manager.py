@@ -100,19 +100,19 @@ class ContextManager:
     # Compression
     # ------------------------------------------------------------------
 
-    async def compress(self, messages: list, gateway=None) -> list:
+    async def compress(self, messages: list, gateway=None,
+                       memory_service=None) -> list:
         """Compress messages if approaching the token limit.
 
-        Strategy:
-        1. If total tokens < compression_threshold * max_tokens, return unchanged.
-        2. Keep the system prompt (first system message) and the last N messages intact.
-        3. Summarise the middle messages into a single context-summary message.
-        4. If *gateway* is provided, use it to generate a real summary; otherwise
-           fall back to a simple truncation summary.
+        降级链实现：
+        1. LLM 摘要 → 重试 1 次 → 仍失败则降级到提取式摘要
+        2. 最终失败则标记 degraded=True 并调用 trim_to_fit 硬截断
+        3. 回合结束后将待摘内容通过 memory_service 补交后台巩固队列
 
         Args:
             messages: List of message dicts (role, content, ...).
             gateway: Optional LLM gateway for generating summaries.
+            memory_service: Optional MemoryService for degraded content submission.
 
         Returns:
             Compressed message list (may be the same reference if no compression
@@ -150,27 +150,78 @@ class ContextManager:
         middle = other_msgs[:-keep_tail]
         tail = other_msgs[-keep_tail:]
 
-        # Build a summary of the middle portion
-        summary_text = await self._summarise(middle, gateway)
+        # ── 降级链：LLM 摘要 → 重试 → 降级 → 硬截断 ──
+        degraded = False
+        llm_failed = False
+        summary_text = ""
+
+        # 尝试 LLM 摘要（带重试）
+        if gateway is not None:
+            for attempt in range(2):  # 最多重试 1 次
+                try:
+                    summary_text = await self._llm_summarise(middle, gateway)
+                    break
+                except Exception as exc:
+                    logger.warning(
+                        "LLM summarisation attempt %d failed: %s", attempt + 1, exc
+                    )
+                    llm_failed = True
+                    if attempt == 0:
+                        logger.info("Retrying LLM summarisation...")
+                    else:
+                        logger.error("LLM summarisation failed after retry, using fallback")
+
+        # LLM 失败或未配置 → 降级到提取式摘要
+        if not summary_text:
+            summary_text = self._extractive_summary(middle)
+            degraded = True
+            logger.warning("Using extractive summary (degraded mode)")
+
+        # 构建摘要消息
+        summary_msg_content = (
+            "[Context Summary]\n"
+            "The following is a compressed summary of earlier conversation messages "
+            "that were removed to stay within the context window.\n\n"
+        )
+        if degraded:
+            summary_msg_content += "[DEGRADED MODE - extractive summary]\n\n"
+        summary_msg_content += summary_text
 
         summary_msg = {
             "role": "system",
-            "content": (
-                "[Context Summary]\n"
-                "The following is a compressed summary of earlier conversation messages "
-                "that were removed to stay within the context window.\n\n"
-                f"{summary_text}"
-            ),
+            "content": summary_msg_content,
         }
 
         compressed = system_msgs + [summary_msg] + tail
 
+        # 如果摘要后仍超出预算，执行硬截断
         new_tokens = self.count_message_tokens(compressed)
+        if new_tokens > self.max_tokens:
+            logger.warning(
+                "Compression still over budget (%d > %d), using trim_to_fit",
+                new_tokens, self.max_tokens,
+            )
+            compressed = self.trim_to_fit(compressed)
+            degraded = True
+
+        # 降级后：将被压缩的中间消息提交到后台巩固队列
+        if degraded and memory_service is not None:
+            try:
+                # 异步提交被压缩内容到 L3 巩固
+                import asyncio
+                asyncio.create_task(
+                    self._submit_degraded_content(middle, memory_service)
+                )
+            except Exception as exc:
+                logger.warning("Failed to submit degraded content: %s", exc)
+
         logger.info(
-            "Compression result: %d → %d tokens (%.1f%% reduction)",
+            "Compression result: %d → %d tokens (%.1f%% reduction, degraded=%s, llm_failed=%s)",
             total_tokens,
-            new_tokens,
-            (1 - new_tokens / total_tokens) * 100 if total_tokens else 0,
+            self.count_message_tokens(compressed),
+            (1 - self.count_message_tokens(compressed) / total_tokens) * 100 if total_tokens else 0,
+            degraded,
+            llm_failed,
         )
 
         return compressed
@@ -279,3 +330,82 @@ class ContextManager:
             self.count_message_tokens(result),
         )
         return result
+
+    # ------------------------------------------------------------------
+    # 降级链辅助方法
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _extractive_summary(messages: list) -> str:
+        """提取式摘要（LLM 不可用时的降级方案）。
+
+        从每个消息中提取关键内容，拼接成简明摘要。
+        """
+        parts: list[str] = []
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            if isinstance(content, str) and content.strip():
+                # 提取前 150 字符作为摘要片段
+                snippet = content[:150].replace("\n", " ")
+                if len(content) > 150:
+                    snippet += "..."
+                parts.append(f"[{role}]: {snippet}")
+        return "\n".join(parts) if parts else "(no content to summarise)"
+
+    @staticmethod
+    async def _submit_degraded_content(
+        messages: list, memory_service,
+    ) -> None:
+        """将降级模式下被压缩的内容提交到后台巩固队列。
+
+        Args:
+            messages: 被压缩的中间消息列表。
+            memory_service: MemoryService 实例。
+        """
+        try:
+            # 构造摘要内容并提交
+            convo_msgs = [
+                m for m in messages
+                if m.get("role") in ("user", "assistant") and m.get("content")
+            ]
+            if convo_msgs:
+                # 从第一条消息获取 scope 信息
+                scope = None
+                for msg in convo_msgs:
+                    if hasattr(msg, 'get'):
+                        tenant_id = msg.get("tenant_id", "default")
+                        user_id = msg.get("user_id", "unknown")
+                        if tenant_id and user_id:
+                            from app.memory.layers import Scope
+                            scope = Scope(
+                                tenant_id=tenant_id,
+                                user_id=user_id,
+                                session_id="",
+                            )
+                            break
+
+                if scope is None:
+                    from app.memory.layers import Scope
+                    scope = Scope(
+                        tenant_id="default",
+                        user_id="unknown",
+                        session_id="",
+                    )
+
+                # 保存摘要到 L3
+                combined_content = "\n".join(
+                    f"[{m.get('role', 'user')}]: {m.get('content', '')[:200]}"
+                    for m in convo_msgs
+                )
+                await memory_service.save_summary(
+                    scope=scope,
+                    content=combined_content,
+                    topics=["degraded_compaction"],
+                )
+                logger.info(
+                    "Submitted degraded content to L3 consolidation "
+                    "(%d messages)", len(convo_msgs),
+                )
+        except Exception as exc:
+            logger.warning("Failed to submit degraded content to L3: %s", exc)
