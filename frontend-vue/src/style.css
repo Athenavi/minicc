@@ -256,3 +256,13 @@ body {
 @media (min-width: 577px) {
   .u-hide-lg { display: none !important; }
 }
+
+/* ── 全局 reduced-motion：覆盖所有页面（含 admin 子页）── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

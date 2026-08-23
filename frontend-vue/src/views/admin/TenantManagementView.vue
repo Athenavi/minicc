@@ -298,12 +298,16 @@ onMounted(loadTenants)
 <style scoped>
 .tenant-management { padding: 24px; }
 .page-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
-.page-header h1 { margin: 0; font-size: 24px; font-weight: 600; }
+.page-header h1 { margin: 0; font-size: 24px; font-weight: 600; color: var(--text-primary); }
 .usage-empty { margin-top: 16px; }
 
 /* 窄屏:按钮全宽、触控目标 ≥ 40px */
 @media (max-width: 768px) {
+  .tenant-management { padding: 16px 12px; }
   .tenant-management .page-header { row-gap: 12px; }
   .tenant-management .page-header .ant-btn { min-height: 40px; }
+}
+@media (max-width: 480px) {
+  .tenant-management .page-header h1 { font-size: 20px; }
 }
 </style>

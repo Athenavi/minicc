@@ -390,11 +390,15 @@ onMounted(async () => {
 <style scoped>
 .database-management { padding: 24px; }
 .page-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
-.page-header h1 { margin: 0; font-size: 24px; font-weight: 600; }
+.page-header h1 { margin: 0; font-size: 24px; font-weight: 600; color: var(--text-primary); }
 .cell { word-break: break-all; }
 
 @media (max-width: 768px) {
+  .database-management { padding: 16px 12px; }
   .database-management .page-header { row-gap: 12px; }
   .database-management .page-header .ant-btn { min-height: 40px; }
+}
+@media (max-width: 480px) {
+  .database-management .page-header h1 { font-size: 20px; }
 }
 </style>
