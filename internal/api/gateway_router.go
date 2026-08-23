@@ -206,7 +206,7 @@ func NewGatewayRouter(
 	// 移除 BalanceSyncer 异步落库订阅，避免多副本 split-brain 与重复扣费。
 
 	// Agent execution semaphore
-	agentSem := make(chan struct{}, 20)
+	agentSem := make(chan struct{}, cfg.AgentMaxConcurrency)
 
 	// Submit handler (proxies to Python)
 	submitHandler := NewSubmitHandler(pythonClient, sessionMgr, eventHub, billingMgr)
@@ -247,6 +247,9 @@ func NewGatewayRouter(
 
 	// 模型路由：对话可用模型列表
 	mux.Handle("GET /v1/models", authMW(rlMW(http.HandlerFunc(ListUserModels))))
+	// 模板市场：工作流/Agent/技能 一键使用
+	templateHandler := NewTemplateHandler(pythonClient)
+	templateHandler.RegisterRoutes(mux, authMW, rlMW)
 
 	// 定时自动化：Webhook 触发（token 即鉴权，公开但限流）
 	mux.Handle("POST /v1/hooks/{jobID}", rlMW(http.HandlerFunc(HandleCronWebhook)))
@@ -315,6 +318,7 @@ func NewGatewayRouter(
 	mux.Handle("GET /v1/agents/{id}", authMW(rlMW(http.HandlerFunc(agentHandler.Get))))
 	mux.Handle("PUT /v1/agents/{id}", authMW(rlMW(http.HandlerFunc(agentHandler.Update))))
 	mux.Handle("DELETE /v1/agents/{id}", authMW(rlMW(http.HandlerFunc(agentHandler.Delete))))
+	mux.Handle("PUT /v1/agents/{id}/visibility", authMW(rlMW(http.HandlerFunc(agentHandler.SetVisibility))))
 	mux.Handle("POST /v1/agents/{id}/run", authMW(rlMW(http.HandlerFunc(agentHandler.Run))))
 	mux.Handle("GET /v1/agents/sessions", authMW(rlMW(http.HandlerFunc(agentHandler.ListSessions))))
 	mux.Handle("GET /v1/agents/sessions/{id}", authMW(rlMW(http.HandlerFunc(agentHandler.GetSession))))
@@ -743,6 +747,7 @@ func registerProxyRoutes(
 	mux.Handle("POST /v1/kb/{id}/query", authMW(kbRateMW(kbP(pathParamSuffix("/v1/kb", "/query")))))
 	// 知识库删除文档（P1 修复：Python 端已有 DELETE /{kb_id}/documents?doc_id=，
 	// 网关此前缺失该路由导致前端删除文档 404）
+	mux.Handle("PUT /v1/kb/{id}/visibility", authMW(kbRateMW(http.HandlerFunc(handleKBVisibility))))
 	mux.Handle("DELETE /v1/kb/{id}/documents", authMW(kbRateMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if pythonClient == nil {
 			InternalError(w, "python engine not available")

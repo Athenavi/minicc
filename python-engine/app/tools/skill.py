@@ -2,12 +2,14 @@
 
 实现对标 Go `internal/skill/tools.go`，使用磁盘 SkillStore 作为后端。
 
-## 多租户 / 用户级隔离
+## 多租户 / 用户级隔离 + 租户共享层
 
 - 运行时工具链从 app.tools.context（contextvars，AgentRuntime 注入）读取
   user_id / tenant_id，按与 API 层（app/api/skills.py）相同的规则构造 store：
-  `data/skills/{tenant_id}/{user_id}/`；无身份（未登录 / 系统任务）→
-  `data/skills/_shared/`（首次访问自动迁移旧全局目录内容，见 app/skill/store.py）。
+  查找执行沿 `data/skills/{tenant_id}/{user_id}/` → `data/skills/{tenant_id}/_shared/`
+  （租户共享层）→ `data/skills/_shared/`（全局共享）三级，取第一个命中
+  （SkillStore.get 内部实现，见 app/skill/store.py）；写（install/generate）默认
+  user 私有目录。无身份（未登录 / 系统任务）→ `data/skills/_shared/`。
 - 函数签名保持兼容：调用方不传身份时行为与历史一致（共享目录）。
 - 身份段非法（路径穿越）时回退共享目录并告警，避免工具调用中断。
 """
@@ -30,7 +32,11 @@ _store = SkillStore()
 
 
 def _get_store() -> SkillStore:
-    """按当前运行上下文解析身份 store；无身份 → 共享目录（模块级 _store）。"""
+    """按当前运行上下文解析身份 store；无身份 → 全局共享目录（模块级 _store）。
+
+    有身份时构造带 tenant/user 的 store：读/执行沿 user → 租户 _shared →
+    全局 _shared 查找（skill_run 依赖此找到团队共享技能），写默认 user 私有目录。
+    """
     from app.tools.context import get_tenant_id, get_user_id
 
     uid = get_user_id()
@@ -49,7 +55,12 @@ async def skill_list() -> dict[str, Any]:
     if not skills:
         return {"output": "No skills installed.", "count": 0, "skills": []}
     lines = [f"  - {s.name}: {s.description} (v{s.version}, {s.exec_type})" for s in skills]
-    return {"output": "\n".join(lines), "count": len(skills), "skills": [s.to_dict() for s in skills]}
+    payload = []
+    for s in skills:
+        item = s.to_dict()
+        item["source"] = s.scope  # user/tenant/shared，标记团队共享技能
+        payload.append(item)
+    return {"output": "\n".join(lines), "count": len(skills), "skills": payload}
 
 
 async def skill_install(url: str = "", file: str = "", inline: str = "") -> dict[str, Any]:

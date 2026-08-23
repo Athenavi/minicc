@@ -88,7 +88,7 @@ func (c *PythonClient) markSuccess(addr string) {
 // do 统一请求出口：记录成功/失败并更新熔断状态
 func (c *PythonClient) do(req *http.Request) (*http.Response, error) {
 	addr := req.URL.Scheme + "://" + req.URL.Host
-	resp, err := c.do(req)
+	resp, err := c.client.Do(req)
 	if err != nil {
 		c.markFailure(addr)
 		return nil, err

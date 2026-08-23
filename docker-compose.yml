@@ -6,9 +6,9 @@ services:
   postgres:
     image: pgvector/pgvector:pg16-alpine
     environment:
-      POSTGRES_USER: minicc
-      # 閻㈢喍楠囬柈銊ц鐠囧嘲濮熻箛鍛禌閹诡澀璐熷鍝勭槕閻緤绱橲 鐎瑰鍙忛崝鐘叉祼閿?
-      POSTGRES_PASSWORD: minicc
+      POSTGRES_USER: ${POSTGRES_USER:-minicc}
+      # P1 安全：生产必须设置强密码；开发环境默认仅本地可访问
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-minicc_dev_change_in_production}
       POSTGRES_DB: minicc
     ports:
       # 娴犲懐绮︾€规碍婀伴張鍝勬礀閻滎垽绱濋柆鍨帳閸╄櫣顢呯拋鐐煢閻╁瓨甯撮弳鎾苟閸忣剛缍夐敍鍦?鐎瑰鍙忛崝鐘叉祼閿?
@@ -42,9 +42,9 @@ services:
       - "127.0.0.1:9000:9000"
       - "127.0.0.1:9001:9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      # 閻㈢喍楠囬柈銊ц鐠囧嘲濮熻箛鍛禌閹诡澀璐熷鍝勭槕閻緤绱橲 鐎瑰鍙忛崝鐘叉祼閿?
-      MINIO_ROOT_PASSWORD: minioadmin123
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      # P1 安全：生产必须设置强密码；开发环境默认仅本地可访问
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin_dev_change_in_production}
     volumes:
       - miniodata:/data
     healthcheck:

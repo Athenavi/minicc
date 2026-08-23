@@ -4,8 +4,8 @@ import { useRouter } from 'vue-router'
 import {
   Button, Modal, Input, Radio, Tag, Popconfirm, message,
 } from 'ant-design-vue'
-import { BookOutlined, PlusOutlined, DeleteOutlined, SearchOutlined, EditOutlined, FileTextOutlined, DatabaseOutlined } from '@ant-design/icons-vue'
-import { api } from '../api'
+import { BookOutlined, PlusOutlined, DeleteOutlined, SearchOutlined, EditOutlined, FileTextOutlined, DatabaseOutlined, TeamOutlined, LockOutlined } from '@ant-design/icons-vue'
+import { api, setKBVisibility } from '../api'
 import PageSkeleton from '../components/common/PageSkeleton.vue'
 import EmptyState from '../components/common/EmptyState.vue'
 
@@ -14,7 +14,7 @@ interface KnowledgeBase {
   name: string
   description: string
   type: 'wiki' | 'rag'
-  visibility: 'public' | 'private'
+  visibility: 'public' | 'private' | 'tenant'
   status: string
   document_count: number
   total_size_bytes: number
@@ -40,6 +40,7 @@ const showEditModal = ref(false)
 const editingKb = ref<KnowledgeBase | null>(null)
 const editForm = ref({ name: '', description: '', type: 'wiki' as 'wiki' | 'rag', visibility: 'private' as 'public' | 'private' })
 const saving = ref(false)
+const visibilityTogglingId = ref('')
 
 onMounted(loadKnowledgeBases)
 
@@ -50,14 +51,16 @@ const filtered = computed(() => {
     (kb.name || '').toLowerCase().includes(q) || (kb.description || '').toLowerCase().includes(q))
 })
 
-const privateKbs = computed(() => filtered.value.filter(kb => kb.visibility === 'private'))
+// tenant / 缺失均归入「我的知识库」（缺失视为 private），团队共享项靠徽标区分
+const privateKbs = computed(() => filtered.value.filter(kb => kb.visibility !== 'public'))
 const publicKbs = computed(() => filtered.value.filter(kb => kb.visibility === 'public'))
 
 async function loadKnowledgeBases() {
   loading.value = true
   try {
     const res = await api.get('/v1/kb')
-    knowledgeBases.value = res.data?.data?.knowledge_bases || []
+    // 降级：列表项缺失 visibility 时视为 private
+    knowledgeBases.value = (res.data?.data?.knowledge_bases || []).map((kb: any) => ({ ...kb, visibility: kb.visibility || 'private' }))
   } catch {
     message.error('加载知识库失败')
   } finally {
@@ -83,7 +86,8 @@ async function createKnowledgeBase() {
 
 function openEdit(kb: KnowledgeBase) {
   editingKb.value = kb
-  editForm.value = { name: kb.name, description: kb.description, type: kb.type, visibility: kb.visibility }
+  // 编辑弹窗只管理 私有/公开；团队共享态映射为 private（团队共享由独立开关切换）
+  editForm.value = { name: kb.name, description: kb.description, type: kb.type, visibility: kb.visibility === 'tenant' ? 'private' : kb.visibility }
   showEditModal.value = true
 }
 
@@ -109,6 +113,26 @@ async function deleteKnowledgeBase(id: string) {
     await loadKnowledgeBases()
   } catch (e: any) {
     message.error(e.response?.data?.detail || e.response?.data?.error || '删除失败')
+  }
+}
+
+// ── 团队共享 / 私有切换（owner-only；非属主 403 提示）──
+async function toggleVisibility(kb: KnowledgeBase) {
+  const next = kb.visibility === 'tenant' ? 'private' : 'tenant'
+  visibilityTogglingId.value = kb.id
+  try {
+    await setKBVisibility(kb.id, next)
+    message.success(next === 'tenant' ? '已共享给团队' : '已设为私有')
+    await loadKnowledgeBases()
+  } catch (e: any) {
+    const msg = e.response?.data?.detail || e.response?.data?.error || e.response?.data?.message || ''
+    if (e.response?.status === 403) {
+      message.error('只能操作自己创建的知识库' + (msg ? `：${msg}` : ''))
+    } else {
+      message.error('操作失败' + (msg ? `：${msg}` : ''))
+    }
+  } finally {
+    visibilityTogglingId.value = ''
   }
 }
 
@@ -185,6 +209,7 @@ function formatDate(iso: string): string {
                   <span class="kb-desc">{{ kb.description || '暂无描述' }}</span>
                 </div>
                 <Tag :color="kb.type === 'rag' ? 'success' : 'blue'" class="type-tag">{{ kb.type.toUpperCase() }}</Tag>
+                <Tag v-if="kb.visibility === 'tenant'" color="green" class="type-tag">团队共享</Tag>
               </div>
               <div class="kb-stats">
                 <span class="stat"><FileTextOutlined /> {{ kb.document_count }} 文档</span>
@@ -194,6 +219,19 @@ function formatDate(iso: string): string {
               <div class="kb-footer">
                 <span class="kb-time">更新于 {{ formatDate(kb.updated_at) }}</span>
                 <div class="footer-actions">
+                  <Button
+                    v-if="kb.visibility !== 'public'"
+                    type="text"
+                    size="small"
+                    :title="kb.visibility === 'tenant' ? '设为私有' : '共享给团队'"
+                    :loading="visibilityTogglingId === kb.id"
+                    @click.stop="toggleVisibility(kb)"
+                  >
+                    <template #icon>
+                      <LockOutlined v-if="kb.visibility === 'tenant'" />
+                      <TeamOutlined v-else />
+                    </template>
+                  </Button>
                   <Button type="text" size="small" title="编辑" @click.stop="openEdit(kb)">
                     <template #icon><EditOutlined /></template>
                   </Button>

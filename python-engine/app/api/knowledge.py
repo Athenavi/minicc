@@ -111,7 +111,7 @@ async def list_knowledge_bases(user_id: str) -> dict:
         """SELECT id, name, COALESCE(description, '') as description, type, visibility, status,
                   document_count, total_size_bytes, credits_consumed, config, created_at, updated_at
            FROM knowledge_bases
-           WHERE user_id = $1 OR visibility = 'public'
+           WHERE user_id = $1 OR visibility = 'tenant'
            ORDER BY created_at DESC""",
         user_id,
     )
@@ -131,8 +131,8 @@ async def create_knowledge_base(
         raise HTTPException(status_code=400, detail="name must not be empty")
     if kb_type not in ("wiki", "rag"):
         raise HTTPException(status_code=400, detail="type must be 'wiki' or 'rag'")
-    if visibility not in ("public", "private"):
-        raise HTTPException(status_code=400, detail="visibility must be 'public' or 'private'")
+    if visibility not in ("public", "private", "tenant"):
+        raise HTTPException(status_code=400, detail="visibility must be 'public', 'private', or 'tenant'")
 
     pool = get_pool()
     kb_id = str(uuid.uuid4())
@@ -152,7 +152,7 @@ async def get_knowledge_base(kb_id: str, user_id: str) -> dict:
         """SELECT id, name, COALESCE(description, '') as description, type, visibility, status,
                   document_count, total_size_bytes, credits_consumed, config, created_at, updated_at
            FROM knowledge_bases
-           WHERE id = $1 AND (user_id = $2 OR visibility = 'public')""",
+           WHERE id = $1 AND (user_id = $2 OR visibility = 'tenant')""",
         kb_id, user_id,
     )
     if row is None:
@@ -207,8 +207,8 @@ async def update_knowledge_base(
         params.append(kb_type)
         idx += 1
     if visibility is not None:
-        if visibility not in ("public", "private"):
-            raise HTTPException(status_code=400, detail="visibility must be 'public' or 'private'")
+    if visibility not in ("public", "private", "tenant"):
+        raise HTTPException(status_code=400, detail="visibility must be 'public', 'private', or 'tenant'")
         updates.append(f"visibility = ${idx}")
         params.append(visibility)
         idx += 1

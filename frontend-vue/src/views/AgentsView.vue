@@ -9,12 +9,12 @@ import {
   PlusOutlined, PlayCircleOutlined, EditOutlined, DeleteOutlined,
   StopOutlined, ClockCircleOutlined, CheckCircleOutlined,
   CloseCircleOutlined, SyncOutlined, RobotOutlined, HistoryOutlined,
-  MessageOutlined, ShopOutlined,
+  MessageOutlined, ShopOutlined, TeamOutlined, LockOutlined,
 } from '@ant-design/icons-vue'
 import {
   listAgents, createAgent, updateAgent, deleteAgent,
   runAgent, listAgentSessions, getAgentSession,
-  listMarket, installMarket,
+  listMarket, installMarket, setAgentVisibility,
 } from '../api'
 import type { Agent, AgentSession, MarketItem } from '../api'
 import PageSkeleton from '../components/common/PageSkeleton.vue'
@@ -22,7 +22,9 @@ import EmptyState from '../components/common/EmptyState.vue'
 import SkillMarketCard from '../components/SkillMarketCard.vue'
 
 // ── 数据 ──
-const agents = ref<Agent[]>([])
+// 后端列表项可能带 visibility（'private'|'tenant'）；缺失视为 private
+type AgentRow = Agent & { visibility?: 'private' | 'tenant' }
+const agents = ref<AgentRow[]>([])
 const loadingAgents = ref(true)
 const errorAgents = ref(false)
 const sessions = ref<AgentSession[]>([])
@@ -199,6 +201,24 @@ async function toggleEnabled(a: Agent) {
     a.enabled = !a.enabled
   } catch {
     message.error('操作失败')
+  }
+}
+
+// ── 共享可见性（团队共享 / 私有；owner-only，非属主 403 提示）──
+async function toggleVisibility(a: AgentRow) {
+  const next = a.visibility === 'tenant' ? 'private' : 'tenant'
+  try {
+    await setAgentVisibility(a.id, next)
+    message.success(next === 'tenant' ? '已共享给团队' : '已设为私有')
+    await loadAgents()
+  } catch (e: any) {
+    const raw = e?.response?.data
+    const msg = raw?.message || raw?.detail || raw?.error || ''
+    if (e?.response?.status === 403) {
+      message.error('只能操作自己创建的 Agent' + (msg ? `：${msg}` : ''))
+    } else {
+      message.error('操作失败' + (msg ? `：${msg}` : ''))
+    }
   }
 }
 
@@ -381,12 +401,17 @@ function toolCount(a: Agent): number {
                       <template v-if="a.enabled"><StopOutlined class="menu-icon" />停用</template>
                       <template v-else><PlayCircleOutlined class="menu-icon" />启用</template>
                     </MenuItem>
+                    <MenuItem key="visibility" @click="toggleVisibility(a)">
+                      <template v-if="a.visibility === 'tenant'"><LockOutlined class="menu-icon" />设为私有</template>
+                      <template v-else><TeamOutlined class="menu-icon" />共享给团队</template>
+                    </MenuItem>
                     <MenuItem key="delete" danger @click="requestDelete(a)"><DeleteOutlined class="menu-icon" />删除</MenuItem>
                   </Menu>
                 </template>
               </Dropdown>
             </div>
             <div class="card-meta">
+              <Tag v-if="a.visibility === 'tenant'" color="green">团队共享</Tag>
               <Tag :color="a.enabled ? 'green' : 'default'">{{ a.enabled ? '启用' : '已停用' }}</Tag>
               <Tag>{{ toolCount(a) }} 工具</Tag>
               <Tag>最多 {{ a.max_turns }} 轮</Tag>

@@ -103,6 +103,7 @@ type Config struct {
 	AgentMaxTurns     int // max LLM-tool turns per run (default 10)
 	AgentMaxTokens    int // max output tokens per LLM call (default 8192)
 	AgentContextLimit int // max messages before pruning (default 20)
+	AgentMaxConcurrency int // max concurrent agent runs (default 20)
 
 	// Python AI 引擎
 	PythonEngineAddress string // HTTP 地址，如 "localhost:8000"
@@ -188,6 +189,8 @@ func Load() *Config {
 		AgentMaxTurns:         getInt("AGENT_MAX_TURNS", 10),
 		AgentMaxTokens:        getInt("AGENT_MAX_TOKENS", 8192),
 		AgentContextLimit:     getInt("AGENT_CONTEXT_LIMIT", 20),
+		AgentMaxConcurrency:   getInt("AGENT_MAX_CONCURRENCY", 20),
+		AgentContextLimit:     getInt("AGENT_CONTEXT_LIMIT", 20),
 
 		// Python AI 引擎（连接池配置）
 
@@ -231,6 +234,7 @@ func ValidateJWTSecret(secret string) bool {
 		"secret",
 		"test-secret",
 		"change-me",
+		"changeme",
 	}
 	for _, ws := range weakSecrets {
 		if secret == ws {

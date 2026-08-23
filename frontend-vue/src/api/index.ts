@@ -332,3 +332,33 @@ export function cronWebhookUrl(id: string, token: string): string {
   return `${location.origin}/v1/hooks/${id}?token=${encodeURIComponent(token)}`
 }
 
+
+// ── 模板市场 / 共享可见性（2026-08-23 批次2）──
+export interface TemplateItem {
+  id: string
+  type: 'workflow' | 'agent' | 'skill'
+  name: string
+  description: string
+  payload: Record<string, any>
+}
+
+export async function listTemplates(type?: 'workflow' | 'agent' | 'skill'): Promise<TemplateItem[]> {
+  const resp = await api.get('/v1/templates', { params: type ? { type } : {} })
+  return resp.data?.templates || []
+}
+
+export async function useTemplate(id: string): Promise<any> {
+  const resp = await api.post(`/v1/templates/${id}/use`)
+  return resp.data
+}
+
+export async function setAgentVisibility(id: string, visibility: 'private' | 'tenant' | 'public'): Promise<any> {
+  const resp = await api.put(`/v1/agents/${id}/visibility`, { visibility })
+  return resp.data
+}
+
+export async function setKBVisibility(id: string, visibility: 'private' | 'tenant' | 'public'): Promise<any> {
+  const resp = await api.put(`/v1/kb/${id}/visibility`, { visibility })
+  return resp.data
+}
+

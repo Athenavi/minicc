@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick, markRaw } from 'vue'
 import { useRouter } from 'vue-router'
 import { VueFlow, useVueFlow, Handle, Position } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
@@ -7,16 +7,19 @@ import { Controls } from '@vue-flow/controls'
 import { MiniMap } from '@vue-flow/minimap'
 import {
   Button, Input, Select, Drawer, Form, FormItem,
-  Empty, Popconfirm, Tag, InputNumber, message,
+  Empty, Popconfirm, Tag, InputNumber, message, Tabs, TabPane,
 } from 'ant-design-vue'
 import {
   SaveOutlined, PlayCircleOutlined, DeleteOutlined,
   CloseOutlined, UnorderedListOutlined, CopyOutlined,
   AlignCenterOutlined, HistoryOutlined, MessageOutlined,
+  DownloadOutlined, RocketOutlined,
 } from '@ant-design/icons-vue'
-import { api, listAgents } from '../api'
-import type { Agent } from '../api'
+import { api, listAgents, listTemplates, useTemplate } from '../api'
+import type { Agent, TemplateItem } from '../api'
 import { useAuthStore } from '../stores/auth'
+import PageSkeleton from '../components/common/PageSkeleton.vue'
+import EmptyState from '../components/common/EmptyState.vue'
 import type { Node, Edge, Connection } from '@vue-flow/core'
 
 const authStore = useAuthStore()
@@ -104,7 +107,7 @@ const modelOptions = [
 ]
 
 // ── Vue Flow ──
-const { findNode, addNodes, addEdges, removeNodes, getNodes, getEdges, getSelectedNodes } = useVueFlow({
+const { findNode, addNodes, addEdges, removeNodes, getNodes, getEdges, getSelectedNodes, fitView } = useVueFlow({
   defaultEdgeOptions: { type: 'smoothstep', animated: true },
   multiSelectionKeyCode: ['Shift', 'Meta', 'Control'],
 })
@@ -600,11 +603,62 @@ function runInChat() {
   router.push({ path: '/chat', query: { workflow: value, mode: 'workflow' } })
 }
 
+// ── 模板市场（一键使用：加载进画布，不落库）──
+const activeView = ref('canvas')
+const templates = ref<TemplateItem[]>([])
+const templatesLoading = ref(false)
+const templatesError = ref(false)
+const templateUsingId = ref<string | null>(null)
+
+async function loadTemplates() {
+  templatesLoading.value = true
+  templatesError.value = false
+  try {
+    templates.value = await listTemplates('workflow')
+  } catch {
+    templatesError.value = true
+    message.error('获取工作流模板失败')
+  } finally {
+    templatesLoading.value = false
+  }
+}
+
+function templateNodeCount(t: TemplateItem): number {
+  return Array.isArray(t.payload?.nodes) ? t.payload.nodes.length : 0
+}
+
+function templateEdgeCount(t: TemplateItem): number {
+  return Array.isArray(t.payload?.edges) ? t.payload.edges.length : 0
+}
+
+async function useWorkflowTemplate(t: TemplateItem) {
+  templateUsingId.value = t.id
+  try {
+    const resp = await useTemplate(t.id)
+    // 兼容直接返回 {payload,...} 或 {data:{payload,...}} 包装
+    const body = resp?.data && typeof resp.data === 'object' && resp.data.payload ? resp.data : resp
+    const payload = body?.payload
+    if (!payload || !Array.isArray(payload.nodes)) throw new Error('模板数据不完整')
+    // 替换当前画布：模板只加载不落库，可编辑后手动保存
+    resetCanvas()
+    fromBackendFormat({ name: body?.name || t.name, nodes: payload.nodes, edges: payload.edges || [] })
+    message.success(`已加载模板「${body?.name || t.name}」，可编辑后保存`)
+    activeView.value = 'canvas'
+    await nextTick()
+    try { fitView({ padding: 0.15 }) } catch { /* 忽略布局异常 */ }
+  } catch (e: any) {
+    message.error('加载模板失败: ' + (e?.response?.data?.error || e?.message || ''))
+  } finally {
+    templateUsingId.value = null
+  }
+}
+
 // ── Mount ──
 onMounted(() => {
   loadWorkflows()
   loadInstances()
   loadAgentList()
+  loadTemplates()
   window.addEventListener('keydown', onKeydown)
 })
 onUnmounted(() => {

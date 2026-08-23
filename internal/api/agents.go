@@ -165,7 +165,7 @@ func (h *AgentHandler) List(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	rows, err := db.Pool.Query(r.Context(),
 		`SELECT id::text, name, COALESCE(description,''), COALESCE(system_prompt,''), COALESCE(tools,'[]'::jsonb), COALESCE(llm_config,'{}'::jsonb), max_turns, timeout_seconds, enabled, created_at, updated_at
-		 FROM agents WHERE tenant_id = $1 AND user_id = $2 ORDER BY created_at DESC`, claims.TenantID, claims.UserID)
+		 FROM agents WHERE tenant_id = $1 AND (user_id = $2 OR (visibility = 'tenant' AND tenant_id = $1)) ORDER BY created_at DESC`, claims.TenantID, claims.UserID)
 	if err != nil {
 		logAndRespond(w, err, http.StatusInternalServerError, "list agents failed")
 		return
@@ -463,6 +463,39 @@ func (h *AgentHandler) executeAgent(agent *Agent, task, sessionID, userID, tenan
 }
 
 // ListSessions 返回当前用户在当前租户下的运行记录（倒序）。
+// SetVisibility 设置 Agent 共享可见性（仅 owner）：PUT /v1/agents/{id}/visibility
+func (h *AgentHandler) SetVisibility(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil || claims.TenantID == "" {
+		Unauthorized(w, "missing tenant context")
+		return
+	}
+	var body struct {
+		Visibility string `json:"visibility"`
+	}
+	if err := DecodeJSON(w, r, &body); err != nil {
+		BadRequest(w, ErrInvalidReq)
+		return
+	}
+	if body.Visibility != "private" && body.Visibility != "tenant" {
+		BadRequest(w, "visibility must be private or tenant")
+		return
+	}
+	// owner-only：更新必须命中 user_id
+	tag, err := db.Pool.Exec(r.Context(),
+		`UPDATE agents SET visibility = $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3 AND user_id = $4`,
+		body.Visibility, r.PathValue("id"), claims.TenantID, claims.UserID)
+	if err != nil {
+		logAndRespond(w, err, http.StatusInternalServerError, "update visibility failed")
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		Forbidden(w, "agent not found or not owned by you")
+		return
+	}
+	OK(w, map[string]interface{}{"id": r.PathValue("id"), "visibility": body.Visibility})
+}
+
 func (h *AgentHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	rows, err := db.Pool.Query(r.Context(),
@@ -514,7 +547,7 @@ func (h *AgentHandler) queryAgent(ctx context.Context, tenantID, userID, agentID
 	var a Agent
 	err := db.Pool.QueryRow(ctx,
 		`SELECT id::text, name, COALESCE(description,''), COALESCE(system_prompt,''), COALESCE(tools,'[]'::jsonb), COALESCE(llm_config,'{}'::jsonb), max_turns, timeout_seconds, enabled, created_at, updated_at
-		 FROM agents WHERE tenant_id = $1 AND id = $2 AND user_id = $3`, tenantID, userID, agentID).
+		 FROM agents WHERE tenant_id = $1 AND id = $2 AND (user_id = $3 OR (visibility = 'tenant' AND tenant_id = $1))`, tenantID, agentID, userID).
 		Scan(&a.ID, &a.Name, &a.Description, &a.SystemPrompt, &a.Tools, &a.LLMConfig,
 			&a.MaxTurns, &a.TimeoutSeconds, &a.Enabled, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {

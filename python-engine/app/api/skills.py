@@ -1,15 +1,21 @@
 """Skill API endpoints — CRUD + discover, backed by SkillStore.
 
-## 多租户 / 用户级隔离
+## 多租户 / 用户级隔离 + 租户共享层（四级目录解析）
 
 - 所有 handler 从 query 参数读取 `user_id` / `tenant_id`（由网关在代理时注入），
   每个请求构造带身份的 `SkillStore`（根目录解析见 app/skill/store.py）：
-  `data/skills/{tenant_id}/{user_id}/`；两者都缺失（未登录 / 系统任务）时回退
-  `data/skills/_shared/`（首次访问自动迁移旧全局目录内容）。
-- 不传身份时行为与历史版本一致（共享目录），返回结构保持不变。
+  读查找沿 `data/skills/{tenant_id}/{user_id}/` → `data/skills/{tenant_id}/_shared/`
+  （租户共享层）→ `data/skills/_shared/`（全局共享）三级合并；两者都缺失
+  （未登录 / 系统任务）时回退 `data/skills/_shared/`（首次访问自动迁移旧全局目录）。
+- 写目标：默认 user 私有目录；`?scope=tenant` 时写租户共享层（需 tenant_id），
+  `?scope=private` / 缺省时写 user 私有目录。
+- `GET /v1/skills` 返回结构每个技能含 `source` 字段（user/tenant/shared），
+  前端可据此显示“团队共享”徽标（source == 'tenant'）。
 - 身份段非法（如 `../` 路径穿越）→ 400，拒绝构造 store。
 - `run` handler 会把请求身份写入 tool context（app.tools.context），保证
   tools/skill.py 的 `skill_run` 执行链（含沙箱工具）落在同一身份目录下。
+- 删除：DELETE /v1/skills/{name} 仅删除 user 私有目录中的技能（保持现状）；
+  租户共享层技能的删除由租户 owner 后续通过 scope=tenant 单独处理（本期未实现）。
 """
 from __future__ import annotations
 
@@ -25,20 +31,37 @@ from app.skill.store import SkillStore, SkillDef
 router = APIRouter(tags=["skills"])
 
 
-def _store_for(user_id: str = "", tenant_id: str = "") -> SkillStore:
+def _valid_scope(scope: str = "") -> str:
+    """校验安装/注册目标 scope：空 / 'private' → user 私有；'tenant' → 租户共享。"""
+    if scope in ("", "private"):
+        return ""
+    if scope == "tenant":
+        return "tenant"
+    raise HTTPException(status_code=400, detail="invalid scope: must be 'tenant' or 'private'")
+
+
+def _store_for(user_id: str = "", tenant_id: str = "", scope: str = "") -> SkillStore:
     """按请求身份构造 store；身份非法时 400（防路径穿越）。"""
     try:
-        return SkillStore(tenant_id=tenant_id, user_id=user_id)
+        return SkillStore(tenant_id=tenant_id, user_id=user_id, scope=scope)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"invalid identity: {e}")
 
 
+def _skill_payload(s: SkillDef) -> dict[str, Any]:
+    """序列化技能并附带 source 标记（user/tenant/shared），供前端展示共享徽标。"""
+    payload = s.to_dict()
+    payload["source"] = s.scope
+    return payload
+
+
 @router.get("/v1/skills")
 async def list_skills(user_id: str = "", tenant_id: str = "") -> dict[str, Any]:
+    """列出全部可用技能：合并 user 目录 + 租户 _shared + 全局 _shared（去重，user 优先）。"""
     store = _store_for(user_id, tenant_id)
     skills = store.list()
     return {
-        "skills": [s.to_dict() for s in skills],
+        "skills": [_skill_payload(s) for s in skills],
         "count": len(skills),
     }
 
@@ -50,15 +73,16 @@ class SkillInstallRequest(BaseModel):
 
 
 @router.post("/v1/skills/{name}/register")
-async def register_skill(name: str, user_id: str = "", tenant_id: str = "") -> dict[str, Any]:
+async def register_skill(name: str, user_id: str = "", tenant_id: str = "", scope: str = "") -> dict[str, Any]:
     """将能力注册中心的技能注册为本地技能（SkillStore），供对话/Agent 工具链调用。
 
     前端 SkillMarketCard 调用 POST /v1/skills/{capabilityId}/register；
     能力注册中心查询不到时返回 404，避免假注册。
+    scope=tenant 时注册进租户共享层（团队共享），缺省写 user 私有目录。
     """
     from app.core.capabilities import get_registry
 
-    store = _store_for(user_id, tenant_id)
+    store = _store_for(user_id, tenant_id, _valid_scope(scope))
 
     cap = get_registry().get(name)
     if cap is None:
@@ -66,7 +90,7 @@ async def register_skill(name: str, user_id: str = "", tenant_id: str = "") -> d
 
     existing = [s for s in store.list() if s.name == name]
     if existing:
-        return {"success": True, "skill": name, "registered": True}
+        return {"success": True, "skill": name, "registered": True, "scope": store.write_scope}
 
     skill = SkillDef(
         name=cap.name or name,
@@ -81,12 +105,14 @@ async def register_skill(name: str, user_id: str = "", tenant_id: str = "") -> d
         "skill": skill.name,
         "registered": True,
         "description": skill.description,
+        "scope": store.write_scope,
     }
 
 
 @router.post("/v1/skills/install")
-async def install_skill(body: SkillInstallRequest, user_id: str = "", tenant_id: str = "") -> dict[str, Any]:
-    store = _store_for(user_id, tenant_id)
+async def install_skill(body: SkillInstallRequest, user_id: str = "", tenant_id: str = "", scope: str = "") -> dict[str, Any]:
+    """安装技能（url / file / inline）；scope=tenant 时安装进租户共享层。"""
+    store = _store_for(user_id, tenant_id, _valid_scope(scope))
 
     if not body.url and not body.file and not body.inline:
         raise HTTPException(status_code=400, detail="provide url, file, or inline")
@@ -122,7 +148,9 @@ async def install_skill(body: SkillInstallRequest, user_id: str = "", tenant_id:
         parameters=data.get("parameters", []),
     )
     store.save(skill)
-    return {"skill": skill.to_dict(), "message": f"Skill '{skill.name}' installed"}
+    payload = skill.to_dict()
+    payload["source"] = store.write_scope
+    return {"skill": payload, "message": f"Skill '{skill.name}' installed", "scope": store.write_scope}
 
 
 class SkillGenerateRequest(BaseModel):
@@ -131,8 +159,9 @@ class SkillGenerateRequest(BaseModel):
 
 
 @router.post("/v1/skills/generate")
-async def generate_skill(body: SkillGenerateRequest, user_id: str = "", tenant_id: str = "") -> dict[str, Any]:
-    store = _store_for(user_id, tenant_id)
+async def generate_skill(body: SkillGenerateRequest, user_id: str = "", tenant_id: str = "", scope: str = "") -> dict[str, Any]:
+    """生成技能；auto_install 时保存，scope=tenant 则保存进租户共享层。"""
+    store = _store_for(user_id, tenant_id, _valid_scope(scope))
 
     if not body.description:
         raise HTTPException(status_code=400, detail="description is required")
@@ -150,12 +179,19 @@ async def generate_skill(body: SkillGenerateRequest, user_id: str = "", tenant_i
     if body.auto_install:
         store.save(skill)
         result["message"] = f"Skill '{skill.name}' generated and installed"
+        result["scope"] = store.write_scope
 
     return result
 
 
 @router.delete("/v1/skills/{name}")
 async def delete_skill(name: str, user_id: str = "", tenant_id: str = "") -> dict[str, str]:
+    """删除技能：仅删除 user 私有目录中的技能（保持现状）。
+
+    租户共享层技能的删除由租户 owner 后续通过 scope=tenant 参数单独处理
+    （本期未实现——store.delete 只会作用于写目标目录，此处 store 无 scope，
+    写目标即 user 私有目录，租户/全局共享技能不会被误删）。
+    """
     store = _store_for(user_id, tenant_id)
 
     if not re.match(r"^[a-zA-Z0-9_.-]+$", name):
@@ -172,7 +208,11 @@ class SkillToggleRequest(BaseModel):
 
 @router.put("/v1/skills/{name}")
 async def toggle_skill(name: str, body: SkillToggleRequest, user_id: str = "", tenant_id: str = "") -> dict[str, Any]:
-    """启用/停用技能（停用后不进 agent 目录、不可运行）。"""
+    """启用/停用技能（停用后不进 agent 目录、不可运行）。
+
+    命中的技能可能来自租户/全局共享层；回写时落在 user 私有目录形成“本地覆盖”
+    （仅影响当前用户，团队共享技能可被成员本地停用）。
+    """
     store = _store_for(user_id, tenant_id)
 
     if not re.match(r"^[a-zA-Z0-9_.-]+$", name):
@@ -183,7 +223,7 @@ async def toggle_skill(name: str, body: SkillToggleRequest, user_id: str = "", t
     skill.enabled = body.enabled
     store.save(skill)
     return {
-        "skill": skill.to_dict(),
+        "skill": _skill_payload(skill),
         "message": f"Skill '{name}' {'已启用' if body.enabled else '已停用'}",
     }
 
@@ -197,7 +237,8 @@ async def run_skill(name: str, body: SkillRunRequest, user_id: str = "", tenant_
     """运行技能（校验启用状态后调 skill_run）。
 
     把请求身份写入 tool context 再执行，保证 tools/skill.py 的 skill_run
-    （及其内部沙箱/LLM 调用链）落在与校验相同的身份目录下。
+    （及其内部沙箱/LLM 调用链）落在与校验相同的身份目录下；运行查找同样遵循
+    user → 租户 _shared → 全局 _shared 四级规则。
     """
     store = _store_for(user_id, tenant_id)
 
