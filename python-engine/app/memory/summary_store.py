@@ -19,6 +19,7 @@ import redis.asyncio as aioredis
 
 from app.db import get_pool
 from app.memory.layers import (
+    MemoryType,
     RecalledItem,
     Scope,
     SummaryEntry,
@@ -240,7 +241,7 @@ class SummaryStore:
 
             coll.insert([
                 [summary_id], [tenant_id], [user_id], [session_id],
-                [content], ["summary"], [embedding],
+                [content], [MemoryType.SUMMARY.value], [embedding],
                 [str(int(t.time()))], [metadata],
             ])
             coll.flush()
@@ -326,7 +327,7 @@ class SummaryStore:
                 expr=(
                     f'tenant_id == "{tenant_id}" && '
                     f'user_id == "{user_id}" && '
-                    f'memory_type == "summary"'
+                    f'memory_type == "{MemoryType.SUMMARY.value}"'
                 ),
                 output_fields=[
                     MILVUS_FIELD_SUMMARY_ID,

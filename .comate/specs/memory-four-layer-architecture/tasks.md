@@ -99,7 +99,7 @@
     - 14.3: 实现定期 rollup 后台任务（每凌晨触发）
     - 14.4: 实现队列积压超限告警
 
-- [ ] Task 15: 扩展 Milvus memory_type
+- [✓] Task 15: 扩展 Milvus memory_type
     - 15.1: 修改 MemoryManager，扩展 memory_type 取值（summary/topic/long_term）
     - 15.2: 确保所有查询都带 tenant_id 过滤
     - 15.3: 验证 metadata_json 结构兼容性

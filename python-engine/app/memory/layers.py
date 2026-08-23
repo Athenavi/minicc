@@ -72,9 +72,12 @@ class Scope:
 
 
 class MemoryType(str, Enum):
-    """记忆类型引用。"""
+    """记忆类型引用（Milvus memory_type 取值）。"""
     PROFILE = "profile"
     SUMMARY = "summary"
+    TOPIC = "topic"
+    LONG_TERM = "long_term"
+    SHORT_TERM = "short_term"
 
 
 # ── L2: 用户档案卡相关类型 ──────────────────────────────────────────────
