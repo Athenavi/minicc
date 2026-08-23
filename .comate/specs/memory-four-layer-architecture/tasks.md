@@ -71,7 +71,7 @@
 
 # PR-2：摘要层
 
-- [ ] Task 11: 数据库迁移 - L3 摘要表
+- [✓] Task 11: 数据库迁移 - L3 摘要表
     - 11.1: 创建 `migrations/20260821000004_memory_summaries.up.sql`，定义 memory_summaries 表
     - 11.2: 添加唯一索引 uq_ms_hash（content_hash 去重）
     - 11.3: 创建 `migrations/20260821000004_memory_summaries.down.sql`，定义回滚逻辑
@@ -104,7 +104,7 @@
     - 15.2: 确保所有查询都带 tenant_id 过滤
     - 15.3: 验证 metadata_json 结构兼容性
 
-- [ ] Task 16: 实现 MemoryService 语义查询
+- [✓] Task 16: 实现 MemoryService 语义查询
     - 16.1: 完善 MemoryService.recall 方法（L2 + L3 合并）
     - 16.2: 实现最终排序（L2 整卡 + L3 top_k=5）
     - 16.3: 实现去重（摘要覆盖的 turn_range 与窗口重叠则丢弃）

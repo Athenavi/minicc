@@ -175,38 +175,84 @@ class MemoryService:
         self,
         scope: Scope,
         query: str = "",
+        top_k: int = 5,
+        exclude_turn_range: tuple[int, int] | None = None,
     ) -> RecallResult:
         """召回记忆（L2 + L3 合并）。
 
         Args:
             scope: 查询范围。
             query: 查询文本（用于 L3 语义检索）。
+            top_k: L3 召回条数上限（默认 5）。
+            exclude_turn_range: 需要排除的 turn_range（与当前窗口重叠的摘要）。
 
         Returns:
             RecallResult 包含 L2 档案卡和 L3 召回摘要。
         """
-        # L2: 获取整卡
-        profile_items = await self._profile_card.get_profile(
-            scope.tenant_id, scope.user_id
-        )
+        # ── L2: 获取整卡 ──────────────────────────────────────────────
+        profile_items = []
+        try:
+            if self._profile_card:
+                profile_items = await self._profile_card.get_profile(
+                    scope.tenant_id, scope.user_id
+                )
+        except Exception as e:
+            logger.warning("L2 recall failed: %s", e)
 
         # L2: 紧凑序列化（≤1.5KB）
         profile_block = self._serialize_profile(profile_items)
 
-        # L3: 语义召回（占位，Task 12 实现后启用）
+        # ── L3: 语义召回 ──────────────────────────────────────────────
         summary_items: list[RecalledItem] = []
         if self._summary_store and query:
             try:
-                summary_items = await self._summary_store.recall(
-                    scope=scope, query=query
+                raw_items = await self._summary_store.recall(
+                    scope=scope, query=query, top_k=top_k
                 )
+
+                # 去重：排除与当前窗口重叠的摘要（turn_range 重叠则丢弃）
+                if exclude_turn_range:
+                    filtered = []
+                    for item in raw_items:
+                        if self._is_turn_range_overlap(
+                            item.turn_range, exclude_turn_range
+                        ):
+                            logger.debug(
+                                "Excluding overlapping summary: %s", item.id
+                            )
+                            continue
+                        filtered.append(item)
+                    raw_items = filtered
+
+                # final_score 已由 SummaryStore.recall 排序，取 top_k
+                summary_items = raw_items[:top_k]
+
             except Exception as e:
-                logger.warning("L3 recall failed, returning only L2: %s", e)
+                logger.warning("L3 recall failed (fail-soft, returning empty L3): %s", e)
+                summary_items = []
 
         return RecallResult(
             profile_block=profile_block,
             summary_items=summary_items,
         )
+
+    @staticmethod
+    def _is_turn_range_overlap(
+        range_a: tuple[int, int],
+        range_b: tuple[int, int],
+    ) -> bool:
+        """判断两个 turn_range 是否重叠。
+
+        Args:
+            range_a: (start, end) 第一个范围。
+            range_b: (start, end) 第二个范围。
+
+        Returns:
+            如果重叠则返回 True。
+        """
+        start_a, end_a = range_a
+        start_b, end_b = range_b
+        return start_a <= end_b and start_b <= end_a
 
     async def save_summary(
         self,

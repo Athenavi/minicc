@@ -660,9 +660,11 @@ class FakeSummaryStore:
         self._should_fail = should_fail
         self.recall_called = False
         self.save_called = False
+        self.last_recall_kwargs = {}
 
-    async def recall(self, scope, query):
+    async def recall(self, scope, query, top_k=5):
         self.recall_called = True
+        self.last_recall_kwargs = {"scope": scope, "query": query, "top_k": top_k}
         if self._should_fail:
             raise RuntimeError("L3 recall failed")
         return self._recall_result
@@ -704,6 +706,100 @@ async def test_recall_l3_failure_fallback(service):
 
     scope = Scope(tenant_id="t1", user_id="u1", session_id="sess-001")
     result = await service.recall(scope=scope, query="test query")
+    assert result.summary_items == []
+
+
+@pytest.mark.asyncio
+async def test_recall_top_k_parameter(service):
+    """recall 应将 top_k 传递给 summary_store.recall。"""
+    fake_l3 = FakeSummaryStore(recall_result=[
+        RecalledItem(
+            id=f"m{i}", content=f"历史片段 {i}",
+            topics=[], entities={},
+            turn_range=(i * 10, i * 10 + 5), session_id="sess-001",
+            access_count=0, last_accessed_at=0.0,
+            created_at=time.time(), score=0.9 - i * 0.1,
+        )
+        for i in range(10)  # 10 条结果
+    ])
+    service._summary_store = fake_l3
+
+    scope = Scope(tenant_id="t1", user_id="u1", session_id="sess-001")
+    result = await service.recall(scope=scope, query="test", top_k=3)
+    assert len(result.summary_items) == 3
+    assert fake_l3.last_recall_kwargs["top_k"] == 3
+
+
+@pytest.mark.asyncio
+async def test_recall_exclude_turn_range(service):
+    """recall 应排除与 exclude_turn_range 重叠的摘要。"""
+    now = time.time()
+    fake_l3 = FakeSummaryStore(recall_result=[
+        RecalledItem(
+            id="overlap", content="重叠摘要",
+            topics=[], entities={},
+            turn_range=(10, 20), session_id="sess-001",
+            access_count=0, last_accessed_at=0.0,
+            created_at=now, score=0.95,
+        ),
+        RecalledItem(
+            id="no_overlap", content="不重叠摘要",
+            topics=[], entities={},
+            turn_range=(50, 60), session_id="sess-001",
+            access_count=0, last_accessed_at=0.0,
+            created_at=now, score=0.9,
+        ),
+    ])
+    service._summary_store = fake_l3
+
+    scope = Scope(tenant_id="t1", user_id="u1", session_id="sess-001")
+    result = await service.recall(
+        scope=scope, query="test",
+        exclude_turn_range=(15, 25),  # 与 (10,20) 重叠
+    )
+    assert len(result.summary_items) == 1
+    assert result.summary_items[0].id == "no_overlap"
+
+
+class TestTurnRangeOverlap:
+    """测试 _is_turn_range_overlap 静态方法。"""
+
+    def test_overlapping_ranges(self):
+        """重叠范围应返回 True。"""
+        assert MemoryService._is_turn_range_overlap((10, 20), (15, 25)) is True
+        assert MemoryService._is_turn_range_overlap((10, 20), (5, 15)) is True
+        assert MemoryService._is_turn_range_overlap((10, 20), (10, 20)) is True
+        assert MemoryService._is_turn_range_overlap((10, 20), (0, 100)) is True
+
+    def test_non_overlapping_ranges(self):
+        """不重叠范围应返回 False。"""
+        assert MemoryService._is_turn_range_overlap((10, 20), (25, 30)) is False
+        assert MemoryService._is_turn_range_overlap((10, 20), (0, 5)) is False
+
+    def test_boundary_overlap(self):
+        """边界相邻应返回 True（视为重叠）。"""
+        assert MemoryService._is_turn_range_overlap((10, 20), (20, 30)) is True
+
+
+@pytest.mark.asyncio
+async def test_recall_l2_failure_fallback(service):
+    """L2 recall 失败时应降级为空档案卡。"""
+    service._profile_card = None  # 模拟 L2 不可用
+
+    scope = Scope(tenant_id="t1", user_id="u1", session_id="sess-001")
+    result = await service.recall(scope=scope)
+    assert "暂无用户档案信息" in result.profile_block
+
+
+@pytest.mark.asyncio
+async def test_recall_fail_soft_when_l3_unavailable(service):
+    """L3 不可用时（无 query）应返回空 L3，不抛出异常。"""
+    fake_l3 = FakeSummaryStore(should_fail=True)
+    service._summary_store = fake_l3
+
+    scope = Scope(tenant_id="t1", user_id="u1", session_id="sess-001")
+    # 无 query 时不应调用 L3
+    result = await service.recall(scope=scope, query="")
     assert result.summary_items == []
 
 
