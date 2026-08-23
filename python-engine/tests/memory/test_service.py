@@ -131,6 +131,7 @@ class MockRedis:
     def __init__(self):
         self._store: dict[str, str] = {}
         self._expiry: dict[str, float] = {}
+        self._sets: dict[str, set[str]] = {}
 
     async def get(self, key):
         if key in self._expiry and time.time() > self._expiry[key]:
@@ -139,16 +140,46 @@ class MockRedis:
             return None
         return self._store.get(key)
 
+    async def set(self, key, value, ex=None):
+        self._store[key] = value
+        return True
+
     async def setex(self, key, ttl, value):
         self._store[key] = value
         self._expiry[key] = time.time() + ttl
         return True
 
-    async def delete(self, key):
-        deleted = key in self._store
-        self._store.pop(key, None)
-        self._expiry.pop(key, None)
-        return deleted
+    async def delete(self, *keys):
+        for key in keys:
+            if key in self._store:
+                self._store.pop(key, None)
+                self._expiry.pop(key, None)
+                return True
+        return False
+
+    async def sadd(self, key, value):
+        if key not in self._sets:
+            self._sets[key] = set()
+        self._sets[key].add(value)
+        return True
+
+    async def srem(self, key, value):
+        if key in self._sets:
+            self._sets[key].discard(value)
+        return True
+
+    async def smembers(self, key):
+        return self._sets.get(key, set())
+
+    async def expire(self, key, ttl):
+        self._expiry[key] = time.time() + ttl
+        return True
+
+    async def incr(self, key):
+        count = int(self._store.get(key, "0"))
+        count += 1
+        self._store[key] = str(count)
+        return count
 
 
 # ── Fixtures ────────────────────────────────────────────────────────────
@@ -166,9 +197,11 @@ def mock_pool():
 
 @pytest.fixture
 def profile_card(mock_redis, mock_pool):
+    from app.memory.conflict_manager import ConflictManager
     pc = ProfileCard.__new__(ProfileCard)
     pc._redis = mock_redis
     pc._pool = mock_pool
+    pc._conflict_manager = ConflictManager(mock_redis)
     return pc
 
 
@@ -639,13 +672,14 @@ class TestPlaceholderMethods:
         assert conflicts == []
 
     @pytest.mark.asyncio
-    async def test_resolve_conflict_returns_none(self, service):
-        result = await service.resolve_conflict(
-            tenant_id="t1", user_id="u1",
-            conflict_id="conf-001",
-            resolution="keep_old",
-        )
-        assert result is None
+    async def test_resolve_conflict_nonexistent_raises(self, service):
+        """不存在的冲突应抛出 ValueError。"""
+        with pytest.raises(ValueError, match="Conflict conf-001 not found"):
+            await service.resolve_conflict(
+                tenant_id="t1", user_id="u1",
+                conflict_id="conf-001",
+                resolution="keep_old",
+            )
 
 
 # ── L3 路径测试 ──────────────────────────────────────────────────────────

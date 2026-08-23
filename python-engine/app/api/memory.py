@@ -214,13 +214,13 @@ async def list_conflicts(request: Request):
     tenant_id, user_id = _scope(request)
     if not user_id:
         return _bad_request("user_id is required")
-    conflicts = svc.list_conflicts(tenant_id, user_id)
+    conflicts = await svc.list_conflicts(tenant_id, user_id)
     return {"success": True, "conflicts": conflicts, "count": len(conflicts)}
 
 
 @router.post("/v1/memory/conflicts/{conflict_id}/resolve")
 async def resolve_conflict(conflict_id: str, request: Request):
-    """裁决冲突：keep_old / adopt_new / manual。"""
+    """裁决冲突：keep_old / use_new / manual。"""
     svc = get_service()
     if svc is None:
         return _unavailable()
@@ -229,11 +229,35 @@ async def resolve_conflict(conflict_id: str, request: Request):
         return _bad_request("user_id is required")
     body = await request.json()
     resolution = body.get("resolution", "")
-    manual_value = body.get("manual_value", "")
-    if resolution not in ("keep_old", "adopt_new", "manual"):
-        return _bad_request("resolution must be one of: keep_old, adopt_new, manual")
+    manual_value = body.get("manual_value")
+    # 兼容前端命名：adopt_new → use_new
+    if resolution == "adopt_new":
+        resolution = "use_new"
+    if resolution not in ("keep_old", "use_new", "manual"):
+        return _bad_request("resolution must be one of: keep_old, use_new, manual")
     try:
-        result = await svc.resolve_conflict(conflict_id, resolution, manual_value)
+        result = await svc.resolve_conflict(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            conflict_id=conflict_id,
+            resolution=resolution,
+            manual_value=manual_value,
+        )
     except ValueError as e:
         return JSONResponse(status_code=404, content={"error": str(e)})
     return {"success": True, "conflict": result}
+
+
+@router.delete("/v1/memory/conflicts/{conflict_id}")
+async def delete_conflict(conflict_id: str, request: Request):
+    """删除冲突（用户否认时调用）。"""
+    svc = get_service()
+    if svc is None:
+        return _unavailable()
+    tenant_id, user_id = _scope(request)
+    if not user_id:
+        return _bad_request("user_id is required")
+    deleted = await svc.delete_conflict(tenant_id, user_id, conflict_id)
+    if not deleted:
+        return JSONResponse({"success": False, "error": "conflict not found"}, status_code=404)
+    return {"success": True, "deleted": conflict_id}

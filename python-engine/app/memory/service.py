@@ -3,15 +3,18 @@
 本模块实现 MemoryService 门面类，作为四层记忆架构的统一入口：
 - L1 SessionMetaStore: 会话级簿记
 - L2 ProfileCard: 用户档案卡
-- L3 SummaryStore: 对话摘要（占位）
+- L3 SummaryStore: 对话摘要
+- ConflictManager: 冲突检测与裁决
 - 提供生命周期钩子：on_session_start/on_turn_complete/on_session_end
 """
 
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Optional
 
+from app.memory.conflict_manager import ConflictManager
 from app.memory.layers import (
     ConflictRef,
     MemoryConflict,
@@ -43,19 +46,23 @@ class MemoryService:
         profile_card: ProfileCard,
         summary_store: Any = None,
         producer: Any = None,
+        conflict_manager: Optional[ConflictManager] = None,
     ) -> None:
         """初始化 MemoryService。
 
         Args:
             session_meta_store: L1 会话元数据存储。
             profile_card: L2 用户档案卡 Provider。
-            summary_store: L3 摘要存储（Task 12 后启用）。
-            producer: 队列生产者（Task 14 后启用，用于异步巩固）。
+            summary_store: L3 摘要存储。
+            producer: 队列生产者（用于异步巩固）。
+            conflict_manager: 冲突管理器（从 profile_card 自动获取）。
         """
         self._session_meta = session_meta_store
         self._profile_card = profile_card
         self._summary_store = summary_store
         self._producer = producer
+        # 从 profile_card 获取 conflict_manager
+        self._conflict_manager = conflict_manager or getattr(profile_card, '_conflict_manager', None)
 
     # ── 生命周期钩子 ──────────────────────────────────────────────────
 
@@ -369,43 +376,121 @@ class MemoryService:
         self,
         tenant_id: str,
         user_id: str,
-    ) -> list[ConflictRef]:
-        """列出待处理的冲突（占位）。
+    ) -> list[dict[str, Any]]:
+        """列出待处理的冲突。
 
         Args:
             tenant_id: 租户 ID。
             user_id: 用户 ID。
 
         Returns:
-            冲突引用列表。
+            冲突事件列表（字典格式，用于 API 返回）。
         """
-        # Task 31 实现
-        logger.info("list_conflicts called (not implemented yet)")
-        return []
+        if not self._conflict_manager:
+            logger.warning("ConflictManager not available, returning empty list")
+            return []
+
+        conflicts = await self._conflict_manager.get_pending_conflicts(
+            tenant_id, user_id
+        )
+        # 转换为 API 友好的格式
+        return [
+            {
+                "conflict_id": c.conflict_id,
+                "slot": c.slot.value,
+                "item_key": c.item_key,
+                "old_value": c.old_value,
+                "new_value": c.new_value,
+                "source": c.source.value,
+                "created_at": c.created_at,
+            }
+            for c in conflicts
+        ]
 
     async def resolve_conflict(
         self,
         tenant_id: str,
         user_id: str,
         conflict_id: str,
-        resolution: str,  # "keep_old" | "take_new" | "manual"
+        resolution: str,
         manual_value: Any = None,
-    ) -> ProfileUpdateResult | None:
-        """解决冲突（占位）。
+    ) -> Optional[dict[str, Any]]:
+        """解决冲突。
 
         Args:
             tenant_id: 租户 ID。
             user_id: 用户 ID。
             conflict_id: 冲突 ID。
-            resolution: 解决方案。
-            manual_value: 手动值（如果 resolution == "manual"）。
+            resolution: 解决方案 ("keep_old", "use_new", "manual")。
+            manual_value: 手动值（仅当 resolution == "manual"）。
 
         Returns:
-            更新结果或 None。
+            裁决结果（如果成功）。
+
+        Raises:
+            ValueError: 当冲突不存在或裁决方式无效时。
         """
-        # Task 31 实现
-        logger.info("resolve_conflict called (not implemented yet)")
-        return None
+        if not self._conflict_manager:
+            raise ValueError("ConflictManager not available")
+
+        # 获取冲突详情
+        conflict = await self._conflict_manager.get_conflict(conflict_id)
+        if not conflict:
+            raise ValueError(f"Conflict {conflict_id} not found")
+
+        # 裁决冲突
+        success, result = await self._conflict_manager.resolve_conflict(
+            conflict_id, resolution, manual_value
+        )
+
+        if not success:
+            raise ValueError(result.get("error", "Failed to resolve conflict"))
+
+        # 如果是 use_new 或 manual，需要更新 ProfileCard
+        if resolution in ("use_new", "manual") and result:
+            final_value = result["final_value"]
+            update_result = await self._profile_card.upsert_item(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                slot=conflict.slot,
+                item_key=conflict.item_key,
+                item_value=final_value,
+                confidence=80,
+                source=SourceType.USER_CONFIRMED,  # 用户裁决后视为确认
+            )
+            result["profile_update"] = {
+                "success": update_result.success,
+                "item": update_result.item.item_value if update_result.item else None,
+            }
+
+        logger.info(
+            "Conflict %s resolved: %s (tenant=%s, user=%s)",
+            conflict_id, resolution, tenant_id, user_id,
+        )
+
+        return result
+
+    async def delete_conflict(
+        self,
+        tenant_id: str,
+        user_id: str,
+        conflict_id: str,
+    ) -> bool:
+        """删除冲突（用户否认时调用）。
+
+        Args:
+            tenant_id: 租户 ID。
+            user_id: 用户 ID。
+            conflict_id: 冲突 ID。
+
+        Returns:
+            是否成功删除。
+        """
+        if not self._conflict_manager:
+            logger.warning("ConflictManager not available")
+            return False
+
+        return await self._conflict_manager.delete_conflict(conflict_id)
 
     # ── 辅助方法 ──────────────────────────────────────────────────────
 

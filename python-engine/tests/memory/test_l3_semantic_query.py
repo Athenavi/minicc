@@ -32,18 +32,51 @@ class MockRedis:
 
     def __init__(self):
         self._store: dict[str, str] = {}
+        self._expiry: dict[str, float] = {}
+        self._sets: dict[str, set[str]] = {}
 
     async def get(self, key: str) -> Optional[str]:
         return self._store.get(key)
 
-    async def setex(self, key: str, ttl: int, value: str) -> bool:
+    async def set(self, key: str, value: str, ex=None) -> bool:
         self._store[key] = value
         return True
 
-    async def delete(self, key: str) -> int:
-        deleted = 1 if key in self._store else 0
-        self._store.pop(key, None)
-        return deleted
+    async def setex(self, key: str, ttl: int, value: str) -> bool:
+        self._store[key] = value
+        self._expiry[key] = time.time() + ttl
+        return True
+
+    async def delete(self, *keys) -> int:
+        for key in keys:
+            deleted = 1 if key in self._store else 0
+            self._store.pop(key, None)
+            self._expiry.pop(key, None)
+        return len(keys)
+
+    async def sadd(self, key: str, value: str) -> bool:
+        if key not in self._sets:
+            self._sets[key] = set()
+        self._sets[key].add(value)
+        return True
+
+    async def srem(self, key: str, value: str) -> bool:
+        if key in self._sets:
+            self._sets[key].discard(value)
+        return True
+
+    async def smembers(self, key: str) -> set[str]:
+        return self._sets.get(key, set())
+
+    async def expire(self, key: str, ttl: int) -> bool:
+        self._expiry[key] = time.time() + ttl
+        return True
+
+    async def incr(self, key: str) -> int:
+        count = int(self._store.get(key, "0"))
+        count += 1
+        self._store[key] = str(count)
+        return count
 
 
 class MockDatabasePool:
@@ -183,9 +216,11 @@ def mock_pool():
 
 @pytest.fixture
 def profile_card(mock_redis, mock_pool):
+    from app.memory.conflict_manager import ConflictManager
     pc = ProfileCard.__new__(ProfileCard)
     pc._redis = mock_redis
     pc._pool = mock_pool
+    pc._conflict_manager = ConflictManager(mock_redis)
     return pc
 
 

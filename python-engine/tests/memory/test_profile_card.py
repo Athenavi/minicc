@@ -175,6 +175,7 @@ class MockRedis:
     def __init__(self):
         self._store: dict[str, str] = {}
         self._expiry: dict[str, float] = {}
+        self._sets: dict[str, set[str]] = {}
 
     async def get(self, key: str) -> str | None:
         """获取缓存值。"""
@@ -185,18 +186,53 @@ class MockRedis:
                 return None
         return self._store.get(key)
 
+    async def set(self, key: str, value: str, ex=None) -> bool:
+        """设置缓存值。"""
+        self._store[key] = value
+        return True
+
     async def setex(self, key: str, ttl: int, value: str) -> bool:
         """设置带过期时间的缓存。"""
         self._store[key] = value
         self._expiry[key] = time.time() + ttl
         return True
 
-    async def delete(self, key: str) -> bool:
+    async def delete(self, *keys) -> bool:
         """删除缓存。"""
-        deleted = key in self._store
-        self._store.pop(key, None)
-        self._expiry.pop(key, None)
-        return deleted
+        for key in keys:
+            deleted = key in self._store
+            self._store.pop(key, None)
+            self._expiry.pop(key, None)
+        return True
+
+    async def sadd(self, key: str, value: str) -> bool:
+        """向集合添加成员。"""
+        if key not in self._sets:
+            self._sets[key] = set()
+        self._sets[key].add(value)
+        return True
+
+    async def srem(self, key: str, value: str) -> bool:
+        """从集合移除成员。"""
+        if key in self._sets:
+            self._sets[key].discard(value)
+        return True
+
+    async def smembers(self, key: str) -> set[str]:
+        """获取集合所有成员。"""
+        return self._sets.get(key, set())
+
+    async def expire(self, key: str, ttl: int) -> bool:
+        """设置过期时间。"""
+        self._expiry[key] = time.time() + ttl
+        return True
+
+    async def incr(self, key: str) -> int:
+        """递增计数器。"""
+        count = int(self._store.get(key, "0"))
+        count += 1
+        self._store[key] = str(count)
+        return count
 
 
 # ── Fixtures ────────────────────────────────────────────────────────────
@@ -214,9 +250,11 @@ def mock_pool() -> MockDatabasePool:
 
 @pytest.fixture
 def profile_card(mock_redis: MockRedis, mock_pool: MockDatabasePool) -> ProfileCard:
+    from app.memory.conflict_manager import ConflictManager
     pc = ProfileCard.__new__(ProfileCard)
     pc._redis = mock_redis
     pc._pool = mock_pool
+    pc._conflict_manager = ConflictManager(mock_redis)
     yield pc
 
 

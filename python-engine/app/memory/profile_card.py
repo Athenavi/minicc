@@ -6,6 +6,7 @@
 - delete_item: 硬删除条目
 - archive_low_confidence: 归档低置信度条目
 - evict_over_limit: 条目软限淘汰
+- 集成 ConflictManager 进行冲突检测与管理
 """
 
 from __future__ import annotations
@@ -13,11 +14,12 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any
+from typing import Any, Optional
 
 import redis.asyncio as aioredis
 
 from app.db import get_pool
+from app.memory.conflict_manager import ConflictManager
 from app.memory.layers import (
     ConflictRef,
     MemoryConflict,
@@ -41,16 +43,22 @@ class ProfileCard:
 
     负责管理 PostgreSQL 中 user_memory_profile 表的 CRUD 操作，
     并通过 Redis 缓存优化读取性能。
+
+    集成 ConflictManager 进行冲突检测与管理：
+    - user_confirmed 冲突挂起
+    - derived 二次出现自动写入
     """
 
-    def __init__(self, redis: aioredis.Redis):
+    def __init__(self, redis: aioredis.Redis, conflict_manager: Optional[ConflictManager] = None):
         """初始化 ProfileCard。
 
         Args:
             redis: Redis 连接实例（用于缓存）。
+            conflict_manager: 冲突管理器（可选，用于冲突检测）。
         """
         self._redis = redis
         self._pool = get_pool()
+        self._conflict_manager = conflict_manager or ConflictManager(redis)
 
     # ── 缓存键生成 ──────────────────────────────────────────────────────
 
@@ -144,7 +152,9 @@ class ProfileCard:
 
         核心逻辑：
         1. 检查现有条目
-        2. 如果现有条目是 user_confirmed，且新条目不是，则产出冲突
+        2. 使用 ConflictManager 进行冲突检测
+           - user_confirmed 冲突挂起（等待用户裁决）
+           - derived 二次出现自动写入
         3. 如果现有条目是 derived，允许覆盖（version+1）
         4. 如果是新条目，直接插入
 
@@ -165,21 +175,28 @@ class ProfileCard:
         # 查询现有条目
         existing = await self._get_item(tenant_id, user_id, slot, item_key)
 
-        # 冲突检测：现有条目是 user_confirmed，新条目不是
-        if existing and existing.source == SourceType.USER_CONFIRMED and source != SourceType.USER_CONFIRMED:
+        # 使用 ConflictManager 进行冲突检测
+        should_block, conflict_event = await self._conflict_manager.detect_and_handle_conflict(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            slot=slot,
+            item_key=item_key,
+            new_value=item_value,
+            new_source=source,
+            existing_item=existing,
+        )
+
+        # 如果需要阻止写入（user_confirmed 冲突）
+        if should_block and conflict_event:
+            # 将 MemoryConflict 转换为 ConflictRef 返回
             conflict = ConflictRef(
-                conflict_id=f"conf_{int(now)}_{hash(f'{slot}:{item_key}') % 10000}",
-                slot=slot,
-                item_key=item_key,
-                old_value=existing.item_value,
-                new_value=item_value,
-                old_source=existing.source,
-                old_confirmed_at=existing.confirmed_at,
-            )
-            logger.info(
-                "Conflict detected for %s:%s (user %s, tenant %s): "
-                "old=%s new=%s",
-                slot, item_key, user_id, tenant_id, existing.item_value, item_value,
+                conflict_id=conflict_event.conflict_id,
+                slot=conflict_event.slot,
+                item_key=conflict_event.item_key,
+                old_value=conflict_event.old_value,
+                new_value=conflict_event.new_value,
+                old_source=SourceType(SourceType.USER_CONFIRMED.value),  # 现有条目是 user_confirmed
+                old_confirmed_at=existing.confirmed_at if existing else None,
             )
             return ProfileUpdateResult(
                 success=False,

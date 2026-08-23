@@ -125,3 +125,63 @@ export const MEMORY_SLOTS: { slot: MemorySlot; label: string }[] = [
   { slot: 'decision', label: '关键决策' },
   { slot: 'fact', label: '长期事实' },
 ]
+
+// ── 冲突裁决 API ──
+
+export interface MemoryConflict {
+  conflict_id: string
+  slot: string
+  item_key: string
+  old_value: string
+  new_value: string
+  source: string
+  created_at: number
+}
+
+export interface ConflictListResponse {
+  conflicts: MemoryConflict[]
+  count: number
+}
+
+/** 获取待裁决冲突列表 */
+export async function listConflicts(): Promise<ConflictListResponse> {
+  const { data } = await api.get('/v1/memory/conflicts')
+  return data
+}
+
+export interface ResolveConflictResponse {
+  conflict_id: string
+  final_value: string
+  resolution: string
+  slot: string
+  item_key: string
+  profile_update?: {
+    success: boolean
+    item: string | null
+  }
+}
+
+/**
+ * 裁决冲突
+ * @param conflictId 冲突 ID
+ * @param resolution 裁决方式: 'keep_old' | 'use_new' | 'manual'
+ * @param manualValue 手动修改值（仅当 resolution === 'manual'）
+ */
+export async function resolveConflict(
+  conflictId: string,
+  resolution: 'keep_old' | 'use_new' | 'manual',
+  manualValue?: string,
+): Promise<ResolveConflictResponse> {
+  const body: { resolution: string; manual_value?: string } = { resolution }
+  if (resolution === 'manual' && manualValue !== undefined) {
+    body.manual_value = manualValue
+  }
+  const { data } = await api.post(`/v1/memory/conflicts/${encodeURIComponent(conflictId)}/resolve`, body)
+  return data.conflict
+}
+
+/** 删除冲突（用户否认） */
+export async function deleteConflict(conflictId: string): Promise<{ deleted: string }> {
+  const { data } = await api.delete(`/v1/memory/conflicts/${encodeURIComponent(conflictId)}`)
+  return data
+}
