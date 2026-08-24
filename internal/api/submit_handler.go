@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/athenavi/minicc/internal/auth"
 	"github.com/athenavi/minicc/internal/billing"
 	"github.com/athenavi/minicc/internal/broadcast"
 	"github.com/athenavi/minicc/internal/engine"
@@ -40,6 +41,7 @@ func (h *SubmitHandler) SubmitApproval(w http.ResponseWriter, r *http.Request) {
 		ToolCallID string `json:"tool_call_id"`
 		Approved   bool   `json:"approved"`
 		Reason     string `json:"reason"`
+		UserID     string `json:"user_id,omitempty"`
 	}
 	if err := DecodeJSON(w, r, &req); err != nil {
 		BadRequest(w, "invalid request")
@@ -50,6 +52,11 @@ func (h *SubmitHandler) SubmitApproval(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var out map[string]any
+	// S 修复：把已验证 JWT claims 的 user_id 一并透传，供 Python 端校验
+	// 来电者是否为会话 owner，防止他人代批/拒批危险工具。
+	if claims := auth.GetClaims(r.Context()); claims != nil {
+		req.UserID = claims.UserID
+	}
 	if err := h.python.PostJSON(r.Context(), "/v1/agent/approval", req, &out); err != nil {
 		slog.Error("approval: python proxy failed", "session", req.SessionID, "error", err)
 		InternalError(w, "approval proxy failed")

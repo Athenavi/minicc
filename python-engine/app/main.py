@@ -20,8 +20,9 @@ from app.session_store import SessionStore
 
 # 全局会话消息缓存（lifespan 中接入 Redis 实现多实例共享）
 _session_cache = SessionStore(max_sessions=200)
-# 活跃 AgentRuntime 注册表（S 安全修复：工具确认端点按 session_id 定位 runtime）
-_ACTIVE_RUNTIMES: dict[str, AgentRuntime] = {}
+# 活跃 AgentRuntime 注册表（S 安全修复：工具确认端点按 session_id 定位 runtime；
+# 值为 (runtime, owner_user_id)，用于确认时校验来电者是否为会话 owner）
+_ACTIVE_RUNTIMES: dict[str, tuple[AgentRuntime, str]] = {}
 
 logger = logging.getLogger(__name__)
 
@@ -633,7 +634,7 @@ async def agent_submit(
     )
     session_id = task.session_id
     if session_id:
-        _ACTIVE_RUNTIMES[session_id] = runtime
+        _ACTIVE_RUNTIMES[session_id] = (runtime, task.user_id)
 
     async def event_generator():
         try:
@@ -662,9 +663,19 @@ async def agent_approval(
     tool_call_id = body.get("tool_call_id", "")
     approved = bool(body.get("approved", False))
     reason = body.get("reason", "")
-    runtime = _ACTIVE_RUNTIMES.get(session_id)
-    if runtime is None:
+    entry = _ACTIVE_RUNTIMES.get(session_id)
+    if entry is None:
         return {"ok": False, "error": "no active agent for this session"}
+
+    # S 安全修复：校验来电者是否为会话 owner，防止他人代批/拒批危险工具。
+    # 可信 user_id 由 Go 网关从已验证 JWT claims 写入 body(或 X-User-ID 头)，
+    # 直连路径无该身份时不得放行他人。
+    runtime, owner_uid = entry
+    caller = request.headers.get("x-user-id", "") or body.get("user_id", "")
+    if owner_uid and caller and owner_uid != caller:
+        logger.warning("approval rejected: caller %s != owner %s (session=%s)",
+                       caller, owner_uid, session_id)
+        return {"ok": False, "error": "not session owner"}
     resolved = await runtime.submit_approval(tool_call_id, approved, reason)
     return {"ok": resolved}
 

@@ -49,11 +49,7 @@ type Config struct {
 	// CORS
 	CORSOrigins string
 
-	// LLM
-	LLMProvider string
-	LLMAPIKey   string
-	LLMModel    string
-	LLMBaseURL  string
+	// LLM 调用已转发 Python 引擎（config 中 LLM 配置为遗留死配置，已移除）
 
 	// Storage
 	StorageBackend string // "local" or "s3"
@@ -81,12 +77,7 @@ type Config struct {
 	// Log
 	LogLevel string // debug / info / warn / error
 
-	// Stripe
-	StripeSecretKey     string
-	StripeWebhookSecret string
-	StripePriceID       string
-
-	// 支付（支付宝/微信）
+	// 支付（支付宝/微信；Stripe 为遗留死配置已移除）
 	PublicBaseURL         string // 公网可达的基础 URL，用于构造支付回调 notify_url
 	FrontendURL           string // 前端地址（如 http://localhost:5173）；SSO 回调 302 目标，空 = 同源 "/"
 	AlipayAppID           string
@@ -109,12 +100,7 @@ type Config struct {
 	PythonEngineAddress string // HTTP 地址，如 "localhost:8000"
 	PythonEngineTimeout time.Duration
 
-	// LLM Gateway（Python 引擎内置）
-	LLMGatewayURL string // Python 引擎 LLM Gateway 地址，如 "http://localhost:8000"
-	LLMGatewayKey string // LLM Gateway API Key（可选）
-
-	// Temporal
-	TemporalAddress string // Temporal Server 地址，如 "localhost:7233"
+	// Temporal / LLMGateway 为遗留死配置（未使用），已移除
 
 	// PayPal
 	PayPalClientID string
@@ -153,10 +139,6 @@ func Load() *Config {
 		DisableRegistration: isTruthy(getEnv("DISABLE_REGISTRATION", "")),
 		CookieSecure:        isTruthy(getEnv("COOKIE_SECURE", "")),
 		CORSOrigins:         getEnv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173"),
-		LLMProvider:         getEnv("LLM_PROVIDER", "openai"),
-		LLMAPIKey:           getEnv("LLM_API_KEY", ""),
-		LLMModel:            getEnv("LLM_MODEL", "gpt-4o"),
-		LLMBaseURL:          getEnv("LLM_BASE_URL", ""),
 		StorageBackend:      getEnv("STORAGE_BACKEND", "local"),
 		StorageRoot:         getEnv("STORAGE_ROOT", "./workspace"),
 		S3Endpoint:          getEnv("S3_ENDPOINT", ""),
@@ -170,9 +152,6 @@ func Load() *Config {
 		TrustedProxyCIDRs:   getStringSlice("TRUSTED_PROXY_CIDRS", []string{}),
 		MetricsToken:        getEnv("METRICS_TOKEN", ""),
 		LogLevel:            getEnv("LOG_LEVEL", "info"),
-		StripeSecretKey:     getEnv("STRIPE_SECRET_KEY", ""),
-		StripeWebhookSecret: getEnv("STRIPE_WEBHOOK_SECRET", ""),
-		StripePriceID:       getEnv("STRIPE_PRICE_ID", "price_1000_credits"),
 
 		// 支付（支付宝/微信）
 		PublicBaseURL:         getEnv("PUBLIC_BASE_URL", ""),
@@ -196,13 +175,6 @@ func Load() *Config {
 		// Python AI 引擎
 		PythonEngineAddress: getEnv("PYTHON_ENGINE_ADDRESS", "localhost:8000"),
 		PythonEngineTimeout: getDuration("PYTHON_ENGINE_TIMEOUT", 5*time.Minute),
-
-		// LLM Gateway（Python 引擎内置）
-		LLMGatewayURL: getEnv("LLM_GATEWAY_URL", getEnv("PYTHON_ENGINE_ADDRESS", "localhost:8000")),
-		LLMGatewayKey: getEnv("LLM_GATEWAY_KEY", ""),
-
-		// Temporal
-		TemporalAddress: getEnv("TEMPORAL_ADDRESS", "localhost:7233"),
 
 		PayPalClientID: getEnv("PAYPAL_CLIENT_ID", ""),
 		PayPalSecret:   getEnv("PAYPAL_SECRET", ""),

@@ -25,10 +25,7 @@ type ConfigFile struct {
 	JWTExpiration string `json:"jwt_expiration,omitempty"`
 	CORSOrigins   string `json:"cors_origins,omitempty"`
 
-	LLMProvider string `json:"llm_provider,omitempty"`
-	LLMAPIKey   string `json:"llm_api_key,omitempty"`
-	LLMModel    string `json:"llm_model,omitempty"`
-	LLMBaseURL  string `json:"llm_base_url,omitempty"`
+	// LLM 配置为遗留死配置（AI 已迁 Python 引擎），已移除
 
 	StorageBackend string `json:"storage_backend,omitempty"`
 	StorageRoot    string `json:"storage_root,omitempty"`
@@ -86,10 +83,6 @@ func loadConfigFile() {
 	setIfNot("JWT_SECRET", cf.JWTSecret)
 	setIfNot("JWT_EXPIRATION", cf.JWTExpiration)
 	setIfNot("CORS_ORIGINS", cf.CORSOrigins)
-	setIfNot("LLM_PROVIDER", cf.LLMProvider)
-	setIfNot("LLM_API_KEY", cf.LLMAPIKey)
-	setIfNot("LLM_MODEL", cf.LLMModel)
-	setIfNot("LLM_BASE_URL", cf.LLMBaseURL)
 	setIfNot("STORAGE_BACKEND", cf.StorageBackend)
 	setIfNot("STORAGE_ROOT", cf.StorageRoot)
 	setIfNot("S3_ENDPOINT", cf.S3Endpoint)
