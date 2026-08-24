@@ -600,22 +600,13 @@ class AgentRuntime:
                         safe = self._output_guard.sanitize(chunk.content)
                         if not safe:
                             chunk.content = ""
-                        if has_reasoned:
-                            # 已有 native reasoning_content → content 是实际回答
-                            response_content += chunk.content
-                            yield AgentEvent(
-                                type="text",
-                                content=safe,
-                            )
-                        elif not response_content and not tool_calls:
-                            # 无 reasoning_content，无工具 → 兼容模式：首段内容可能含 [thinking]
-                            reasoning_content += chunk.content
-                        else:
-                            response_content += chunk.content
-                            yield AgentEvent(
-                                type="text",
-                                content=safe,
-                            )
+                        # S 修复：无论是否有 native reasoning，文本都作为回答增量输出，
+                        # 不再把整轮缓冲进 reasoning_content（那样前端只能等整轮结束）。
+                        response_content += chunk.content
+                        yield AgentEvent(
+                            type="text",
+                            content=safe,
+                        )
                         if self._output_guard.blocked:
                             logger.warning("Output guard blocked (task=%s): repeated host-path/secret leak", task.id)
                             yield AgentEvent(type="guardrail_blocked", content="输出包含敏感路径，已截断")
@@ -828,7 +819,8 @@ class AgentRuntime:
             
             # S 修复：上下文丢失 — 任何退出路径（异常/SSE 中断/GeneratorExit）都保存缓存，
             # 保证"继续"时历史可续（用户消息不丢）
-            if not _cache_saved and self._session_store and task.session_id and messages:
+            if not _cache_saved and self._session_store and task.session_id \
+                and "messages" in locals() and messages:
                 try:
                     await self._session_store.append(task.session_id, messages)
                     logger.info("Session cache saved on exit: %s (%d messages)", task.session_id, len(messages))

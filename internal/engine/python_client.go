@@ -218,10 +218,15 @@ func (c *PythonClient) Run(ctx context.Context, req PythonRunRequest) (<-chan Py
 		lineCh := make(chan string, 1)
 
 		// Background goroutine to read lines
+		// S 修复：sender 在发送前检查 ctx.Done，避免外层退出后阻塞发送而泄漏 goroutine。
 		go func() {
 			defer close(lineCh)
 			for scanner.Scan() {
-				lineCh <- scanner.Text()
+				select {
+				case lineCh <- scanner.Text():
+				case <-ctx.Done():
+					return
+				}
 			}
 		}()
 
@@ -480,10 +485,15 @@ func (c *PythonClient) RunSSE(ctx context.Context, path string, body any, extraH
 		lineCh := make(chan string, 1)
 
 		// Background goroutine to read lines
+		// S 修复：sender 在发送前检查 ctx.Done，避免外层退出后阻塞发送而泄漏 goroutine。
 		go func() {
 			defer close(lineCh)
 			for scanner.Scan() {
-				lineCh <- scanner.Text()
+				select {
+				case lineCh <- scanner.Text():
+				case <-ctx.Done():
+					return
+				}
 			}
 		}()
 

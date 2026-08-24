@@ -493,7 +493,9 @@ async function uploadToKnowledgeBase() {
   if (fail > 0) message.error(`${fail} 个文件上传失败`)
 }
 
-watch([searchQuery, typeFilter, tagFilter, page, pageSize], () => { fetchItems() })
+// S 修复：搜索/筛选变化时重置到第 1 页，避免停留在旧页导致假空结果；分页变化单独触发
+watch([searchQuery, typeFilter, tagFilter], () => { page.value = 1; fetchItems() })
+watch([page, pageSize], () => { fetchItems() })
 
 onMounted(() => {
   fetchItems()

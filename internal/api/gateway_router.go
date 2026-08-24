@@ -680,12 +680,14 @@ func registerProxyRoutes(
 				case "POST":
 					var body map[string]interface{}
 					if err2 := DecodeJSON(w, r, &body); err2 != nil {
+						BadRequest(w, ErrInvalidReq)
 						return
 					}
 					err = pythonClient.PostJSON(r.Context(), proxiedPath, body, &resp)
 				case "PUT":
 					var body map[string]interface{}
 					if err2 := DecodeJSON(w, r, &body); err2 != nil {
+						BadRequest(w, ErrInvalidReq)
 						return
 					}
 					err = pythonClient.PutJSON(r.Context(), proxiedPath, body, &resp)

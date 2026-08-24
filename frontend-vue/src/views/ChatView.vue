@@ -1156,6 +1156,8 @@ async function sendMessage(text: string, attachments?: ChatAttachment[]) {
     await api.post('/submit', body)
     activeSessionId.value = sessionId
   } catch (e: any) {
+    // S 修复：发送失败时关闭 SSE，避免连接泄漏 + 迟到流事件污染消息列表
+    if (activeSSE) { activeSSE.close(); activeSSE = null }
     loading.value = false
     stopTurnTimer()
     flushStreamingFlags()

@@ -340,6 +340,7 @@ class AgentDispatcher:
                 output="",
                 error=f"Agent '{name}' not found",
             )
+            self._bound_results()
             return task_id
 
         task_id = str(uuid.uuid4())
@@ -347,6 +348,7 @@ class AgentDispatcher:
         async def _run_and_store():
             result = await agent.run(task, context=context, tenant_id=tenant_id)
             self._results[task_id] = result
+            self._bound_results()
             self._active.pop(task_id, None)
 
         atask = asyncio.create_task(_run_and_store())
@@ -409,14 +411,21 @@ class AgentDispatcher:
         self._active.clear()
 
     def cleanup_results(self, max_age: float = 3600.0) -> int:
-        """清理过期的异步结果，返回清理数量"""
-        to_remove = []
-        for task_id, result in self._results.items():
-            if result.duration > 0 and result.duration + result.duration < time.monotonic() - max_age:
-                to_remove.append(task_id)
-        for task_id in to_remove:
+        """清理过期异步结果，返回清理数量。
+
+        S 修复：原实现用 result.duration(耗时秒)当时间戳与单调钟比较，恒为假 →
+        结果永不被清理、内存无限增长。现改为有界容量淘汰（保留最近 MAX_RESULTS 条）。
+        """
+        return self._bound_results()
+
+    def _bound_results(self, max_results: int = 500) -> int:
+        """将 _results 有界到最近 max_results 条（dict 保持插入序）。"""
+        overflow = len(self._results) - max_results
+        if overflow <= 0:
+            return 0
+        for task_id in list(self._results.keys())[:overflow]:
             del self._results[task_id]
-        return len(to_remove)
+        return overflow
 
 
 # ── 内置代理定义 ──────────────────────────────────────────
