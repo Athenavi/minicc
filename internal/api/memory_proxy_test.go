@@ -20,6 +20,7 @@ import (
 func testRouterWithPython(t *testing.T, pyClient *engine.PythonClient) http.Handler {
 	t.Helper()
 	os.Setenv("JWT_SECRET", "test-secret-that-is-at-least-32-bytes-long!")
+	os.Setenv("APP_SECRET", "test-app-secret-that-is-at-least-32-bytes-long!")
 	cfg := config.Load()
 	eventHub := broadcast.NewHub(nil)
 	sessionMgr := session.NewManager(nil, nil)

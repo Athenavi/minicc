@@ -1,8 +1,10 @@
 package api
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/athenavi/minicc/internal/auth"
 	"github.com/athenavi/minicc/internal/db"
@@ -23,11 +25,13 @@ func handleReadiness(w http.ResponseWriter, r *http.Request) {
 		"redis":    "up",
 	}
 	ready := true
-	if db.Pool == nil {
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	if db.Pool == nil || db.Pool.Ping(ctx) != nil {
 		deps["postgres"] = "down"
 		ready = false
 	}
-	if db.Redis == nil {
+	if db.Redis == nil || db.Redis.Ping(ctx).Err() != nil {
 		deps["redis"] = "down"
 		ready = false
 	}

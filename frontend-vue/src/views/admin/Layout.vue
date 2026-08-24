@@ -75,49 +75,43 @@ const breadcrumbs = computed(() => {
   }))
 })
 
-// 菜单分组：核心 / 访问控制 / 基础设施 / 安全合规 / 系统
-// 使用 MenuItemGroup 分组，缓解 18 项平铺的信息密度问题
+// 菜单分组：总览监控 / 访问安全 / 系统 / 平台 四组，归并 19 项后台功能
 const menuGroups = computed(() => [
   {
-    key: 'g-core', label: '核心',
+    key: 'g-monitor', label: '总览监控',
     children: [
       { key: '/admin/dashboard', label: '仪表盘', icon: () => h(DashboardOutlined) },
-      { key: '/admin/tenants', label: '租户管理', icon: () => h(TeamOutlined) },
-      { key: '/admin/api-keys', label: 'API Key 管理', icon: () => h(KeyOutlined) },
-    ],
-  },
-  {
-    key: 'g-access', label: '访问控制',
-    children: [
-      { key: '/admin/domains', label: '域名管理', icon: () => h(GlobalOutlined) },
-      { key: '/admin/oauth-providers', label: '三方登录', icon: () => h(SafetyOutlined) },
-      { key: '/admin/roles', label: '角色管理', icon: () => h(IdcardOutlined) },
-      { key: '/admin/groups', label: '群组管理', icon: () => h(ClusterOutlined) },
-    ],
-  },
-  {
-    key: 'g-infra', label: '基础设施',
-    children: [
-      { key: '/admin/redis', label: 'Redis 管理', icon: () => h(DatabaseOutlined) },
-      { key: '/admin/database', label: '数据库管理', icon: () => h(DatabaseOutlined) },
+      { key: '/admin/performance', label: '性能监控', icon: () => h(ThunderboltOutlined) },
       { key: '/admin/queue', label: '队列监控', icon: () => h(OrderedListOutlined) },
       { key: '/admin/cache', label: '缓存监控', icon: () => h(DatabaseOutlined) },
-      { key: '/admin/performance', label: '性能监控', icon: () => h(ThunderboltOutlined) },
     ],
   },
   {
-    key: 'g-compliance', label: '安全合规',
+    key: 'g-access', label: '访问安全',
     children: [
-      { key: '/admin/audit', label: '操作审计', icon: () => h(FileSearchOutlined) },
+      { key: '/admin/api-keys', label: 'API Key 管理', icon: () => h(KeyOutlined) },
+      { key: '/admin/roles', label: '角色管理', icon: () => h(IdcardOutlined) },
+      { key: '/admin/groups', label: '群组管理', icon: () => h(ClusterOutlined) },
+      { key: '/admin/oauth-providers', label: '三方登录与人机验证', icon: () => h(SafetyOutlined) },
       { key: '/admin/privacy', label: '隐私模式管控', icon: () => h(SafetyOutlined) },
       { key: '/admin/model-policy', label: '模型策略管控', icon: () => h(ControlOutlined) },
-      { key: '/admin/costcenter', label: '成本中心', icon: () => h(WalletOutlined) },
     ],
   },
   {
     key: 'g-system', label: '系统',
     children: [
       { key: '/admin/settings', label: '系统设置', icon: () => h(SettingOutlined) },
+      { key: '/admin/tenants', label: '租户管理', icon: () => h(TeamOutlined) },
+      { key: '/admin/redis', label: 'Redis 管理', icon: () => h(DatabaseOutlined) },
+      { key: '/admin/database', label: '数据库管理', icon: () => h(DatabaseOutlined) },
+      { key: '/admin/domains', label: '域名管理', icon: () => h(GlobalOutlined) },
+      { key: '/admin/audit', label: '操作审计', icon: () => h(FileSearchOutlined) },
+    ],
+  },
+  {
+    key: 'g-platform', label: '平台',
+    children: [
+      { key: '/admin/costcenter', label: '成本中心', icon: () => h(WalletOutlined) },
       { key: '/admin/market', label: '企业能力市场', icon: () => h(ShopOutlined) },
       { key: '/admin/api-docs', label: 'API 文档', icon: () => h(FileTextOutlined) },
     ],

@@ -142,6 +142,25 @@ class ProfileItem:
 
 
 @dataclass
+class MemoryEntry:
+    """L2 用户记忆条目（= user_memory_entries 行模型，profile.py 持久层使用）。"""
+    id: str
+    tenant_id: str
+    user_id: str
+    slot: Any
+    item_key: str
+    item_value: Any
+    confidence: int  # 0-100
+    source: Any
+    embedding: list[float] | None = None
+    access_count: int = 0
+    last_accessed_at: Any = None
+    status: str = "active"
+    created_at: Any = None
+    updated_at: Any = None
+
+
+@dataclass
 class ProfileUpdateResult:
     """L2 档案卡更新结果。"""
     success: bool

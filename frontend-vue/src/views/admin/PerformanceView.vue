@@ -1,62 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { Card, Row, Col, Statistic, Descriptions, DescriptionsItem, Spin, message } from 'ant-design-vue'
-import { use } from 'echarts/core'
-import { CanvasRenderer } from 'echarts/renderers'
-import { LineChart, BarChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent } from 'echarts/components'
-import VChart from 'vue-echarts'
+import { ref, onMounted } from 'vue'
+import { Card, Statistic, Descriptions, DescriptionsItem, Spin, message } from 'ant-design-vue'
 import { getPerformance } from '@/api/admin'
-
-use([CanvasRenderer, LineChart, BarChart, GridComponent, TooltipComponent])
 
 const loading = ref(false)
 
 const metrics = ref({
   connections: 0,
   avgLatencyMs: 0,
-  errorRate: 0,
-  qps: 0,
+  dbLatencyMs: 0,
 })
-
-const latencyChartOption = computed(() => {
-  const dist = latencyDistribution.value
-  const labels = Object.keys(dist)
-  const values = Object.values(dist)
-  return {
-    tooltip: { trigger: 'axis' },
-    xAxis: { type: 'category', data: labels.length ? labels : ['--'] },
-    yAxis: { type: 'value', name: '请求数' },
-    series: [{
-      type: 'bar',
-      data: values.length ? values : [0],
-      itemStyle: {
-        color: (params: any) => {
-          const colors = ['#18a058', '#2080f0', '#f0a020', '#d03050', '#802020']
-          return colors[params.dataIndex % colors.length]
-        },
-      },
-    }],
-  }
-})
-
-const qpsChartOption = computed(() => {
-  const trend = qpsTrend.value
-  return {
-    tooltip: { trigger: 'axis' },
-    xAxis: { type: 'category', data: trend.length ? trend.map(t => t.time) : ['--'] },
-    yAxis: { type: 'value', name: 'QPS' },
-    series: [{
-      type: 'line',
-      data: trend.length ? trend.map(t => t.qps) : [0],
-      smooth: true,
-      areaStyle: { opacity: 0.3 },
-    }],
-  }
-})
-
-const latencyDistribution = ref<Record<string, number>>({})
-const qpsTrend = ref<{ time: string; qps: number }[]>([])
 
 const gatewayStatus = ref({
   instances: 0,
@@ -103,12 +56,8 @@ async function fetchData() {
     metrics.value = {
       connections: gw.connections || 0,
       avgLatencyMs: py.avg_inference_ms || 0,
-      errorRate: 0,
-      qps: data.qps_trend?.length ? data.qps_trend[data.qps_trend.length - 1].qps : 0,
+      dbLatencyMs: gw.db_latency_ms || 0,
     }
-
-    latencyDistribution.value = data.latency_distribution || {}
-    qpsTrend.value = data.qps_trend || []
 
     gatewayStatus.value = {
       instances: gw.instances || 0,
@@ -156,19 +105,7 @@ onMounted(() => {
           <Statistic title="推理延迟(均值)" :value="metrics.avgLatencyMs" suffix="ms" />
         </Card>
         <Card>
-          <Statistic title="错误率" :value="metrics.errorRate" suffix="%" />
-        </Card>
-        <Card>
-          <Statistic title="QPS" :value="metrics.qps" />
-        </Card>
-      </div>
-
-      <div class="chart-grid">
-        <Card title="延迟分布">
-          <VChart :option="latencyChartOption" style="height: var(--chart-h, 300px)" autoresize />
-        </Card>
-        <Card title="QPS 趋势">
-          <VChart :option="qpsChartOption" style="height: var(--chart-h, 300px)" autoresize />
+          <Statistic title="网关 DB 延迟" :value="metrics.dbLatencyMs" suffix="ms" />
         </Card>
       </div>
 
@@ -213,26 +150,20 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.performance-monitor { padding: 0; --chart-h: 300px; }
+.performance-monitor { padding: 0; }
 
 /* 指标卡网格:auto-fill(minmax 150px),窄屏自动降列 */
 .metric-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 16px;
 }
 
-/* 图表/状态卡片网格 */
-.chart-grid,
+/* 状态卡片网格 */
 .status-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 16px;
   margin-top: 16px;
-}
-
-/* 移动端:图表高度压缩 */
-@media (max-width: 768px) {
-  .performance-monitor { --chart-h: 220px; }
 }
 </style>

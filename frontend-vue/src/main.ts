@@ -1,6 +1,6 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import Antd from 'ant-design-vue'
+// antd 已按需引入（unplugin-vue-components），无需全局 app.use(Antd)
 import 'ant-design-vue/dist/reset.css'
 import '@fontsource-variable/geist'
 import router from './router'
@@ -12,7 +12,6 @@ const pinia = createPinia()
 
 app.use(pinia)
 app.use(router)
-app.use(Antd)
 app.mount('#app')
 
 // PWA：生产环境注册 Service Worker（离线壳；开发环境跳过）

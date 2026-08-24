@@ -172,6 +172,7 @@ async function removeAllocation(allocID: string) {
 }
 
 function fmtAmount(n: number, type: string): string {
+  if (!Number.isFinite(n)) return '—'
   if (n === 0) return '无限制'
   if (type === 'storage_mb') return `${n} MB`
   if (type === 'credits') return `${n} credits`
@@ -244,9 +245,9 @@ onMounted(fetchPools)
       </template>
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'action'">
-          <a-button type="link" size="small" @click="openAllocDrawer(record)">分配</a-button>
-          <a-button type="link" size="small" @click="openEditPool(record)">编辑</a-button>
-          <a-button type="link" size="small" danger @click="confirmDeletePool(record)">删除</a-button>
+          <a-button type="link" size="small" @click="openAllocDrawer(record as QuotaPoolWithAllocated)">分配</a-button>
+          <a-button type="link" size="small" @click="openEditPool(record as QuotaPoolWithAllocated)">编辑</a-button>
+          <a-button type="link" size="small" danger @click="confirmDeletePool(record as QuotaPoolWithAllocated)">删除</a-button>
         </template>
       </template>
     </a-table>

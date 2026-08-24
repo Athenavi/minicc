@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { fileViewerRenderers } from '@file-viewer/vite-plugin'
+import Components from 'unplugin-vue-components/vite'
+import { AntDesignVueResolver } from 'unplugin-vue-components/resolvers'
 import path from 'path'
 
 // https://vite.dev/config/
@@ -8,6 +10,12 @@ export default defineConfig({
   plugins: [
     vue(),
     fileViewerRenderers({ copyAssets: true }),
+    // antd 按需引入：只打包模板中实际使用的 a-* 组件，显著削减首屏体积。
+    // 组件样式由 antd v4 cssinjs 运行时注入，无需额外 style 导入。
+    Components({
+      resolvers: [AntDesignVueResolver({ importStyle: false })],
+      dts: 'src/components.d.ts',
+    }),
   ],
   resolve: {
     alias: {

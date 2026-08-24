@@ -15,6 +15,7 @@ import (
 	"github.com/athenavi/minicc/internal/db"
 	"github.com/athenavi/minicc/internal/engine"
 	"github.com/athenavi/minicc/internal/monitor"
+	"github.com/athenavi/minicc/internal/settings"
 	"github.com/athenavi/minicc/internal/storage"
 )
 
@@ -26,7 +27,9 @@ type AdminHandler struct {
 	store         *storage.AtomicStore
 	redis         *db.AtomicRedis
 	pythonClient  *engine.PythonClient
-	settingsStore *settingsStore
+	rateLimiter   *DistributedRateLimiter
+	appSecret     string
+	settingsStore *settings.Store
 }
 
 func NewAdminHandler(a *auth.Authenticator, store *storage.AtomicStore, redis *db.AtomicRedis, pythonClient *engine.PythonClient) *AdminHandler {

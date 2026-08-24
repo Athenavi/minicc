@@ -146,8 +146,9 @@ func NewGatewayRouter(
 	//   - Redis 不可用 + 生产环境（cfg.RateLimitFailClose=true）：写操作拒绝
 	//   - Redis 不可用 + 开发/测试：降级内存限流（单实例有效，多副本失效）
 	var rlMW func(http.Handler) http.Handler
+	var distLimiter *DistributedRateLimiter
 	if atomicRedis != nil {
-		distLimiter := NewDistributedRateLimiter(
+		distLimiter = NewDistributedRateLimiter(
 			atomicRedis.LoadRaw(),
 			cfg.RateLimitRPM*10, // 全局：单实例限制 × 10
 			cfg.RateLimitRPM*5,  // 租户：单实例限制 × 5
@@ -288,6 +289,8 @@ func NewGatewayRouter(
 
 	// Admin handler
 	adminHandler := NewAdminHandler(authenticator, fileStore, atomicRedis, pythonClient)
+	adminHandler.rateLimiter = distLimiter
+	adminHandler.appSecret = cfg.AppSecret
 
 	// ── Route registration by functional domain ──
 
@@ -407,6 +410,8 @@ func registerPublicEndpoints(
 	// API 文档（OpenAPI spec，公开，供 Swagger/Redoc 展示）
 	mux.Handle("GET /docs/", http.StripPrefix("/docs/", http.FileServer(http.Dir("docs"))))
 	mux.Handle("GET /ready", rlMW(http.HandlerFunc(handleReadiness)))
+	// 引擎配置下发（X-Internal-Token 保护，Python 引擎启动拉取）
+	mux.Handle("GET /v1/internal/engine-config", rlMW(internalTokenMW(cfg, EngineConfig(cfg))))
 }
 
 // ── Agent submit/cancel/events ──

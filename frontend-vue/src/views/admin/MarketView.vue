@@ -243,10 +243,10 @@ onMounted(fetchItems)
           <a-tag :color="statusColor(record.status)">{{ record.status }}</a-tag>
         </template>
         <template v-if="column.key === 'action'">
-          <a-button type="link" size="small" @click="openGrantDrawer(record)">授权</a-button>
-          <a-button v-if="record.status === 'draft'" type="link" size="small" @click="publishItem(record)">发布</a-button>
-          <a-button v-if="record.status === 'published'" type="link" size="small" danger @click="retireItem(record)">退役</a-button>
-          <a-button type="link" size="small" danger @click="confirmDeleteItem(record)">删除</a-button>
+          <a-button type="link" size="small" @click="openGrantDrawer(record as MarketItem)">授权</a-button>
+          <a-button v-if="record.status === 'draft'" type="link" size="small" @click="publishItem(record as MarketItem)">发布</a-button>
+          <a-button v-if="record.status === 'published'" type="link" size="small" danger @click="retireItem(record as MarketItem)">退役</a-button>
+          <a-button type="link" size="small" danger @click="confirmDeleteItem(record as MarketItem)">删除</a-button>
         </template>
       </template>
     </a-table>
@@ -303,7 +303,7 @@ onMounted(fetchItems)
         </template>
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'action'">
-            <a-button type="link" size="small" danger @click="removeGrant(record)">撤销</a-button>
+            <a-button type="link" size="small" danger @click="removeGrant(record as MarketGrant)">撤销</a-button>
           </template>
         </template>
       </a-table>

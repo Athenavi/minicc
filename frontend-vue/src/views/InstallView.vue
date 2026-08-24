@@ -1,15 +1,18 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { getInstallStatus, setupSystem } from '../api/install'
+import { getInstallStatus, setupSystem, type InstallDep } from '../api/install'
 
 const router = useRouter()
 const loading = ref(true)
 const needed = ref(false)
 const error = ref(false)
 const submitting = ref(false)
+const deps = ref<InstallDep[]>([])
 const form = ref({ email: '', password: '', confirm: '', name: '' })
+
+const depsReady = computed(() => deps.value.length > 0 && deps.value.every((d) => d.ok))
 
 async function fetchStatus() {
   loading.value = true
@@ -17,6 +20,13 @@ async function fetchStatus() {
   try {
     const s = await getInstallStatus()
     needed.value = s.needed
+    deps.value = s.deps ?? []
+    if (deps.value.length === 0) {
+      deps.value = [
+        { name: 'postgres', ok: s.db, message: s.db ? 'PostgreSQL 连接正常' : 'PostgreSQL 不可用' },
+        { name: 'redis', ok: s.redis, message: s.redis ? 'Redis 连接正常' : 'Redis 不可用' },
+      ]
+    }
   } catch (e: any) {
     error.value = true
     message.error('无法连接后端服务，请确认服务已启动')
@@ -66,27 +76,49 @@ async function submit() {
       </div>
 
       <a-spin :spinning="loading">
+        <!-- 依赖探测（始终展示，便于排查连接问题） -->
+        <div v-if="!error && deps.length" class="dep-list" aria-label="依赖就绪状态">
+          <div v-for="d in deps" :key="d.name" class="dep-item">
+            <span class="dep-icon" :class="d.ok ? 'ok' : 'fail'">{{ d.ok ? '✓' : '✕' }}</span>
+            <span class="dep-name">{{ d.name }}</span>
+            <span class="dep-msg">{{ d.message }}</span>
+          </div>
+          <a-button v-if="!depsReady" size="small" type="link" @click="fetchStatus">重新检测</a-button>
+        </div>
+
+        <!-- 部署模型说明 -->
+        <div v-if="!error" class="install-hint hint-info">
+          本部署仅需在 .env 配置 <b>APP_SECRET</b>（唯一主密钥）。PostgreSQL / Redis / CORS / 存储 / 模型 / 支付等配置
+          初始化后可在后台「系统设置」统一管理，敏感值（密钥、密码）将加密入库。若数据库/Redis 不在本机默认地址，
+          请在启动前通过环境变量 POSTGRES_DSN / REDIS_ADDR 指定引导连接，之后可在后台切换集群。
+        </div>
+
         <!-- 未初始化：显示初始化表单 -->
         <template v-if="needed">
-          <p class="install-hint hint-warn">
-            检测到系统尚未初始化。请创建首个管理员账户（owner 角色），该账户拥有全部管理权限。
-            初始化后此入口将自动关闭。
+          <p v-if="!depsReady" class="install-hint hint-warn">
+            系统依赖未全部就绪，无法进行初始化。请先确保 PostgreSQL 与 Redis 正常运行并可访问。
           </p>
-          <a-form layout="vertical" @finish="submit">
-            <a-form-item label="邮箱" required>
-              <a-input v-model:value="form.email" type="email" placeholder="admin@example.com" />
-            </a-form-item>
-            <a-form-item label="姓名" required>
-              <a-input v-model:value="form.name" placeholder="管理员姓名" />
-            </a-form-item>
-            <a-form-item label="密码（至少 8 位）" required>
-              <a-input-password v-model:value="form.password" placeholder="至少 8 位" />
-            </a-form-item>
-            <a-form-item label="确认密码" required>
-              <a-input-password v-model:value="form.confirm" placeholder="再次输入密码" />
-            </a-form-item>
-            <a-button type="primary" html-type="submit" :loading="submitting" block>初始化系统</a-button>
-          </a-form>
+          <template v-else>
+            <p class="install-hint hint-warn">
+              检测到系统尚未初始化。请创建首个管理员账户（owner 角色），该账户拥有全部管理权限。
+              初始化后此入口将自动关闭。
+            </p>
+            <a-form layout="vertical" @finish="submit">
+              <a-form-item label="邮箱" required>
+                <a-input v-model:value="form.email" type="email" placeholder="admin@example.com" />
+              </a-form-item>
+              <a-form-item label="姓名" required>
+                <a-input v-model:value="form.name" placeholder="管理员姓名" />
+              </a-form-item>
+              <a-form-item label="密码（至少 8 位）" required>
+                <a-input-password v-model:value="form.password" placeholder="至少 8 位" />
+              </a-form-item>
+              <a-form-item label="确认密码" required>
+                <a-input-password v-model:value="form.confirm" placeholder="再次输入密码" />
+              </a-form-item>
+              <a-button type="primary" html-type="submit" :loading="submitting" block>初始化系统</a-button>
+            </a-form>
+          </template>
         </template>
 
         <!-- 已初始化：显示系统状态 -->
@@ -179,10 +211,40 @@ async function submit() {
   padding: 12px;
   border-radius: var(--radius-sm, 6px);
 }
+.dep-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 20px;
+  padding: 4px 0;
+}
+.dep-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-sm, 6px);
+  padding: 8px 10px;
+}
+.dep-icon.ok { color: var(--colorSuccess, #52c41a); }
+.dep-icon.fail { color: var(--colorError, #ff4d4f); }
+.dep-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  min-width: 70px;
+}
+.dep-msg { font-size: 12px; }
 .hint-warn {
   background: var(--warning-bg, rgba(255, 197, 23, 0.1));
   border: 1px solid var(--warning-border, rgba(255, 197, 23, 0.3));
 }
+.hint-info {
+  background: var(--info-bg, rgba(22, 119, 255, 0.08));
+  border: 1px solid var(--info-border, rgba(22, 119, 255, 0.25));
+}
+.hint-info b { color: var(--text-primary); }
 .installed-state {
   text-align: center;
   padding: 24px 0;

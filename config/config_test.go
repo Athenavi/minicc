@@ -7,6 +7,7 @@ import (
 
 func TestLoadDefaults(t *testing.T) {
 	os.Setenv("JWT_SECRET", "test-secret-32-bytes-long-for-testing!")
+	os.Setenv("APP_SECRET", "test-app-secret-32-bytes-long-for-testing!")
 	os.Setenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173")
 	defer func() {
 		os.Unsetenv("JWT_SECRET")
@@ -48,6 +49,7 @@ func TestLoadFailsWithoutJWTSecret(t *testing.T) {
 
 func TestEnvOverride(t *testing.T) {
 	os.Setenv("JWT_SECRET", "test-secret-here-32-bytes-long-for-test!")
+	os.Setenv("APP_SECRET", "test-app-secret-here-32-bytes-long-for-test!")
 	os.Setenv("PORT", "9090")
 	defer func() {
 		os.Unsetenv("JWT_SECRET")

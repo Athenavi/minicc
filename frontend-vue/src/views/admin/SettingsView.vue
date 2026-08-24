@@ -1,17 +1,71 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { Card, Row, Col, Form, FormItem, InputNumber, Button, Switch, Slider, message } from 'ant-design-vue'
+import { Card, Row, Col, Form, FormItem, InputNumber, Input, InputPassword, Select, Button, Switch, Slider, message } from 'ant-design-vue'
 import { saveSettings, getSettings } from '@/api/admin'
 
 const saving = ref(false)
 const loading = ref(false)
 
 const rateLimitConfig = ref({
-  rps: 10000,
-  rpm: 1000000,
-  tpm: 100000000,
-  userConcurrent: 10,
-  tenantConcurrent: 1000,
+  global: 1000,
+  tenant: 500,
+  user: 100,
+})
+
+const agentConfig = ref({
+  max_turns: 10,
+  max_tokens: 4096,
+  context_limit: 20,
+})
+
+const llmConfig = ref({
+  provider: 'openai',
+  model: 'gpt-4o',
+})
+
+const storageConfig = ref({
+  backend: 'local',
+  root: './workspace',
+})
+
+const paymentConfig = ref({
+  public_base_url: '',
+  alipay_gateway: '',
+})
+
+// 连接与密钥配置（敏感值由 APP_SECRET 派生密钥加密入库）
+const redisConfig = ref({
+  addr: 'localhost:6379',
+  password: '',
+  db: 0,
+})
+
+const postgresConfig = ref({
+  dsn: '',
+})
+
+const corsConfig = ref({
+  origins: '',
+})
+
+const s3Config = ref({
+  endpoint: '',
+  bucket: '',
+  access_key: '',
+  secret_key: '',
+  use_ssl: false,
+})
+
+// Python AI 引擎配置（下发到引擎；api_key 等敏感值加密入库）
+const pythonConfig = ref({
+  llm_provider: 'openai',
+  llm_model: '',
+  llm_api_key: '',
+  llm_base_url: '',
+  embedding_model: '',
+  max_turns: 10,
+  queue_worker_concurrency: 10,
+  cache_l1_capacity: 2048,
 })
 
 const degradationConfig = ref({
@@ -187,6 +241,114 @@ async function saveApiKey() {
   }
 }
 
+async function saveAgent() {
+  saving.value = true
+  try {
+    await saveSettings('agent', agentConfig.value)
+    message.success('Agent 配置已保存')
+  } catch (err: any) {
+    message.error('保存失败: ' + (err.message || '未知错误'))
+  } finally {
+    saving.value = false
+  }
+}
+
+async function saveLlm() {
+  saving.value = true
+  try {
+    await saveSettings('llm', llmConfig.value)
+    message.success('模型配置已保存')
+  } catch (err: any) {
+    message.error('保存失败: ' + (err.message || '未知错误'))
+  } finally {
+    saving.value = false
+  }
+}
+
+async function saveStorage() {
+  saving.value = true
+  try {
+    await saveSettings('storage', storageConfig.value)
+    message.success('存储配置已保存')
+  } catch (err: any) {
+    message.error('保存失败: ' + (err.message || '未知错误'))
+  } finally {
+    saving.value = false
+  }
+}
+
+async function savePayment() {
+  saving.value = true
+  try {
+    await saveSettings('payment', paymentConfig.value)
+    message.success('支付配置已保存')
+  } catch (err: any) {
+    message.error('保存失败: ' + (err.message || '未知错误'))
+  } finally {
+    saving.value = false
+  }
+}
+
+async function saveRedis() {
+  saving.value = true
+  try {
+    await saveSettings('redis', redisConfig.value)
+    message.success('Redis 配置已保存并热更新连接')
+  } catch (err: any) {
+    message.error('保存失败: ' + (err.message || '未知错误'))
+  } finally {
+    saving.value = false
+  }
+}
+
+async function savePostgres() {
+  saving.value = true
+  try {
+    await saveSettings('postgres', postgresConfig.value)
+    message.success('数据库配置已保存（重启后生效）')
+  } catch (err: any) {
+    message.error('保存失败: ' + (err.message || '未知错误'))
+  } finally {
+    saving.value = false
+  }
+}
+
+async function saveCors() {
+  saving.value = true
+  try {
+    await saveSettings('cors', corsConfig.value)
+    message.success('CORS 配置已保存（重启后生效）')
+  } catch (err: any) {
+    message.error('保存失败: ' + (err.message || '未知错误'))
+  } finally {
+    saving.value = false
+  }
+}
+
+async function saveS3() {
+  saving.value = true
+  try {
+    await saveSettings('s3', s3Config.value)
+    message.success('对象存储配置已保存')
+  } catch (err: any) {
+    message.error('保存失败: ' + (err.message || '未知错误'))
+  } finally {
+    saving.value = false
+  }
+}
+
+async function savePython() {
+  saving.value = true
+  try {
+    await saveSettings('python', pythonConfig.value)
+    message.success('Python 引擎配置已保存，引擎重启后生效')
+  } catch (err: any) {
+    message.error('保存失败: ' + (err.message || '未知错误'))
+  } finally {
+    saving.value = false
+  }
+}
+
 const copyNginx = () => {
   navigator.clipboard.writeText(nginxConfig)
   message.success('已复制到剪贴板')
@@ -212,6 +374,15 @@ onMounted(async () => {
     mergeConfig(degradationConfig, await getSettings('degradation'))
     mergeConfig(cacheConfig, await getSettings('cache'))
     mergeConfig(apiKeyConfig, await getSettings('api_key'))
+    mergeConfig(agentConfig, await getSettings('agent'))
+    mergeConfig(llmConfig, await getSettings('llm'))
+    mergeConfig(storageConfig, await getSettings('storage'))
+    mergeConfig(paymentConfig, await getSettings('payment'))
+    mergeConfig(redisConfig, await getSettings('redis'))
+    mergeConfig(postgresConfig, await getSettings('postgres'))
+    mergeConfig(corsConfig, await getSettings('cors'))
+    mergeConfig(s3Config, await getSettings('s3'))
+    mergeConfig(pythonConfig, await getSettings('python'))
   } catch {
     // 拉取失败保留默认值，不阻断页面
   } finally {
@@ -227,23 +398,18 @@ onMounted(async () => {
       <Col :xs="24" :sm="12">
         <Card title="限流配置">
           <Form :model="rateLimitConfig" layout="vertical">
-            <FormItem label="每秒请求数">
-              <InputNumber v-model:value="rateLimitConfig.rps" :min="100" :max="100000" style="width: 100%" />
+            <FormItem label="全局（每分钟）">
+              <InputNumber v-model:value="rateLimitConfig.global" :min="100" :max="1000000" style="width: 100%" />
             </FormItem>
-            <FormItem label="每分钟请求数">
-              <InputNumber v-model:value="rateLimitConfig.rpm" :min="1000" :max="10000000" style="width: 100%" />
+            <FormItem label="单租户（每分钟）">
+              <InputNumber v-model:value="rateLimitConfig.tenant" :min="10" :max="100000" style="width: 100%" />
             </FormItem>
-            <FormItem label="每分钟 Token 数">
-              <InputNumber v-model:value="rateLimitConfig.tpm" :min="10000" :max="1000000000" style="width: 100%" />
-            </FormItem>
-            <FormItem label="单用户并发">
-              <InputNumber v-model:value="rateLimitConfig.userConcurrent" :min="1" :max="100" style="width: 100%" />
-            </FormItem>
-            <FormItem label="单租户并发">
-              <InputNumber v-model:value="rateLimitConfig.tenantConcurrent" :min="10" :max="10000" style="width: 100%" />
+            <FormItem label="单用户（每分钟）">
+              <InputNumber v-model:value="rateLimitConfig.user" :min="1" :max="10000" style="width: 100%" />
             </FormItem>
           </Form>
           <Button type="primary" :loading="saving" @click="saveRateLimit">保存</Button>
+          <div class="config-note">保存后即刻生效（热更新）。</div>
         </Card>
       </Col>
 
@@ -314,6 +480,202 @@ onMounted(async () => {
       </Col>
     </Row>
 
+    <!-- 迁移自 .env 的业务配置（持久化到 DB system_settings） -->
+    <Row :gutter="16" class="config-row">
+      <!-- Agent 配置 -->
+      <Col :xs="24" :sm="12">
+        <Card title="Agent 配置">
+          <Form :model="agentConfig" layout="vertical">
+            <FormItem label="最大推理轮数">
+              <InputNumber v-model:value="agentConfig.max_turns" :min="1" :max="100" style="width: 100%" />
+            </FormItem>
+            <FormItem label="每次调用最大 Token">
+              <InputNumber v-model:value="agentConfig.max_tokens" :min="256" :max="32768" style="width: 100%" />
+            </FormItem>
+            <FormItem label="上下文消息数限制">
+              <InputNumber v-model:value="agentConfig.context_limit" :min="1" :max="100" style="width: 100%" />
+            </FormItem>
+          </Form>
+          <Button type="primary" :loading="saving" @click="saveAgent">保存</Button>
+          <div class="config-note">保存到 DB，运行时消费项重启后生效。</div>
+        </Card>
+      </Col>
+
+      <!-- LLM / 模型配置 -->
+      <Col :xs="24" :sm="12">
+        <Card title="模型配置">
+          <Form :model="llmConfig" layout="vertical">
+            <FormItem label="Provider">
+              <Select v-model:value="llmConfig.provider" style="width: 100%">
+                <Select.Option value="openai">OpenAI</Select.Option>
+                <Select.Option value="anthropic">Anthropic</Select.Option>
+                <Select.Option value="deepseek">DeepSeek</Select.Option>
+              </Select>
+            </FormItem>
+            <FormItem label="默认模型">
+              <Input v-model:value="llmConfig.model" placeholder="gpt-4o" />
+            </FormItem>
+          </Form>
+          <Button type="primary" :loading="saving" @click="saveLlm">保存</Button>
+          <div class="config-note">Provider/Model 已持久化到 DB，重启生效；密钥类敏感值加密入库。</div>
+        </Card>
+      </Col>
+
+      <!-- 存储配置 -->
+      <Col :xs="24" :sm="12">
+        <Card title="存储配置">
+          <Form :model="storageConfig" layout="vertical">
+            <FormItem label="后端类型">
+              <Select v-model:value="storageConfig.backend" style="width: 100%">
+                <Select.Option value="local">本地磁盘</Select.Option>
+                <Select.Option value="s3">S3 / MinIO</Select.Option>
+              </Select>
+            </FormItem>
+            <FormItem label="存储根目录">
+              <Input v-model:value="storageConfig.root" placeholder="./workspace" />
+            </FormItem>
+          </Form>
+          <Button type="primary" :loading="saving" @click="saveStorage">保存</Button>
+          <div class="config-note">保存到 DB，运行时消费项重启后生效。</div>
+        </Card>
+      </Col>
+
+      <!-- 支付配置（非敏感项） -->
+      <Col :xs="24" :sm="12">
+        <Card title="支付配置">
+          <Form :model="paymentConfig" layout="vertical">
+            <FormItem label="公网基础 URL">
+              <Input v-model:value="paymentConfig.public_base_url" placeholder="https://api.example.com" />
+            </FormItem>
+            <FormItem label="支付宝网关">
+              <Input v-model:value="paymentConfig.alipay_gateway" placeholder="https://openapi.alipay.com/gateway.do" />
+            </FormItem>
+          </Form>
+          <Button type="primary" :loading="saving" @click="savePayment">保存</Button>
+          <div class="config-note">密钥类凭据不入库，由环境变量注入。</div>
+        </Card>
+      </Col>
+    </Row>
+
+    <!-- 连接与密钥配置（敏感值 AES-GCM 加密入库） -->
+    <Row :gutter="16" class="config-row">
+      <!-- Redis 配置 -->
+      <Col :xs="24" :sm="12">
+        <Card title="Redis 配置">
+          <Form :model="redisConfig" layout="vertical">
+            <FormItem label="地址">
+              <Input v-model:value="redisConfig.addr" placeholder="localhost:6379" />
+            </FormItem>
+            <FormItem label="密码（加密入库）">
+              <InputPassword v-model:value="redisConfig.password" placeholder="空则无密码" />
+            </FormItem>
+            <FormItem label="DB">
+              <InputNumber v-model:value="redisConfig.db" :min="0" :max="15" style="width: 100%" />
+            </FormItem>
+          </Form>
+          <Button type="primary" :loading="saving" @click="saveRedis">保存</Button>
+          <div class="config-note">保存后热更新连接；可切换 Redis 集群。</div>
+        </Card>
+      </Col>
+
+      <!-- PostgreSQL 配置 -->
+      <Col :xs="24" :sm="12">
+        <Card title="数据库（PostgreSQL）配置">
+          <Form :model="postgresConfig" layout="vertical">
+            <FormItem label="DSN（加密入库）">
+              <InputPassword v-model:value="postgresConfig.dsn" placeholder="postgres://user:pass@host:5432/minicc" />
+            </FormItem>
+          </Form>
+          <Button type="primary" :loading="saving" @click="savePostgres">保存</Button>
+          <div class="config-note">保存到 DB，切换数据库集群需重启生效。</div>
+        </Card>
+      </Col>
+
+      <!-- CORS 配置 -->
+      <Col :xs="24" :sm="12">
+        <Card title="CORS 配置">
+          <Form :model="corsConfig" layout="vertical">
+            <FormItem label="允许来源（逗号分隔）">
+              <Input v-model:value="corsConfig.origins" placeholder="http://localhost:5173,https://app.example.com" />
+            </FormItem>
+          </Form>
+          <Button type="primary" :loading="saving" @click="saveCors">保存</Button>
+          <div class="config-note">保存后重启生效。</div>
+        </Card>
+      </Col>
+
+      <!-- S3 / MinIO 配置 -->
+      <Col :xs="24" :sm="12">
+        <Card title="对象存储（S3/MinIO）配置">
+          <Form :model="s3Config" layout="vertical">
+            <FormItem label="Endpoint">
+              <Input v-model:value="s3Config.endpoint" placeholder="localhost:9000" />
+            </FormItem>
+            <FormItem label="Bucket">
+              <Input v-model:value="s3Config.bucket" placeholder="minicc-media" />
+            </FormItem>
+            <FormItem label="Access Key">
+              <Input v-model:value="s3Config.access_key" />
+            </FormItem>
+            <FormItem label="Secret Key（加密入库）">
+              <InputPassword v-model:value="s3Config.secret_key" />
+            </FormItem>
+            <FormItem label="启用 SSL">
+              <Switch v-model:checked="s3Config.use_ssl" />
+            </FormItem>
+          </Form>
+          <Button type="primary" :loading="saving" @click="saveS3">保存</Button>
+          <div class="config-note">保存后重启生效。</div>
+        </Card>
+      </Col>
+
+      <!-- Python AI 引擎配置 -->
+      <Col :xs="24" :sm="24">
+        <Card title="Python AI 引擎配置">
+          <Row :gutter="16">
+            <Col :xs="24" :sm="12">
+              <Form :model="pythonConfig" layout="vertical">
+                <FormItem label="LLM Provider">
+                  <Select v-model:value="pythonConfig.llm_provider" style="width: 100%">
+                    <Select.Option value="openai">OpenAI</Select.Option>
+                    <Select.Option value="anthropic">Anthropic</Select.Option>
+                    <Select.Option value="deepseek">DeepSeek</Select.Option>
+                  </Select>
+                </FormItem>
+                <FormItem label="默认模型">
+                  <Input v-model:value="pythonConfig.llm_model" placeholder="deepseek-v4-flash" />
+                </FormItem>
+                <FormItem label="LLM API Key（加密入库）">
+                  <InputPassword v-model:value="pythonConfig.llm_api_key" />
+                </FormItem>
+                <FormItem label="LLM Base URL">
+                  <Input v-model:value="pythonConfig.llm_base_url" placeholder="https://api.deepseek.com" />
+                </FormItem>
+              </Form>
+            </Col>
+            <Col :xs="24" :sm="12">
+              <Form :model="pythonConfig" layout="vertical">
+                <FormItem label="Embedding 模型">
+                  <Input v-model:value="pythonConfig.embedding_model" placeholder="text-embedding-3-small" />
+                </FormItem>
+                <FormItem label="Agent 最大轮数">
+                  <InputNumber v-model:value="pythonConfig.max_turns" :min="1" :max="100" style="width: 100%" />
+                </FormItem>
+                <FormItem label="队列并发数">
+                  <InputNumber v-model:value="pythonConfig.queue_worker_concurrency" :min="1" :max="100" style="width: 100%" />
+                </FormItem>
+                <FormItem label="L1 缓存容量">
+                  <InputNumber v-model:value="pythonConfig.cache_l1_capacity" :min="128" :max="100000" style="width: 100%" />
+                </FormItem>
+              </Form>
+            </Col>
+          </Row>
+          <Button type="primary" :loading="saving" @click="savePython">保存</Button>
+          <div class="config-note">引擎启动时经内部端点拉取；API Key 加密入库。</div>
+        </Card>
+      </Col>
+    </Row>
+
     <!-- Nginx 配置 -->
     <Card title="Nginx 调优配置" class="config-card">
       <template #extra>
@@ -335,6 +697,17 @@ onMounted(async () => {
 <style scoped>
 .settings { padding: 0; }
 .config-card { margin-top: 16px; }
+
+.config-row {
+  margin-top: 16px;
+}
+
+.config-note {
+  margin-top: 8px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
+}
 
 .code-block {
   background: var(--bg-code);

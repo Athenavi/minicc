@@ -164,9 +164,9 @@ onMounted(() => {
       </template>
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'action'">
-          <a-button type="link" size="small" @click="openRoleBinding(record)">绑定角色</a-button>
-          <a-button type="link" size="small" @click="openEdit(record)">编辑</a-button>
-          <a-button type="link" size="small" danger @click="confirmDelete(record)">删除</a-button>
+          <a-button type="link" size="small" @click="openRoleBinding(record as EntGroup)">绑定角色</a-button>
+          <a-button type="link" size="small" @click="openEdit(record as EntGroup)">编辑</a-button>
+          <a-button type="link" size="small" danger @click="confirmDelete(record as EntGroup)">删除</a-button>
         </template>
       </template>
     </a-table>

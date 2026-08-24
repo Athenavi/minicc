@@ -130,8 +130,8 @@ onMounted(fetchRoles)
       </template>
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'action'">
-          <a-button type="link" size="small" @click="openEdit(record)">编辑</a-button>
-          <a-button type="link" size="small" danger @click="confirmDelete(record)">删除</a-button>
+          <a-button type="link" size="small" @click="openEdit(record as EntRole)">编辑</a-button>
+          <a-button type="link" size="small" danger @click="confirmDelete(record as EntRole)">删除</a-button>
         </template>
       </template>
     </a-table>

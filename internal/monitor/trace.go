@@ -3,9 +3,11 @@ package monitor
 import (
 	"context"
 	"crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -31,15 +33,24 @@ func (s SpanID) String() string {
 
 func newTraceID() TraceID {
 	var id TraceID
-	rand.Read(id[:])
+	if _, err := rand.Read(id[:]); err != nil {
+		// 失败时退化为时间戳+原子计数，避免全零 ID 引发 trace 冲突
+		binary.BigEndian.PutUint64(id[8:], uint64(time.Now().UnixNano()))
+		binary.BigEndian.PutUint64(id[0:], traceCounter.Add(1))
+	}
 	return id
 }
 
 func newSpanID() SpanID {
 	var id SpanID
-	rand.Read(id[:])
+	if _, err := rand.Read(id[:]); err != nil {
+		binary.BigEndian.PutUint64(id[:], traceCounter.Add(1))
+	}
 	return id
 }
+
+// traceCounter 提供 rand 失败时的回退自增计数，保证 ID 唯一性。
+var traceCounter atomic.Uint64
 
 // ── Span ──────────────────────────────────────────────────────────────────
 

@@ -2,6 +2,9 @@ package config
 
 import (
 	"bufio"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -10,6 +13,11 @@ import (
 )
 
 type Config struct {
+	// AppSecret：部署级主密钥（≥32 字符）。用于：
+	//  - 派生 JWT_SECRET / INTERNAL_TOKEN（当对应环境变量未显式设置时）
+	//  - 加密 system_settings 中敏感配置（LLM/S3/支付密钥、redis/pg 密码）
+	AppSecret string
+
 	// Server
 	Port         string
 	ReadTimeout  time.Duration
@@ -116,12 +124,14 @@ func Load() *Config {
 	loadDotEnv()     // .env file overrides config file
 	loadConfigFile() // JSON config file (lowest priority)
 	cfg := &Config{
-		Port:         getEnv("PORT", "8080"),
-		ReadTimeout:  getDuration("READ_TIMEOUT", 10*time.Second),
-		WriteTimeout: getDuration("WRITE_TIMEOUT", 60*time.Second),
-		IdleTimeout:  getDuration("IDLE_TIMEOUT", 120*time.Second),
-		// P2-4: 默认空，强制通过 env 提供；与 Python 端 config.py 保持一致
-		PostgresDSN:         getEnv("POSTGRES_DSN", ""),
+		AppSecret:       getEnv("APP_SECRET", ""),
+		Port:            getEnv("PORT", "8080"),
+		ReadTimeout:     getDuration("READ_TIMEOUT", 10*time.Second),
+		WriteTimeout:    getDuration("WRITE_TIMEOUT", 60*time.Second),
+		IdleTimeout:     getDuration("IDLE_TIMEOUT", 120*time.Second),
+		// 引导连接：仅当未显式设置 POSTGRES_DSN 时使用默认，供「只留 app_secret」初始化后从
+		// system_settings 读取数据库集群配置覆盖（切换集群重启生效）。
+		PostgresDSN:         getEnv("POSTGRES_DSN", "postgres://postgres@localhost:5432/minicc?sslmode=disable"),
 		PostgresMaxConn:     getInt("POSTGRES_MAX_CONN", 20),
 		PostgresMinConn:     getInt("POSTGRES_MIN_CONN", 2),
 		PostgresReadDSNs:    getStringSlice("POSTGRES_READ_DSNS", []string{}),
@@ -184,13 +194,43 @@ func Load() *Config {
 		PluginDataDir:     getEnv("PLUGIN_DATA_DIR", "./data/plugins"),
 	}
 
-	// JWT_SECRET is required.
+	// APP_SECRET is required（部署级主密钥）。
+	if !cfg.ValidateAppSecret() {
+		os.Stderr.WriteString("FATAL: APP_SECRET environment variable must be set to a strong, unique value (32+ chars)\n")
+		os.Exit(1)
+	}
+
+	// 派生密钥：当 JWT_SECRET / INTERNAL_TOKEN 未显式设置时，由 APP_SECRET 域分离派生。
+	// 安全模型取舍：部署主密钥为唯一必填秘密；若需更强的密钥隔离，仍可显式设置 JWT_SECRET / INTERNAL_TOKEN 覆盖派生值。
+	if cfg.JWTSecret == "" {
+		cfg.JWTSecret = deriveSubsecret(cfg.AppSecret, "minicc-jwt")
+	}
+	if cfg.InternalToken == "" {
+		cfg.InternalToken = deriveSubsecret(cfg.AppSecret, "minicc-internal")
+	}
+
+	// JWT_SECRET is required (derived or explicit).
 	if !ValidateJWTSecret(cfg.JWTSecret) {
-		os.Stderr.WriteString("FATAL: JWT_SECRET environment variable must be set to a strong, unique value\n")
+		os.Stderr.WriteString("FATAL: JWT_SECRET (or its source APP_SECRET) must be set to a strong, unique value\n")
 		os.Exit(1)
 	}
 
 	return cfg
+}
+
+// ValidateAppSecret 校验部署主密钥强度（≥32 字符，非弱值）。
+func (c *Config) ValidateAppSecret() bool {
+	return ValidateJWTSecret(c.AppSecret)
+}
+
+// deriveSubsecret 从主密钥派生确定性子密钥（HMAC-SHA256，域分离）。
+func deriveSubsecret(secret, domain string) string {
+	if secret == "" {
+		return ""
+	}
+	h := hmac.New(sha256.New, []byte(secret))
+	h.Write([]byte(domain))
+	return base64.RawURLEncoding.EncodeToString(h.Sum(nil))
 }
 
 // ValidateJWTSecret returns true if the secret is valid for production use.

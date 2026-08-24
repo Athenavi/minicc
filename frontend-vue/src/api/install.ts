@@ -1,9 +1,17 @@
 import { api } from './index'
 
+export interface InstallDep {
+  name: string
+  ok: boolean
+  message?: string
+}
+
 export interface InstallStatus {
   needed: boolean
   reason?: string
   db: boolean
+  redis: boolean
+  deps?: InstallDep[]
 }
 
 export interface SetupResult {

@@ -2,6 +2,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import type { TableColumnsType } from 'ant-design-vue'
+import dayjs, { type Dayjs } from 'dayjs'
 import { queryAuditLogs } from '../../api/audit'
 import type { AuditLog } from '../../api/audit'
 
@@ -12,11 +13,12 @@ const detailVisible = ref(false)
 const currentLog = ref<AuditLog | null>(null)
 
 // 过滤条件（时间默认最近 7 天，对齐后端强制范围）
+// 注意：a-range-picker 的值须为 dayjs 对象，避免内部比较触发 date.isAfter 报错
 const filters = reactive({
   user_id: '',
   action: '',
   resource_type: '',
-  dateRange: undefined as [string, string] | undefined,
+  dateRange: undefined as [Dayjs, Dayjs] | undefined,
 })
 
 const pagination = reactive({
@@ -24,14 +26,14 @@ const pagination = reactive({
   page_size: 50,
 })
 
-function defaultRange(): [string, string] {
-  const to = new Date()
-  const from = new Date(to.getTime() - 6 * 24 * 60 * 60 * 1000)
-  return [fmt(from), fmt(to)]
+function defaultRange(): [Dayjs, Dayjs] {
+  const to = dayjs()
+  const from = to.subtract(6, 'day')
+  return [from, to]
 }
 
-function fmt(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+function fmt(d: Dayjs): string {
+  return d.format('YYYY-MM-DD')
 }
 
 async function fetchLogs() {
@@ -42,8 +44,8 @@ async function fetchLogs() {
       user_id: filters.user_id || undefined,
       action: filters.action || undefined,
       resource_type: filters.resource_type || undefined,
-      from: range[0],
-      to: range[1],
+      from: fmt(range[0]),
+      to: fmt(range[1]),
       page: pagination.page,
       page_size: pagination.page_size,
     })
@@ -170,7 +172,7 @@ onMounted(() => {
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'action_btn'">
-          <a-button type="link" size="small" @click="showDetail(record)">详情</a-button>
+          <a-button type="link" size="small" @click="showDetail(record as AuditLog)">详情</a-button>
         </template>
       </template>
     </a-table>

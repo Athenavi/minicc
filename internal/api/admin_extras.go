@@ -1,53 +1,18 @@
 package api
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"time"
 
+	"github.com/athenavi/minicc/internal/auth"
 	"github.com/athenavi/minicc/internal/db"
 	"github.com/athenavi/minicc/internal/monitor"
+	"github.com/athenavi/minicc/internal/settings"
 )
-
-// ── Settings Store ──
-
-// settingsStore manages persistent settings storage (Redis-backed).
-type settingsStore struct {
-	redis *db.AtomicRedis
-}
-
-func newSettingsStore(redis *db.AtomicRedis) *settingsStore {
-	return &settingsStore{redis: redis}
-}
-
-func (s *settingsStore) Get(ctx context.Context, key string) (string, bool) {
-	if s.redis == nil {
-		return "", false
-	}
-	val := s.redis.Get(ctx, "minicc_settings:"+key)
-	if val == nil || val.Err() != nil {
-		return "", false
-	}
-	bytes, err := val.Bytes()
-	if err != nil {
-		return "", false
-	}
-	return string(bytes), true
-}
-
-func (s *settingsStore) Set(ctx context.Context, key string, value string, ttl int64) error {
-	if s.redis == nil {
-		return fmt.Errorf("redis not available")
-	}
-	if ttl <= 0 {
-		ttl = 86400 // default 24 hours
-	}
-	return s.redis.Set(ctx, "minicc_settings:"+key, value, time.Duration(ttl)*time.Second).Err()
-}
 
 // ── Queue Stats ──
 
@@ -316,6 +281,50 @@ func (h *AdminHandler) DeleteApiKey(w http.ResponseWriter, r *http.Request) {
 
 // ── Settings ──
 
+// settingsCategories 后台「系统设置」允许的配置分组。
+// 敏感键（password/secret/api_key/dsn/token 等）由 settings.Store 用 APP_SECRET
+// 派生密钥加密落库；非敏感配置明文存储。上级配置经 DB 持久化，env 作为默认值。
+var settingsCategories = []string{
+	"rate_limit", "degradation", "cache", "api_key",
+	"agent", "llm", "storage", "payment", "redis", "postgres", "cors", "s3",
+	"python",
+}
+
+func validSettingsCategory(c string) bool {
+	for _, v := range settingsCategories {
+		if v == c {
+			return true
+		}
+	}
+	return false
+}
+
+var settingsCategoryList = strings.Join(settingsCategories, ", ")
+
+// intFromValue 从 JSON 解码出的值安全取整数，非数值/越界时返回 fallback。
+func intFromValue(v interface{}, fallback int) int {
+	switch n := v.(type) {
+	case float64:
+		i := int(n)
+		if i > 0 {
+			return i
+		}
+	case int:
+		if n > 0 {
+			return n
+		}
+	case string:
+		var i int
+		if _, err := fmt.Sscanf(n, "%d", &i); err == nil && i > 0 {
+			return i
+		}
+	}
+	return fallback
+}
+
+// SaveSettings PUT /v1/admin/settings
+// 将某分组配置按 key 逐条 upsert 到 system_settings 表。
+// config 中 value 为 null 的 key 会被删除，使该配置回落到 env 默认值。
 func (h *AdminHandler) SaveSettings(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Category string                 `json:"category"`
@@ -325,81 +334,123 @@ func (h *AdminHandler) SaveSettings(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, ErrInvalidReq)
 		return
 	}
-
 	if body.Category == "" {
-		BadRequest(w, "category is required (rate_limit, degradation, cache, api_key)")
+		BadRequest(w, "category is required: "+settingsCategoryList)
 		return
 	}
-
 	if body.Config == nil {
 		BadRequest(w, "config is required")
 		return
 	}
-
-	// Validate category
-	validCategories := map[string]bool{
-		"rate_limit":  true,
-		"degradation": true,
-		"cache":       true,
-		"api_key":     true,
-	}
-	if !validCategories[body.Category] {
-		BadRequest(w, fmt.Sprintf("invalid category: must be one of %v", []string{"rate_limit", "degradation", "cache", "api_key"}))
+	if !validSettingsCategory(body.Category) {
+		BadRequest(w, "invalid category: must be one of "+settingsCategoryList)
 		return
 	}
 
-	// Marshal config to JSON
-	configJSON, err := json.Marshal(body.Config)
-	if err != nil {
-		logAndRespond(w, err, http.StatusInternalServerError, "failed to marshal config")
+	ctx := r.Context()
+	s := h.ensureSettingsStore()
+	if s == nil {
+		InternalError(w, "settings store unavailable")
 		return
 	}
 
-	// Initialize settings store if needed
-	if h.settingsStore == nil && h.redis != nil {
-		h.settingsStore = newSettingsStore(h.redis)
+	// 当前操作用户（可空，用于审计 updated_by）
+	userID := ""
+	if claims := auth.GetClaims(r.Context()); claims != nil {
+		userID = claims.ID
 	}
 
-	// Save to Redis (persistent)
-	ctx := context.Background()
-	if h.settingsStore != nil {
-		if err := h.settingsStore.Set(ctx, body.Category, string(configJSON), 86400); err != nil {
-			slog.Error("save settings failed", "category", body.Category, "error", err)
-			InternalError(w, "failed to save settings")
+	if err := s.SaveConfig(ctx, body.Category, body.Config, userID); err != nil {
+		slog.Error("save settings failed", "category", body.Category, "error", err)
+		if err == settings.ErrEncryptedKeyNotFound {
+			InternalError(w, "APP_SECRET not configured; cannot encrypt sensitive settings")
 			return
+		}
+		InternalError(w, "failed to save settings")
+		return
+	}
+
+	// rate_limit 分组：热更新分布式限流阈值（保存成功后生效）
+	if body.Category == "rate_limit" && h.rateLimiter != nil {
+		global := intFromValue(body.Config["global"], 0)
+		tenant := intFromValue(body.Config["tenant"], 0)
+		user := intFromValue(body.Config["user"], 0)
+		if global > 0 || tenant > 0 || user > 0 {
+			h.rateLimiter.Configure(global, tenant, user)
+			slog.Info("rate limiter hot-reloaded", "global", global, "tenant", tenant, "user", user)
 		}
 	}
 
-	slog.Info("settings saved", "category", body.Category, "config", string(configJSON))
+	// redirect：保存 redis 配置后热换 Redis 连接
+	if body.Category == "redis" {
+		h.hotReloadRedis(body.Config)
+	}
 
-	OK(w, map[string]interface{}{
-		"status":   "saved",
-		"category": body.Category,
-	})
+	slog.Info("settings saved", "category", body.Category, "keys", len(body.Config))
+	OK(w, map[string]interface{}{"status": "saved", "category": body.Category})
 }
 
-// GetSettings GET /v1/admin/settings?category=... 读取某类已持久化配置。
-// 无存储/无记录时返回空 config（前端保留默认值）。
+// ensureSettingsStore 惰性初始化 DB 加密设置存储。
+func (h *AdminHandler) ensureSettingsStore() *settings.Store {
+	if h.settingsStore == nil && db.Pool != nil {
+		h.settingsStore = settings.New(db.Pool, h.appSecret)
+	}
+	return h.settingsStore
+}
+
+// hotReloadRedis 在保存 redis 分组设置后热换 Redis 连接（AtomicRedis.Swap）。
+// 仅当配置了新地址才执行；失败仅记日志不影响保存结果。
+func (h *AdminHandler) hotReloadRedis(cfg map[string]interface{}) {
+	if h.redis == nil {
+		return
+	}
+	addr := strFromValue(cfg["addr"])
+	if addr == "" {
+		return
+	}
+	rc := db.RedisConfig{
+		Mode:     "single",
+		Addr:     addr,
+		Password: strFromValue(cfg["password"]),
+		DB:       intFromValue(cfg["db"], 0),
+		PoolSize: intFromValue(cfg["pool_size"], 50),
+	}
+	client, err := db.NewRedisClient(rc)
+	if err != nil {
+		slog.Error("redis hot-swap failed", "addr", addr, "error", err)
+		return
+	}
+	h.redis.Swap(client)
+	slog.Info("redis hot-swapped", "addr", addr)
+}
+
+// strFromValue 从 JSON 解码出的值安全取字符串；非字符串返回 ""。
+func strFromValue(v interface{}) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+// GetSettings GET /v1/admin/settings?category=... 读取某分组已持久化配置。
+// 无记录时返回空 config（前端保留默认值）。
 func (h *AdminHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	category := r.URL.Query().Get("category")
 	if category == "" {
-		BadRequest(w, "category is required (rate_limit, degradation, cache, api_key)")
+		BadRequest(w, "category is required: "+settingsCategoryList)
 		return
 	}
-	if h.settingsStore == nil && h.redis != nil {
-		h.settingsStore = newSettingsStore(h.redis)
+	if !validSettingsCategory(category) {
+		BadRequest(w, "invalid category: must be one of "+settingsCategoryList)
+		return
 	}
-	if h.settingsStore == nil {
+	s := h.ensureSettingsStore()
+	if s == nil {
 		OK(w, map[string]interface{}{"category": category, "config": map[string]interface{}{}})
 		return
 	}
-	raw, ok := h.settingsStore.Get(r.Context(), category)
-	if !ok {
-		OK(w, map[string]interface{}{"category": category, "config": map[string]interface{}{}})
-		return
-	}
-	var config map[string]interface{}
-	if err := json.Unmarshal([]byte(raw), &config); err != nil {
+	config, err := s.LoadConfig(r.Context(), category)
+	if err != nil {
 		OK(w, map[string]interface{}{"category": category, "config": map[string]interface{}{}})
 		return
 	}

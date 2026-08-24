@@ -220,6 +220,12 @@ const routes = [
       },
     ],
   },
+  // 404 兜底：避免未知地址白屏
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'NotFound',
+    component: () => import('../views/NotFoundView.vue'),
+  },
 ]
 
 const router = createRouter({

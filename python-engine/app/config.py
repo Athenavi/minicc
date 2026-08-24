@@ -115,6 +115,9 @@ class Settings(BaseSettings):
     # 网关透传的 ?tenant_id= / ?user_id= query 身份（防直连绕过）
     internal_token: str = ""
 
+    # ── Go 网关内部配置下发端点（引擎启动时拉取后台「系统设置」中的 python 分类配置）──
+    gateway_internal_url: str = "http://127.0.0.1:8080"
+
     # ── 可观测性 ──
     log_level: str = "INFO"
     otel_endpoint: str = ""  # e.g. "http://otel-collector:4317"
@@ -188,3 +191,37 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def _load_gateway_config() -> dict:
+    """从 Go 网关内部端点拉取后台「系统设置」的 python 分类配置。
+
+    返回与 Settings 字段名一致的扁平 dict（敏感键已由网关用 APP_SECRET 解密）。
+    网关不可达或未配置 internal_token 时返回空（fail-open，使用 env 默认值，不阻断启动）。
+    """
+    import json
+    import logging
+    import urllib.request
+
+    if not settings.internal_token:
+        return {}
+    url = f"{settings.gateway_internal_url.rstrip('/')}/v1/internal/engine-config"
+    try:
+        req = urllib.request.Request(url, headers={"X-Internal-Token": settings.internal_token})
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            payload = json.loads(resp.read().decode())
+        data = payload.get("data", payload) if isinstance(payload, dict) else {}
+        return {k: v for k, v in data.items() if v is not None}
+    except Exception as exc:  # noqa: BLE001 - 配置下发失败不阻断引擎启动
+        logging.getLogger(__name__).warning("load engine config from gateway failed: %s", exc)
+        return {}
+
+
+# 合并网关下发的配置：仅接受 Settings 已声明的字段，DB/env 之外不引入任意键。
+_db_overrides = _load_gateway_config()
+_allowed = set(Settings.model_fields.keys())
+_merged = {k: v for k, v in _db_overrides.items() if k in _allowed}
+if _merged:
+    settings = settings.model_copy(update=_merged)
+    import logging as _log
+    _log.getLogger(__name__).info("applied %d engine settings from gateway", len(_merged))

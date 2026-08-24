@@ -25,6 +25,7 @@ func testRouter(t *testing.T) http.Handler {
 
 	// Config (minimal — no DB, no Redis)
 	os.Setenv("JWT_SECRET", "test-secret-that-is-at-least-32-bytes-long!")
+	os.Setenv("APP_SECRET", "test-app-secret-that-is-at-least-32-bytes-long!")
 	cfg := config.Load()
 
 	// Event Hub
@@ -40,6 +41,7 @@ func testRouter(t *testing.T) http.Handler {
 func testToken(t *testing.T) string {
 	t.Helper()
 	os.Setenv("JWT_SECRET", "test-secret-that-is-at-least-32-bytes-long!")
+	os.Setenv("APP_SECRET", "test-app-secret-that-is-at-least-32-bytes-long!")
 	cfg := config.Load()
 	authenticator := auth.NewAuthenticator(cfg.JWTSecret, cfg.JWTExpiration)
 	token, err := authenticator.GenerateToken("test-user-id", "test@example.com", "user", db.DefaultTenantID, auth.RolePermissions["user"])
@@ -53,6 +55,7 @@ func testToken(t *testing.T) string {
 func adminToken(t *testing.T) string {
 	t.Helper()
 	os.Setenv("JWT_SECRET", "test-secret-that-is-at-least-32-bytes-long!")
+	os.Setenv("APP_SECRET", "test-app-secret-that-is-at-least-32-bytes-long!")
 	cfg := config.Load()
 	authenticator := auth.NewAuthenticator(cfg.JWTSecret, cfg.JWTExpiration)
 	token, err := authenticator.GenerateToken("admin-id", "admin@example.com", "admin", db.DefaultTenantID, auth.RolePermissions["admin"])
@@ -100,6 +103,7 @@ func TestIntegration_Ready(t *testing.T) {
 func TestIntegration_SSE(t *testing.T) {
 	// 该测试无数据库：sessionMgr 传 nil 跳过归属校验，聚焦流式行为本身。
 	os.Setenv("JWT_SECRET", "test-secret-that-is-at-least-32-bytes-long!")
+	os.Setenv("APP_SECRET", "test-app-secret-that-is-at-least-32-bytes-long!")
 	cfg := config.Load()
 	eventHub := broadcast.NewHub(nil)
 	router := NewGatewayRouter(cfg, nil, eventHub, nil, nil, nil, nil)
@@ -213,6 +217,7 @@ func TestIntegration_SystemTraces(t *testing.T) {
 
 	// admin 可访问
 	os.Setenv("JWT_SECRET", "test-secret-that-is-at-least-32-bytes-long!")
+	os.Setenv("APP_SECRET", "test-app-secret-that-is-at-least-32-bytes-long!")
 	adminAuth := auth.NewAuthenticator(config.Load().JWTSecret, time.Hour)
 	adminToken, err := adminAuth.GenerateToken("admin-id", "admin@example.com", "admin", db.DefaultTenantID, auth.RolePermissions["admin"])
 	if err != nil {

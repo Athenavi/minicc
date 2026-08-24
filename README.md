@@ -23,13 +23,13 @@ MiniCC 是一套开箱即用的**多租户 AI Agent 控制台**:对话、Agent�
 ### Docker Compose(推荐,一条命令起全栈)
 
 ```bash
-cp .env.example .env        # 至少填写 JWT_SECRET 与一个 LLM API Key
+cp .env.example .env        # 至少填写 APP_SECRET(唯一主密钥),业务配置可在后台「系统设置」维护
 docker compose up -d --build
 ```
 
 启动后访问 <http://localhost:3000>(前端),API 网关在 <http://localhost:8080>,健康检查 `GET /health`。
 
-> 首次启动会自动执行数据库迁移(`migrate` 服务)。生产环境请先修改 `.env` 中的默认口令,并将 `COOKIE_SECURE=true`。
+> 首次启动会自动执行数据库迁移(`migrate` 服务)。`APP_SECRET` 派生 JWT 与内部互信令牌;LLM/存储/支付等密钥经加密落库,可在后台统一管理。
 
 ### 本地开发模式
 
@@ -38,7 +38,7 @@ docker compose up -d --build
 docker compose up -d postgres redis
 
 # 2. 配置
-cp .env.example .env        # 填写 LLM_API_KEY / POSTGRES_DSN / REDIS_ADDR 等
+cp .env.example .env        # 填写 APP_SECRET 即可;其余在后台「系统设置」维护
 
 # 3. 启动 Go 网关 + Python 引擎 + 前端(自动构建)
 python run.py start
@@ -50,19 +50,13 @@ python run.py start
 
 | 变量 | 必填 | 说明 |
 |---|---|---|
-| `JWT_SECRET` | ✅ | JWT HS256 签名密钥,**至少 32 字符**,`openssl rand -base64 48` 生成;未设置网关直接拒绝启动 |
-| `POSTGRES_DSN` | ✅ | PostgreSQL 连接串,如 `postgres://minicc:minicc@localhost:5432/minicc?sslmode=disable` |
-| `INTERNAL_TOKEN` | ✅(多租户) | Go 网关 → Python 引擎内部身份透传密钥(`X-Internal-Token`);未配置时 Python 拒绝 query 身份透传(fail-close) |
-| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` | 至少一个 | LLM Provider 密钥,网关与引擎共享 |
-| `REDIS_PASSWORD` | 视部署 | Redis 密码;docker-compose 中启用 `--requirepass` 后必须设置 |
-| `PLUGIN_COMMAND_ALLOWLIST` | 安全建议 | MCP 插件可执行命令白名单(逗号分隔 basename);**留空 = 禁止所有自定义插件命令** |
-| `LLM_GATEWAY_KEY` | 可选 | 引擎内置 LLM Gateway 的内部端点鉴权密钥 |
-| `COOKIE_SECURE` | 生产必填 `true` | JWT cookie 追加 `Secure` 标志(HTTPS 部署) |
-| `DISABLE_REGISTRATION` | 可选 | `true` 关闭公开注册,仅管理员经 `/v1/install/setup` 创建用户 |
-| `TRUSTED_PROXY_CIDRS` / `METRICS_TOKEN` | 生产加固 | 可信反向代理网段(防 XFF 伪造);Prometheus 抓取 `/metrics` 的 Bearer token |
-| `LLM_PROVIDER` / `LLM_MODEL` | 可选 | 默认 `openai` / `gpt-4o` |
+| `APP_SECRET` | ✅ | **唯一部署主密钥,至少 32 字符**,`python -c "import secrets; print(secrets.token_urlsafe(32))"` 生成。派生 JWT_SECRET / INTERNAL_TOKEN,并加密管理后台的敏感配置;未设置网关拒绝启动 |
+| `POSTGRES_DSN` | 可选 | PostgreSQL 引导连接串;缺省用 `postgres://postgres@localhost:5432/minicc`。连接后从后台「系统设置」读取集群配置覆盖,切换数据库集群重启生效 |
+| `JWT_SECRET` / `INTERNAL_TOKEN` | 可选 | 默认由 `APP_SECRET` 派生;仅在需要更强密钥隔离时显式覆盖 |
 
-完整变量见 [.env.example](.env.example)(含生产加固清单)。
+> 其余业务/基础设施配置(Redis、CORS、存储、模型、限流、支付等)均已迁移至后台「系统设置」,敏感值(密钥/密码)经 `APP_SECRET` 派生密钥 AES-GCM 加密落库,可在后台统一修改——便于切换 Redis 集群、数据库集群等。生产 HTTPS 部署请在后台/环境设置 `COOKIE_SECURE=true`。
+
+完整变量见 [.env.example](.env.example)。
 
 ## 🧩 特性总览
 

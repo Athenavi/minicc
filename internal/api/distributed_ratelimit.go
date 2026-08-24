@@ -46,6 +46,20 @@ func NewDistributedRateLimiter(rdb db.RedisClient, globalLimit, tenantLimit, use
 	}
 }
 
+// Configure 运行时热更新三级限流阈值（阈值 ≤0 表示不生效/跳过）。
+// Allow 每次读取字段，因此改完即刻生效，供后台「系统设置」调用。
+func (l *DistributedRateLimiter) Configure(globalLimit, tenantLimit, userLimit int) {
+	if globalLimit > 0 {
+		l.globalLimit = globalLimit
+	}
+	if tenantLimit > 0 {
+		l.tenantLimit = tenantLimit
+	}
+	if userLimit > 0 {
+		l.userLimit = userLimit
+	}
+}
+
 // rateLimitLua 三级限流原子脚本 — 预检查全部三级后统一递增，防止配额泄漏
 //
 // KEYS[1]  全局 key     KEYS[2] 租户 key（空串则跳过）  KEYS[3] 用户 key（空串则跳过）

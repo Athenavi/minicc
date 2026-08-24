@@ -18,6 +18,7 @@ import (
 	"github.com/athenavi/minicc/internal/engine"
 	"github.com/athenavi/minicc/internal/monitor"
 	"github.com/athenavi/minicc/internal/session"
+	"github.com/athenavi/minicc/internal/settings"
 	"github.com/athenavi/minicc/internal/storage"
 )
 
@@ -91,6 +92,12 @@ func main() {
 		if err := db.SeedMarketCatalog(ctx, db.Pool); err != nil {
 			slog.Warn("seed market catalog failed", "error", err)
 		}
+	}
+
+	// 引导：连上数据库后，读取后台已持久化的基础设施/业务配置覆盖 cfg。
+	// 使后续 Redis/存储/路由初始化使用 DB 值——支持仅凭 APP_SECRET 切换 Redis 集群等，重启生效。
+	if pgConnected {
+		applyDBSettingsAfterConnect(cfg)
 	}
 
 	// ── Redis ──
@@ -234,6 +241,103 @@ func main() {
 		slog.Error("shutdown error", "error", err)
 	}
 	slog.Info("server stopped")
+}
+
+// applyDBSettingsAfterConnect 在完成首次数据库连接后，读取 system_settings 中
+// 已持久化的基础设施/业务配置并覆盖 cfg，使后续 Redis/存储/路由初始化使用 DB 值。
+// 依赖：db.Pool 已就绪、cfg.AppSecret 已校验。
+// 作用范围：仅影响进程「后续初始化」使用的配置（Redis 集群、CORS、存储、S3、
+// Agent、限流、支付）；DB 连接本身使用 env/默认引导串，切换数据库集群需重启。
+func applyDBSettingsAfterConnect(cfg *config.Config) {
+	if db.Pool == nil {
+		return
+	}
+	store := settings.New(db.Pool, cfg.AppSecret)
+	ctx := context.Background()
+
+	apply := func(category string, fn func(map[string]interface{})) {
+		m, err := store.LoadConfig(ctx, category)
+		if err != nil || len(m) == 0 {
+			return
+		}
+		fn(m)
+		slog.Info("applied settings from DB", "category", category)
+	}
+
+	apply("redis", func(m map[string]interface{}) {
+		if v, ok := m["addr"].(string); ok && v != "" {
+			cfg.RedisAddr = v
+		}
+		if v, ok := m["password"].(string); ok {
+			cfg.RedisPassword = v
+		}
+		if v, ok := m["db"].(float64); ok {
+			cfg.RedisDB = int(v)
+		}
+		if v, ok := m["mode"].(string); ok && v != "" {
+			cfg.RedisMode = v
+		}
+	})
+
+	apply("cors", func(m map[string]interface{}) {
+		if v, ok := m["origins"].(string); ok && v != "" {
+			cfg.CORSOrigins = v
+		}
+	})
+
+	apply("storage", func(m map[string]interface{}) {
+		if v, ok := m["backend"].(string); ok && v != "" {
+			cfg.StorageBackend = v
+		}
+		if v, ok := m["root"].(string); ok && v != "" {
+			cfg.StorageRoot = v
+		}
+	})
+
+	apply("s3", func(m map[string]interface{}) {
+		if v, ok := m["endpoint"].(string); ok && v != "" {
+			cfg.S3Endpoint = v
+		}
+		if v, ok := m["bucket"].(string); ok && v != "" {
+			cfg.S3Bucket = v
+		}
+		if v, ok := m["access_key"].(string); ok {
+			cfg.S3AccessKey = v
+		}
+		if v, ok := m["secret_key"].(string); ok {
+			cfg.S3SecretKey = v
+		}
+		if v, ok := m["use_ssl"].(bool); ok {
+			cfg.S3UseSSL = v
+		}
+	})
+
+	apply("agent", func(m map[string]interface{}) {
+		if v, ok := m["max_turns"].(float64); ok && v > 0 {
+			cfg.AgentMaxTurns = int(v)
+		}
+		if v, ok := m["max_tokens"].(float64); ok && v > 0 {
+			cfg.AgentMaxTokens = int(v)
+		}
+		if v, ok := m["context_limit"].(float64); ok && v > 0 {
+			cfg.AgentContextLimit = int(v)
+		}
+	})
+
+	apply("rate_limit", func(m map[string]interface{}) {
+		if v, ok := m["global"].(float64); ok && v > 0 {
+			cfg.RateLimitGlobal = int(v)
+		}
+	})
+
+	apply("payment", func(m map[string]interface{}) {
+		if v, ok := m["public_base_url"].(string); ok && v != "" {
+			cfg.PublicBaseURL = v
+		}
+		if v, ok := m["alipay_gateway"].(string); ok && v != "" {
+			cfg.AlipayGateway = v
+		}
+	})
 }
 
 func parseLogLevel(level string) slog.Level {

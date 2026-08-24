@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"net/http"
+	"time"
 
 	"github.com/athenavi/minicc/config"
 	"github.com/athenavi/minicc/internal/auth"
@@ -25,19 +27,56 @@ type InstallStatus struct {
 	Needed bool   `json:"needed"`
 	Reason string `json:"reason,omitempty"`
 	DB     bool   `json:"db"`
+	Redis  bool   `json:"redis"`
+
+	// 依赖探测明细（初始化页面展示各就绪项）
+	Deps []InstallDep `json:"deps,omitempty"`
+}
+
+type InstallDep struct {
+	Name    string `json:"name"`
+	OK      bool   `json:"ok"`
+	Message string `json:"message,omitempty"`
 }
 
 // Status checks if the system needs initialization.
 // GET /v1/install/status
 func (h *InstallHandler) Status(w http.ResponseWriter, r *http.Request) {
-	status := InstallStatus{DB: true}
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+
+	var status InstallStatus
+	status.Deps = make([]InstallDep, 0, 2)
+
+	// 依赖 1：PostgreSQL 连通性（真实 ping）
+	dbOK := db.Pool != nil && db.Pool.Ping(ctx) == nil
+	status.DB = dbOK
+	status.Deps = append(status.Deps, InstallDep{
+		Name:    "postgres",
+		OK:      dbOK,
+		Message: map[bool]string{true: "PostgreSQL 连接正常", false: "PostgreSQL 不可用：请检查 POSTGRES_DSN"}[dbOK],
+	})
+
+	// 依赖 2：Redis 连通性（真实 ping）
+	redisOK := db.Redis != nil && db.Redis.Ping(ctx).Err() == nil
+	status.Redis = redisOK
+	status.Deps = append(status.Deps, InstallDep{
+		Name:    "redis",
+		OK:      redisOK,
+		Message: map[bool]string{true: "Redis 连接正常", false: "Redis 不可用：请检查 REDIS_ADDR / 密码"}[redisOK],
+	})
 
 	// If at least one user with role 'owner' exists, system is initialized
-	var count int
-	err := db.ReadPool().QueryRow(r.Context(), `SELECT COUNT(*) FROM users WHERE role = 'owner'`).Scan(&count)
-	if err != nil || count == 0 {
+	if dbOK {
+		var count int
+		err := db.Pool.QueryRow(r.Context(), `SELECT COUNT(*) FROM users WHERE role = 'owner'`).Scan(&count)
+		if err != nil || count == 0 {
+			status.Needed = true
+			status.Reason = "no admin user configured"
+		}
+	} else {
 		status.Needed = true
-		status.Reason = "no admin user configured"
+		status.Reason = "postgres unavailable"
 	}
 
 	OK(w, status)
