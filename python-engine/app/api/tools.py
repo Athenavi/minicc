@@ -22,14 +22,16 @@ class ToolExecuteRequest(BaseModel):
     name: str
     input: dict[str, Any] = {}
     user_id: str = ""
+    tenant_id: str = ""
 
 
 @router.post("/v1/tools/execute")
 async def execute_tool(body: ToolExecuteRequest) -> dict[str, Any]:
-    # Go 网关转发时携带 user_id；设置工具沙箱上下文（用户级隔离）
+    # Go 网关转发时携带 user_id + tenant_id；设置工具沙箱上下文（租户+用户级隔离）
     if body.user_id:
         from app.tools.context import set_tool_context
-        set_tool_context(user_id=body.user_id, tenant_id=body.user_id)
+        # S 修复：tenant 取网关透传的 tenant_id（缺失时才回退 user_id，不再用 user_id 冒充 tenant）
+        set_tool_context(user_id=body.user_id, tenant_id=body.tenant_id or body.user_id)
         from app.main import touch_user
         touch_user(body.user_id)
     result = await registry.execute(body.name, body.input, user_id=body.user_id)

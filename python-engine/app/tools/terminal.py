@@ -40,17 +40,26 @@ class PersistentTerminal:
     def __init__(self) -> None:
         self._procs: dict[str, asyncio.subprocess.Process] = {}
 
+    def _prune_procs(self) -> None:
+        """回收已退出的进程条目，防止 _procs 无限累积（S 资源修复）。"""
+        dead = [k for k, p in self._procs.items() if p is not None and p.returncode is not None]
+        for k in dead:
+            self._procs.pop(k, None)
+
     async def _get_proc(self, key: str) -> asyncio.subprocess.Process:
         proc = self._procs.get(key)
         if proc is not None and proc.returncode is None:
             return proc
-        self._ws = str(workspace_dir())
+        # 回收已退出进程，再创建新的（避免累积完成/崩溃的 shell）
+        self._prune_procs()
+        # S 修复：ws 用局部变量，避免写成实例属性后被并发请求覆盖导致跨会话串 cwd/cd
+        ws = str(workspace_dir())
         proc = await asyncio.create_subprocess_shell(
             _shell_command(),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
-            cwd=self._ws if hasattr(self, '_ws') else None,
+            cwd=ws,
             # S 安全修复：清理宿主 env(API key/JWT_SECRET/internal token 等)，
             # 仅保留 PATH/HOME 等基础变量并重定向到沙箱，防止模型 `env` 外带密钥。
             env=sandboxed_env(),
@@ -58,9 +67,9 @@ class PersistentTerminal:
         # 首命令 cd 到沙箱 workspace，保证状态持久在隔离目录内（S 安全修复）
         try:
             if sys.platform == 'win32':
-                proc.stdin.write(f'cd /d \"{self._ws}\"\n'.encode('utf-8'))
+                proc.stdin.write(f'cd /d \"{ws}\"\n'.encode('utf-8'))
             else:
-                proc.stdin.write(f'cd \"{self._ws}\"\n'.encode('utf-8'))
+                proc.stdin.write(f'cd \"{ws}\"\n'.encode('utf-8'))
             await proc.stdin.drain()
         except Exception:
             pass

@@ -672,11 +672,14 @@ async function switchSession(id: string) {
     unifiedSessionId.value = ''
   }
   if (id === activeSessionId.value) return
+  // S 修复：请求序号守卫 — 快速切换会话时，先发的慢请求返回后不得覆盖新切换
+  const mySeq = ++switchSeq.value
   activeSessionId.value = id; items.value = []; loading.value = true
   hasMore.value = false; earliestCursor.value = ''; loadingEarlier.value = false
   initialLoading.value = true  // P2-E: 显示骨架屏
   try {
     const res = await api.get(`/v1/conversations/${id}?limit=${HISTORY_PAGE_SIZE}`)
+    if (mySeq !== switchSeq.value) return  // 已切到其它会话，丢弃本次结果
     const data = res.data?.data || res.data
     if (data?.messages) {
       items.value = mergeHistory(data.messages, data.tool_calls || [])
@@ -693,8 +696,10 @@ async function switchSession(id: string) {
     // ── 会话级模型恢复：llm_config.model 回填模型下拉（空 = 后端默认）──
     llmModel.value = typeof cfg?.model === 'string' ? cfg.model : ''
   } catch { /* fallback */ } finally {
-    loading.value = false
-    initialLoading.value = false  // P2-E: 隐藏骨架屏
+    if (mySeq === switchSeq.value) {
+      loading.value = false
+      initialLoading.value = false  // P2-E: 隐藏骨架屏
+    }
   }
 }
 
@@ -704,6 +709,7 @@ const hasMore = ref(false)
 const earliestCursor = ref('')
 const loadingEarlier = ref(false)
 const initialLoading = ref(false)  // P2-E: 首次加载会话历史的骨架屏
+const switchSeq = ref(0)  // S 修复：切会话请求序号，用于丢弃过期响应
 
 function mergeHistory(messages: any[], toolCalls: any[]): ChatItem[] {
   // 重构：工具调用双源渲染 — tool_calls 表为主源，messages 内联 tool_calls 列兜底

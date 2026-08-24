@@ -419,7 +419,7 @@ func registerAgentRoutes(
 ) {
 	mux.Handle("POST /v1/agent/approval", authMW(rlMW(http.HandlerFunc(submitHandler.SubmitApproval))))
 
-	mux.Handle("POST /submit", authMW(publicMW(sanitizeMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("POST /submit", authMW(sanitizeMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Content   string                 `json:"content"`
 			SessionID string                 `json:"session_id"`
@@ -484,9 +484,9 @@ func registerAgentRoutes(
 			defer sessionCancels.Delete(body.SessionID)
 			submitHandler.HandleSubmit(ctx, userID, body.SessionID, body.Content, body.LLMConfig)
 		}()
-	})))))
+	}))))
 
-	mux.Handle("POST /cancel", authMW(rlMW(publicMW(http.HandlerFunc(handleCancel)))))
+	mux.Handle("POST /cancel", authMW(rlMW(http.HandlerFunc(handleCancel))))
 
 	// SSE + WebSocket
 	mux.Handle("GET /events", authMW(rlMW(SSEHandler(eventHub, sessionMgr))))
