@@ -35,6 +35,7 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = ref(50)
 const searchQuery = ref('')
+const fetchSeq = ref(0)  // S 修复：列表请求序号，丢弃过期响应
 const typeFilter = ref('')
 const viewMode = ref<'grid' | 'list'>(localStorage.getItem('media-view') === 'list' ? 'list' : 'grid')
 const breadcrumbs = ref<{ id: string; name: string }[]>([{ id: '', name: '全部文件' }])
@@ -134,6 +135,8 @@ function onImgError(e: Event, item: MediaItem) {
 }
 
 async function fetchItems() {
+  // S 修复：请求序号守卫 — 快速翻页/搜索时丢弃过期响应，避免旧结果覆盖新列表
+  const mySeq = ++fetchSeq.value
   loading.value = true
   error.value = false
   try {
@@ -146,18 +149,20 @@ async function fetchItems() {
     if (typeFilter.value) params.type = typeFilter.value
     if (tagFilter.value.length > 0) params.tags = tagFilter.value.join(',')
     const res = await api.get('/v1/media', { params })
+    if (mySeq !== fetchSeq.value) return  // 已被更新的请求取代
     const data = res.data?.data || { items: [], total: 0 }
     items.value = data.items || []
     total.value = data.total || 0
     selectedIds.value = new Set()
     resolveAllUrls()
   } catch {
+    if (mySeq !== fetchSeq.value) return
     items.value = []
     total.value = 0
     error.value = true
     message.error('加载媒体库失败')
   } finally {
-    loading.value = false
+    if (mySeq === fetchSeq.value) loading.value = false
   }
 }
 
@@ -493,8 +498,13 @@ async function uploadToKnowledgeBase() {
   if (fail > 0) message.error(`${fail} 个文件上传失败`)
 }
 
-// S 修复：搜索/筛选变化时重置到第 1 页，避免停留在旧页导致假空结果；分页变化单独触发
-watch([searchQuery, typeFilter, tagFilter], () => { page.value = 1; fetchItems() })
+// S 修复：搜索/筛选变化时重置到第 1 页并防抖(300ms)，避免逐击键请求；分页变化单独触发
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+watch([searchQuery, typeFilter, tagFilter], () => {
+  page.value = 1
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => fetchItems(), 300)
+})
 watch([page, pageSize], () => { fetchItems() })
 
 onMounted(() => {

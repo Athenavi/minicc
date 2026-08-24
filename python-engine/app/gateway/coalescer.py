@@ -125,18 +125,14 @@ class RequestCoalescer:
                     del self._pending[key]
                 self._pending_count -= 1
     
-    def _compute_key(self, prompt: str, kwargs: dict) -> int:
-        """计算请求哈希"""
-        # 只使用影响结果的参数
+    def _compute_key(self, prompt: str, kwargs: dict) -> str:
+        """计算请求哈希（S 修复：内置 hash() 受 PYTHONHASHSEED 影响且不可靠，
+        改确定性 md5；并纳入全部参数，避免仅取 4 个造成错误合并）。"""
         key_parts = [prompt]
-        
-        # 添加关键参数
         for k in sorted(kwargs.keys()):
-            if k in ("model", "temperature", "max_tokens", "tools"):
-                key_parts.append(f"{k}={kwargs[k]}")
-        
+            key_parts.append(f"{k}={kwargs[k]}")
         key_str = "|".join(key_parts)
-        return hash(key_str)
+        return hashlib.md5(key_str.encode("utf-8")).hexdigest()
     
     def get_stats(self) -> dict:
         """获取统计信息"""

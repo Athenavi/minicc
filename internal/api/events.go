@@ -82,7 +82,13 @@ func SSEHandler(hub *broadcast.Hub, sessionMgr *session.Manager) http.HandlerFun
 		subID := r.URL.Query().Get("client_id")
 		if subID == "" {
 			var buf [8]byte
-			rand.Read(buf[:])
+			if _, err := rand.Read(buf[:]); err != nil {
+				// 极端回退：rand 失败用时间纳秒填充，保证 ID 非空且唯一
+				nano := time.Now().UnixNano()
+				for i := range buf {
+					buf[i] = byte(nano >> (i * 8))
+				}
+			}
 			subID = "anon-" + hex.EncodeToString(buf[:])
 		}
 		sessionID := r.URL.Query().Get("session_id")

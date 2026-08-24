@@ -423,8 +423,8 @@ func (h *AdminHandler) RestoreDatabaseBackup(w http.ResponseWriter, r *http.Requ
 
 func (h *AdminHandler) DatabaseStatus(w http.ResponseWriter, r *http.Request) {
 	var version string
-	_ = db.ReadPool().QueryRow(r.Context(), `SELECT version()`).Scan(&version)
-	OK(w, map[string]interface{}{"version": version, "connected": version != ""})
+	err := db.ReadPool().QueryRow(r.Context(), `SELECT version()`).Scan(&version)
+	OK(w, map[string]interface{}{"version": version, "connected": err == nil && version != ""})
 }
 
 var selectOnlyRe = regexp.MustCompile(`(?i)^\s*select\b`)

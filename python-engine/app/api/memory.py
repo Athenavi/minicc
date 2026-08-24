@@ -202,7 +202,9 @@ async def list_summaries(request: Request):
     tenant_id, user_id = _scope(request)
     if not user_id:
         return _bad_request("user_id is required")
-    limit = int(request.query_params.get("limit", "50"))
+    limit = int(request.query_params.get("limit", "50") or 50)
+    # S 修复：限制上限，避免非法/超大 limit 导致 DB 无界查询
+    limit = min(max(limit, 1), 200)
     data = await svc.list_summaries(tenant_id, user_id, limit)
     return {"success": True, **data}
 

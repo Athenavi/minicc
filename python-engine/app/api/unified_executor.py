@@ -58,9 +58,18 @@ class UnifiedChatHandler:
     """
     
     def __init__(self):
-        self.sessions: dict[str, ChatSession] = {}  # session_id -> Session (L1 缓存)
+        self.sessions: dict[str, ChatSession] = {}  # session_id -> Session (L1 缓存,有界)
         self.router = TaskRouter()
         self._db_warned = False  # DB 降级仅告警一次
+
+    # L1 会话缓存上限(S 资源修复: 原 self.sessions 无界,消息无限 append → 内存线性增长)
+    _MAX_L1_SESSIONS = 200
+
+    def _evict_l1_sessions(self) -> None:
+        """超出上限时淘汰最久未更新的会话,防止内存无限增长。"""
+        while len(self.sessions) > self._MAX_L1_SESSIONS:
+            oldest_id = min(self.sessions, key=lambda k: self.sessions[k].updated_at)
+            self.sessions.pop(oldest_id, None)
 
     # ── PostgreSQL 持久化层 (统一任务会话) ──────────────────────────
     # 写策略: 先写库,再更新内存 L1 缓存 (写穿透)。
@@ -224,6 +233,7 @@ class UnifiedChatHandler:
                     shared_context=dict(context),
                 )
             self.sessions[session_id] = session
+            self._evict_l1_sessions()
 
         session.updated_at = time.time()
         session.mode = mode

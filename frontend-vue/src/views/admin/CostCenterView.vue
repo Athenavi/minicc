@@ -181,7 +181,7 @@ function fmtAmount(n: number, type: string): string {
 function usagePercent(p: QuotaPoolWithAllocated): string {
   const um = usageMap()
   const u = um[p.id]
-  if (!u || p.total_amount === 0) return '-'
+  if (!u || p.total_amount === 0 || !Number.isFinite(u.usage_ratio)) return '-'
   return `${(u.usage_ratio * 100).toFixed(1)}%`
 }
 

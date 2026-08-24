@@ -195,9 +195,11 @@ class SubAgent:
                     # 工具结果消息（真实执行：走工具注册表沙箱，返回实际结果/错误）
                     from app.tools.context import set_tool_context
 
+                    # S 修复：优先用 context 携带的 user_id（缺省回退 tenant），不再用 tenant 冒充 user
+                    _ctx_user = context.get("user_id") if isinstance(context, dict) else ""
                     set_tool_context(
                         session_id=context.get("session_id") if isinstance(context, dict) else "",
-                        user_id=tenant_id or "anonymous",
+                        user_id=_ctx_user or tenant_id or "anonymous",
                         tenant_id=tenant_id or "default",
                     )
                     for tc in tool_calls:

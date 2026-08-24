@@ -141,8 +141,8 @@ const filteredMediaFiles = computed(() => {
   if (!mediaSearchQuery.value.trim()) return mediaFiles.value
   const query = mediaSearchQuery.value.toLowerCase()
   return mediaFiles.value.filter((f: any) =>
-    f.name.toLowerCase().includes(query) ||
-    f.type.toLowerCase().includes(query)
+    (f.name || '').toLowerCase().includes(query) ||
+    (f.type || '').toLowerCase().includes(query)
   )
 })
 

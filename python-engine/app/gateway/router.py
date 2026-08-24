@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import time
+import sys
 import random
 from typing import AsyncIterator, Optional
 
@@ -170,11 +171,8 @@ class GatewayRouter:
                 )
                 await self._cache.store(model, messages, tools, temperature, resp)
 
-            # ── 预算扣减（流式路径）：Agent 主路径走 chat_stream，
-            # 若不按实际用量 deduct，per-tenant 月度预算的 used 永不增长，
-            # 超限请求永远不会被拒绝（与 chat() 保持一致） ──
-            if self._budget and tenant_id and (total_input + total_output) > 0:
-                await self._budget.deduct(tenant_id, total_input + total_output)
+            # 缓存正常路径仅存结果；预算扣减统一在 finally 处理（见下）
+
         except Exception as e:
             self._breakers[provider.name].record_failure()
             logger.error("Provider %s chat_stream failed: %s", provider.name, e)
@@ -186,6 +184,14 @@ class GatewayRouter:
                 message=f"provider {provider.name} stream failed: {type(e).__name__}: {e}",
             )
         finally:
+            # S 修复：预算扣减放入 finally——正常/异常路径都会按实际用量扣除。
+            # GeneratorExit(客户端断开)取消时 await 不安全，跳过(少量少计可接受)。
+            _exc = sys.exc_info()[1]
+            if not isinstance(_exc, GeneratorExit) and self._budget and tenant_id and (total_input + total_output) > 0:
+                try:
+                    await self._budget.deduct(tenant_id, total_input + total_output)
+                except Exception:
+                    logger.warning("budget deduct failed (non-blocking)")
             elapsed = (time.monotonic() - start) * 1000
             self._latencies[provider.name] = (
                 self._latencies[provider.name] * 0.8 + elapsed * 0.2

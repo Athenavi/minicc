@@ -66,7 +66,13 @@ func middlewareChain(h http.Handler, mws ...func(http.Handler) http.Handler) htt
 func requestIDHeader(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var buf [8]byte
-		rand.Read(buf[:])
+		if _, err := rand.Read(buf[:]); err != nil {
+			// 极端回退：rand 失败用时间纳秒填充
+			nano := time.Now().UnixNano()
+			for i := range buf {
+				buf[i] = byte(nano >> (i * 8))
+			}
+		}
 		id := hex.EncodeToString(buf[:])
 		r.Header.Set("X-Request-ID", id)
 		w.Header().Set("X-Request-ID", id)

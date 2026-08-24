@@ -174,19 +174,26 @@ function statusColor(s: string): string {
   return 'default'
 }
 
+// S 修复：空/非法时间返回 '-'，避免 new Date(null) 抛 RangeError 崩单元格
+function formatDateCell(text: any): string {
+  if (!text) return '-'
+  const d = new Date(text)
+  return isNaN(d.getTime()) ? '-' : d.toLocaleString('zh-CN', { hour12: false })
+}
+
 const columns: TableColumnsType = [
   { title: '类型', dataIndex: 'type', key: 'type', width: 80 },
   { title: '名称', dataIndex: 'name', key: 'name' },
   { title: '版本', dataIndex: 'version', key: 'version', width: 100 },
   { title: '状态', dataIndex: 'status', key: 'status', width: 100 },
-  { title: '更新时间', dataIndex: 'updated_at', key: 'updated_at', width: 180, customRender: ({ text }) => new Date(text).toLocaleString('zh-CN', { hour12: false }) },
+  { title: '更新时间', dataIndex: 'updated_at', key: 'updated_at', width: 180, customRender: ({ text }) => formatDateCell(text) },
   { title: '操作', key: 'action', width: 280, fixed: 'right' },
 ]
 
 const grantColumns: TableColumnsType = [
   { title: '租户', dataIndex: 'tenant_id', key: 'tenant_id', ellipsis: true },
   { title: '启用', dataIndex: 'enabled', key: 'enabled', width: 80, customRender: ({ text }) => (text ? '是' : '否') },
-  { title: '安装时间', dataIndex: 'installed_at', key: 'installed_at', width: 180, customRender: ({ text }) => new Date(text).toLocaleString('zh-CN', { hour12: false }) },
+  { title: '安装时间', dataIndex: 'installed_at', key: 'installed_at', width: 180, customRender: ({ text }) => formatDateCell(text) },
   { title: '操作', key: 'action', width: 80, fixed: 'right' },
 ]
 

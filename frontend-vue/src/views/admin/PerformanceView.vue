@@ -14,7 +14,7 @@ const loading = ref(false)
 
 const metrics = ref({
   connections: 0,
-  latencyP99: 0,
+  avgLatencyMs: 0,
   errorRate: 0,
   qps: 0,
 })
@@ -102,7 +102,7 @@ async function fetchData() {
 
     metrics.value = {
       connections: gw.connections || 0,
-      latencyP99: py.avg_inference_ms || 0,
+      avgLatencyMs: py.avg_inference_ms || 0,
       errorRate: 0,
       qps: data.qps_trend?.length ? data.qps_trend[data.qps_trend.length - 1].qps : 0,
     }
@@ -153,7 +153,7 @@ onMounted(() => {
           <Statistic title="并发连接数" :value="metrics.connections" />
         </Card>
         <Card>
-          <Statistic title="API 延迟 P99" :value="metrics.latencyP99" suffix="ms" />
+          <Statistic title="推理延迟(均值)" :value="metrics.avgLatencyMs" suffix="ms" />
         </Card>
         <Card>
           <Statistic title="错误率" :value="metrics.errorRate" suffix="%" />

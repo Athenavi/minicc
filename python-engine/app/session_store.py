@@ -155,7 +155,8 @@ class SessionStore:
         messages = list(history)
         self._local[session_id] = messages
         self._evict_if_needed()
-        return messages
+        # S 修复：与 HIT 一致返回拷贝，避免调用方修改返回列表污染缓存
+        return list(messages)
 
     def _local_set(self, session_id: str, messages: list[dict]) -> None:
         self._local[session_id] = messages
