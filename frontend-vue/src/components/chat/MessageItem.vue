@@ -248,7 +248,7 @@ function renderMarkdown(src: string): string {
   try {
     out = DOMPurify.sanitize(md.render(src), {
       ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'code', 'pre', 'ul', 'ol', 'li', 'a', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'span', 'div', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'hr', 'del', 'sup', 'sub', 'img', 'button'],
-      ALLOWED_ATTR: ['href', 'target', 'rel', 'class', 'style', 'src', 'alt', 'loading', 'decoding', 'data-code'],
+      ALLOWED_ATTR: ['href', 'target', 'rel', 'class', 'src', 'alt', 'loading', 'decoding', 'data-code'],
       ALLOW_DATA_ATTR: true,
     })
   } catch {

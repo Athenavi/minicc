@@ -208,9 +208,9 @@ export async function uploadFile(file: File): Promise<{
 }> {
   const form = new FormData()
   form.append('file', file)
-  const resp = await api.post('/v1/media/upload', form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  })
+  // S 修复：不要手动设 multipart Content-Type（会丢 boundary 致 "invalid form"），
+  // 让浏览器/axios 自动生成带 boundary 的正确头。
+  const resp = await api.post('/v1/media/upload', form)
   const d = resp.data?.asset || resp.data || {}
   const id = d.id || d.asset_id || String(Date.now())
   // 后端返回字段 file_url；兜底 /v1/media/{id}/download
