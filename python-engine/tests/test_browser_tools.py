@@ -50,38 +50,45 @@ def test_browser_tool_schemas_have_required_params():
 
 # ── StubHub 命令透传 ────────────────────────────────────────
 
-async def test_navigate_forwards_url_to_hub():
+
+@pytest.fixture
+def stub_hub(monkeypatch):
+    """显式绑定 StubHub，验证命令透传（仅测试夹具；生产默认无 hub → fail-loud）。"""
+    monkeypatch.setattr(browser, "_hub", browser.StubHub())
+
+
+async def test_navigate_forwards_url_to_hub(stub_hub):
     result = await browser.browser_navigate("https://example.com")
     assert result["method"] == "browser_navigate"
     assert result["params"]["url"] == "https://example.com"
     assert result["status"] == "ok"
 
 
-async def test_click_forwards_selector():
+async def test_click_forwards_selector(stub_hub):
     result = await browser.browser_click("#submit-btn")
     assert result["method"] == "browser_click"
     assert result["params"]["selector"] == "#submit-btn"
 
 
-async def test_type_forwards_selector_and_text():
+async def test_type_forwards_selector_and_text(stub_hub):
     result = await browser.browser_type("#search", "hello world")
     assert result["params"]["selector"] == "#search"
     assert result["params"]["text"] == "hello world"
 
 
-async def test_screenshot_defaults():
+async def test_screenshot_defaults(stub_hub):
     result = await browser.browser_screenshot(full_page=True)
     assert result["method"] == "browser_screenshot"
     assert result["params"]["fullPage"] is True
 
 
-async def test_scroll_params():
+async def test_scroll_params(stub_hub):
     result = await browser.browser_scroll(direction="up", amount=300)
     assert result["params"]["direction"] == "up"
     assert result["params"]["amount"] == 300
 
 
-async def test_tab_id_injected_into_params():
+async def test_tab_id_injected_into_params(stub_hub):
     result = await browser.browser_navigate("https://example.com", tab_id=7)
     assert result["params"]["tabId"] == 7
 
@@ -160,3 +167,17 @@ async def test_stubhub_connected_client_ids():
     """默认 StubHub 提供 stub-client 占位。"""
     ids = browser.StubHub().connected_client_ids()
     assert "stub-client" in ids
+
+
+# ── S 修复:生产无真实 hub 绝不返回假成功 ───────────────────────
+
+async def test_no_hub_fails_loud(monkeypatch):
+    """未绑定任何 hub 时浏览器工具必须明确报错,不得返回假成功。"""
+    monkeypatch.setattr(browser, "_hub", None)
+    with pytest.raises(RuntimeError, match="browser RPA not available"):
+        await browser.browser_navigate("https://example.com")
+
+
+def test_default_hub_is_none():
+    """默认 _hub 必须为 None(生产不落 StubHub 假实现)。"""
+    assert browser._hub is None or not isinstance(browser._hub, browser.StubHub)

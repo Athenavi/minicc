@@ -286,7 +286,7 @@ func NewGatewayRouter(
 	// ── Route registration by functional domain ──
 
 	registerPublicEndpoints(mux, authMW, rlMW, publicMW, searchHandler, shareHandler, systemHandler, cfg)
-	registerAgentRoutes(mux, authMW, rlMW, publicMW, sanitizeMW, submitHandler, billingMgr, agentSem, eventHub, sessionMgr, authenticator, rpaHub)
+	registerAgentRoutes(mux, authMW, rlMW, publicMW, sanitizeMW, submitHandler, billingMgr, agentSem, eventHub, sessionMgr, authenticator, rpaHub, cfg.InternalToken)
 	registerAuthRoutes(mux, authHandler, authMW, rlMW)
 
 	// ── SSO 三方登录（公开流程 rlMW；用户自助 authMW；管理 authMW + sso:manage）──
@@ -415,6 +415,7 @@ func registerAgentRoutes(
 	sessionMgr *session.Manager,
 	authenticator *auth.Authenticator,
 	rpaHub *RPAHub,
+	internalToken string,
 ) {
 	mux.Handle("POST /v1/agent/approval", authMW(rlMW(http.HandlerFunc(submitHandler.SubmitApproval))))
 
@@ -491,6 +492,9 @@ func registerAgentRoutes(
 	mux.Handle("GET /events", authMW(rlMW(SSEHandler(eventHub, sessionMgr))))
 	mux.HandleFunc("GET /ws/{sessionId}", WebSocketHandler(NewWebSocketHub(), eventHub, authenticator, sessionMgr))
 	mux.HandleFunc("GET /ws/rpa", RPAWebSocketHandler(rpaHub, authenticator))
+	// 浏览器 RPA 桥（Python engine → 网关 → 插件；仅共享 internal token 可调）
+	mux.Handle("POST /v1/rpa/exec", rlMW(http.HandlerFunc(RPAExecHandler(rpaHub, internalToken))))
+	mux.Handle("GET /v1/rpa/clients", rlMW(http.HandlerFunc(RPAClientsHandler(rpaHub, internalToken))))
 }
 
 // ── Auth (login / register / logout) ──

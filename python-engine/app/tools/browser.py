@@ -20,7 +20,7 @@ class BrowserHub(Protocol):
 
 @dataclass
 class StubHub:
-    """默认内存 Hub，用于测试与占位。"""
+    """内存 Hub，仅作测试夹具。生产不得使用（见 _hub 说明）。"""
     _clients: dict[str, dict[str, Any]] = field(default_factory=lambda: {"stub-client": {"url": "about:blank"}})
 
     def connected_client_ids(self) -> list[str]:
@@ -30,7 +30,9 @@ class StubHub:
         return {"status": "ok", "method": method, "client_id": client_id, "params": params, "note": "stub hub"}
 
 
-_hub: BrowserHub = StubHub()
+# 生产默认为 None：未绑定真实 Hub 时浏览器工具 fail-loud，绝不返回假的默认结果
+# （原来默认 StubHub 会让 LLM 以为浏览器 RPA 成功，实则什么都没做 — S 修复）。
+_hub: BrowserHub | None = None
 
 
 def bind_hub(hub: BrowserHub) -> None:
@@ -38,7 +40,70 @@ def bind_hub(hub: BrowserHub) -> None:
     _hub = hub
 
 
+class GatewayBrowserHub:
+    """真实 Hub：经 Go 网关 /v1/rpa/exec 把命令发给已连接浏览器插件(Chrome Extension /ws/rpa)。
+
+    通过环境变量 RPA_GATEWAY_URL(=http://gateway:8080) 开启；未配置则浏览器工具不可用。
+    请求携带共享 X-Internal-Token，由 Go 网关校验（与网关→引擎互信同源）。
+    """
+
+    def __init__(self, base_url: str):
+        self._base_url = base_url.rstrip("/")
+
+    def connected_client_ids(self) -> list[str]:
+        from app.tools.ssrf import assert_safe_url
+        import httpx
+
+        url = f"{self._base_url}/v1/rpa/clients"
+        assert_safe_url(url)
+        import os
+        from app.config import settings
+        resp = httpx.get(
+            url,
+            headers={"X-Internal-Token": settings.internal_token or os.getenv("INTERNAL_TOKEN", "")},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data.get("client_ids") or []
+
+    def exec_command(self, client_id: str, method: str, params: dict[str, Any]) -> Any:
+        from app.tools.ssrf import assert_safe_url
+        import httpx
+        import os
+        from app.config import settings
+
+        url = f"{self._base_url}/v1/rpa/exec"
+        assert_safe_url(url)
+        resp = httpx.post(
+            url,
+            json={"client_id": client_id, "method": method, "params": params},
+            headers={"X-Internal-Token": settings.internal_token or os.getenv("INTERNAL_TOKEN", "")},
+            timeout=60,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+
+def _init_default_hub() -> None:
+    """依据配置绑定真实网关 Hub；无配置则保持 None（工具 fail-loud）。"""
+    import os
+    global _hub
+    addr = os.getenv("RPA_GATEWAY_URL", "").strip()
+    if addr:
+        _hub = GatewayBrowserHub(addr)
+        from app.observability.logging import get_logger
+        get_logger(__name__).info("Browser RPA hub bound to Go gateway: %s", addr)
+
+
+_init_default_hub()
+
+
 def _resolve_client(tab_id: int | None = None) -> str:
+    if _hub is None:
+        raise RuntimeError(
+            "browser RPA not available: no hub bound (set RPA_GATEWAY_URL to the Go gateway)"
+        )
     ids = _hub.connected_client_ids()
     if not ids:
         raise RuntimeError("no connected browser clients")

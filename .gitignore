@@ -287,7 +287,6 @@ reasonix.toml
 # Local agent scratch (never commit)
 .cowork-temp/
 **/.cowork-temp/
-frontend-vue/-1)
 
 # Runtime audit logs (never commit)
 *.jsonl

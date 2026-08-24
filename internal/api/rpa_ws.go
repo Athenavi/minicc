@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"github.com/athenavi/minicc/internal/auth"
@@ -374,6 +375,54 @@ func RPAWebSocketHandler(hub *RPAHub, authenticator *auth.Authenticator) http.Ha
 				slog.Debug("rpa ws unknown msg type", "type", msg.Type)
 			}
 		}
+	}
+}
+
+// ── RPA HTTP Bridge（Python engine → Go gateway → 浏览器插件） ──
+
+// rpaInternalTokenOK 常量时间比较 X-Internal-Token（网关↔引擎互信）。
+func rpaInternalTokenOK(r *http.Request, internalToken string) bool {
+	if internalToken == "" {
+		return false
+	}
+	provided := r.Header.Get("X-Internal-Token")
+	return provided != "" && subtle.ConstantTimeCompare([]byte(provided), []byte(internalToken)) == 1
+}
+
+// RPAExecHandler 供 Python engine 的 GatewayBrowserHub 把浏览器命令发给
+// 已连接插件(Chrome Extension /ws/rpa)。要求共享 internal token，防止直连滥用。
+func RPAExecHandler(hub *RPAHub, internalToken string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !rpaInternalTokenOK(r, internalToken) {
+			Unauthorized(w, "invalid internal token")
+			return
+		}
+		var req struct {
+			ClientID string                 `json:"client_id"`
+			Method   string                 `json:"method"`
+			Params   map[string]interface{} `json:"params"`
+		}
+		if err := DecodeJSON(w, r, &req); err != nil || req.Method == "" || req.ClientID == "" {
+			BadRequest(w, "client_id and method are required")
+			return
+		}
+		result, err := hub.ExecCommand(r.Context(), req.ClientID, req.Method, req.Params)
+		if err != nil {
+			JSON(w, http.StatusBadGateway, APIResponse{Success: false, Error: err.Error()})
+			return
+		}
+		OK(w, result)
+	}
+}
+
+// RPAClientsHandler 返回已连接浏览器插件客户端列表。
+func RPAClientsHandler(hub *RPAHub, internalToken string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !rpaInternalTokenOK(r, internalToken) {
+			Unauthorized(w, "invalid internal token")
+			return
+		}
+		OK(w, map[string]interface{}{"client_ids": hub.ConnectedClientIDs()})
 	}
 }
 

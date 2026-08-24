@@ -10,10 +10,7 @@ from __future__ import annotations
 
 import os
 import re
-import base64
-import hashlib
 from typing import Any
-from xml.sax.saxutils import escape as xml_escape
 
 from app.tools.registry import registry
 from app.media.store import create_store
@@ -25,40 +22,6 @@ def _sanitize_filename(prompt: str) -> str:
     name = re.sub(r"[^a-zA-Z0-9 _\-]", "", prompt).strip()
     name = re.sub(r"\s+", "_", name)
     return (name[:48] or "image")
-
-
-def _generate_svg(prompt: str, width: int, height: int) -> bytes:
-    # 渐变背景 + 居中文字（与 Go 侧 fallback 一致）
-    h = hashlib.md5(prompt.encode()).hexdigest()[:6]
-    c1, c2 = f"#{h}", f"#{h[::-1]}"
-    lines = []
-    words = prompt.split()
-    line = ""
-    for w in words:
-        if len(line) + len(w) + 1 > 30:
-            lines.append(line)
-            line = w
-        else:
-            line = f"{line} {w}".strip()
-    if line:
-        lines.append(line)
-
-    tspans = ""
-    start_y = max(40, height // 2 - 10 * len(lines))
-    for i, ln in enumerate(lines):
-        tspans += f'<tspan x="{width//2}" y="{start_y + i*22}">{xml_escape(ln)}</tspan>'
-
-    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">
-  <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="{c1}"/>
-      <stop offset="100%" stop-color="{c2}"/>
-    </linearGradient>
-  </defs>
-  <rect width="100%" height="100%" fill="url(#bg)"/>
-  <text font-family="Arial, sans-serif" font-size="18" fill="white" text-anchor="middle">{tspans}</text>
-</svg>'''
-    return svg.encode("utf-8")
 
 
 # ── media_create ──────────────────────────────────────────────
@@ -76,17 +39,34 @@ async def media_create(name: str, content: str, type: str = "text", category: st
 
 # ── image_generate ────────────────────────────────────────────
 async def image_generate(prompt: str = "Generated Image", width: int = 800, height: int = 600, category: str = "generated") -> dict[str, Any]:
+    """真实生成图片；未配置 provider 时明确报错（S 修复：移除假的 SVG 占位，
+    不再虚报生成成功）。配置 IMAGE_GEN_API_URL(+IMAGE_GEN_API_KEY) 接入生成服务。"""
     width = max(64, min(width, 4096))
     height = max(64, min(height, 4096))
 
-    # 当前无 AI provider，直接走 SVG 降级；后续可注入 ImageGateway
-    svg = _generate_svg(prompt, width, height)
-    name = _sanitize_filename(prompt) + ".svg"
-    asset = _store.write(name=name, content=svg, asset_type="image", category=category, fmt="image/svg+xml", width=width, height=height)
+    api_url = os.getenv("IMAGE_GEN_API_URL", "").strip()
+    api_key = os.getenv("IMAGE_GEN_API_KEY", "").strip()
+    if not api_url:
+        return {"error": "image generation not available: IMAGE_GEN_API_URL not configured"}
+
+    import httpx
+    try:
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(
+                api_url, json={"prompt": prompt, "width": width, "height": height}, headers=headers
+            )
+            resp.raise_for_status()
+            data = resp.content
+    except Exception as e:  # noqa: BLE001 — 生成失败如实返回，不伪造成功
+        return {"error": f"image generation failed: {e}"}
+
+    name = _sanitize_filename(prompt) + ".png"
+    asset = _store.write(name=name, content=data, asset_type="image", category=category, fmt="image/png", width=width, height=height)
 
     return {
         "output": f"Image generated: {name} ({asset.size} bytes)",
-        "id": asset.id, "name": name, "type": "image", "format": "image/svg+xml",
+        "id": asset.id, "name": name, "type": "image", "format": "image/png",
         "width": width, "height": height, "category": category,
         "file_url": asset.file_url, "size": asset.size,
     }
@@ -112,7 +92,7 @@ registry.register(
 
 registry.register(
     name="image_generate",
-    description="Generate an image from a text prompt (SVG placeholder; AI generation can be added later).",
+    description="Generate an image from a text prompt (requires IMAGE_GEN_API_URL; fails loudly when unconfigured).",
     parameters={
         "type": "object",
         "properties": {
