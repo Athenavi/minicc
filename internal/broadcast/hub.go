@@ -150,13 +150,25 @@ func (h *Hub) redisListener() {
 			select {
 			case subCh <- env.Event:
 			default:
-				go func(c chan Event) {
-					select {
-					case c <- env.Event:
-					case <-time.After(3 * time.Second):
-						slog.Warn("subscriber slow, dropping after 3s timeout")
-					}
-				}(subCh)
+				// Use semaphore to limit goroutine spawning (same pattern as Publish)
+				select {
+				case slowSubSem <- struct{}{}:
+					go func(c chan Event) {
+						defer func() {
+							if r := recover(); r != nil {
+								// channel closed, discard
+							}
+							<-slowSubSem
+						}()
+						select {
+						case c <- env.Event:
+						case <-time.After(3 * time.Second):
+							slog.Warn("subscriber slow, dropping after 3s timeout")
+						}
+					}(subCh)
+				default:
+					slog.Warn("too many slow subscribers (redis), dropping event")
+				}
 			}
 		}
 		h.mu.RUnlock()

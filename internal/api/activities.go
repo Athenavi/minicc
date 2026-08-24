@@ -36,6 +36,7 @@ func activityStatusText(status string) string {
 }
 
 // handleActivities 返回当前用户跨六大工作台的最近活动（按时间倒序，租户+用户隔离）。
+// 优化：通过 UNION ALL 合并三次查询为单次数据库往返。
 func handleActivities(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	if claims == nil || claims.TenantID == "" {
@@ -59,46 +60,26 @@ func handleActivities(w http.ResponseWriter, r *http.Request) {
 	items := make([]item, 0, limit*3)
 	ctx := r.Context()
 
-	// Agent 工作台：agent_sessions
-	if rows, err := db.ReadPool().Query(ctx,
-		`SELECT COALESCE(name, ''), status, created_at FROM agent_sessions
-		 WHERE tenant_id = $1 AND user_id = $2 ORDER BY created_at DESC LIMIT $3`,
-		claims.TenantID, claims.UserID, limit); err == nil {
+	// Single combined query: UNION ALL across all three tables
+	// Each sub-query returns (workstation, route, title, status, ts)
+	const combinedSQL = `
+		SELECT 'agent'::text, '/agents'::text, COALESCE(name,''), status, created_at FROM agent_sessions
+			WHERE tenant_id = $1 AND user_id = $2 ORDER BY created_at DESC LIMIT $3
+		UNION ALL
+		SELECT 'dialogue'::text, '/chat'::text, COALESCE(title,''), 'active'::text, updated_at FROM sessions
+			WHERE tenant_id = $1 AND user_id = $2 ORDER BY updated_at DESC LIMIT $3
+		UNION ALL
+		SELECT 'knowledge'::text, '/knowledge'::text, COALESCE(name,''), status, created_at FROM knowledge_documents
+			WHERE tenant_id = $1 AND user_id = $2 ORDER BY created_at DESC LIMIT $3
+		ORDER BY 5 DESC
+		LIMIT $3
+	`
+	if rows, err := db.ReadPool().Query(ctx, combinedSQL, claims.TenantID, claims.UserID, limit*3); err == nil {
 		for rows.Next() {
-			var title, status string
+			var ws, route, title, status string
 			var ts time.Time
-			if err := rows.Scan(&title, &status, &ts); err == nil {
-				items = append(items, item{"agent", "/agents", title, status, ts})
-			}
-		}
-		rows.Close()
-	}
-
-	// 对话工作台：sessions
-	if rows, err := db.ReadPool().Query(ctx,
-		`SELECT COALESCE(title, ''), updated_at FROM sessions
-		 WHERE tenant_id = $1 AND user_id = $2 ORDER BY updated_at DESC LIMIT $3`,
-		claims.TenantID, claims.UserID, limit); err == nil {
-		for rows.Next() {
-			var title string
-			var ts time.Time
-			if err := rows.Scan(&title, &ts); err == nil {
-				items = append(items, item{"dialogue", "/chat", title, "active", ts})
-			}
-		}
-		rows.Close()
-	}
-
-	// 知识库工作台：knowledge_documents
-	if rows, err := db.ReadPool().Query(ctx,
-		`SELECT COALESCE(name, ''), status, created_at FROM knowledge_documents
-		 WHERE tenant_id = $1 AND user_id = $2 ORDER BY created_at DESC LIMIT $3`,
-		claims.TenantID, claims.UserID, limit); err == nil {
-		for rows.Next() {
-			var title, status string
-			var ts time.Time
-			if err := rows.Scan(&title, &status, &ts); err == nil {
-				items = append(items, item{"knowledge", "/knowledge", title, status, ts})
+			if err := rows.Scan(&ws, &route, &title, &status, &ts); err == nil {
+				items = append(items, item{ws, route, title, status, ts})
 			}
 		}
 		rows.Close()

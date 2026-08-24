@@ -182,14 +182,17 @@ type ClusterRedis struct {
 }
 
 // NewClusterRedis creates a new Redis cluster client.
-func NewClusterRedis(addrs []string, password string) (*ClusterRedis, error) {
+func NewClusterRedis(addrs []string, password string, poolSize int) (*ClusterRedis, error) {
+	if poolSize <= 0 {
+		poolSize = 50
+	}
 	opts := &redis.ClusterOptions{
 		Addrs:        addrs,
 		Password:     password,
 		DialTimeout:  3 * time.Second,
 		ReadTimeout:  3 * time.Second,
 		WriteTimeout: 3 * time.Second,
-		PoolSize:     10,
+		PoolSize:     poolSize,
 		MinIdleConns: 0,
 		MaxRetries:   0,
 		PoolTimeout:  2 * time.Second,
@@ -314,7 +317,10 @@ type FailoverRedis struct {
 }
 
 // NewFailoverRedis creates a new Redis client with Sentinel failover.
-func NewFailoverRedis(masterName string, sentinelAddrs []string, password string, db int) (*FailoverRedis, error) {
+func NewFailoverRedis(masterName string, sentinelAddrs []string, password string, db int, poolSize int) (*FailoverRedis, error) {
+	if poolSize <= 0 {
+		poolSize = 50
+	}
 	opts := &redis.FailoverOptions{
 		MasterName:    masterName,
 		SentinelAddrs: sentinelAddrs,
@@ -323,7 +329,7 @@ func NewFailoverRedis(masterName string, sentinelAddrs []string, password string
 		DialTimeout:   3 * time.Second,
 		ReadTimeout:   3 * time.Second,
 		WriteTimeout:  3 * time.Second,
-		PoolSize:      10,
+		PoolSize:      poolSize,
 		MinIdleConns:  0,
 		MaxRetries:    0,
 		PoolTimeout:   2 * time.Second,
@@ -469,7 +475,7 @@ func NewRedisClient(cfg RedisConfig) (RedisClient, error) {
 		if len(cfg.Addrs) == 0 {
 			return nil, fmt.Errorf("cluster mode requires at least one address")
 		}
-		return NewClusterRedis(cfg.Addrs, cfg.Password)
+		return NewClusterRedis(cfg.Addrs, cfg.Password, cfg.PoolSize)
 	case "sentinel":
 		if cfg.MasterName == "" {
 			return nil, fmt.Errorf("sentinel mode requires master_name")
@@ -477,7 +483,7 @@ func NewRedisClient(cfg RedisConfig) (RedisClient, error) {
 		if len(cfg.SentinelAddrs) == 0 {
 			return nil, fmt.Errorf("sentinel mode requires at least one sentinel address")
 		}
-		return NewFailoverRedis(cfg.MasterName, cfg.SentinelAddrs, cfg.Password, cfg.DB)
+		return NewFailoverRedis(cfg.MasterName, cfg.SentinelAddrs, cfg.Password, cfg.DB, cfg.PoolSize)
 	default:
 		return nil, fmt.Errorf("unknown redis mode: %s", cfg.Mode)
 	}

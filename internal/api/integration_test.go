@@ -49,6 +49,19 @@ func testToken(t *testing.T) string {
 	return token
 }
 
+// adminToken 返回 admin 角色的 JWT，用于验证需要管理端权限的路由。
+func adminToken(t *testing.T) string {
+	t.Helper()
+	os.Setenv("JWT_SECRET", "test-secret-that-is-at-least-32-bytes-long!")
+	cfg := config.Load()
+	authenticator := auth.NewAuthenticator(cfg.JWTSecret, cfg.JWTExpiration)
+	token, err := authenticator.GenerateToken("admin-id", "admin@example.com", "admin", db.DefaultTenantID, auth.RolePermissions["admin"])
+	if err != nil {
+		t.Fatalf("generate admin token: %v", err)
+	}
+	return token
+}
+
 // ── Health & Readiness ──
 
 func TestIntegration_Health(t *testing.T) {
@@ -297,13 +310,35 @@ func TestIntegration_EditorListFiles(t *testing.T) {
 	router := testRouter(t)
 
 	req := httptest.NewRequest("GET", "/api/editor/files", nil)
-	req.Header.Set("Authorization", "Bearer "+testToken(t))
+	req.Header.Set("Authorization", "Bearer "+adminToken(t))
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
 	resp := w.Result()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestIntegration_Editor_UserForbidden(t *testing.T) {
+	// S 安全修复：编辑器读写共享工作区，普通 user 必须被拒绝（403）
+	router := testRouter(t)
+
+	req := httptest.NewRequest("GET", "/api/editor/read?path=secret.txt", nil)
+	req.Header.Set("Authorization", "Bearer "+testToken(t))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if resp := w.Result(); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403 for plain user read, got %d", resp.StatusCode)
+	}
+
+	req = httptest.NewRequest("POST", "/api/editor/write", bytes.NewReader([]byte(`{"path":"evil.txt","content":"x"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+testToken(t))
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if resp := w.Result(); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403 for plain user write, got %d", resp.StatusCode)
 	}
 }
 
@@ -314,7 +349,7 @@ func TestIntegration_EditorWriteRead(t *testing.T) {
 	writeBody := `{"path":"test.txt","content":"hello world"}`
 	req := httptest.NewRequest("POST", "/api/editor/write", bytes.NewReader([]byte(writeBody)))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+testToken(t))
+	req.Header.Set("Authorization", "Bearer "+adminToken(t))
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	if w.Result().StatusCode != http.StatusOK {
@@ -323,7 +358,7 @@ func TestIntegration_EditorWriteRead(t *testing.T) {
 
 	// Read it back
 	req = httptest.NewRequest("GET", "/api/editor/read?path=test.txt", nil)
-	req.Header.Set("Authorization", "Bearer "+testToken(t))
+	req.Header.Set("Authorization", "Bearer "+adminToken(t))
 	w = httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	resp := w.Result()
@@ -353,7 +388,7 @@ func TestIntegration_EditorWriteRead_EscapeBlocked(t *testing.T) {
 	writeBody := "{\"path\":\"../evil.txt\",\"content\":\"bad\"}"
 	req := httptest.NewRequest("POST", "/api/editor/write", bytes.NewReader([]byte(writeBody)))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+testToken(t))
+	req.Header.Set("Authorization", "Bearer "+adminToken(t))
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	if w.Result().StatusCode != http.StatusBadRequest {
@@ -361,7 +396,7 @@ func TestIntegration_EditorWriteRead_EscapeBlocked(t *testing.T) {
 	}
 
 	req = httptest.NewRequest("GET", "/api/editor/read?path=../evil.txt", nil)
-	req.Header.Set("Authorization", "Bearer "+testToken(t))
+	req.Header.Set("Authorization", "Bearer "+adminToken(t))
 	w = httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	if w.Result().StatusCode != http.StatusBadRequest {

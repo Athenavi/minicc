@@ -15,14 +15,13 @@ S5 沙箱隔离（subprocess + IPC 代理）：
 - 模型代码在独立子进程内执行，通过 stdin/stdout JSON-line 协议
   代理 tools 调用回主进程；子进程无直接访问宿主文件/socket/DB 的能力
 - 子进程应用 RLIMIT_AS/CPU/FSIZE（POSIX）+ 主进程 wall-clock SIGKILL
-- 静态守卫（code_guard.check_static）在子进程内再次执行（纵深防御）
-- 子进程启动失败时降级到同进程加固模式（rlimit + 收紧 imports）
+- 静态守卫（code_guard.check_static）在子进程内再次执行（纵深防御） +
+  封禁 __class__/__subclasses__ 等对象内省逃逸链
+- S 修复：子进程不可用时 fail-closed 报错，绝不在宿主进程直接 exec 用户代码
 """
 from __future__ import annotations
 
 import asyncio
-import contextlib
-import io
 import json
 import logging
 import subprocess
@@ -31,12 +30,6 @@ import threading
 import time
 import types
 from typing import Any
-
-try:
-    import resource as _resource  # POSIX only
-    _HAS_RESOURCE = True
-except ImportError:
-    _HAS_RESOURCE = False
 
 from app.tools.code_guard import (  # noqa: F401 — 向后兼容再导出（tests 直接从本模块导入 _check_static）
     BLOCKED_BUILTINS as _BLOCKED_BUILTINS,
@@ -51,11 +44,6 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT_SECONDS = 60
 MAX_LOG_CHARS = 20_000
-
-# 资源限制（POSIX；同进程降级模式下使用）
-_MEM_LIMIT_BYTES = 512 * 1024 * 1024  # 512MB
-_CPU_LIMIT_SECONDS = 30
-_FILE_LIMIT_BYTES = 10 * 1024 * 1024  # 10MB
 
 # 历史别名：run_code 曾自带守卫常量（2026-08-21 抽取到 code_guard.py 单一事实来源）
 DANGEROUS_ATTRS = ("os.", "subprocess.", "sys.", "socket.", "ctypes.")
@@ -148,6 +136,9 @@ def _run_subprocess_sync(
         return None
 
     try:
+        from app.tools.sandbox import sandboxed_env
+        # S 安全修复:子进程清理宿主 env(API key/JWT_SECRET 等),仅保留基础变量,
+        # 防止沙箱内模型代码 `os.environ` 外带密钥。
         proc = subprocess.Popen(
             cmd,
             stdin=subprocess.PIPE,
@@ -157,6 +148,7 @@ def _run_subprocess_sync(
             encoding="utf-8",
             errors="replace",
             bufsize=1,  # 行缓冲
+            env=sandboxed_env(),
         )
     except (OSError, FileNotFoundError) as e:
         logger.warning("subprocess start failed, will fallback to in-process: %s", e)
@@ -368,98 +360,14 @@ def _read_stderr_sync(proc: "subprocess.Popen[str]") -> str:
         return ""
 
 
-# ── 同进程降级模式（fallback）──────────────────────────────────────
-
-
-async def _run_in_process(code: str, timeout: int) -> dict[str, Any]:
-    """同进程加固模式：subprocess 不可用时降级使用。
-
-    保留 RLIMIT + 静态守卫 + safe_builtins，但无 OS 级隔离。
-    """
-    denied = _check_static(code)
-    if denied:
-        return {
-            "isError": True,
-            "message": f"program blocked by static guard: {denied}",
-            "logs": "",
-        }
-
-    body = "\n".join("    " + line if line.strip() else line for line in code.splitlines())
-    ns: dict[str, Any] = {
-        "tools": _build_sdk(),
-        "ToolCallError": ToolCallError,
-        "__builtins__": _safe_builtins(),
-    }
-    src = f"async def _main():\n{body}\n"
-
-    # P1-7: 同进程降级模式不再对主进程设置 RLIMIT_AS。
-    # 历史问题：fallback 路径调用 setrlimit(RLIMIT_AS, 512MB) 会限制整个 Python
-    # 引擎进程，而非仅限制用户代码；用户代码一旦 OOM 会拖垮整个 AI 引擎服务。
-    # 修复：仅保留 CPU/FSIZE 限制（影响小），RLIMIT_AS 不在主进程设置；
-    # 内存隔离依赖 subprocess 模式（_run_in_sandbox），fallback 模式无内存硬隔离。
-    if _HAS_RESOURCE:
-        try:
-            _resource.setrlimit(_resource.RLIMIT_CPU, (_CPU_LIMIT_SECONDS, _CPU_LIMIT_SECONDS))
-            _resource.setrlimit(_resource.RLIMIT_FSIZE, (_FILE_LIMIT_BYTES, _FILE_LIMIT_BYTES))
-        except (ValueError, OSError) as e:
-            logger.warning("setrlimit failed (in-process sandbox relaxed): %s", e)
-
-    log_buf = io.StringIO()
-    try:
-        exec(compile(src, "<run_code>", "exec"), ns)  # noqa: S102 — 模型沙箱语义由部署策略约束
-        main_fn = ns["_main"]
-        async def _run():
-            with contextlib.redirect_stdout(log_buf):
-                result = await main_fn()
-            return result
-        result = await asyncio.wait_for(_run(), timeout=timeout)
-    except RuntimeError as e:
-        if "blocked by runtime guard" in str(e):
-            return {
-                "isError": True,
-                "message": str(e),
-                "logs": log_buf.getvalue()[-MAX_LOG_CHARS:],
-            }
-        return {
-            "isError": True,
-            "message": f"program raised RuntimeError: {e}",
-            "logs": log_buf.getvalue()[-MAX_LOG_CHARS:],
-        }
-    except ToolCallError as e:
-        return {
-            "isError": True,
-            "message": f"tool call failed: {e.tool_name} — {e.message}",
-            "logs": log_buf.getvalue()[-MAX_LOG_CHARS:],
-        }
-    except asyncio.TimeoutError:
-        return {
-            "isError": True,
-            "message": f"run_code timed out after {timeout}s",
-            "logs": log_buf.getvalue()[-MAX_LOG_CHARS:],
-        }
-    except SyntaxError as e:
-        return {"isError": True, "message": f"program syntax error: {e}", "logs": ""}
-    except Exception as e:  # noqa: BLE001 — 模型程序异常按结构化错误返回
-        return {
-            "isError": True,
-            "message": f"program raised {type(e).__name__}: {e}",
-            "logs": log_buf.getvalue()[-MAX_LOG_CHARS:],
-        }
-
-    return {
-        "logs": log_buf.getvalue()[-MAX_LOG_CHARS:],
-        "result": _render_result(result),
-    }
-
-
-# ── 主入口（先尝试 subprocess，失败降级到同进程）─────────────────────
+# ── 主入口（仅 subprocess 隔离执行，子进程不可用即 fail-closed） ──────
 
 
 async def run_code(code: str, description: str = "", timeout: int = DEFAULT_TIMEOUT_SECONDS) -> dict[str, Any]:
     """Execute a Python async program against the tool SDK.
 
-    优先在独立子进程中执行（OS 级隔离 + IPC 代理 tools 调用）；
-    子进程启动失败时降级到同进程加固模式（rlimit + 收紧 imports）。
+    在独立子进程中执行（OS 级隔离 + IPC 代理 tools 调用）；子进程不可用时
+    fail-closed 返回错误，绝不在宿主进程直接 exec 用户代码（S 安全修复）。
 
     Parameters
     ----------
@@ -475,14 +383,17 @@ async def run_code(code: str, description: str = "", timeout: int = DEFAULT_TIME
 
     tool_names = registry.list_names()
 
-    # 优先 subprocess 隔离模式
+    # S 安全修复：必须走 subprocess 隔离执行,不再降级到主进程 exec 用户代码。
+    # 同进程模式无 OS 级隔离,`__class__.__subclasses__()` 等逃逸可达主进程
+    # 全部特权 → RCE。子进程不可用即 fail-closed,返回结构化错误而非提升特权执行。
     result = await _run_in_subprocess(code, tool_names, timeout)
     if result is not None:
         return result
-
-    # 降级到同进程加固模式
-    logger.warning("run_code falling back to in-process sandbox (subprocess unavailable)")
-    return await _run_in_process(code, timeout)
+    return {
+        "isError": True,
+        "message": "run_code sandbox subprocess unavailable; refusing to run in host process",
+        "logs": "",
+    }
 
 
 # ── Register ─────────────────────────────────────────────────────

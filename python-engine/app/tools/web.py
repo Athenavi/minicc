@@ -17,7 +17,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from app.tools.registry import registry
-from app.tools.ssrf import assert_safe_url
+from app.tools.ssrf import assert_safe_url, fetch_url_safe
 
 logger = logging.getLogger(__name__)
 

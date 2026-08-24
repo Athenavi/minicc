@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, watchEffect } from 'vue'
 import { useRoute } from 'vue-router'
 import { ConfigProvider, theme } from 'ant-design-vue'
 import AppLayout from './components/AppLayout.vue'
@@ -11,54 +11,21 @@ const route = useRoute()
 const themeStore = useThemeStore()
 const showLayout = computed(() => !['Login', 'Register'].includes(route.name as string))
 
-// 与 style.css 语义令牌同步的 antd token（亮/暗双套）
-// 强调色：DeepSeek 品牌蓝（复刻 design-platform）；输入胶囊圆角 22
-const fontStack = "'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif"
-
-const lightTokens = {
-  colorPrimary: '#4176E6',
-  colorInfo: '#4176E6',
-  colorSuccess: '#22C55E',
-  colorWarning: '#F59E0B',
-  colorError: '#EF4444',
-  borderRadius: 6,
-  fontFamily: fontStack,
-  colorBgLayout: '#F9FAFB',
-  colorBgContainer: '#FFFFFF',
-  colorBgElevated: '#FFFFFF',
-  colorBorder: 'rgba(0, 0, 0, 0.1)',
-  colorBorderSecondary: 'rgba(0, 0, 0, 0.04)',
-  colorText: '#0F1115',
-  colorTextSecondary: '#61666B',
-  colorTextTertiary: '#81858C',
-  colorTextQuaternary: '#ADB2B8',
-  controlOutline: 'rgba(65, 118, 230, 0.15)',
-}
-
-const darkTokens = {
-  colorPrimary: '#5686FE',
-  colorInfo: '#5686FE',
-  colorSuccess: '#22C55E',
-  colorWarning: '#F59E0B',
-  colorError: '#EF4444',
-  borderRadius: 6,
-  fontFamily: fontStack,
-  colorBgLayout: '#151517',
-  colorBgContainer: '#232324',
-  colorBgElevated: '#2C2C2E',
-  colorBorder: 'rgba(255, 255, 255, 0.12)',
-  colorBorderSecondary: 'rgba(255, 255, 255, 0.06)',
-  colorText: '#F9FAFB',
-  colorTextSecondary: '#CFD3D6',
-  colorTextTertiary: '#ADB2B8',
-  colorTextQuaternary: '#81858C',
-  controlOutline: 'rgba(103, 158, 254, 0.25)',
-}
-
 const themeConfig = computed(() => ({
   algorithm: themeStore.isDark ? theme.darkAlgorithm : theme.defaultAlgorithm,
-  token: themeStore.isDark ? darkTokens : lightTokens,
+  token: themeStore.antdTokens,
 }))
+
+onMounted(() => {
+  themeStore.init()
+})
+
+watchEffect(() => {
+  const root = document.documentElement
+  root.setAttribute('data-theme', themeStore.cssThemeId)
+  if (themeStore.isDark) root.classList.add('dark')
+  else root.classList.remove('dark')
+})
 </script>
 
 <template>
@@ -72,8 +39,43 @@ const themeConfig = computed(() => ({
 </template>
 
 <style>
-#app {
+html, body, #app {
   width: 100%;
-  height: 100vh;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+#app {
+  min-height: 100dvh;
+  background: var(--bg-page);
+  color: var(--text-primary);
+  transition: background-color 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+              color 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+body {
+  font-family: var(--font-sans);
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--bg-page);
+  transition: background-color 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+              background-image 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 主题切换：全局平滑过渡 */
+* {
+  transition: background-color 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+              border-color 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+              color 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 减少动画偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition: none !important;
+  }
 }
 </style>

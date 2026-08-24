@@ -7,7 +7,11 @@ import (
 
 func TestLoadDefaults(t *testing.T) {
 	os.Setenv("JWT_SECRET", "test-secret-32-bytes-long-for-testing!")
-	defer os.Unsetenv("JWT_SECRET")
+	os.Setenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173")
+	defer func() {
+		os.Unsetenv("JWT_SECRET")
+		os.Unsetenv("CORS_ORIGINS")
+	}()
 
 	cfg := Load()
 

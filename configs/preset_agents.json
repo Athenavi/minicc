@@ -1,0 +1,41 @@
+[
+  {
+    "name": "knowledge",
+    "description": "知识检索与问答代理：搜索文件、抓取网页后回答问题",
+    "prompt": "你是知识检索与问答代理。使用可用工具查找信息（搜索文件、grep、读取文件、抓取网页），基于真实材料回答，不确定时说明不确定之处。",
+    "tools": [
+      {"name": "search_files", "description": "按关键词搜索文件", "parameters": {"type": "object", "properties": {}}},
+      {"name": "grep_files", "description": "在文件中查找文本", "parameters": {"type": "object", "properties": {}}},
+      {"name": "read_file", "description": "读取文件内容", "parameters": {"type": "object", "properties": {}}},
+      {"name": "web_fetch", "description": "抓取网页内容", "parameters": {"type": "object", "properties": {}}}
+    ],
+    "llm": {"model": "deepseek-chat", "max_tokens": 4096, "temperature": 0.4},
+    "turns": 6
+  },
+  {
+    "name": "tool",
+    "description": "通用工具代理：执行命令、操作文件完成具体任务",
+    "prompt": "你是通用工具代理。把任务拆解为可执行的工具调用（执行命令、读写文件等），逐步完成并汇报结果。",
+    "tools": [
+      {"name": "shell_exec", "description": "执行 shell 命令", "parameters": {"type": "object", "properties": {}}},
+      {"name": "write_file", "description": "写入文件", "parameters": {"type": "object", "properties": {}}},
+      {"name": "read_file", "description": "读取文件内容", "parameters": {"type": "object", "properties": {}}}
+    ],
+    "llm": {"model": "deepseek-chat", "max_tokens": 4096, "temperature": 0.6},
+    "turns": 8
+  },
+  {
+    "name": "browser",
+    "description": "浏览器自动化代理：导航、点击、输入、截图完成网页任务",
+    "prompt": "你是浏览器自动化代理。使用浏览器工具导航网页、定位元素、点击与输入、截图确认，完成网页相关任务。",
+    "tools": [
+      {"name": "browser_navigate", "description": "导航到 URL", "parameters": {"type": "object", "properties": {}}},
+      {"name": "browser_click", "description": "点击页面元素", "parameters": {"type": "object", "properties": {}}},
+      {"name": "browser_type", "description": "在输入框输入文本", "parameters": {"type": "object", "properties": {}}},
+      {"name": "browser_read", "description": "读取页面文本", "parameters": {"type": "object", "properties": {}}},
+      {"name": "browser_screenshot", "description": "页面截图", "parameters": {"type": "object", "properties": {}}}
+    ],
+    "llm": {"model": "deepseek-chat", "max_tokens": 4096, "temperature": 0.5},
+    "turns": 8
+  }
+]

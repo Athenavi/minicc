@@ -599,14 +599,20 @@ class UnifiedChatHandler:
     async def get_session_messages(
         self,
         session_id: str,
+        tenant_id: str | None = None,
         limit: int = 50,
     ) -> dict[str, Any]:
         """获取会话消息历史 (DB 优先,内存兜底)
+
+        S 安全修复:必须提供 tenant_id 并校验会话归属,杜绝跨租户读取消息。
 
         返回结构保持兼容:
         {success, session_id, messages: [{role, content, timestamp, metadata?, error?}], shared_context}
         timestamp 为 Unix 秒 (由 DB created_at 转换)。
         """
+        if not tenant_id:
+            return {"success": False, "error": "tenant_id is required"}
+
         # 1) DB 优先: 读库为准,保证多实例一致
         try:
             pool = get_pool()
@@ -617,8 +623,8 @@ class UnifiedChatHandler:
             try:
                 row = await pool.fetchrow(
                     "SELECT tenant_id, title, mode, shared_context "
-                    "FROM unified_sessions WHERE id = $1",
-                    session_id,
+                    "FROM unified_sessions WHERE id = $1 AND tenant_id = $2",
+                    session_id, tenant_id,
                 )
                 if row is None:
                     return {"success": False, "error": "Session not found"}
@@ -657,7 +663,7 @@ class UnifiedChatHandler:
 
         # 2) 内存兜底 (DB 不可用,维持旧版行为)
         session = self.sessions.get(session_id)
-        if not session:
+        if not session or getattr(session, "tenant_id", None) != tenant_id:
             return {"success": False, "error": "Session not found"}
 
         return {
@@ -703,9 +709,14 @@ async def submit_chat(request: Request):
     if not user_input.strip():
         return {"success": False, "error": "message is required"}
 
-    # S 多租户隔离:优先 body → tenant_id query param(Go 网关注入 claims.TenantID)→ 拒绝
-    # 历史遗留:曾用 user_id 兜底,但 user_id 不是租户标识,会导致跨租户数据访问
-    tenant_id = str(body.get("tenant_id") or request.query_params.get("tenant_id") or "")
+    # 多租户隔离:query 的 tenant_id 由 Go 网关从已验证 JWT claims 可信注入,
+    # 必须优先于 body 中客户端可伪造的 tenant_id(S 安全修复,防止跨租户)。
+    # 两者都存在且不一致时直接拒绝,绝不允许以客户端 body 覆盖可信身份。
+    query_tid = str(request.query_params.get("tenant_id") or "")
+    body_tid = str(body.get("tenant_id") or "")
+    if query_tid and body_tid and query_tid != body_tid:
+        return {"success": False, "error": "tenant_id mismatch"}
+    tenant_id = query_tid or body_tid
     if not tenant_id:
         return {"success": False, "error": "tenant_id is required"}
 
@@ -713,8 +724,11 @@ async def submit_chat(request: Request):
     context = body.get("context")
     if context is not None and not isinstance(context, dict):
         return {"success": False, "error": "context must be an object"}
-    # user_id 持久化标识 (Go 网关代理时追加 ?user_id=<claims.UserID>;缺省以 tenant_id 兜底)
-    user_id = str(body.get("user_id") or request.query_params.get("user_id") or "")
+    # user_id 持久化标识 (Go 网关代理时追加 ?user_id=<claims.UserID>;缺省以 tenant_id 兜底)。
+    # 同 tenant_id 逻辑:query 可信优先,防止客户端伪造 user_id 冒充他人。
+    query_uid = str(request.query_params.get("user_id") or "")
+    body_uid = str(body.get("user_id") or "")
+    user_id = query_uid or body_uid
     return await handler.submit_task(
         user_input=user_input,
         tenant_id=tenant_id,
@@ -726,7 +740,13 @@ async def submit_chat(request: Request):
 
 
 @router.get("/v1/chat/sessions/{session_id}/messages")
-async def get_messages(session_id: str, limit: int = 50):
-    """获取会话消息历史（含跨工作台共享上下文）"""
+async def get_messages(request: Request, session_id: str, limit: int = 50):
+    """获取会话消息历史（含跨工作台共享上下文）
+
+    S 安全修复:强制租户校验。tenant_id 优先取 Go 网关可信注入的
+    ?tenant_id= 查询参数,缺省尝试 request.state.tenant_id(中间件设置时)。
+    """
+    tenant_id = str(request.query_params.get("tenant_id") or "") or \
+        str(getattr(request.state, "tenant_id", "") or "")
     handler = get_chat_handler()
-    return await handler.get_session_messages(session_id, limit=limit)
+    return await handler.get_session_messages(session_id, tenant_id=tenant_id, limit=limit)

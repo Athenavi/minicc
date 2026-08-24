@@ -25,7 +25,6 @@ import {
   SettingOutlined,
   LogoutOutlined,
   UserSwitchOutlined,
-  BulbOutlined,
   DownOutlined,
   HistoryOutlined,
   RobotOutlined,
@@ -36,6 +35,7 @@ import {
 import { executeQuickCommand } from './WorkstationNav.vue'
 // 全局命令面板（Ctrl/Cmd+K）：六大工作台切换 / 主题 / 快速命令 / 全局搜索 / 最近活动
 import CommandPalette from './CommandPalette.vue'
+import ThemeSwitcher from './ThemeSwitcher.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -82,8 +82,6 @@ const menuItems = computed<MenuItem[]>(() => {
     ...(authStore.isAdmin
       ? [{ key: '/admin', label: '管理', icon: () => h(SettingOutlined) }]
       : []),
-    // 主题切换并入品牌菜单（顶栏不再有独立按钮；未登录用户也可用）
-    { key: 'toggle-theme', label: themeStore.isDark ? '浅色模式' : '深色模式', icon: () => h(BulbOutlined) },
   ]
   return items
 })
@@ -94,20 +92,13 @@ const currentLabel = computed(() => {
   return hit?.label || ''
 })
 
-// 首页（品牌页）强制深色：整个应用外壳（含顶栏及其后方背景）统一深色，
-// 避免深色内容 + 亮色顶栏后区的割裂（半透明白叠亮底 = 视觉不透明）
-const isHome = computed(() => route.path === '/')
-
+// 首页（品牌页）强制深色：跟随主题 store 的 current theme，无需额外覆盖
 const selectedKeys = computed(() => {
   const exact = menuItems.value.find(m => route.path === m.key)
   return [exact?.key ?? route.path]
 })
 
 function handleMenuClick(info: any) {
-  if (info.key === 'toggle-theme') {
-    themeStore.toggleTheme()
-    return
-  }
   router.push(info.key)
 }
 
@@ -220,7 +211,7 @@ async function runQuickCommand() {
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'app-shell--dark': isHome }">
+  <div class="app-shell">
     <!-- 左上角浮动品牌胶囊（导航入口；不占布局，悬浮于内容之上） -->
     <header class="topbar" :title="currentLabel || '导航菜单'">
       <Dropdown trigger="click" placement="bottomLeft">
@@ -299,16 +290,19 @@ async function runQuickCommand() {
     </nav>
 
     <!-- 右上角用户胶囊（登录时；不占布局） -->
-    <div v-if="authStore.user" class="user-fab">
-      <Dropdown :menu="{ items: userMenuItems, onClick: handleUserMenuClick }">
-        <Avatar
-          :size="30"
-          class="user-fab-avatar"
-          :style="{ backgroundColor: 'var(--primary)' }"
-        >
-          {{ authStore.user.name?.charAt(0)?.toUpperCase() || 'U' }}
-        </Avatar>
-      </Dropdown>
+    <div class="topbar-actions">
+      <ThemeSwitcher />
+      <div v-if="authStore.user" class="user-fab">
+        <Dropdown :menu="{ items: userMenuItems, onClick: handleUserMenuClick }">
+          <Avatar
+            :size="30"
+            class="user-fab-avatar"
+            :style="{ backgroundColor: 'var(--primary)' }"
+          >
+            {{ authStore.user.name?.charAt(0)?.toUpperCase() || 'U' }}
+          </Avatar>
+        </Dropdown>
+      </div>
     </div>
 
     <!-- 全宽内容区（浮动胶囊悬浮其上，不占位；停靠坞可见时桌面 margin-left / 移动端 padding-bottom 避让） -->
@@ -330,26 +324,14 @@ async function runQuickCommand() {
   position: relative;
   height: 100vh;
   background: var(--bg-page);
-  /* 停靠坞尺寸令牌（桌面侧栏 60px / 移动端底部横条 56px） */
+  color: var(--text-primary);
   --dock-w: 60px;
   --dock-h: 56px;
   --dock-gap: 12px;
-}
-
-/* 首页（品牌页）统一深色：顶栏及后方背景跟随深色变量（rgba 半透明才显现） */
-.app-shell--dark {
-  --bg-page: #151517;
-  --bg-card: #232324;
-  --bg-secondary: #2c2c2e;
-  --bg-hover: rgba(255, 255, 255, 0.08);
-  --border: rgba(255, 255, 255, 0.12);
-  --topbar-bg: rgba(35, 35, 36, 0.4);
-  --menu-bg: rgba(44, 44, 46, 0.72);
-  --text-primary: #f9fafb;
-  --text-secondary: #cfd3d6;
-  --text-tertiary: #adb2b8;
-  --primary: #5686fe;
-  --primary-bg: rgba(103, 158, 254, 0.14);
+  --panel-bg: var(--bg-elevated);
+  --panel-border: var(--border-default);
+  --hover-bg: var(--bg-surface-hover);
+  --sidebar-bg: var(--bg-sidebar);
 }
 
 /* ── 左上角浮动品牌胶囊：不占布局、悬浮于内容上（沉浸导航） ── */
@@ -362,12 +344,12 @@ async function runQuickCommand() {
   display: flex;
   align-items: center;
   padding: 0 6px 0 4px;
-  border-radius: 999px;
-  background: var(--topbar-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-md);
+  border-radius: var(--sig-radius-input);
+  background: var(--comp-header-bg);
+  backdrop-filter: blur(var(--sig-blur-header));
+  -webkit-backdrop-filter: blur(var(--sig-blur-header));
+  border: 1px solid var(--border-default);
+  box-shadow: var(--sig-shadow-card);
 }
 .brand-btn {
   display: flex;
@@ -376,24 +358,24 @@ async function runQuickCommand() {
   height: 32px;
   padding: 0 8px 0 4px;
   border: none;
-  border-radius: 999px;
+  border-radius: var(--sig-radius-button);
   background: transparent;
   cursor: pointer;
   transition: background 0.15s ease;
 }
-.brand-btn:hover { background: var(--bg-hover); }
+.brand-btn:hover { background: var(--hover-bg); }
 .brand-logo {
   width: 24px;
   height: 24px;
-  border-radius: 7px;
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  border-radius: var(--sig-radius-button);
+  background: linear-gradient(135deg, var(--primary), var(--accent));
   color: #fff;
   font-weight: 700;
   font-size: 11px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--sig-shadow-card);
   flex-shrink: 0;
 }
 .brand-name {
@@ -408,41 +390,48 @@ async function runQuickCommand() {
   .brand-name { display: none; }
 }
 
+/* ── 顶栏右侧操作组：主题切换器 + 用户胶囊 ── */
+.topbar-actions {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 /* ── 右上角用户胶囊（登录时） ── */
 .user-fab {
-  position: fixed;
-  top: 14px;
-  right: 14px;
-  z-index: 30;
   padding: 2px;
   border-radius: 50%;
-  background: var(--topbar-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-md);
+  background: var(--comp-header-bg);
+  backdrop-filter: blur(var(--sig-blur-header));
+  -webkit-backdrop-filter: blur(var(--sig-blur-header));
+  border: 1px solid var(--border-default);
+  box-shadow: var(--sig-shadow-card);
   cursor: pointer;
 }
 .user-fab-avatar { cursor: pointer; display: block; }
 .user-fab-avatar:hover { opacity: 0.9; }
 
-/* 导航下拉菜单（半透明玻璃：var(--menu-bg)，透出滚动内容） */
+/* 导航下拉菜单 */
 .nav-menu {
   min-width: 200px;
-  border-radius: 10px;
+  border-radius: var(--sig-radius-button);
   padding: 4px;
-  box-shadow: var(--shadow-lg);
-  background: var(--menu-bg) !important;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--border);
+  box-shadow: var(--sig-shadow-hover);
+  background: var(--panel-bg) !important;
+  backdrop-filter: blur(calc(var(--sig-blur-header) + 4px));
+  -webkit-backdrop-filter: blur(calc(var(--sig-blur-header) + 4px));
+  border: 1px solid var(--panel-border);
 }
 .nav-menu :deep(.ant-dropdown-menu-item) {
   display: flex;
   align-items: center;
   gap: 10px;
   font-size: 13px;
-  border-radius: 6px;
+  border-radius: var(--sig-radius-button);
   padding: 8px 12px !important;
 }
 .nav-menu :deep(.ant-dropdown-menu-item-selected) {
@@ -471,12 +460,12 @@ async function runQuickCommand() {
   align-items: center;
   gap: 8px;
   padding: 10px 8px;
-  border-radius: 16px;
-  background: var(--menu-bg);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-md);
+  border-radius: var(--sig-radius-card);
+  background: var(--panel-bg);
+  backdrop-filter: blur(calc(var(--sig-blur-header) + 4px));
+  -webkit-backdrop-filter: blur(calc(var(--sig-blur-header) + 4px));
+  border: 1px solid var(--panel-border);
+  box-shadow: var(--sig-shadow-card);
   overflow-y: auto;
   scrollbar-width: none;
 }
@@ -498,13 +487,13 @@ async function runQuickCommand() {
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 10px;
+  border-radius: var(--sig-radius-button);
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease, transform 0.08s ease;
 }
-.dock-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+.dock-item:hover { background: var(--hover-bg); color: var(--text-primary); }
 .dock-item:active { transform: scale(0.94); }
 .dock-item:focus-visible,
 .dock-command-btn:focus-visible,
@@ -514,7 +503,7 @@ async function runQuickCommand() {
 }
 .dock-item.active {
   background: var(--primary);
-  color: #fff;
+  color: var(--text-inverse);
   box-shadow: 0 4px 14px var(--primary-bg), inset 0 1px 1px hsla(0, 0%, 100%, 0.25);
 }
 /* 激活项 2px 指示条（桌面：左侧竖向；scaleY 入场动画） */
@@ -546,12 +535,12 @@ async function runQuickCommand() {
   flex-direction: column;
   gap: 1px;
   padding: 5px 10px;
-  border-radius: 6px;
-  background: var(--menu-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-md);
+  border-radius: var(--sig-radius-button);
+  background: var(--panel-bg);
+  backdrop-filter: blur(var(--sig-blur-header));
+  -webkit-backdrop-filter: blur(var(--sig-blur-header));
+  border: 1px solid var(--panel-border);
+  box-shadow: var(--sig-shadow-card);
   color: var(--text-primary);
   font-size: 12px;
   font-weight: 500;
@@ -577,9 +566,9 @@ async function runQuickCommand() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px dashed var(--border);
-  border-radius: 10px;
-  background: var(--bg-hover);
+  border: 1px dashed var(--panel-border);
+  border-radius: var(--sig-radius-button);
+  background: var(--hover-bg);
   color: var(--text-secondary);
   font-size: 17px;
   cursor: pointer;
@@ -598,13 +587,13 @@ async function runQuickCommand() {
   bottom: 0;
   width: 340px;
   padding: 12px;
-  border-radius: 12px;
-  background: var(--menu-bg);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-lg);
-  z-index: 25;          /* 高于停靠坞(20)、低于顶栏(30) */
+  border-radius: var(--sig-radius-code);
+  background: var(--panel-bg);
+  backdrop-filter: blur(calc(var(--sig-blur-header) + 4px));
+  -webkit-backdrop-filter: blur(calc(var(--sig-blur-header) + 4px));
+  border: 1px solid var(--panel-border);
+  box-shadow: var(--sig-shadow-hover);
+  z-index: 25;
 }
 .dock-popover-head { margin-bottom: 10px; }
 .dock-popover-title {
@@ -626,9 +615,9 @@ async function runQuickCommand() {
   min-width: 0;
   min-height: 40px;
   padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--sig-radius-card);
+  background: var(--bg-surface);
   color: var(--text-primary);
   font-size: 13px;
   outline: none;
@@ -638,22 +627,22 @@ async function runQuickCommand() {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-bg);
 }
-.dock-command-input::placeholder { color: var(--text-muted); }
+.dock-command-input::placeholder { color: var(--text-quaternary); }
 .dock-command-go {
   flex: none;
   min-height: 40px;
   min-width: 64px;
   padding: 0 14px;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--sig-radius-card);
   background: var(--primary);
-  color: #fff;
+  color: var(--text-inverse);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   transition: background 0.2s ease, opacity 0.2s ease;
 }
-.dock-command-go:hover:not(:disabled) { background: var(--primary-dark); }
+.dock-command-go:hover:not(:disabled) { background: var(--primary-hover); }
 .dock-command-go:disabled { opacity: 0.6; cursor: not-allowed; }
 .dock-spinner {
   display: inline-block;
@@ -695,7 +684,7 @@ async function runQuickCommand() {
     align-items: center;
     gap: 4px;
     padding: 8px 10px;
-    border-radius: 16px;
+    border-radius: var(--sig-radius-card);
   }
   .dock-items {
     flex: 1;

@@ -396,15 +396,15 @@ function onSlashInput() {
   display: flex; flex-direction: column; gap: 12px;
   width: 100%; max-width: 780px; margin: 0 auto;
   padding: 10px 12px 12px;
-  border: 1px solid var(--border); border-radius: 22px;
-  background: var(--bg-input); box-shadow: var(--shadow-md);
+  border: var(--sig-border-width) solid var(--border); border-radius: var(--sig-radius-input);
+  background: var(--bg-input); box-shadow: var(--sig-input-shadow);
   font-size: 16px; line-height: 24px;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
-/* 聚焦态：主色描边 + 主色光晕（deepseek InputBar focus ring） */
+/* 聚焦态：主色描边 + 主色光晕 */
 .input-card:focus-within {
   border-color: var(--primary);
-  box-shadow: var(--shadow-md), 0 0 0 3px var(--primary-bg);
+  box-shadow: var(--sig-input-shadow), 0 0 0 var(--sig-input-ring) var(--primary-bg);
 }
 .input-field { background: transparent !important; }
 .input-field :deep(textarea) { color: var(--text-primary) !important; font-size: 16px !important; line-height: 24px !important; }
@@ -428,13 +428,13 @@ function onSlashInput() {
 }
 /* 发送按钮：可发送时主色、hover 微放大 + 加深 */
 .send-btn { transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease; }
-.send-btn:not(:disabled):hover { transform: scale(1.06); box-shadow: 0 4px 12px var(--primary-bg); }
+.send-btn:not(:disabled):hover { transform: scale(1.06); box-shadow: 0 4px 12px var(--primary-bg); filter: brightness(1.05); }
 .send-btn:disabled { opacity: 0.45; }
 @media (max-width: 768px) { .input-area { padding: 0 12px 8px; } }
 /* ── 移动端：输入区贴底 + 安全区 + 触控目标放大 + 工具栏换行 ── */
 @media (max-width: 768px) {
   .input-area { padding: 0 12px calc(8px + env(safe-area-inset-bottom)); }
-  .input-card { border-radius: 18px; }
+  .input-card { border-radius: var(--sig-radius-input); }
   .input-actions { gap: 8px; flex-wrap: wrap; row-gap: 6px; }
   .input-hint { display: none; } /* 窄屏隐藏提示文字，占位符承担语义 */
 }
@@ -451,31 +451,31 @@ function onSlashInput() {
 
 /* P1-2 附件预览区 */
 .attachment-preview { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0 8px; }
-.att-thumb { position: relative; width: 64px; height: 64px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-card); overflow: hidden; }
+.att-thumb { position: relative; width: 64px; height: 64px; border-radius: var(--sig-radius-card); border: 1px solid var(--border); background: var(--bg-card); overflow: hidden; }
 .att-thumb-img { width: 100%; height: 100%; object-fit: cover; }
 .att-thumb-file { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 4px; color: var(--text-tertiary); font-size: 10px; }
 .att-thumb-name { max-width: 56px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.att-remove { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; border-radius: 50%; border: none; background: rgba(0,0,0,0.6); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 10px; }
-.att-remove:hover { background: rgba(220,38,38,0.85); }
+.att-remove { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; border-radius: 50%; border: none; background: var(--bg-overlay); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 10px; }
+.att-remove:hover { background: var(--error); }
 .attach-btn { color: var(--text-tertiary); display: inline-flex; align-items: center; justify-content: center; }
 .attach-btn:hover { color: var(--primary); }
 /* 拖拽态：边框主色 + 背景淡色 */
 .input-card.drag-active { border-color: var(--primary); background: var(--primary-bg); box-shadow: var(--shadow-md), 0 0 0 3px var(--primary-bg); }
 
 /* P3-C: 斜杠命令面板 */
-.slash-menu { position: absolute; bottom: 100%; left: 0; right: 0; margin-bottom: 4px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow-lg); overflow: hidden; z-index: 10; }
+.slash-menu { position: absolute; bottom: 100%; left: 0; right: 0; margin-bottom: 4px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--sig-radius-card); box-shadow: var(--shadow-lg); overflow: hidden; z-index: 10; }
 .slash-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; cursor: pointer; transition: background 0.1s ease; }
 .slash-item.active { background: var(--bg-hover); }
 .slash-cmd { font-weight: 600; color: var(--primary); font-size: 13px; }
 .slash-desc { color: var(--text-tertiary); font-size: 12px; }
 
 /* P3-E: 大文本粘贴折叠预览 */
-.paste-preview { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; background: var(--bg-secondary); margin-bottom: 4px; }
+.paste-preview { border: 1px solid var(--border); border-radius: var(--sig-radius-card); padding: 8px 12px; background: var(--bg-secondary); margin-bottom: 4px; }
 .paste-preview-text { font-size: 12px; color: var(--text-secondary); line-height: 1.5; max-height: 80px; overflow: hidden; white-space: pre-wrap; word-break: break-all; }
 .paste-preview-meta { font-size: 11px; color: var(--text-tertiary); margin: 4px 0; }
 .paste-preview-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.paste-btn { padding: 2px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); font-size: 12px; cursor: pointer; }
+.paste-btn { padding: 2px 10px; border-radius: var(--sig-radius-button); border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); font-size: 12px; cursor: pointer; }
 .paste-btn.accept { background: var(--primary); color: #fff; border-color: var(--primary); }
 .paste-btn.accept:hover { opacity: 0.9; }
-.paste-btn.discard:hover { color: var(--danger, #dc2626); border-color: var(--danger, #dc2626); }
+.paste-btn.discard:hover { color: var(--error); border-color: var(--error); }
 </style>

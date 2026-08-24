@@ -160,6 +160,7 @@ class SessionStore:
     def _local_set(self, session_id: str, messages: list[dict]) -> None:
         self._local[session_id] = messages
         self._local.move_to_end(session_id)
+        self._evict_if_needed()
 
     def _evict_if_needed(self) -> None:
         while len(self._local) > self._max_sessions:

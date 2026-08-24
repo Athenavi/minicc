@@ -551,7 +551,7 @@ function pickSession(id: string) {
   display: flex; flex-direction: column;
   background: var(--bg-card);
   border-left: 1px solid var(--border);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--sig-shadow-hover);
   transform: translateX(100%);
   visibility: hidden;
   transition: transform 0.25s ease, visibility 0.25s;
@@ -594,7 +594,7 @@ function pickSession(id: string) {
 }
 .session-picker, .session-back {
   flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px;
-  height: 28px; padding: 0 8px; border: none; border-radius: 6px;
+  height: 28px; padding: 0 8px; border: none; border-radius: var(--sig-radius-button);
   background: transparent; color: var(--text-primary);
   font-size: 13px; font-weight: 600; cursor: pointer;
   transition: background 0.15s ease;
@@ -611,7 +611,7 @@ function pickSession(id: string) {
 .ctx-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .ctx-chip {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 2px 8px; border-radius: 10px;
+  padding: 2px 8px; border-radius: var(--sig-radius-button);
   border: 1px solid var(--border); background: var(--bg-card);
   color: var(--text-secondary); font-size: 12px;
   transition: border-color 0.15s ease, color 0.15s ease;
@@ -637,7 +637,7 @@ function pickSession(id: string) {
 .quick-clear:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* 搜索框（轨迹 / 会话通用） */
-.panel-search { flex: none; display: flex; align-items: center; gap: 4px; margin: 8px 12px 0; padding: 0 8px; height: 28px; background: var(--bg-secondary); border-radius: 6px; }
+.panel-search { flex: none; display: flex; align-items: center; gap: 4px; margin: 8px 12px 0; padding: 0 8px; height: 28px; background: var(--bg-secondary); border-radius: var(--sig-radius-button); }
 .search-icon { font-size: 11px; color: var(--text-tertiary); }
 .search-input { flex: 1; border: none; outline: none; background: none; font-size: 12px; color: var(--text-primary); }
 .search-clear { font-size: 10px; color: var(--text-tertiary); cursor: pointer; }
@@ -673,7 +673,7 @@ function pickSession(id: string) {
 
 /* ── 主视图：提问锚点列表 ── */
 .anchor-list { flex: 1; overflow-y: auto; padding: 6px; scrollbar-width: thin; scrollbar-color: var(--text-disabled) transparent; }
-.anchor-row { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 6px; cursor: pointer; transition: background 0.15s ease; }
+.anchor-row { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: var(--sig-radius-button); cursor: pointer; transition: background 0.15s ease; }
 .anchor-row:hover { background: var(--bg-hover); }
 .anchor-row.active { background: var(--primary-bg); }
 .row-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--primary); }
@@ -687,14 +687,14 @@ function pickSession(id: string) {
 
 /* P3-D: 标签筛选与展示 */
 .tag-filter { display: flex; gap: 6px; padding: 4px 12px 8px; flex-wrap: wrap; }
-.tag-chip { padding: 2px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-tertiary); font-size: 11px; cursor: pointer; transition: all 0.15s ease; }
+.tag-chip { padding: 2px 10px; border-radius: var(--sig-radius-button); border: 1px solid var(--border); background: var(--bg-card); color: var(--text-tertiary); font-size: 11px; cursor: pointer; transition: all 0.15s ease; }
 .tag-chip:hover { border-color: var(--primary); color: var(--primary); }
 .tag-chip.active { background: var(--primary); color: #fff; border-color: var(--primary); }
-.session-tag { display: inline-block; padding: 0 6px; border-radius: 8px; background: var(--bg-hover); color: var(--text-tertiary); font-size: 10px; line-height: 16px; margin-left: 4px; flex-shrink: 0; }
+.session-tag { display: inline-block; padding: 0 6px; border-radius: var(--sig-radius-card); background: var(--bg-hover); color: var(--text-tertiary); font-size: 10px; line-height: 16px; margin-left: 4px; flex-shrink: 0; }
 .session-group-label { font-size: 11px; font-weight: 600; color: var(--text-tertiary); padding: 12px 8px 4px; text-transform: uppercase; letter-spacing: 0.5px; }
 .session-row {
   display: flex; align-items: center; gap: 4px;
-  padding: 0 10px; height: 40px; border-radius: 8px;
+  padding: 0 10px; height: 40px; border-radius: var(--sig-radius-card);
   cursor: pointer; margin-bottom: 1px;
   transition: background 0.15s ease;
   position: relative;
@@ -714,8 +714,8 @@ function pickSession(id: string) {
 .session-more-btn { opacity: 0; flex-shrink: 0; width: 22px; height: 22px; color: var(--text-muted); }
 .session-row:hover .session-more-btn, .session-row.menu-open .session-more-btn { opacity: 1; }
 .session-more-btn:hover { color: var(--text-primary); }
-.session-menu { min-width: 148px; border-radius: 10px; padding: 4px; box-shadow: var(--shadow-lg); }
-.session-menu :deep(.ant-dropdown-menu-item) { display: flex; align-items: center; gap: 8px; font-size: 13px; border-radius: 6px; }
+.session-menu { min-width: 148px; border-radius: var(--sig-radius-code); padding: 4px; box-shadow: var(--shadow-lg); }
+.session-menu :deep(.ant-dropdown-menu-item) { display: flex; align-items: center; gap: 8px; font-size: 13px; border-radius: var(--sig-radius-button); }
 .menu-icon { font-size: 14px; }
 
 /* ── 最近活动（/v1/activities，30s 轮询）── */
@@ -731,14 +731,14 @@ function pickSession(id: string) {
 .act-list { overflow-y: auto; padding: 0 6px 6px; scrollbar-width: thin; scrollbar-color: var(--text-disabled) transparent; }
 .act-row {
   display: flex; align-items: center; gap: 8px; width: 100%;
-  padding: 6px 8px; border: none; border-radius: 6px;
+  padding: 6px 8px; border: none; border-radius: var(--sig-radius-button);
   background: transparent; color: var(--text-secondary);
   font-size: 12px; text-align: left; cursor: pointer;
   transition: background 0.15s ease;
 }
 .act-row:hover { background: var(--bg-hover); }
 .act-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--text-disabled); }
-.act-dot.completed, .act-dot.success { background: #52c41a; }
+.act-dot.completed, .act-dot.success { background: var(--success); }
 .act-dot.running, .act-dot.pending { background: var(--primary); }
 .act-dot.failed, .act-dot.error { background: var(--danger, #ef4444); }
 .act-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -119,12 +119,12 @@ const searchFiles = computed(() => {
 .tool-result.error .result-label { color: var(--error); }
 .chevron { font-size: 10px; transition: transform 0.2s; }
 .chevron.open { transform: rotate(90deg); }
-.result-code { margin: 0; padding: 12px; background: var(--bg-code); border-radius: 12px; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; color: var(--text-code); white-space: pre-wrap; word-break: break-all; }
-.result-text { padding: 10px 12px; background: var(--bg-secondary); border-radius: 12px; font-size: 13px; color: var(--text-secondary); white-space: pre-wrap; word-break: break-all; }
-.result-image { max-width: min(320px, 80vw); max-height: 240px; border-radius: 12px; border: 1px solid var(--border-card); display: block; margin-top: 4px; }
+.result-code { margin: 0; padding: 12px; background: var(--bg-code); border-radius: var(--sig-radius-code); font-family: var(--font-mono); font-size: 12px; line-height: 1.6; color: var(--text-code); white-space: pre-wrap; word-break: break-all; }
+.result-text { padding: 10px 12px; background: var(--bg-secondary); border-radius: var(--sig-radius-button); font-size: 13px; color: var(--text-secondary); white-space: pre-wrap; word-break: break-all; }
+.result-image { max-width: min(320px, 80vw); max-height: 240px; border-radius: var(--sig-radius-card); border: 1px solid var(--border-card); display: block; margin-top: 4px; }
 
 /* read 卡片：12px 圆角 + banner + 48px 行号 gutter + 22px 行高（deepseek ReadBlock） */
-.read-block { margin: 8px 0; background: var(--bg-code); border-radius: 12px; overflow: hidden; }
+.read-block { margin: 8px 0; background: var(--bg-code); border-radius: var(--sig-radius-code); overflow: hidden; }
 .read-banner { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 14px; background: var(--bg-secondary); }
 .read-path { font-family: var(--font-mono); font-size: 12px; line-height: 18px; color: var(--text-primary); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .read-count { font-size: 12px; color: var(--text-tertiary); flex-shrink: 0; }
@@ -134,15 +134,15 @@ const searchFiles = computed(() => {
 .line-text { flex: 1; padding-right: 14px; white-space: pre; overflow-x: auto; color: var(--text-primary); }
 
 /* 终端卡片（deepseek TerminalBlock 语义） */
-.terminal-block { margin: 8px 0; background: #1e1e1e; border-radius: 12px; overflow: hidden; }
-.terminal-banner { display: flex; justify-content: space-between; align-items: center; padding: 9px 14px; background: #2d2d2d; }
-.terminal-label { font-family: var(--font-mono); font-size: 12px; color: #d4d4d4; }
+.terminal-block { margin: 8px 0; background: var(--terminal-bg); border-radius: var(--sig-radius-code); overflow: hidden; }
+.terminal-banner { display: flex; justify-content: space-between; align-items: center; padding: 9px 14px; background: var(--terminal-header-bg); }
+.terminal-label { font-family: var(--font-mono); font-size: 12px; color: var(--terminal-text); }
 .terminal-exit { font-family: var(--font-mono); font-size: 12px; color: var(--success); }
 .terminal-exit.nonzero { color: var(--error); }
-.terminal-body { margin: 0; padding: 14px; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; color: #d4d4d4; white-space: pre-wrap; word-break: break-all; max-height: 360px; overflow-y: auto; }
+.terminal-body { margin: 0; padding: 14px; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; color: var(--terminal-text); white-space: pre-wrap; word-break: break-all; max-height: 360px; overflow-y: auto; }
 
 /* 搜索卡片（deepseek SearchBlock：12px 圆角 + banner + 22px 行 + pre 不折行） */
-.search-block { margin: 8px 0; background: var(--bg-code); border-radius: 12px; overflow: hidden; }
+.search-block { margin: 8px 0; background: var(--bg-code); border-radius: var(--sig-radius-code); overflow: hidden; }
 .search-header { display: flex; align-items: center; gap: 12px; padding: 9px 14px; background: var(--bg-secondary); }
 .search-summary { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--text-secondary); }
 .search-body { padding: 8px 14px 12px 0; overflow-x: auto; font-family: var(--font-mono); font-size: 12px; }

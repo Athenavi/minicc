@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/athenavi/minicc/internal/auth"
 )
 
 // PythonClient calls the Python AI engine via HTTP SSE.
@@ -39,9 +41,20 @@ func NewPythonClient(addresses ...string) *PythonClient {
 	if len(addrs) == 0 {
 		addrs = []string{"http://localhost:8000"}
 	}
+
+	// Configure transport with sensible timeouts to prevent resource leaks
+	transport := &http.Transport{
+		MaxIdleConns:        10,
+		MaxIdleConnsPerHost: 5,
+		IdleConnTimeout:     90 * time.Second,
+	}
+
 	return &PythonClient{
-		addresses:     addrs,
-		client:        &http.Client{Timeout: 5 * time.Minute},
+		addresses: addrs,
+		client: &http.Client{
+			Timeout:   0, // No overall timeout; individual requests use their own context
+			Transport: transport,
+		},
 		cooldownUntil: make([]int64, len(addrs)),
 	}
 }
@@ -195,26 +208,52 @@ func (c *PythonClient) Run(ctx context.Context, req PythonRunRequest) (<-chan Py
 		defer resp.Body.Close()
 
 		scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 1024*1024), 16*1024*1024) // P1: 提升行上限，防长文档 data: 行被截断
-		for scanner.Scan() {
-			line := scanner.Text()
-			if !strings.HasPrefix(line, "data: ") {
-				continue
+		scanner.Buffer(make([]byte, 1024*1024), 16*1024*1024)
+
+		// Use a ticker to periodically check context cancellation
+		// This prevents the goroutine from blocking forever on scanner.Scan()
+		// if the context is cancelled but no data is being sent.
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		lineCh := make(chan string, 1)
+
+		// Background goroutine to read lines
+		go func() {
+			defer close(lineCh)
+			for scanner.Scan() {
+				lineCh <- scanner.Text()
 			}
-			data := strings.TrimPrefix(line, "data: ")
-			var event PythonEvent
-			if err := json.Unmarshal([]byte(data), &event); err != nil {
-				slog.Warn("python engine: unmarshal event", "error", err, "data", data)
-				continue
-			}
+		}()
+
+		for {
 			select {
-			case events <- event:
 			case <-ctx.Done():
 				return
+			case line, ok := <-lineCh:
+				if !ok {
+					// Scanner finished (EOF or error)
+					if err := scanner.Err(); err != nil && err != io.EOF {
+						slog.Warn("python engine: read stream", "error", err)
+					}
+					return
+				}
+				if !strings.HasPrefix(line, "data: ") {
+					continue
+				}
+				data := strings.TrimPrefix(line, "data: ")
+				var event PythonEvent
+				if err := json.Unmarshal([]byte(data), &event); err != nil {
+					slog.Warn("python engine: unmarshal event", "error", err, "data", data)
+					continue
+				}
+				select {
+				case events <- event:
+				case <-ctx.Done():
+					return
+				}
+			case <-ticker.C:
+				// Periodic check, if context is done, we'll catch it in the first case
 			}
-		}
-		if err := scanner.Err(); err != nil && err != io.EOF {
-			slog.Warn("python engine: read stream", "error", err)
 		}
 	}()
 
@@ -313,28 +352,53 @@ func (c *PythonClient) PutJSON(ctx context.Context, path string, in any, out any
 func (c *PythonClient) ForwardRequest(w http.ResponseWriter, r *http.Request, path string) {
 	req, err := http.NewRequestWithContext(r.Context(), r.Method, c.pickAddress()+path, r.Body)
 	if err != nil {
-		// S 安全：不向客户端泄露内部错误细节（含地址/路径），仅记录日志
 		slog.Error("create forward request", "path", path, "error", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	// Copy relevant headers
+	// 安全：仅转发必要的客户端头，排除认证/会话/身份相关头
+	// 防止客户端通过伪造 Authorization/Cookie/X-API-Key 绕过网关认证链路，
+	// 也防止伪造 X-User-ID/X-Tenant-ID/X-Internal-Token 冒用他人/他租户身份（P0）。
+	skipHeaders := map[string]bool{
+		"Authorization":       true,
+		"Proxy-Authorization": true,
+		"Cookie":              true,
+		"Set-Cookie":          true,
+		"X-Api-Key":           true,
+		"X-Auth-Token":        true,
+		"X-User-Id":           true,
+		"X-User-Role":         true,
+		"X-Tenant-Id":         true,
+		"X-Internal-Token":    true,
+	}
 	for k, vv := range r.Header {
+		if skipHeaders[k] {
+			continue
+		}
 		for _, v := range vv {
 			req.Header.Add(k, v)
 		}
 	}
-	// 注入 Go↔Python 内部 token，Python 侧据此接受 ?tenant_id= 透传身份
+	// 注入 Go↔Python 内部 token + 从已验证的 JWT claims 可信注入身份头
+	// （Python 引擎信任这些头，故必须由网关覆盖，禁止客户端直传）。
 	c.injectInternalToken(req)
+	if claims := auth.GetClaims(r.Context()); claims != nil {
+		if claims.UserID != "" {
+			req.Header.Set("X-User-Id", claims.UserID)
+		}
+		if claims.TenantID != "" {
+			req.Header.Set("X-Tenant-Id", claims.TenantID)
+		}
+	}
 	resp, err := c.do(req)
 	if err != nil {
-		// S 安全：不向客户端泄露后端连接细节
 		slog.Error("forward to python engine", "path", path, "error", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	defer resp.Body.Close()
-	// Copy response headers
+	// 安全：过滤响应中的 Set-Cookie，防止客户端 Cookie 被意外设置
+	resp.Header.Del("Set-Cookie")
 	for k, vv := range resp.Header {
 		for _, v := range vv {
 			w.Header().Add(k, v)
@@ -408,26 +472,49 @@ func (c *PythonClient) RunSSE(ctx context.Context, path string, body any, extraH
 		defer resp.Body.Close()
 
 		scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 1024*1024), 16*1024*1024) // P1: 提升行上限，防长文档 data: 行被截断
-		for scanner.Scan() {
-			line := scanner.Text()
-			if !strings.HasPrefix(line, "data: ") {
-				continue
+		scanner.Buffer(make([]byte, 1024*1024), 16*1024*1024)
+
+		// Use a ticker to periodically check context cancellation
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		lineCh := make(chan string, 1)
+
+		// Background goroutine to read lines
+		go func() {
+			defer close(lineCh)
+			for scanner.Scan() {
+				lineCh <- scanner.Text()
 			}
-			raw := strings.TrimPrefix(line, "data: ")
-			var event PythonEvent
-			if err := json.Unmarshal([]byte(raw), &event); err != nil {
-				slog.Warn("python engine: unmarshal event", "error", err, "data", raw)
-				continue
-			}
+		}()
+
+		for {
 			select {
-			case events <- event:
 			case <-ctx.Done():
 				return
+			case line, ok := <-lineCh:
+				if !ok {
+					if err := scanner.Err(); err != nil && err != io.EOF {
+						slog.Warn("python engine: read stream", "error", err)
+					}
+					return
+				}
+				if !strings.HasPrefix(line, "data: ") {
+					continue
+				}
+				raw := strings.TrimPrefix(line, "data: ")
+				var event PythonEvent
+				if err := json.Unmarshal([]byte(raw), &event); err != nil {
+					slog.Warn("python engine: unmarshal event", "error", err, "data", raw)
+					continue
+				}
+				select {
+				case events <- event:
+				case <-ctx.Done():
+					return
+				}
+			case <-ticker.C:
+				// Periodic check
 			}
-		}
-		if err := scanner.Err(); err != nil && err != io.EOF {
-			slog.Warn("python engine: read stream", "error", err)
 		}
 	}()
 

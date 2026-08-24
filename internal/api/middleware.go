@@ -71,6 +71,35 @@ func markJWTBlacklisted(jti string) {
 	jwtBlacklistCache.Store(jti, jwtBlacklistEntry{blacklisted: true, checkedAt: time.Now()})
 }
 
+// StartBlacklistCleaner 定期清理过期的 JWT 黑名单本地缓存条目，防止内存泄漏。
+// 每 10 分钟扫描一次，删除超过 1 小时未更新的条目。
+func StartBlacklistCleaner(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				expired := 0
+				cutoff := time.Now().Add(-1 * time.Hour)
+				jwtBlacklistCache.Range(func(key, value any) bool {
+					e := value.(jwtBlacklistEntry)
+					if e.checkedAt.Before(cutoff) {
+						jwtBlacklistCache.Delete(key)
+						expired++
+					}
+					return true
+				})
+				if expired > 0 {
+					slog.Debug("cleaned expired JWT blacklist cache entries", "count", expired)
+				}
+			}
+		}
+	}()
+}
+
 
 func (rw *responseWriter) WriteHeader(status int) {
 	rw.status = status

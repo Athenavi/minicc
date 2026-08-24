@@ -20,10 +20,11 @@ func (h *MediaHandler) Download(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "id is required")
 		return
 	}
+	tenantID := claims.TenantID
 	var fileURL string
 	if err := db.ReadPool().QueryRow(r.Context(),
 		`SELECT COALESCE(file_url,'') FROM media_assets WHERE id=$1 AND tenant_id=$2 AND user_id=$3`,
-		id, DefaultTenantID, claims.UserID).Scan(&fileURL); err != nil {
+		id, tenantID, claims.UserID).Scan(&fileURL); err != nil {
 		NotFound(w, "media asset not found")
 		return
 	}
@@ -63,7 +64,7 @@ func (h *MediaHandler) Share(w http.ResponseWriter, r *http.Request) {
 	var fileName, userID string
 	if err := db.ReadPool().QueryRow(r.Context(),
 		`SELECT COALESCE(name,''), COALESCE(user_id,'') FROM media_assets WHERE id=$1 AND tenant_id=$2 AND user_id=$3`,
-		id, DefaultTenantID, claims.UserID).Scan(&fileName, &userID); err != nil {
+		id, claims.TenantID, claims.UserID).Scan(&fileName, &userID); err != nil {
 		NotFound(w, "media asset not found")
 		return
 	}

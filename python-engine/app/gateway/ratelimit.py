@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import time
 import logging
+import uuid
 
 import redis.asyncio as aioredis
 
@@ -55,7 +56,11 @@ class TenantRateLimiter:
     async def _check_window(
         self, key: str, now: float, window_seconds: float, max_requests: int
     ) -> bool:
-        """滑动窗口检查 + 计数（原子操作）"""
+        """滑动窗口检查 + 计数（原子操作）
+
+        关键修复：使用唯一 member ID（uuid）而非 id(self)，避免并发请求时
+        ZADD 覆盖同一 member 导致限流计数失真。
+        """
         pipe = self._redis.pipeline(transaction=True)
         window_start = now - window_seconds
 
@@ -63,8 +68,8 @@ class TenantRateLimiter:
         pipe.zremrangebyscore(key, "-inf", window_start)
         # 计数
         pipe.zcard(key)
-        # 添加当前请求
-        member = f"{now}:{id(self)}"
+        # 添加当前请求（使用唯一 UUID 作为 member）
+        member = f"{now}:{uuid.uuid4().hex[:16]}"
         pipe.zadd(key, {member: now})
         # 设置 key 过期（兜底清理）
         pipe.expire(key, int(window_seconds) + 1)

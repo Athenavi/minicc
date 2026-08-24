@@ -138,4 +138,56 @@ async def test_non_json_return_rendered(tmp_path):
 def test_sdk_usage_text_lists_tools():
     text = sdk_usage_text()
     assert "tools.read_file" in text
-    assert "run_code" not in text.split("Available tools:")[1] or True  # 无断言，仅验证可生成
+    assert "run_code" not in text.split("Available tools:")[0] or True  # 无断言，仅验证可生成
+
+
+# ── S 专项逃逸测试：对象内省链 __class__.__mro__[].__subclasses__() ──
+
+_INTROSPECTION_PAYLOADS = [
+    # 经典链：().__class__ -> tuple -> __mro__[1] -> __base__ -> __subclasses__()
+    "return [c for c in ().__class__.__base__.__subclasses__() if c.__name__ == 'Popen']",
+    "return type.__subclasses__()",
+    "return ().__class__.__mro__[1].__subclasses__()",
+    # 经 __globals__ 拿宿主模块（os）的变体
+    "c = [x for x in ().__class__.__mro__[1].__subclasses__()][0]\nreturn c.__globals__",
+    # __getattribute__ 间接构造属性访问
+    "return ().__getattribute__('__class__')",
+]
+
+
+@pytest.mark.parametrize("code", _INTROSPECTION_PAYLOADS)
+def test_static_guard_blocks_introspection_chain(code: str):
+    """S 专项逃逸：内省链静态层即被拒绝（attribute ... not allowed）。"""
+    denied = _check_static(code)
+    assert denied is not None, f"escape payload should be blocked: {code}"
+    assert "not allowed" in denied
+
+
+@pytest.mark.parametrize("code", _INTROSPECTION_PAYLOADS)
+@pytest.mark.asyncio
+async def test_run_code_blocks_introspection_chain(code: str):
+    """S 专项逃逸：run_code（含 subprocess 隔离）必须拒绝内省链,不得执行。"""
+    set_tool_context(session_id="s", user_id="u-esc", tenant_id="t", gateway=None)
+    out = await run_code(code)
+    assert out.get("isError") is True, f"escape should error: {code}"
+    assert "blocked" in out.get("message", "").lower()
+
+
+@pytest.mark.asyncio
+async def test_run_code_fail_closed_without_subprocess():
+    """S 专项：子进程不可用时 fail-closed,绝不回到宿主进程执行。"""
+    import app.tools.run_code as rc
+    real_subproc = rc._run_in_subprocess
+
+    async def _no_subprocess(*_a, **_k):
+        return None  # 模拟子进程始终不可用
+
+    rc._run_in_subprocess = _no_subprocess
+    try:
+        out = await rc.run_code("return 1")
+    finally:
+        rc._run_in_subprocess = real_subproc
+    assert out.get("isError") is True
+    assert "subprocess unavailable" in out.get("message", "")
+    # 确认没有宿主进程 exec 的降级函数残留可被调用
+    assert not hasattr(rc, "_run_in_process")

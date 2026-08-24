@@ -430,7 +430,7 @@ function handleMsgClick(e: MouseEvent) {
 .msg-row { padding: 6px 0; max-width: min(720px, 92%); margin: 0 auto; }
 .msg-row.user { display: flex; justify-content: flex-end; }
 /* 轨迹跳转高亮闪烁（deepseek data-current 聚焦反馈） */
-.msg-row.highlighted { background: var(--primary-bg); border-radius: 12px; animation: trajectoryFlash 2s ease-out; }
+.msg-row.highlighted { background: var(--primary-bg); border-radius: var(--sig-radius-card); animation: trajectoryFlash 2s ease-out; }
 @keyframes trajectoryFlash { 0% { background: var(--primary-bg); } 100% { background: transparent; } }
 .msg-content { min-width: 0; }
 .msg-text { font-size: 16px; line-height: 28px; color: var(--text-primary); }
@@ -462,11 +462,11 @@ function handleMsgClick(e: MouseEvent) {
 .msg-row.user .msg-text {
   display: inline-block; padding: 10px 16px;
   background: var(--bubble-user); color: var(--bubble-user-text);
-  border-radius: 22px; border-bottom-right-radius: 6px; max-width: min(525px, 88%);
+  border-radius: var(--sig-radius-bubble); border-bottom-right-radius: var(--sig-radius-bubble-assistant); max-width: min(525px, 88%);
   line-height: 24px;
   transition: box-shadow 0.2s ease;
 }
-.msg-row.user .msg-text:hover { box-shadow: var(--shadow-md); }
+.msg-row.user .msg-text:hover { box-shadow: var(--sig-shadow-hover); }
 .turn-stats { max-width: min(720px, 92%); margin: 0 auto; padding: 4px 0 10px; font-size: 11px; color: var(--text-muted); text-align: right; }
 /* markdown 正文（deepseek MarkdownText：16/28、标题层级、块 gap 16） */
 .msg-text :deep(p) { margin: 16px 0; }
@@ -478,16 +478,16 @@ function handleMsgClick(e: MouseEvent) {
 .msg-text :deep(strong) { font-weight: 600; }
 .msg-text :deep(ul), .msg-text :deep(ol) { padding-left: 24px; margin: 16px 0; }
 .msg-text :deep(li) { margin: 4px 0; }
-.msg-text :deep(blockquote) { margin: 16px 0; padding: 6px 12px; border-left: 3px solid var(--primary); background: var(--bg-hover); border-radius: 6px; }
+.msg-text :deep(blockquote) { margin: 16px 0; padding: 6px 12px; border-left: 3px solid var(--primary); background: var(--bg-hover); border-radius: var(--sig-radius-button); }
 .msg-text :deep(a) { color: var(--primary); text-decoration: none; }
 .msg-text :deep(a:hover) { text-decoration: underline; }
 .msg-text :deep(table) { border-collapse: collapse; margin: 16px 0; display: block; width: max-content; min-width: 100%; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .msg-text :deep(th), .msg-text :deep(td) { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
 .msg-text :deep(th) { background: var(--bg-secondary); font-weight: 600; }
-.msg-text :deep(img) { max-width: 100%; border-radius: 12px; }/* 行内代码（deepseek markdown-inline-code：bluish-100 底） */
-.msg-text :deep(code) { font-family: var(--font-mono); font-size: 0.9em; background: var(--bg-secondary); padding: 2px 6px; border-radius: 6px; }
+.msg-text :deep(img) { max-width: 100%; border-radius: var(--sig-radius-code); }/* 行内代码（deepseek markdown-inline-code：bluish-100 底） */
+.msg-text :deep(code) { font-family: var(--font-mono); font-size: 0.9em; background: var(--bg-secondary); padding: 2px 6px; border-radius: var(--sig-radius-button); }
 /* 代码块：12px 圆角 + banner（deepseek CodeBlock） */
-.msg-text :deep(.code-block-wrapper) { margin: 16px 0; background: var(--bg-code); border-radius: 12px; overflow: hidden; }
+.msg-text :deep(.code-block-wrapper) { margin: 16px 0; background: var(--bg-code); border-radius: var(--sig-radius-code); overflow: hidden; }
 .msg-text :deep(.code-block-header) { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 14px; background: var(--bg-secondary); }
 .msg-text :deep(.code-lang) { font-family: var(--font-mono); font-size: 12px; line-height: 18px; color: var(--text-primary); }
 .msg-text :deep(.code-copy-btn) { background: none; border: none; color: var(--text-tertiary); cursor: pointer; font-size: 12px; padding: 0; }
@@ -502,7 +502,7 @@ function handleMsgClick(e: MouseEvent) {
 .msg-action { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; border-radius: 50%; background: transparent; color: var(--text-tertiary); cursor: pointer; opacity: 0; transition: opacity 80ms ease, background 0.15s ease, transform 0.1s ease; }
 .msg-action:hover { background: var(--bg-hover); color: var(--text-primary); }
 .msg-action.active { color: var(--primary); opacity: 1; }
-.msg-action.continue-btn { width: auto; padding: 0 10px; border-radius: 14px; background: var(--primary); color: #fff; font-size: 12px; gap: 4px; opacity: 1; }
+.msg-action.continue-btn { width: auto; padding: 0 10px; border-radius: var(--sig-radius-button); background: var(--primary); color: #fff; font-size: 12px; gap: 4px; opacity: 1; }
 .msg-action.continue-btn:hover { opacity: 0.9; background: var(--primary); color: #fff; }
 
 /* P3-A: 用 CSS 变量覆盖 hljs token 颜色，暗色模式自动跟随 .dark class */
@@ -516,7 +516,7 @@ function handleMsgClick(e: MouseEvent) {
 .hljs-meta, .hljs-symbol, .hljs-bullet, .hljs-link { color: var(--hljs-meta); }
 
 /* P3-B: 长消息折叠 */
-.collapse-toggle { margin-top: 8px; padding: 4px 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-card); color: var(--text-secondary); font-size: 12px; cursor: pointer; transition: border-color 0.15s ease, color 0.15s ease; }
+.collapse-toggle { margin-top: 8px; padding: 4px 12px; border: 1px solid var(--border); border-radius: var(--sig-radius-button); background: var(--bg-card); color: var(--text-secondary); font-size: 12px; cursor: pointer; transition: border-color 0.15s ease, color 0.15s ease; }
 .collapse-toggle:hover { border-color: var(--primary); color: var(--primary); }
 .collapse-toggle:active { transform: scale(0.97); }
 .msg-action:active { transform: scale(0.9); }
@@ -531,7 +531,7 @@ function handleMsgClick(e: MouseEvent) {
   .msg-actions { gap: 4px; height: 40px; }
   .msg-time { opacity: 1; font-size: 11px; padding-right: 4px; }
   .msg-action { width: 40px; height: 40px; opacity: 1; }
-  .msg-action.continue-btn { width: auto; height: 40px; padding: 0 14px; border-radius: 20px; }
+  .msg-action.continue-btn { width: auto; height: 40px; padding: 0 14px; border-radius: var(--sig-radius-bubble); }
   .msg-text :deep(pre) { white-space: pre; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .msg-text :deep(p) { margin: 10px 0; }
   .msg-text :deep(ul), .msg-text :deep(ol) { padding-left: 20px; margin: 10px 0; }
@@ -550,18 +550,18 @@ function handleMsgClick(e: MouseEvent) {
 
 /* ── P1-1 编辑重发 ── */
 .msg-edit { display: flex; flex-direction: column; gap: 8px; max-width: min(525px, 100%); margin-left: auto; }
-.edit-textarea { border-radius: 12px !important; border-color: var(--primary) !important; }
+.edit-textarea { border-radius: var(--sig-radius-card) !important; border-color: var(--primary) !important; }
 .edit-textarea :deep(textarea) { font-size: 16px !important; line-height: 24px !important; }
 .edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.edit-btn { padding: 4px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); transition: all 0.15s ease; }
+.edit-btn { padding: 4px 12px; border-radius: var(--sig-radius-button); font-size: 12px; cursor: pointer; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); transition: all 0.15s ease; }
 .edit-btn.save { background: var(--primary); color: #fff; border-color: var(--primary); }
 .edit-btn.save:hover { opacity: 0.9; }
 .edit-btn.cancel:hover { color: var(--text-primary); background: var(--bg-hover); }
 
 /* ── P1-2 附件展示 ── */
 .msg-attachments { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
-.msg-attachment-img { max-width: 200px; max-height: 200px; border-radius: 8px; border: 1px solid var(--border); object-fit: cover; }
-.msg-attachment-file { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); text-decoration: none; font-size: 13px; transition: border-color 0.15s ease, color 0.15s ease; }
+.msg-attachment-img { max-width: 200px; max-height: 200px; border-radius: var(--sig-radius-card); border: 1px solid var(--border); object-fit: cover; }
+.msg-attachment-file { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: var(--sig-radius-card); border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); text-decoration: none; font-size: 13px; transition: border-color 0.15s ease, color 0.15s ease; }
 .msg-attachment-file:hover { border-color: var(--primary); color: var(--primary); }
 .msg-attachment-file .att-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .msg-attachment-file .att-size { color: var(--text-tertiary); font-size: 12px; }
@@ -585,8 +585,8 @@ function handleMsgClick(e: MouseEvent) {
 
 /* ── P1-3 错误状态 ── */
 .msg-row.msg-error .msg-text { opacity: 0.6; }
-.msg-error-banner { display: flex; align-items: center; gap: 12px; margin-top: 8px; padding: 8px 12px; border-radius: 8px; background: rgba(220, 38, 38, 0.08); border: 1px solid rgba(220, 38, 38, 0.2); }
-.msg-error-banner .error-text { font-size: 13px; color: var(--danger, #dc2626); flex: 1; }
-.retry-btn { display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px; border-radius: 6px; border: 1px solid var(--danger, #dc2626); background: transparent; color: var(--danger, #dc2626); font-size: 12px; cursor: pointer; transition: background 0.15s ease, color 0.15s ease; }
-.retry-btn:hover { background: var(--danger, #dc2626); color: #fff; }
+.msg-error-banner { display: flex; align-items: center; gap: 12px; margin-top: 8px; padding: 8px 12px; border-radius: var(--sig-radius-card); background: var(--error-bg); border: 1px solid var(--error); }
+.msg-error-banner .error-text { font-size: 13px; color: var(--error); flex: 1; }
+.retry-btn { display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px; border-radius: var(--sig-radius-button); border: 1px solid var(--error); background: transparent; color: var(--error); font-size: 12px; cursor: pointer; transition: background 0.15s ease, color 0.15s ease; }
+.retry-btn:hover { background: var(--error); color: #fff; }
 </style>

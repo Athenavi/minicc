@@ -71,13 +71,15 @@ async def upsert_profile(request: Request):
         return _bad_request("user_id is required")
     body = await request.json()
     try:
+        confidence = int(body.get("confidence", 50))
+        confidence = max(0, min(100, confidence))
         result = await svc.upsert(
             tenant_id=tenant_id,
             user_id=user_id,
             slot=str(body.get("slot") or "fact"),
             key=str(body.get("key") or ""),
             value=str(body.get("value") or ""),
-            confidence=int(body.get("confidence", 50)),
+            confidence=confidence,
             source=str(body.get("source") or "user_confirmed"),
         )
     except ValueError as e:
@@ -99,6 +101,8 @@ async def update_profile(request: Request):
         return _bad_request("id is required")
     try:
         confidence = body.get("confidence")
+        if confidence is not None:
+            confidence = max(0, min(100, int(confidence)))
         entry = await svc.update_entry(
             tenant_id, user_id, entry_id,
             key=str(body["key"]) if body.get("key") is not None else None,

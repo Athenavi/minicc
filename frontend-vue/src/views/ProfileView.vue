@@ -255,7 +255,7 @@ async function handleSetPassword() {
         <Card class="profile-card" title="外观与主题" style="margin-top: 16px">
       <div class="appearance-row">
         <div class="appearance-label">深浅模式</div>
-        <a-radio-group :value="themeStore.themePreference" @change="(e: any) => themeStore.toggleTheme()">
+        <a-radio-group :value="themeStore.preference" @change="(e: any) => themeStore.toggleTheme()">
           <a-radio-button :value="'dark'">深色</a-radio-button>
           <a-radio-button :value="'light'">浅色</a-radio-button>
         </a-radio-group>
@@ -273,7 +273,7 @@ async function handleSetPassword() {
             :title="c"
             @click="themeStore.setAccent(c)"
           />
-          <label class="accent-custom" :style="{ backgroundColor: themeStore.accent }" title="自定义颜色">
+          <label class="accent-custom" :style="{ backgroundColor: themeStore.accent || '#0a0a0a' }" title="自定义颜色">
             <input
               type="color"
               :value="themeStore.accent"

@@ -119,6 +119,10 @@ func (s *CronScheduler) sync() {
 }
 
 func (s *CronScheduler) execute(ctx context.Context, j jobRow) {
+	// Add a timeout to prevent hanging jobs from blocking the cron executor
+	execCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+
 	start := time.Now()
 	status := "success"
 	errMsg := ""
@@ -135,7 +139,7 @@ func (s *CronScheduler) execute(ctx context.Context, j jobRow) {
 			_ = json.Unmarshal([]byte(j.Task), &t)
 			if t.AgentID == "" {
 				status, errMsg = "failed", "agent_id required"
-			} else if err := s.runAgent(ctx, j.TenantID, j.UserID, t.AgentID, t.Prompt); err != nil {
+			} else if err := s.runAgent(execCtx, j.TenantID, j.UserID, t.AgentID, t.Prompt); err != nil {
 				status, errMsg = "failed", err.Error()
 			}
 		default: // quick / 通用统一任务
@@ -146,12 +150,12 @@ func (s *CronScheduler) execute(ctx context.Context, j jobRow) {
 			_ = json.Unmarshal([]byte(j.Task), &t)
 			if t.UserInput == "" {
 				status, errMsg = "failed", "user_input required"
-			} else if err := s.runQuick(ctx, j.TenantID, j.UserID, t.UserInput, t.Mode); err != nil {
+			} else if err := s.runQuick(execCtx, j.TenantID, j.UserID, t.UserInput, t.Mode); err != nil {
 				status, errMsg = "failed", err.Error()
 			}
 		}
 	}
-	_, _ = db.Pool.Exec(ctx,
+	_, _ = db.Pool.Exec(execCtx,
 		`UPDATE cron_jobs SET last_run_at = NOW(), last_status = $1 WHERE id = $2`,
 		status, j.ID)
 	if status != "success" {
@@ -221,14 +225,21 @@ func HandleCronWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 	// 异步执行（webhook 尽快返回）
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("cron webhook async panic", "job", jobID, "panic", r)
+			}
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
 		s := &CronScheduler{python: cronSchedulerPython}
-		rows, err := db.ReadPool().Query(context.Background(),
+		rows, err := db.ReadPool().Query(ctx,
 			`SELECT id::text, name, schedule, task, COALESCE(tenant_id::text,''), COALESCE(user_id::text,'')
 			 FROM cron_jobs WHERE id = $1`, jobID)
 		if err == nil && rows.Next() {
 			var j jobRow
 			if rows.Scan(&j.ID, &j.Name, &j.Schedule, &j.Task, &j.TenantID, &j.UserID) == nil {
-				s.execute(context.Background(), j)
+				s.execute(ctx, j)
 			}
 		}
 		if rows != nil {
@@ -255,8 +266,15 @@ func (h *AdminHandler) HandleCronTrigger(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("cron trigger async panic", "job", id, "panic", r)
+			}
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
 		s := &CronScheduler{python: cronSchedulerPython}
-		s.execute(context.Background(), j)
+		s.execute(ctx, j)
 	}()
 	_ = tenantID
 	_ = userID

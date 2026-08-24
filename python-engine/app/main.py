@@ -289,6 +289,10 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
+    # 等待后台任务完成（上下文巩固等）
+    from app.context.manager import wait_background_tasks
+    await wait_background_tasks(timeout=10.0)
+
     # 关闭 PostgreSQL
     from app.db import close_pool
     await close_pool()
@@ -344,11 +348,14 @@ async def _resolve_attachments(content: str) -> str:
         return content
 
     import httpx
+    from app.tools.ssrf import fetch_url_safe
 
-    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+    # S 安全修复：禁用自动重定向，改用 ssrf.fetch_url_safe 逐跳校验
+    # scheme/端口/DNS/IP（含重定向绕过）后再获取，防止附件 URL 打内网/云元数据。
+    async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
         for is_image, name, url in matches:
             try:
-                resp = await client.get(url)
+                resp = await fetch_url_safe(client, url)
                 if resp.status_code != 200:
                     continue
 

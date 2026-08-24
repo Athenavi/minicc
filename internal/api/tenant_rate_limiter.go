@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -129,7 +130,11 @@ func (rl *TenantRateLimiter) Middleware(next http.Handler) http.Handler {
 
 // extractResource 从 URL 路径提取资源名。
 func extractResource(path string) string {
-	parts := splitPath(path)
+	trimmed := strings.Trim(path, "/")
+	if trimmed == "" {
+		return "unknown"
+	}
+	parts := strings.SplitN(trimmed, "/", 4)
 	if len(parts) >= 2 {
 		resource := parts[1]
 		if len(parts) >= 3 {
@@ -141,24 +146,6 @@ func extractResource(path string) string {
 		return resource
 	}
 	return "unknown"
-}
-
-func splitPath(path string) []string {
-	if path == "/" {
-		return []string{""}
-	}
-	result := []string{}
-	start := 0
-	for i, c := range path {
-		if c == '/' && i > 0 {
-			result = append(result, path[start:i])
-			start = i + 1
-		}
-	}
-	if start < len(path) {
-		result = append(result, path[start:])
-	}
-	return result
 }
 
 func formatFloat(f float64) string {

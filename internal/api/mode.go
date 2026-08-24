@@ -46,6 +46,13 @@ func (s *ModeStore) Set(sessionID, mode string) {
 	s.modes[sessionID] = mode
 }
 
+// Delete removes a session's mode setting to prevent memory leaks
+func (s *ModeStore) Delete(sessionID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.modes, sessionID)
+}
+
 // ── Permission Manager ──
 
 type PermissionRequest struct {

@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/athenavi/minicc/internal/auth"
 	"github.com/athenavi/minicc/internal/broadcast"
@@ -73,8 +74,11 @@ func (h *WebSocketHub) Broadcast(sessionID string, msg interface{}) {
 		slog.Warn("ws marshal", "error", err)
 		return
 	}
+	// Use a short write deadline to prevent blocking on slow connections
+	deadline := 5 * time.Second
 	for _, sc := range conns {
 		sc.mu.Lock()
+		_ = sc.conn.SetWriteDeadline(time.Now().Add(deadline))
 		err := sc.conn.WriteMessage(websocket.TextMessage, data)
 		sc.mu.Unlock()
 		if err != nil {
@@ -95,8 +99,14 @@ func (h *WebSocketHub) removeConn(sessionID string, conn *websocket.Conn) {
 	conns := h.conns[sessionID]
 	for i, sc := range conns {
 		if sc.conn == conn {
-			h.conns[sessionID] = append(conns[:i], conns[i+1:]...)
-			break
+			conns = append(conns[:i], conns[i+1:]...)
+			if len(conns) == 0 {
+				// Clean up empty session entry to prevent map bloat
+				delete(h.conns, sessionID)
+			} else {
+				h.conns[sessionID] = conns
+			}
+			return
 		}
 	}
 }
@@ -175,7 +185,6 @@ func WebSocketHandler(hub *WebSocketHub, eventHub *broadcast.Hub, authenticator 
 						slog.Error("ws event forward panic", "panic", r)
 					}
 				}()
-				defer eventHub.Unsubscribe(subID)
 				for evt := range subCh {
 					// Only forward events for this session (or broadcast events with no session)
 					if evt.SessionID != "" && evt.SessionID != sessionID {

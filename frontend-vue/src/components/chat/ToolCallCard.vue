@@ -63,7 +63,7 @@ const padLeft = computed(() => (props.depth || 0) * 22)
 .tree-guide { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--border); }
 
 /* 工具行：24px 单行（deepseek ToolRow 视觉） */
-.tool-row { overflow: hidden; border-radius: 6px; }
+.tool-row { overflow: hidden; border-radius: var(--sig-radius-code); }
 .tool-row:hover { background: var(--bg-hover); }
 .tool-main { display: flex; align-items: center; gap: 6px; width: 100%; height: 28px; padding: 0 8px; border: none; background: none; color: var(--text-secondary); cursor: pointer; font-size: 13px; text-align: left; }
 .chevron { font-size: 10px; color: var(--text-muted); transition: transform 0.2s; flex-shrink: 0; }
@@ -96,7 +96,7 @@ const padLeft = computed(() => (props.depth || 0) * 22)
   .state-dot.running::after { animation: none; }
 }
 
-.tool-args { padding: 8px 12px; margin: 2px 8px 6px; background: var(--bg-secondary); border: 1px solid var(--border-card); border-radius: 6px; }
+.tool-args { padding: 8px 12px; margin: 2px 8px 6px; background: var(--bg-secondary); border: 1px solid var(--border-card); border-radius: var(--sig-radius-button); }
 .tool-args pre { margin: 0; font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); white-space: pre-wrap; word-break: break-all; }
 @media (max-width: 768px) { .tool-row-wrap { padding: 0 16px; } }
 /* 轻量展开动画（≤200ms） */

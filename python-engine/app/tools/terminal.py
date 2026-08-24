@@ -21,6 +21,7 @@ from typing import Any, Optional
 
 from app.tools.context import get_session_id
 from app.tools.registry import registry
+from app.tools.sandbox import sandboxed_env, workspace_dir
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,6 @@ class PersistentTerminal:
         proc = self._procs.get(key)
         if proc is not None and proc.returncode is None:
             return proc
-        from app.tools.sandbox import workspace_dir
         self._ws = str(workspace_dir())
         proc = await asyncio.create_subprocess_shell(
             _shell_command(),
@@ -51,6 +51,9 @@ class PersistentTerminal:
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
             cwd=self._ws if hasattr(self, '_ws') else None,
+            # S 安全修复：清理宿主 env(API key/JWT_SECRET/internal token 等)，
+            # 仅保留 PATH/HOME 等基础变量并重定向到沙箱，防止模型 `env` 外带密钥。
+            env=sandboxed_env(),
         )
         # 首命令 cd 到沙箱 workspace，保证状态持久在隔离目录内（S 安全修复）
         try:

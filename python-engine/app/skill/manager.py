@@ -275,6 +275,15 @@ class MCPClient:
                 "(e.g. 'node /path/to/mcp-server.js')"
             )
 
+        # S 安全修复：MCP STDIO 命令必须过白名单(PLUGIN_COMMAND_ALLOWLIST)，
+        # 防 server_url 可被配置/注入控制时任意命令执行。未配置则 fail-close 拒绝。
+        from app.tools.ssrf import command_allowed
+        if not command_allowed(cmd[0]):
+            raise ValueError(
+                f"STDIO transport: command not allowed: {cmd[0]} "
+                "(set PLUGIN_COMMAND_ALLOWLIST)"
+            )
+
         # 构造 initialize + 实际请求两条消息
         init_req = {
             "jsonrpc": "2.0",

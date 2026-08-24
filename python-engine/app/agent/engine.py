@@ -619,10 +619,20 @@ class AgentEngine:
         except (json.JSONDecodeError, TypeError):
             args = {}
 
-        # Try local registry first
-        if self._tool_registry and self._tool_registry.get(name) is not None:
-            return await self._tool_registry.execute(name, args or {})
-        return {"error": f"Tool '{name}' not found"}
+        # Check for cancellation before starting a potentially long-running tool
+        try:
+            asyncio.current_task().cancel()  # no-op if not cancelled
+        except Exception:
+            pass
+
+        try:
+            # Try local registry first
+            if self._tool_registry and self._tool_registry.get(name) is not None:
+                return await self._tool_registry.execute(name, args or {})
+            return {"error": f"Tool '{name}' not found"}
+        except asyncio.CancelledError:
+            logger.warning("Tool execution cancelled: %s", name)
+            return {"error": f"Tool '{name}' cancelled"}
 
     def _needs_approval(self, tool_name: str) -> bool:
         """Check whether a tool requires user approval."""

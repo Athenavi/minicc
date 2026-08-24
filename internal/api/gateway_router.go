@@ -522,10 +522,12 @@ func registerSystemRoutes(
 	mux.Handle("GET /v1/install/status", rlMW(http.HandlerFunc(installHandler.Status)))
 	mux.Handle("POST /v1/install/setup", rlMW(http.HandlerFunc(installHandler.Setup)))
 
-	// Editor (auth + rate limited)
-	mux.Handle("GET /api/editor/files", authMW(rlMW(http.HandlerFunc(editorHandler.ListFiles))))
-	mux.Handle("GET /api/editor/read", authMW(rlMW(http.HandlerFunc(editorHandler.ReadFile))))
-	mux.Handle("POST /api/editor/write", authMW(rlMW(http.HandlerFunc(editorHandler.WriteFile))))
+	// Editor (admin 权限 + rate limited)
+	// S 安全修复：编辑器直接读写共享服务器工作区（含沙箱/分片/插件数据），
+	// 仅限管理员（列表/读=PermAdminRead，写=PermAdminWrite），普通 user 无权访问。
+	mux.Handle("GET /api/editor/files", authMW(rlMW(RequirePermission(auth.PermAdminRead)(http.HandlerFunc(editorHandler.ListFiles)))))
+	mux.Handle("GET /api/editor/read", authMW(rlMW(RequirePermission(auth.PermAdminRead)(http.HandlerFunc(editorHandler.ReadFile)))))
+	mux.Handle("POST /api/editor/write", authMW(rlMW(RequirePermission(auth.PermAdminWrite)(http.HandlerFunc(editorHandler.WriteFile)))))
 
 	// Tools (rate limited, proxies to Python)
 	mux.Handle("GET /v1/tools", rlMW(http.HandlerFunc(toolHandler.ListTools)))

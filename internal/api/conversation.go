@@ -1,7 +1,9 @@
-﻿package api
+package api
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -108,21 +110,37 @@ func (h *ConversationHandler) Get(w http.ResponseWriter, r *http.Request) {
 	before := r.URL.Query().Get("before")
 
 	// P 性能：messages 与 tool_calls 两个查询并行（pgxpool 并发安全）
+	// 使用 select 确保 context 取消时不泄漏 goroutine
 	type pageResult struct {
 		page session.MessagePage
 		err  error
 	}
 	pageCh := make(chan pageResult, 1)
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("conversation message fetch panic", "session", id, "panic", r)
+				pageCh <- pageResult{err: fmt.Errorf("panic: %v", r)}
+			}
+		}()
 		p, e := h.sessionMgr.GetMessagesPage(r.Context(), id, limit, before)
 		pageCh <- pageResult{p, e}
 	}()
 	toolCalls, _ := h.sessionMgr.GetToolCallsPage(r.Context(), id, limit, before)
-	pr := <-pageCh
+
+	// Wait for messages or context cancellation
+	var pr pageResult
+	select {
+	case pr = <-pageCh:
+	case <-r.Context().Done():
+		// Context cancelled; return what we have from toolCalls
+		pr = pageResult{err: r.Context().Err()}
+		slog.Warn("conversation fetch context cancelled", "session", id)
+	}
 	page := pr.page
 	err = pr.err
 	if err != nil {
-		page.Messages = nil
+		page = session.MessagePage{} // zero value, safe to access fields
 	}
 
 	conv := Conversation{

@@ -1,155 +1,1011 @@
-/* ══════════════════════════════════════════════════════════════
-   MiniCC 设计系统 v2 — taste-skill 驱动重设计
+/* ============================================================
+   MiniCC Design System v3 — Multi-Theme Architecture
    --------------------------------------------------------------
-   Design Read: 企业级 AI Agent 控制台 for 技术用户
-                 Linear/Vercel 式克制专业语言
-   Dials:       DESIGN_VARIANCE 4 / MOTION_INTENSITY 3 / VISUAL_DENSITY 6
-   原则:
-     - 单一强调色（电光蓝），中性底色统一冷暖（zinc 冷灰系）
-     - 亮/暗双套语义令牌，禁纯黑/纯白
-     - 阴影 tinted（带底色相），非纯黑低透明度
-     - 圆角分层规则: 控件 6px / 卡片 10px / 面板 14px
-     - 数字用 tabular-nums（等宽数字，对齐数据列）
-   ══════════════════════════════════════════════════════════════ */
+   Core Principles:
+     - Design Tokens at 3 levels: Primitive → Semantic → Component
+     - 4 theme presets × 2 modes (light/dark) = 8 visual themes
+     - All styles driven by CSS variables; zero hardcoded colors
+     - Smooth transitions between themes
+     - Production-ready: WCAG AA contrast, reduced-motion support
+   ============================================================ */
 
+/* ─═════════════════════════════════════════════════════════════
+   PRIMITIVE TOKENS — base values, no semantic meaning
+   ─═════════════════════════════════════════════════════════════ */
 :root {
-  /* 顶栏/下拉菜单半透明玻璃底色（亮色主题；用 rgba 而非 color-mix，兼容所有浏览器） */
-  --topbar-bg: rgba(255, 255, 255, 0.38);
-  --menu-bg: rgba(255, 255, 255, 0.62);
-  /* ── 强调色 — DeepSeek 品牌蓝（像素级复刻 deepseek-harness design-platform） ── */
-  --primary: #4176e6;            /* --dsw-static-deepseek-500 rgb(65,118,230) */
-  --primary-light: #5686fe;      /* deepseek-450 */
-  --primary-dark: #4868b2;       /* deepseek-600 */
-  --primary-bg: rgba(65, 118, 230, 0.08);
-  --accent: #679efe;             /* deepseek-400 */
+  /* Spacing — 4px base unit */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
 
-  /* ── 语义色（deepseek static 色板） ── */
-  --success: #22c55e;            /* green-500 */
-  --warning: #f59e0b;            /* amber-500 */
-  --error: #ef4444;              /* red-500 */
+  /* Radius */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-3xl: 20px;
+  --radius-full: 9999px;
 
-  /* ── 中性底色 — deepseek neutral-bluish 系 ── */
-  --bg-page: #f9fafb;            /* bluish-50 */
-  --bg-card: #ffffff;            /* bluish-00 */
-  --bg-secondary: #f1f3f5;       /* bluish-75 */
+  /* Typography */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-base: 14px;
+  --fs-md: 15px;
+  --fs-lg: 16px;
+  --fs-xl: 18px;
+  --fs-2xl: 20px;
+  --fs-3xl: 24px;
+  --fs-4xl: 28px;
+  --fs-5xl: 32px;
+  --fs-6xl: 36px;
+  --fs-7xl: 42px;
+  --fs-8xl: 48px;
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+
+  --lh-tight: 1.15;
+  --lh-snug: 1.35;
+  --lh-normal: 1.5;
+  --lh-relaxed: 1.65;
+
+  /* Shadows — layered, tinted with semantic colors */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.08), 0 4px 8px rgba(0, 0, 0, 0.04);
+  --shadow-xl: 0 24px 48px rgba(0, 0, 0, 0.12), 0 8px 16px rgba(0, 0, 0, 0.06);
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 100ms;
+  --dur-normal: 200ms;
+  --dur-slow: 350ms;
+}
+
+/* ─═════════════════════════════════════════════════════════════
+   SEMANTIC TOKENS (THEME: LIGHT) — Linear-inspired default
+   ─═════════════════════════════════════════════════════════════ */
+:root,
+[data-theme='linear-light'] {
+  /* Brand / Primary */
+  --brand-50: #f5f5f5;
+  --brand-100: #e8e8e8;
+  --brand-200: #d4d4d4;
+  --brand-300: #a3a3a3;
+  --brand-400: #737373;
+  --brand-500: #525252;
+  --brand-600: #404040;
+  --brand-700: #262626;
+  --brand-800: #171717;
+  --brand-900: #0a0a0a;
+
+  --primary: #0a0a0a;
+  --primary-hover: #262626;
+  --primary-active: #171717;
+  --primary-bg: rgba(10, 10, 10, 0.06);
+  --primary-border: rgba(10, 10, 10, 0.12);
+
+  /* Accent */
+  --accent: #6366f1;
+  --accent-light: #818cf8;
+  --accent-bg: rgba(99, 102, 241, 0.08);
+
+  /* Status */
+  --success: #10b981;
+  --success-bg: rgba(16, 185, 129, 0.08);
+  --warning: #f59e0b;
+  --warning-bg: rgba(245, 158, 11, 0.08);
+  --error: #ef4444;
+  --error-bg: rgba(239, 68, 68, 0.08);
+  --info: #3b82f6;
+  --info-bg: rgba(59, 130, 246, 0.08);
+
+  /* Backgrounds */
+  --bg-base: #ffffff;
+  --bg-page: #fafafa;
+  --bg-surface: #ffffff;
+  --bg-surface-hover: #f5f5f5;
+  --bg-elevated: #ffffff;
+  --bg-overlay: rgba(0, 0, 0, 0.4);
+  --bg-sidebar: #ffffff;
+  --bg-sidebar-hover: #f5f5f5;
   --bg-input: #ffffff;
-  --bg-hover: rgba(38, 49, 72, 0.06);   /* --dsw-alias-interactive-bg-hover */
-  --bg-code: #f9fafb;            /* markdown-code-block bluish-50 */
+  --bg-input-focus: #ffffff;
+  --bg-code: #f5f5f5;
+  --bg-bubble-user: #f5f5f5;
+  --bg-bubble-assistant: #ffffff;
 
-  /* ── 文本层级（bluish 系） ── */
-  --text-primary: #0f1115;       /* bluish-1000 */
-  --text-secondary: #61666b;     /* bluish-700 */
-  --text-tertiary: #81858c;      /* bluish-600 */
-  --text-muted: #adb2b8;         /* bluish-400 */
-  --text-disabled: #dde2ee;      /* bluish-200 */
-  --text-code: #1f2430;
+  /* Text */
+  --text-primary: #0a0a0a;
+  --text-secondary: #525252;
+  --text-tertiary: #737373;
+  --text-quaternary: #a3a3a3;
+  --text-muted: var(--text-quaternary);
+  --text-disabled: #d4d4d4;
+  --text-inverse: #ffffff;
+  --text-link: #6366f1;
+  --text-link-hover: #4f46e5;
+  --text-bubble-user: #0a0a0a;
+  --text-bubble-assistant: #171717;
 
-  /* ── 边框（black/0.04 → 0.16 层级） ── */
-  --border: rgba(0, 0, 0, 0.1);       /* l2 */
-  --border-card: rgba(0, 0, 0, 0.04); /* l1 */
+  /* Borders */
+  --border-default: #e5e5e5;
+  --border-subtle: #f0f0f0;
+  --border-strong: #d4d4d4;
+  --border-focus: var(--primary);
 
-  /* ── 用户气泡（deepseek specific-bubble） ── */
-  --bubble-user: #edf3fe;             /* deepseek-50 */
-  --bubble-user-text: #0f1115;
+  /* Component-specific */
+  --comp-header-bg: rgba(255, 255, 255, 0.72);
+  --comp-header-border: var(--border-subtle);
+  --comp-header-height: 56px;
+  --comp-sidebar-width: 240px;
+  --comp-sidebar-bg: var(--bg-sidebar);
+  --comp-card-radius: var(--radius-lg);
+  --comp-input-radius: var(--radius-md);
+  --comp-button-radius: var(--radius-md);
+  --comp-button-primary-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --comp-tab-active-bg: var(--primary-bg);
+  --comp-divider: var(--border-subtle);
 
-  /* ── 阴影（deepseek --dsw-shadow-lv1/lv2） ── */
-  --shadow-md: 0 4px 12px 0 rgba(0, 0, 0, 0.02), 0 2px 8px 0 rgba(0, 0, 0, 0.04); /* lv2 */
-  --shadow-lg: 0 2px 4px 0 rgba(0, 0, 0, 0.05), 0 12px 32px 0 rgba(0, 0, 0, 0.1);
+  /* Chat-specific */
+  --chat-bubble-radius-lg: var(--radius-xl);
+  --chat-bubble-radius-sm: var(--radius-lg);
+  --chat-input-bg: var(--bg-surface);
+  --chat-input-border: var(--border-default);
+  --chat-toolbar-bg: var(--bg-surface);
+  --chat-timestamp-color: var(--text-quaternary);
 
-  /* P3-A: 亮色模式 highlight.js 配色变量（github.css 默认值，仅作占位） */
+  /* ── Chat Semantic Aliases ── */
+  --bg-card: var(--bg-surface);
+  --bg-secondary: var(--bg-surface-hover);
+  --bg-hover: var(--bg-surface-hover);
+  --border: var(--border-default);
+  --border-card: var(--border-subtle);
+  --text-code: var(--text-primary);
+  --bubble-user: var(--bg-surface-hover);
+  --bubble-user-text: var(--text-primary);
+  --danger: #ef4444;
+
+  /* Syntax highlighting — light defaults ( overridden per theme ) */
   --hljs-fg: #24292f;
-  --hljs-bg: transparent;
+  --hljs-bg: #f5f5f5;
   --hljs-keyword: #cf222e;
   --hljs-string: #0a3069;
   --hljs-number: #0550ae;
   --hljs-comment: #6e7781;
-  --hljs-title: #6639ba;
-  --hljs-attr: #0550ae;
-  --hljs-built-in: #953800;
-  --hljs-meta: #6e7781;
+  --hljs-title: #8250df;
+  --hljs-built-in: #0550ae;
+  --hljs-meta: #8250df;
 
-  /* ── 圆角 — 复刻 deepseek：输入胶囊 22 / 卡片 8-12 / 控件 6 ── */
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 10px;
-  --radius-xl: 22px;
-  --radius-full: 9999px;
+  /* Terminal panel — dark defaults */
+  --terminal-bg: #1e1e1e;
+  --terminal-header-bg: #2d2d2d;
+  --terminal-text: #d4d4d4;
 
-  /* ── 字体 — deepseek 字体栈 ── */
-  --font-sans: 'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI',
-    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  --font-mono: 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, 'Liberation Mono', Menlo, Courier,
-    'PingFang SC', 'Microsoft YaHei';
+  /* Signature — Linear: minimalist, flat, precise */
+  --sig-radius-card: 8px;
+  --sig-radius-button: 8px;
+  --sig-radius-bubble: 22px;
+  --sig-radius-bubble-assistant: 2px;
+  --sig-radius-code: 8px;
+  --sig-radius-input: 22px;
+  --sig-border-width: 1px;
+  --sig-blur-header: 12px;
+  --sig-blur-panel: 0px;
+  --sig-glass-opacity: 0.72;
+  --sig-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --sig-shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.06);
+  --sig-input-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --sig-input-ring: 3px;
+  --sig-glow-color: transparent;
+  --sig-glow-intensity: 0;
+  --sig-bg-decor: none;
+  --sig-accent-gradient: none;
 }
 
-/* ── 暗色模式 — deepseek bluish 暗色板 ── */
-.dark {
-  --topbar-bg: rgba(35, 35, 36, 0.4);
-  --menu-bg: rgba(44, 44, 46, 0.72);
-  --primary: #5686fe;            /* deepseek-450（暗色更亮） */
-  --primary-light: #679efe;      /* deepseek-400 */
-  --primary-dark: #4176e6;       /* deepseek-500 */
-  --primary-bg: rgba(103, 158, 254, 0.14);
-  --accent: #679efe;
+/* ─═════════════════════════════════════════════════════════════
+   THEME: linear-dark
+   ─═════════════════════════════════════════════════════════════ */
+[data-theme='linear-dark'] {
+  --brand-50: #171717;
+  --brand-100: #262626;
+  --brand-200: #404040;
+  --brand-300: #525252;
+  --brand-400: #737373;
+  --brand-500: #a3a3a3;
+  --brand-600: #d4d4d4;
+  --brand-700: #e8e8e8;
+  --brand-800: #f5f5f5;
+  --brand-900: #ffffff;
 
-  --success: #22c55e;
-  --warning: #f59e0b;
-  --error: #ef4444;
+  --primary: #ffffff;
+  --primary-hover: #f5f5f5;
+  --primary-active: #e8e8e8;
+  --primary-bg: rgba(255, 255, 255, 0.08);
+  --primary-border: rgba(255, 255, 255, 0.14);
 
-  --bg-page: #151517;            /* bluish-950 */
-  --bg-card: #232324;            /* bluish-875 */
-  --bg-secondary: #2c2c2e;       /* bluish-850 */
-  --bg-input: #232324;
-  --bg-hover: rgba(255, 255, 255, 0.08);
-  --bg-code: #2c2c2e;
+  --accent: #818cf8;
+  --accent-light: #a5b4fc;
+  --accent-bg: rgba(129, 140, 248, 0.12);
 
-  --text-primary: #f9fafb;       /* bluish-50 */
-  --text-secondary: #cfd3d6;     /* bluish-300 */
-  --text-tertiary: #adb2b8;      /* bluish-400 */
-  --text-muted: #81858c;         /* bluish-600 */
-  --text-disabled: #3f3f40;
-  --text-code: #dde2ee;
+  --success: #34d399;
+  --success-bg: rgba(52, 211, 153, 0.12);
+  --warning: #fbbf24;
+  --warning-bg: rgba(251, 191, 36, 0.12);
+  --error: #f87171;
+  --error-bg: rgba(248, 113, 113, 0.12);
+  --info: #60a5fa;
+  --info-bg: rgba(96, 165, 250, 0.12);
 
-  --border: rgba(255, 255, 255, 0.12);  /* l2 dark */
-  --border-card: rgba(255, 255, 255, 0.06); /* l1 dark */
+  --bg-base: #0a0a0a;
+  --bg-page: #0a0a0a;
+  --bg-surface: #171717;
+  --bg-surface-hover: #262626;
+  --bg-elevated: #171717;
+  --bg-overlay: rgba(0, 0, 0, 0.6);
+  --bg-sidebar: #0a0a0a;
+  --bg-sidebar-hover: #171717;
+  --bg-input: #171717;
+  --bg-input-focus: #262626;
+  --bg-code: #171717;
+  --bg-bubble-user: #262626;
+  --bg-bubble-assistant: #171717;
 
-  --bubble-user: rgba(86, 134, 254, 0.18);  /* deepseek-450 18% */
-  --bubble-user-text: #f9fafb;
+  --text-primary: #fafafa;
+  --text-secondary: #a3a3a3;
+  --text-tertiary: #737373;
+  --text-quaternary: #525252;
+  --text-disabled: #404040;
+  --text-inverse: #0a0a0a;
+  --text-link: #818cf8;
+  --text-link-hover: #a5b4fc;
+  --text-bubble-user: #fafafa;
+  --text-bubble-assistant: #e5e5e5;
 
-  --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.35);
-  --shadow-lg: 0 2px 4px rgba(0, 0, 0, 0.45), 0 12px 32px rgba(0, 0, 0, 0.4);
+  --border-default: #262626;
+  --border-subtle: #1f1f1f;
+  --border-strong: #404040;
 
-  /* P3-A: 暗色模式下 highlight.js 代码高亮配色覆盖（github.css → github-dark 风格） */
-  --hljs-fg: #c9d1d9;
-  --hljs-bg: transparent;
+  --comp-header-bg: rgba(10, 10, 10, 0.72);
+  --comp-card-radius: var(--radius-lg);
+  --comp-button-primary-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+
+  --chat-timestamp-color: var(--text-quaternary);
+
+  /* Chat Semantic Overrides — linear-dark */
+  --bubble-user: #262626;
+  --bubble-user-text: #f5f5f5;
+  --hljs-fg: #e6edf3;
+  --hljs-bg: #171717;
   --hljs-keyword: #ff7b72;
   --hljs-string: #a5d6ff;
   --hljs-number: #79c0ff;
   --hljs-comment: #8b949e;
   --hljs-title: #d2a8ff;
-  --hljs-attr: #79c0ff;
-  --hljs-built-in: #ffa657;
-  --hljs-meta: #8b949e;
+  --hljs-built-in: #7ee787;
+  --hljs-meta: #d2a8ff;
+  --terminal-bg: #171717;
+  --terminal-header-bg: #262626;
+  --terminal-text: #e6edf3;
+
+  /* Signature — Linear: minimalist, flat, precise */
+  --sig-radius-card: 8px;
+  --sig-radius-button: 8px;
+  --sig-radius-bubble: 22px;
+  --sig-radius-bubble-assistant: 2px;
+  --sig-radius-code: 8px;
+  --sig-radius-input: 22px;
+  --sig-border-width: 1px;
+  --sig-blur-header: 12px;
+  --sig-blur-panel: 0px;
+  --sig-glass-opacity: 0.72;
+  --sig-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --sig-shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.25);
+  --sig-input-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --sig-input-ring: 3px;
+  --sig-glow-color: transparent;
+  --sig-glow-intensity: 0;
+  --sig-bg-decor: none;
+  --sig-accent-gradient: none;
 }
 
-* {
+/* ─═════════════════════════════════════════════════════════════
+   THEME: supabase-light — warm, refined, modern
+   ─═════════════════════════════════════════════════════════════ */
+[data-theme='supabase-light'] {
+  --brand-50: #fefce8;
+  --brand-100: #fef9c3;
+  --brand-200: #fef08a;
+  --brand-300: #fde047;
+  --brand-400: #facc15;
+  --brand-500: #eab308;
+  --brand-600: #ca8a04;
+  --brand-700: #a16207;
+  --brand-800: #854d0e;
+  --brand-900: #713f12;
+
+  --primary: #eab308;
+  --primary-hover: #ca8a04;
+  --primary-active: #a16207;
+  --primary-bg: rgba(234, 179, 8, 0.08);
+  --primary-border: rgba(234, 179, 8, 0.18);
+
+  --accent: #0ea5e9;
+  --accent-light: #38bdf8;
+  --accent-bg: rgba(14, 165, 233, 0.08);
+
+  --success: #10b981;
+  --success-bg: rgba(16, 185, 129, 0.08);
+  --warning: #f59e0b;
+  --warning-bg: rgba(245, 158, 11, 0.08);
+  --error: #ef4444;
+  --error-bg: rgba(239, 68, 68, 0.08);
+  --info: #3b82f6;
+  --info-bg: rgba(59, 130, 246, 0.08);
+
+  --bg-base: #ffffff;
+  --bg-page: #fefef8;
+  --bg-surface: #ffffff;
+  --bg-surface-hover: #fefce8;
+  --bg-elevated: #ffffff;
+  --bg-overlay: rgba(0, 0, 0, 0.4);
+  --bg-sidebar: #ffffff;
+  --bg-sidebar-hover: #fefce8;
+  --bg-input: #fffdf5;
+  --bg-input-focus: #ffffff;
+  --bg-code: #fefce8;
+  --bg-bubble-user: #fef9c3;
+  --bg-bubble-assistant: #ffffff;
+
+  --text-primary: #1c1917;
+  --text-secondary: #57534e;
+  --text-tertiary: #78716c;
+  --text-quaternary: #a8a29e;
+  --text-disabled: #d6d3d1;
+  --text-inverse: #ffffff;
+  --text-link: #ca8a04;
+  --text-link-hover: #a16207;
+  --text-bubble-user: #1c1917;
+  --text-bubble-assistant: #292524;
+
+  --border-default: #e7e5e4;
+  --border-subtle: #f5f5f4;
+  --border-strong: #d6d3d1;
+
+  --comp-header-bg: rgba(255, 255, 255, 0.78);
+  --comp-card-radius: var(--radius-xl);
+  --comp-button-primary-shadow: 0 1px 2px rgba(202, 138, 4, 0.15);
+
+  --chat-bubble-radius-lg: var(--radius-2xl);
+  --chat-bubble-radius-sm: var(--radius-xl);
+
+  /* Chat Semantic Overrides — supabase-light */
+  --bubble-user: #fef9c3;
+  --bubble-user-text: #1c1917;
+  --hljs-fg: #1c1917;
+  --hljs-bg: #fefce8;
+  --hljs-keyword: #9333ea;
+  --hljs-string: #ca8a04;
+  --hljs-number: #2563eb;
+  --hljs-comment: #78716c;
+  --hljs-title: #c026d3;
+  --hljs-built-in: #059669;
+  --hljs-meta: #c026d3;
+  --terminal-bg: #1c1917;
+  --terminal-header-bg: #292524;
+  --terminal-text: #fef3c7;
+
+  /* Signature — Supabase: warm, refined, soft-glass */
+  --sig-radius-card: 14px;
+  --sig-radius-button: 12px;
+  --sig-radius-bubble: 28px;
+  --sig-radius-bubble-assistant: 10px;
+  --sig-radius-code: 12px;
+  --sig-radius-input: 28px;
+  --sig-border-width: 1px;
+  --sig-blur-header: 16px;
+  --sig-blur-panel: 0px;
+  --sig-glass-opacity: 0.82;
+  --sig-shadow-card: 0 4px 16px rgba(202, 138, 4, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --sig-shadow-hover: 0 12px 32px rgba(202, 138, 4, 0.12), 0 4px 8px rgba(0, 0, 0, 0.04);
+  --sig-input-shadow: 0 4px 16px rgba(202, 138, 4, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --sig-input-ring: 4px;
+  --sig-glow-color: transparent;
+  --sig-glow-intensity: 0;
+  --sig-bg-decor: none;
+  --sig-accent-gradient: none;
+}
+
+/* ─═════════════════════════════════════════════════════════════
+   THEME: supabase-dark — dark, warm, glassmorphic
+   ─═════════════════════════════════════════════════════════════ */
+[data-theme='supabase-dark'] {
+  --brand-50: #422006;
+  --brand-100: #713f12;
+  --brand-200: #854d0e;
+  --brand-300: #a16207;
+  --brand-400: #ca8a04;
+  --brand-500: #eab308;
+  --brand-600: #facc15;
+  --brand-700: #fde047;
+  --brand-800: #fef08a;
+  --brand-900: #fefce8;
+
+  --primary: #facc15;
+  --primary-hover: #eab308;
+  --primary-active: #ca8a04;
+  --primary-bg: rgba(250, 204, 21, 0.14);
+  --primary-border: rgba(250, 204, 21, 0.22);
+
+  --accent: #38bdf8;
+  --accent-light: #7dd3fc;
+  --accent-bg: rgba(56, 189, 248, 0.12);
+
+  --success: #34d399;
+  --success-bg: rgba(52, 211, 153, 0.12);
+  --warning: #fbbf24;
+  --warning-bg: rgba(251, 191, 36, 0.12);
+  --error: #f87171;
+  --error-bg: rgba(248, 113, 113, 0.12);
+  --info: #60a5fa;
+  --info-bg: rgba(96, 165, 250, 0.12);
+
+  --bg-base: #1c1917;
+  --bg-page: #1c1917;
+  --bg-surface: #292524;
+  --bg-surface-hover: #44403c;
+  --bg-elevated: #292524;
+  --bg-overlay: rgba(0, 0, 0, 0.6);
+  --bg-sidebar: #1c1917;
+  --bg-sidebar-hover: #292524;
+  --bg-input: #1c1917;
+  --bg-input-focus: #292524;
+  --bg-code: #292524;
+  --bg-bubble-user: #422006;
+  --bg-bubble-assistant: #292524;
+
+  --text-primary: #fef9c3;
+  --text-secondary: #d6d3d1;
+  --text-tertiary: #a8a29e;
+  --text-quaternary: #78716c;
+  --text-disabled: #57534e;
+  --text-inverse: #1c1917;
+  --text-link: #facc15;
+  --text-link-hover: #fde047;
+  --text-bubble-user: #fefce8;
+  --text-bubble-assistant: #f5f5f4;
+
+  --border-default: #44403c;
+  --border-subtle: #292524;
+  --border-strong: #57534e;
+
+  --comp-header-bg: rgba(28, 25, 23, 0.75);
+  --comp-button-primary-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+
+  /* Chat Semantic Overrides — supabase-dark */
+  --bubble-user: #422006;
+  --bubble-user-text: #fef9c3;
+  --hljs-fg: #fef9c3;
+  --hljs-bg: #1c1917;
+  --hljs-keyword: #e879f9;
+  --hljs-string: #fbbf24;
+  --hljs-number: #60a5fa;
+  --hljs-comment: #a8a29e;
+  --hljs-title: #f0abfc;
+  --hljs-built-in: #34d399;
+  --hljs-meta: #f0abfc;
+  --terminal-bg: #1c1917;
+  --terminal-header-bg: #292524;
+  --terminal-text: #fef3c7;
+
+  /* Signature — Supabase: warm, refined, soft-glass */
+  --sig-radius-card: 14px;
+  --sig-radius-button: 12px;
+  --sig-radius-bubble: 28px;
+  --sig-radius-bubble-assistant: 10px;
+  --sig-radius-code: 12px;
+  --sig-radius-input: 28px;
+  --sig-border-width: 1px;
+  --sig-blur-header: 16px;
+  --sig-blur-panel: 0px;
+  --sig-glass-opacity: 0.75;
+  --sig-shadow-card: 0 4px 16px rgba(202, 138, 4, 0.12), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --sig-shadow-hover: 0 12px 32px rgba(202, 138, 4, 0.18), 0 4px 8px rgba(0, 0, 0, 0.2);
+  --sig-input-shadow: 0 4px 16px rgba(202, 138, 4, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --sig-input-ring: 4px;
+  --sig-glow-color: transparent;
+  --sig-glow-intensity: 0;
+  --sig-bg-decor: none;
+  --sig-accent-gradient: none;
+}
+
+/* ─═════════════════════════════════════════════════════════════
+   THEME: notion-light — clean, functional, productive
+   ─═════════════════════════════════════════════════════════════ */
+[data-theme='notion-light'] {
+  --brand-50: #f8fafc;
+  --brand-100: #f1f5f9;
+  --brand-200: #e2e8f0;
+  --brand-300: #cbd5e1;
+  --brand-400: #94a3b8;
+  --brand-500: #64748b;
+  --brand-600: #475569;
+  --brand-700: #334155;
+  --brand-800: #1e293b;
+  --brand-900: #0f172a;
+
+  --primary: #0f172a;
+  --primary-hover: #1e293b;
+  --primary-active: #334155;
+  --primary-bg: rgba(15, 23, 42, 0.05);
+  --primary-border: rgba(15, 23, 42, 0.1);
+
+  --accent: #0ea5e9;
+  --accent-light: #38bdf8;
+  --accent-bg: rgba(14, 165, 233, 0.08);
+
+  --success: #059669;
+  --success-bg: rgba(5, 150, 105, 0.08);
+  --warning: #d97706;
+  --warning-bg: rgba(217, 119, 6, 0.08);
+  --error: #dc2626;
+  --error-bg: rgba(220, 38, 38, 0.08);
+  --info: #0284c7;
+  --info-bg: rgba(2, 132, 199, 0.08);
+
+  --bg-base: #ffffff;
+  --bg-page: #ffffff;
+  --bg-surface: #ffffff;
+  --bg-surface-hover: #f8fafc;
+  --bg-elevated: #ffffff;
+  --bg-overlay: rgba(15, 23, 42, 0.5);
+  --bg-sidebar: #fafafa;
+  --bg-sidebar-hover: #f1f5f9;
+  --bg-input: #ffffff;
+  --bg-input-focus: #ffffff;
+  --bg-code: #f1f5f9;
+  --bg-bubble-user: #f1f5f9;
+  --bg-bubble-assistant: #ffffff;
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-tertiary: #64748b;
+  --text-quaternary: #94a3b8;
+  --text-disabled: #cbd5e1;
+  --text-inverse: #ffffff;
+  --text-link: #0284c7;
+  --text-link-hover: #0369a1;
+  --text-bubble-user: #0f172a;
+  --text-bubble-assistant: #1e293b;
+
+  --border-default: #e2e8f0;
+  --border-subtle: #f1f5f9;
+  --border-strong: #cbd5e1;
+
+  --comp-header-bg: rgba(255, 255, 255, 0.85);
+  --comp-card-radius: var(--radius-md);
+  --comp-input-radius: var(--radius-sm);
+  --comp-button-radius: var(--radius-sm);
+  --comp-button-primary-shadow: none;
+
+  --chat-bubble-radius-lg: var(--radius-lg);
+  --chat-bubble-radius-sm: var(--radius-md);
+
+  /* Chat Semantic Overrides — notion-light */
+  --bubble-user: #f1f5f9;
+  --bubble-user-text: #0f172a;
+  --hljs-fg: #0f172a;
+  --hljs-bg: #f8fafc;
+  --hljs-keyword: #7c3aed;
+  --hljs-string: #059669;
+  --hljs-number: #2563eb;
+  --hljs-comment: #94a3b8;
+  --hljs-title: #7c3aed;
+  --hljs-built-in: #0891b2;
+  --hljs-meta: #7c3aed;
+  --terminal-bg: #0f172a;
+  --terminal-header-bg: #1e293b;
+  --terminal-text: #e2e8f0;
+
+  /* Signature — Notion: functional, sharp, high-info-density */
+  --sig-radius-card: 3px;
+  --sig-radius-button: 3px;
+  --sig-radius-bubble: 3px;
+  --sig-radius-bubble-assistant: 3px;
+  --sig-radius-code: 3px;
+  --sig-radius-input: 3px;
+  --sig-border-width: 1px;
+  --sig-blur-header: 0px;
+  --sig-blur-panel: 0px;
+  --sig-glass-opacity: 1;
+  --sig-shadow-card: none;
+  --sig-shadow-hover: none;
+  --sig-input-shadow: none;
+  --sig-input-ring: 2px;
+  --sig-glow-color: transparent;
+  --sig-glow-intensity: 0;
+  --sig-bg-decor: none;
+  --sig-accent-gradient: none;
+}
+
+/* ─═════════════════════════════════════════════════════════════
+   THEME: notion-dark — dark, functional, high-contrast
+   ─═════════════════════════════════════════════════════════════ */
+[data-theme='notion-dark'] {
+  --brand-50: #0f172a;
+  --brand-100: #1e293b;
+  --brand-200: #334155;
+  --brand-300: #475569;
+  --brand-400: #64748b;
+  --brand-500: #94a3b8;
+  --brand-600: #cbd5e1;
+  --brand-700: #e2e8f0;
+  --brand-800: #f1f5f9;
+  --brand-900: #f8fafc;
+
+  --primary: #f1f5f9;
+  --primary-hover: #e2e8f0;
+  --primary-active: #cbd5e1;
+  --primary-bg: rgba(241, 245, 249, 0.08);
+  --primary-border: rgba(241, 245, 249, 0.14);
+
+  --accent: #38bdf8;
+  --accent-light: #7dd3fc;
+  --accent-bg: rgba(56, 189, 248, 0.12);
+
+  --success: #34d399;
+  --success-bg: rgba(52, 211, 153, 0.12);
+  --warning: #fbbf24;
+  --warning-bg: rgba(251, 191, 36, 0.12);
+  --error: #f87171;
+  --error-bg: rgba(248, 113, 113, 0.12);
+  --info: #60a5fa;
+  --info-bg: rgba(96, 165, 250, 0.12);
+
+  --bg-base: #0f172a;
+  --bg-page: #0f172a;
+  --bg-surface: #1e293b;
+  --bg-surface-hover: #334155;
+  --bg-elevated: #1e293b;
+  --bg-overlay: rgba(2, 6, 23, 0.6);
+  --bg-sidebar: #0f172a;
+  --bg-sidebar-hover: #1e293b;
+  --bg-input: #1e293b;
+  --bg-input-focus: #334155;
+  --bg-code: #1e293b;
+  --bg-bubble-user: #334155;
+  --bg-bubble-assistant: #1e293b;
+
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-tertiary: #94a3b8;
+  --text-quaternary: #64748b;
+  --text-disabled: #475569;
+  --text-inverse: #0f172a;
+  --text-link: #38bdf8;
+  --text-link-hover: #7dd3fc;
+  --text-bubble-user: #f8fafc;
+  --text-bubble-assistant: #e2e8f0;
+
+  --border-default: #334155;
+  --border-subtle: #1e293b;
+  --border-strong: #475569;
+
+  --comp-header-bg: rgba(15, 23, 42, 0.85);
+  --comp-button-primary-shadow: none;
+
+  /* Chat Semantic Overrides — notion-dark */
+  --bubble-user: #334155;
+  --bubble-user-text: #f1f5f9;
+  --hljs-fg: #e2e8f0;
+  --hljs-bg: #1e293b;
+  --hljs-keyword: #c084fc;
+  --hljs-string: #34d399;
+  --hljs-number: #60a5fa;
+  --hljs-comment: #64748b;
+  --hljs-title: #c084fc;
+  --hljs-built-in: #22d3ee;
+  --hljs-meta: #c084fc;
+  --terminal-bg: #0f172a;
+  --terminal-header-bg: #1e293b;
+  --terminal-text: #e2e8f0;
+
+  /* Signature — Notion: functional, sharp, high-info-density */
+  --sig-radius-card: 3px;
+  --sig-radius-button: 3px;
+  --sig-radius-bubble: 3px;
+  --sig-radius-bubble-assistant: 3px;
+  --sig-radius-code: 3px;
+  --sig-radius-input: 3px;
+  --sig-border-width: 1px;
+  --sig-blur-header: 0px;
+  --sig-blur-panel: 0px;
+  --sig-glass-opacity: 1;
+  --sig-shadow-card: none;
+  --sig-shadow-hover: none;
+  --sig-input-shadow: none;
+  --sig-input-ring: 2px;
+  --sig-glow-color: transparent;
+  --sig-glow-intensity: 0;
+  --sig-bg-decor: none;
+  --sig-accent-gradient: none;
+}
+
+/* ─═════════════════════════════════════════════════════════════
+   THEME: futuristic-light — neon, glass, cybernetic
+   ─═════════════════════════════════════════════════════════════ */
+[data-theme='futuristic-light'] {
+  --brand-50: #f0fdfa;
+  --brand-100: #ccfbf1;
+  --brand-200: #99f6e4;
+  --brand-300: #5eead4;
+  --brand-400: #2dd4bf;
+  --brand-500: #14b8a6;
+  --brand-600: #0d9488;
+  --brand-700: #0f766e;
+  --brand-800: #115e59;
+  --brand-900: #134e4a;
+
+  --primary: #0d9488;
+  --primary-hover: #0f766e;
+  --primary-active: #115e59;
+  --primary-bg: rgba(13, 148, 136, 0.1);
+  --primary-border: rgba(13, 148, 136, 0.2);
+
+  --accent: #8b5cf6;
+  --accent-light: #a78bfa;
+  --accent-bg: rgba(139, 92, 246, 0.1);
+
+  --success: #10b981;
+  --success-bg: rgba(16, 185, 129, 0.1);
+  --warning: #f59e0b;
+  --warning-bg: rgba(245, 158, 11, 0.1);
+  --error: #ef4444;
+  --error-bg: rgba(239, 68, 68, 0.1);
+  --info: #3b82f6;
+  --info-bg: rgba(59, 130, 246, 0.1);
+
+  --bg-base: #fafdfc;
+  --bg-page: #f0fdfa;
+  --bg-surface: #ffffff;
+  --bg-surface-hover: #f0fdfa;
+  --bg-elevated: #ffffff;
+  --bg-overlay: rgba(15, 23, 42, 0.45);
+  --bg-sidebar: #ffffff;
+  --bg-sidebar-hover: #f0fdfa;
+  --bg-input: #ffffff;
+  --bg-input-focus: #ffffff;
+  --bg-code: #f0fdfa;
+  --bg-bubble-user: #ccfbf1;
+  --bg-bubble-assistant: #ffffff;
+
+  --text-primary: #042f2e;
+  --text-secondary: #115e59;
+  --text-tertiary: #0d9488;
+  --text-quaternary: #5eead4;
+  --text-disabled: #99f6e4;
+  --text-inverse: #ffffff;
+  --text-link: #0d9488;
+  --text-link-hover: #0f766e;
+  --text-bubble-user: #042f2e;
+  --text-bubble-assistant: #134e4a;
+
+  --border-default: #ccfbf1;
+  --border-subtle: #f0fdfa;
+  --border-strong: #99f6e4;
+
+  --comp-header-bg: rgba(255, 255, 255, 0.72);
+  --comp-card-radius: var(--radius-2xl);
+  --comp-input-radius: var(--radius-lg);
+  --comp-button-radius: var(--radius-lg);
+  --comp-button-primary-shadow: 0 4px 16px rgba(13, 148, 136, 0.2);
+
+  --chat-bubble-radius-lg: var(--radius-2xl);
+  --chat-bubble-radius-sm: var(--radius-xl);
+
+  --shadow-md: 0 8px 24px rgba(13, 148, 136, 0.12), 0 2px 6px rgba(139, 92, 246, 0.06);
+  --shadow-lg: 0 16px 48px rgba(13, 148, 136, 0.14), 0 4px 12px rgba(139, 92, 246, 0.08);
+
+  /* Chat Semantic Overrides — futuristic-light */
+  --bubble-user: rgba(13, 148, 136, 0.12);
+  --bubble-user-text: #042f2e;
+  --hljs-fg: #042f2e;
+  --hljs-bg: #f0fdfa;
+  --hljs-keyword: #7c3aed;
+  --hljs-string: #0d9488;
+  --hljs-number: #0ea5e9;
+  --hljs-comment: #5eead4;
+  --hljs-title: #8b5cf6;
+  --hljs-built-in: #14b8a6;
+  --hljs-meta: #8b5cf6;
+  --terminal-bg: #042f2e;
+  --terminal-header-bg: #0d9488;
+  --terminal-text: #5eead4;
+
+  /* Signature — Futuristic: neon, glass, cybernetic */
+  --sig-radius-card: 12px;
+  --sig-radius-button: 8px;
+  --sig-radius-bubble: 20px;
+  --sig-radius-bubble-assistant: 6px;
+  --sig-radius-code: 16px;
+  --sig-radius-input: 24px;
+  --sig-border-width: 1.5px;
+  --sig-blur-header: 20px;
+  --sig-blur-panel: 8px;
+  --sig-glass-opacity: 0.65;
+  --sig-shadow-card: 0 8px 24px rgba(13, 148, 136, 0.12), 0 0 24px rgba(139, 92, 246, 0.06);
+  --sig-shadow-hover: 0 16px 48px rgba(13, 148, 136, 0.16), 0 0 48px rgba(139, 92, 246, 0.1);
+  --sig-input-shadow: 0 8px 24px rgba(13, 148, 136, 0.12), 0 0 32px rgba(139, 92, 246, 0.08);
+  --sig-input-ring: 4px;
+  --sig-glow-color: rgba(13, 148, 136, 0.4);
+  --sig-glow-intensity: 1;
+  --sig-bg-decor: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(13, 148, 136, 0.06), transparent 70%), radial-gradient(ellipse 60% 40% at 80% 50%, rgba(139, 92, 246, 0.04), transparent 60%);
+  --sig-accent-gradient: linear-gradient(135deg, var(--primary), var(--accent));
+}
+
+/* ─═════════════════════════════════════════════════════════════
+   THEME: futuristic-dark — cyberpunk, neon, glassmorphic
+   ─═════════════════════════════════════════════════════════════ */
+[data-theme='futuristic-dark'] {
+  --brand-50: #042f2e;
+  --brand-100: #134e4a;
+  --brand-200: #115e59;
+  --brand-300: #0f766e;
+  --brand-400: #0d9488;
+  --brand-500: #14b8a6;
+  --brand-600: #2dd4bf;
+  --brand-700: #5eead4;
+  --brand-800: #99f6e4;
+  --brand-900: #ccfbf1;
+
+  --primary: #5eead4;
+  --primary-hover: #2dd4bf;
+  --primary-active: #14b8a6;
+  --primary-bg: rgba(94, 234, 212, 0.15);
+  --primary-border: rgba(94, 234, 212, 0.28);
+
+  --accent: #c4b5fd;
+  --accent-light: #ddd6fe;
+  --accent-bg: rgba(196, 181, 253, 0.12);
+
+  --success: #34d399;
+  --success-bg: rgba(52, 211, 153, 0.12);
+  --warning: #fbbf24;
+  --warning-bg: rgba(251, 191, 36, 0.12);
+  --error: #f87171;
+  --error-bg: rgba(248, 113, 113, 0.12);
+  --info: #60a5fa;
+  --info-bg: rgba(96, 165, 250, 0.12);
+
+  --bg-base: #020a0a;
+  --bg-page: #040f0f;
+  --bg-surface: #061a19;
+  --bg-surface-hover: #0b2d2a;
+  --bg-elevated: #061a19;
+  --bg-overlay: rgba(0, 0, 0, 0.65);
+  --bg-sidebar: #020a0a;
+  --bg-sidebar-hover: #061a19;
+  --bg-input: #061a19;
+  --bg-input-focus: #0b2d2a;
+  --bg-code: #061a19;
+  --bg-bubble-user: #0b2d2a;
+  --bg-bubble-assistant: #061a19;
+
+  --text-primary: #f0fdfa;
+  --text-secondary: #5eead4;
+  --text-tertiary: #2dd4bf;
+  --text-quaternary: #14b8a6;
+  --text-disabled: #0f766e;
+  --text-inverse: #020a0a;
+  --text-link: #5eead4;
+  --text-link-hover: #99f6e4;
+  --text-bubble-user: #f0fdfa;
+  --text-bubble-assistant: #ccfbf1;
+
+  --border-default: rgba(94, 234, 212, 0.18);
+  --border-subtle: rgba(94, 234, 212, 0.08);
+  --border-strong: rgba(94, 234, 212, 0.32);
+
+  --comp-header-bg: rgba(2, 10, 10, 0.72);
+  --comp-card-radius: var(--radius-2xl);
+  --comp-button-primary-shadow: 0 0 24px rgba(94, 234, 212, 0.3);
+
+  --shadow-md: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 24px rgba(94, 234, 212, 0.08);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.6), 0 0 48px rgba(94, 234, 212, 0.12);
+
+  /* Chat Semantic Overrides — futuristic-dark */
+  --bubble-user: #0b2d2a;
+  --bubble-user-text: #f0fdfa;
+  --hljs-fg: #f0fdfa;
+  --hljs-bg: #061a19;
+  --hljs-keyword: #c084fc;
+  --hljs-string: #5eead4;
+  --hljs-number: #2dd4bf;
+  --hljs-comment: #14b8a6;
+  --hljs-title: #a78bfa;
+  --hljs-built-in: #99f6e4;
+  --hljs-meta: #a78bfa;
+  --terminal-bg: #020a0a;
+  --terminal-header-bg: #061a19;
+  --terminal-text: #5eead4;
+
+  /* Signature — Futuristic: neon, glass, cybernetic */
+  --sig-radius-card: 12px;
+  --sig-radius-button: 8px;
+  --sig-radius-bubble: 20px;
+  --sig-radius-bubble-assistant: 6px;
+  --sig-radius-code: 16px;
+  --sig-radius-input: 24px;
+  --sig-border-width: 1.5px;
+  --sig-blur-header: 20px;
+  --sig-blur-panel: 8px;
+  --sig-glass-opacity: 0.55;
+  --sig-shadow-card: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 24px rgba(94, 234, 212, 0.08);
+  --sig-shadow-hover: 0 16px 48px rgba(0, 0, 0, 0.6), 0 0 48px rgba(94, 234, 212, 0.12);
+  --sig-input-shadow: 0 8px 24px rgba(13, 148, 136, 0.12), 0 0 32px rgba(139, 92, 246, 0.08);
+  --sig-input-ring: 4px;
+  --sig-glow-color: rgba(94, 234, 212, 0.5);
+  --sig-glow-intensity: 1;
+  --sig-bg-decor: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(94, 234, 212, 0.08), transparent 70%), radial-gradient(ellipse 60% 40% at 80% 50%, rgba(139, 92, 246, 0.06), transparent 60%);
+  --sig-accent-gradient: linear-gradient(135deg, var(--primary), var(--accent));
+}
+
+/* ─═════════════════════════════════════════════════════════════
+   GLOBAL RESETS & FOUNDATION
+   ─═════════════════════════════════════════════════════════════ */
+
+*,
+*::before,
+*::after {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
-body {
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  line-height: 1.6;
-  font-size: 14px;
-  color: var(--text-primary);
-  background: var(--bg-page);
-  transition: background-color 0.2s ease, color 0.2s ease;
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  scroll-behavior: smooth;
 }
 
-/* 数字等宽对齐（数据列、价格、token 计数） */
+body {
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  line-height: var(--lh-relaxed);
+  color: var(--text-primary);
+  background: var(--bg-page);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color var(--dur-slow) var(--ease-out),
+              color var(--dur-slow) var(--ease-out);
+}
+
+#app {
+  width: 100%;
+  height: 100dvh;
+  min-width: 320px;
+}
+
+/* Tabular numerals for data alignment */
 .nums,
 .numeric,
 .ant-statistic-content,
@@ -158,24 +1014,71 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* 自定义滚动条 — deepseek 8px 细滚动条（scrollbar.css 语义） */
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb, var(--text-disabled)); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover, var(--text-tertiary)); }
-body, body * { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb, var(--text-disabled)) transparent; }
-
-#app {
-  width: 100%;
-  height: 100dvh;
-}
-
+/* Selection */
 ::selection {
-  background: var(--primary);
+  background: var(--accent);
   color: #fff;
 }
 
-/* ── 移动端表格横向滚动 ── */
+/* Scrollbar — slim, themed */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--text-disabled);
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-quaternary);
+}
+body {
+  scrollbar-width: thin;
+  scrollbar-color: var(--text-disabled) transparent;
+}
+
+/* ─═════════════════════════════════════════════════════════════
+   UTILITY CLASSES
+   ─═════════════════════════════════════════════════════════════ */
+.u-w-full { width: 100% !important; }
+.u-scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.u-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.u-flex-wrap { flex-wrap: wrap; }
+.u-gap-2 { gap: var(--space-2); }
+.u-gap-3 { gap: var(--space-3); }
+.u-gap-4 { gap: var(--space-4); }
+
+.u-text-primary { color: var(--text-primary) !important; }
+.u-text-secondary { color: var(--text-secondary) !important; }
+.u-text-tertiary { color: var(--text-tertiary) !important; }
+.u-bg-surface { background: var(--bg-surface) !important; }
+.u-bg-page { background: var(--bg-page) !important; }
+
+.u-rounded { border-radius: var(--radius-lg) !important; }
+.u-rounded-lg { border-radius: var(--radius-xl) !important; }
+.u-shadow { box-shadow: var(--shadow-md) !important; }
+
+.u-border { border: 1px solid var(--border-default) !important; }
+.u-border-b { border-bottom: 1px solid var(--border-default) !important; }
+.u-border-t { border-top: 1px solid var(--border-default) !important; }
+
+@media (max-width: 576px) {
+  .u-hide-sm { display: none !important; }
+  .u-stack-sm { flex-direction: column !important; align-items: stretch !important; }
+  .u-full-sm { width: 100% !important; }
+}
+@media (min-width: 577px) {
+  .u-hide-lg { display: none !important; }
+}
+
+/* ─═════════════════════════════════════════════════════════════
+   ANTD OVERRIDES
+   ─═════════════════════════════════════════════════════════════ */
+
+/* Table — mobile scroll */
 @media (max-width: 768px) {
   .ant-table-wrapper {
     overflow-x: auto;
@@ -186,53 +1089,177 @@ body, body * { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb, va
   }
 }
 
-/* ── 微交互：按钮 active 态 ── */
-.ant-btn:not(:disabled):active {
-  transform: scale(0.97);
-  transition: transform 0.08s ease;
-}
-
-/* ── 微交互：表格行 hover 高亮 ── */
+/* Table row hover */
 .ant-table-tbody > tr.ant-table-row:hover > td,
 .ant-table-tbody > tr:hover > td {
-  background: var(--bg-secondary, rgba(0, 0, 0, 0.02)) !important;
+  background: var(--bg-surface-hover) !important;
 }
 
-/* ============================================================
-   Responsive foundation (2026-08-22 UI/UX pass)
-   - mobile-first global guards + antd small-screen overrides
-   - utility classes for view-level responsive work
-   ============================================================ */
-html {
-  -webkit-text-size-adjust: 100%;
-  text-size-adjust: 100%;
-}
-body {
-  overflow-x: hidden;
-}
-#app {
-  min-width: 320px;
+/* Button active micro-interaction */
+.ant-btn:not(:disabled):active {
+  transform: scale(0.97);
+  transition: transform 80ms var(--ease-out);
 }
 
-/* antd 弹层在窄屏上的行为：抽屉全宽、弹窗贴边、描述列表横向滚动 */
+/* Form focus visibility */
+.ant-input-affix-wrapper-focused,
+.ant-input:focus,
+.ant-input-focused,
+.ant-select-focused .ant-select-selector,
+.ant-picker-focused .ant-picker-input {
+  box-shadow: 0 0 0 2px var(--primary-bg) !important;
+  border-color: var(--primary) !important;
+}
+
+/* Card */
+.ant-card {
+  background: var(--bg-surface) !important;
+  border-color: var(--border-subtle) !important;
+  border-radius: var(--comp-card-radius) !important;
+}
+.ant-card-head {
+  border-bottom-color: var(--border-subtle) !important;
+}
+.ant-card-head-title {
+  color: var(--text-primary) !important;
+  font-weight: var(--fw-semibold) !important;
+}
+
+/* Modal / Drawer */
+.ant-modal-content {
+  background: var(--bg-elevated) !important;
+  border-radius: var(--radius-2xl) !important;
+}
+.ant-modal-header {
+  background: transparent !important;
+  border-bottom-color: var(--border-subtle) !important;
+}
+.ant-modal-title {
+  color: var(--text-primary) !important;
+  font-weight: var(--fw-semibold) !important;
+}
+.ant-drawer-content {
+  background: var(--bg-elevated) !important;
+}
+
+/* Dropdown / Menu */
+.ant-dropdown-menu,
+.ant-menu {
+  background: var(--bg-elevated) !important;
+}
+.ant-dropdown-menu-item,
+.ant-menu-item {
+  border-radius: var(--radius-md) !important;
+  margin: 2px !important;
+}
+
+/* Input */
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-select-selector {
+  background: var(--bg-input) !important;
+  border-color: var(--border-default) !important;
+  color: var(--text-primary) !important;
+  border-radius: var(--comp-input-radius) !important;
+}
+.ant-input::placeholder {
+  color: var(--text-quaternary) !important;
+}
+.ant-input-affix-wrapper .ant-input {
+  background: transparent !important;
+}
+
+/* Button */
+.ant-btn-primary {
+  background: var(--primary) !important;
+  border-color: var(--primary) !important;
+  color: var(--text-inverse) !important;
+  border-radius: var(--comp-button-radius) !important;
+  box-shadow: var(--comp-button-primary-shadow);
+}
+.ant-btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover) !important;
+  border-color: var(--primary-hover) !important;
+}
+.ant-btn-default {
+  background: var(--bg-surface) !important;
+  border-color: var(--border-default) !important;
+  color: var(--text-primary) !important;
+  border-radius: var(--comp-button-radius) !important;
+}
+.ant-btn-default:hover:not(:disabled) {
+  border-color: var(--primary) !important;
+  color: var(--primary) !important;
+}
+.ant-btn-ghost {
+  background: transparent !important;
+  border-color: var(--border-default) !important;
+  color: var(--text-secondary) !important;
+}
+.ant-btn-ghost:hover:not(:disabled) {
+  border-color: var(--primary) !important;
+  color: var(--primary) !important;
+  background: var(--primary-bg) !important;
+}
+
+/* Tabs */
+.ant-tabs-tab {
+  color: var(--text-tertiary) !important;
+  font-weight: var(--fw-medium) !important;
+}
+.ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: var(--text-primary) !important;
+  font-weight: var(--fw-semibold) !important;
+}
+.ant-tabs-ink-bar {
+  background: var(--primary) !important;
+}
+
+/* Badge / Tag */
+.ant-tag {
+  border-radius: var(--radius-md) !important;
+  border-color: var(--border-subtle) !important;
+}
+
+/* Tooltip */
+.ant-tooltip-inner {
+  background: var(--brand-900) !important;
+  color: var(--text-inverse) !important;
+  border-radius: var(--radius-md) !important;
+}
+
+/* ─═════════════════════════════════════════════════════════════
+   RESPONSIVE BREAKPOINTS
+   ─═════════════════════════════════════════════════════════════ */
 @media (max-width: 576px) {
-  .ant-drawer-content-wrapper {
-    max-width: 100vw !important;
-  }
   .ant-modal {
     max-width: calc(100vw - 24px);
     margin: 12px auto;
     top: 24px;
   }
-  .ant-modal-content { padding: 16px; }
-  .ant-modal-confirm .ant-modal-body { padding: 16px; }
-  .ant-card-body { padding: 14px; }
-  .ant-pagination { flex-wrap: wrap; row-gap: 8px; }
+  .ant-modal-content {
+    padding: var(--space-4);
+  }
+  .ant-card-body {
+    padding: var(--space-4);
+  }
+  .ant-pagination {
+    flex-wrap: wrap;
+    row-gap: var(--space-2);
+  }
 }
+
 @media (max-width: 768px) {
-  .ant-descriptions-view { overflow-x: auto; }
-  .ant-steps { overflow-x: auto; }
-  .ant-space { flex-wrap: wrap; row-gap: 8px !important; }
+  .ant-descriptions-view {
+    overflow-x: auto;
+  }
+  .ant-steps {
+    overflow-x: auto;
+  }
+  .ant-space {
+    flex-wrap: wrap;
+    row-gap: var(--space-2) !important;
+  }
   .ant-form-item .ant-form-item-control-input-content > .ant-input-group,
   .ant-form-item .ant-form-item-control-input-content > .ant-select,
   .ant-form-item .ant-form-item-control-input-content > .ant-input-number,
@@ -241,23 +1268,9 @@ body {
   }
 }
 
-/* 工具类：视图级响应式改造统一使用 */
-.u-w-full { width: 100% !important; }
-.u-scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-.u-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.u-flex-wrap { flex-wrap: wrap; }
-.u-gap-8 { gap: 8px; }
-.u-gap-12 { gap: 12px; }
-@media (max-width: 576px) {
-  .u-hide-sm { display: none !important; }
-  .u-stack-sm { flex-direction: column !important; align-items: stretch !important; }
-  .u-full-sm { width: 100% !important; }
-}
-@media (min-width: 577px) {
-  .u-hide-lg { display: none !important; }
-}
-
-/* ── 全局 reduced-motion：覆盖所有页面（含 admin 子页）── */
+/* ─═════════════════════════════════════════════════════════════
+   REDUCED MOTION
+   ─═════════════════════════════════════════════════════════════ */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -265,4 +1278,396 @@ body {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   THEME-SPECIFIC OVERRIDES — 使用 html[data-theme] 超越 scoped CSS
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ━━ FUTURISTIC — 霓虹发光 + 渐变气泡 + 玻璃态 ━━ */
+
+html[data-theme="futuristic-light"] {
+  --bubble-user: linear-gradient(135deg, #00ccaa 0%, #00a3ff 100%);
+  --bubble-user-text: #ffffff;
+  --shadow-xs: 0 1px 2px rgba(0, 204, 170, 0.06);
+  --shadow-sm: 0 1px 3px rgba(0, 204, 170, 0.08), 0 1px 2px rgba(0, 163, 255, 0.04);
+  --shadow-md: 0 4px 16px rgba(0, 204, 170, 0.12), 0 0 24px rgba(0, 163, 255, 0.06);
+  --shadow-lg: 0 12px 32px rgba(0, 204, 170, 0.16), 0 0 48px rgba(0, 163, 255, 0.08);
+  --comp-header-bg: rgba(245, 255, 252, 0.7);
+  --sig-glow-color: rgba(0, 204, 170, 0.45);
+  --sig-glow-intensity: 12px;
+}
+html[data-theme="futuristic-light"] body,
+html[data-theme="futuristic-light"] #app {
+  background: linear-gradient(180deg, #f0fdfa 0%, #e0f7ff 100%) !important;
+}
+html[data-theme="futuristic-light"] .ant-btn-primary:not(:disabled),
+html[data-theme="futuristic-light"] .send-btn:not(:disabled) {
+  box-shadow: 0 0 var(--sig-glow-intensity) var(--sig-glow-color), 0 2px 8px rgba(0, 0, 0, 0.08) !important;
+}
+html[data-theme="futuristic-light"] .ant-btn-primary:not(:disabled):hover,
+html[data-theme="futuristic-light"] .send-btn:not(:disabled):hover {
+  box-shadow: 0 0 calc(var(--sig-glow-intensity) + 6px) var(--sig-glow-color), 0 4px 16px rgba(0, 0, 0, 0.12) !important;
+}
+html[data-theme="futuristic-light"] .input-card:focus-within {
+  box-shadow: 0 0 var(--sig-glow-intensity) var(--sig-glow-color), var(--sig-input-shadow) !important;
+  border-color: rgba(0, 204, 170, 0.5) !important;
+}
+html[data-theme="futuristic-light"] .msg-row.user .msg-text {
+  box-shadow: 0 4px 16px rgba(0, 204, 170, 0.3) !important;
+}
+html[data-theme="futuristic-light"] .topbar {
+  background: rgba(245, 255, 252, 0.7) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border-bottom: 1px solid rgba(0, 204, 170, 0.25) !important;
+}
+html[data-theme="futuristic-light"] .suggestion-card:hover {
+  box-shadow: 0 0 var(--sig-glow-intensity) var(--sig-glow-color), var(--sig-shadow-hover) !important;
+  transform: translateY(-2px);
+}
+html[data-theme="futuristic-light"] .tool-row,
+html[data-theme="futuristic-light"] .tool-result {
+  border-color: rgba(0, 204, 170, 0.25) !important;
+  background: linear-gradient(135deg, rgba(0, 204, 170, 0.04) 0%, rgba(0, 163, 255, 0.04) 100%) !important;
+}
+html[data-theme="futuristic-light"] .side-panel {
+  background: rgba(245, 255, 252, 0.6) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border-right: 1px solid rgba(0, 204, 170, 0.15) !important;
+}
+html[data-theme="futuristic-light"] .msg-text code {
+  border: 1px solid rgba(0, 204, 170, 0.2) !important;
+}
+html[data-theme="futuristic-light"] .msg-text .code-block-wrapper {
+  border: 1px solid rgba(0, 204, 170, 0.2) !important;
+}
+html[data-theme="futuristic-light"] .ant-tag {
+  box-shadow: 0 0 4px rgba(0, 204, 170, 0.2) !important;
+}
+
+/* Futuristic Dark */
+html[data-theme="futuristic-dark"] {
+  --bubble-user: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 100%);
+  --bubble-user-text: #ffffff;
+  --shadow-xs: 0 1px 2px rgba(139, 92, 246, 0.1);
+  --shadow-sm: 0 1px 3px rgba(139, 92, 246, 0.12), 0 1px 2px rgba(6, 182, 212, 0.06);
+  --shadow-md: 0 4px 16px rgba(139, 92, 246, 0.2), 0 0 24px rgba(6, 182, 212, 0.06);
+  --shadow-lg: 0 12px 32px rgba(139, 92, 246, 0.25), 0 0 48px rgba(6, 182, 212, 0.08);
+  --comp-header-bg: rgba(10, 10, 15, 0.6);
+  --sig-glow-color: rgba(139, 92, 246, 0.5);
+  --sig-glow-intensity: 16px;
+}
+html[data-theme="futuristic-dark"] body,
+html[data-theme="futuristic-dark"] #app {
+  background: radial-gradient(ellipse at 20% 0%, rgba(139, 92, 246, 0.15) 0%, transparent 50%),
+              radial-gradient(ellipse at 80% 100%, rgba(6, 182, 212, 0.1) 0%, transparent 50%),
+              #050510 !important;
+}
+html[data-theme="futuristic-dark"] .ant-btn-primary:not(:disabled),
+html[data-theme="futuristic-dark"] .send-btn:not(:disabled) {
+  box-shadow: 0 0 var(--sig-glow-intensity) var(--sig-glow-color), 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+}
+html[data-theme="futuristic-dark"] .ant-btn-primary:not(:disabled):hover,
+html[data-theme="futuristic-dark"] .send-btn:not(:disabled):hover {
+  box-shadow: 0 0 calc(var(--sig-glow-intensity) + 8px) var(--sig-glow-color), 0 4px 16px rgba(0, 0, 0, 0.5) !important;
+}
+html[data-theme="futuristic-dark"] .input-card:focus-within {
+  box-shadow: 0 0 var(--sig-glow-intensity) var(--sig-glow-color), var(--sig-input-shadow) !important;
+  border-color: rgba(139, 92, 246, 0.6) !important;
+}
+html[data-theme="futuristic-dark"] .msg-row.user .msg-text {
+  box-shadow: 0 4px 24px rgba(139, 92, 246, 0.4) !important;
+}
+html[data-theme="futuristic-dark"] .msg-row.assistant .msg-text {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+}
+html[data-theme="futuristic-dark"] .topbar {
+  background: rgba(10, 10, 15, 0.6) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border-bottom: 1px solid rgba(139, 92, 246, 0.2) !important;
+}
+html[data-theme="futuristic-dark"] .suggestion-card {
+  background: rgba(255, 255, 255, 0.03) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+}
+html[data-theme="futuristic-dark"] .suggestion-card:hover {
+  box-shadow: 0 0 var(--sig-glow-intensity) var(--sig-glow-color), var(--sig-shadow-hover) !important;
+  border-color: rgba(139, 92, 246, 0.4) !important;
+  transform: translateY(-2px);
+}
+html[data-theme="futuristic-dark"] .tool-row,
+html[data-theme="futuristic-dark"] .tool-result {
+  border-color: rgba(139, 92, 246, 0.2) !important;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.06) 0%, rgba(6, 182, 212, 0.04) 100%) !important;
+}
+html[data-theme="futuristic-dark"] .side-panel {
+  background: rgba(10, 10, 15, 0.5) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border-right: 1px solid rgba(139, 92, 246, 0.15) !important;
+}
+html[data-theme="futuristic-dark"] .msg-text code {
+  border: 1px solid rgba(139, 92, 246, 0.2) !important;
+  background: rgba(139, 92, 246, 0.08) !important;
+}
+html[data-theme="futuristic-dark"] .msg-text .code-block-wrapper {
+  border: 1px solid rgba(139, 92, 246, 0.2) !important;
+}
+html[data-theme="futuristic-dark"] .ant-tag {
+  box-shadow: 0 0 6px rgba(139, 92, 246, 0.3) !important;
+}
+
+/* ━━ NOTION — 方正锐利 + 无阴影 + 强边框 ━━ */
+
+html[data-theme="notion-light"] {
+  --shadow-xs: none;
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+  --comp-header-bg: #ffffff;
+}
+html[data-theme="notion-light"] body,
+html[data-theme="notion-light"] #app {
+  background: #ffffff !important;
+}
+html[data-theme="notion-light"] .input-card,
+html[data-theme="notion-light"] .tool-row,
+html[data-theme="notion-light"] .tool-result,
+html[data-theme="notion-light"] .suggestion-card {
+  border-radius: 3px !important;
+  box-shadow: none !important;
+}
+html[data-theme="notion-light"] .msg-row.user .msg-text {
+  border-radius: 3px !important;
+  border-bottom-right-radius: 3px !important;
+  box-shadow: none !important;
+  border: 1px solid rgba(15, 15, 15, 0.12) !important;
+}
+html[data-theme="notion-light"] .topbar {
+  background: #ffffff !important;
+  border-bottom: 1px solid rgba(15, 15, 15, 0.08) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html[data-theme="notion-light"] .ant-btn,
+html[data-theme="notion-light"] .send-btn,
+html[data-theme="notion-light"] .ant-tag {
+  border-radius: 3px !important;
+}
+html[data-theme="notion-light"] .side-panel {
+  background: #ffffff !important;
+  border-right: 1px solid rgba(15, 15, 15, 0.08) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html[data-theme="notion-light"] .msg-text blockquote {
+  border-left-width: 3px !important;
+  border-radius: 0 !important;
+}
+html[data-theme="notion-light"] .msg-text code,
+html[data-theme="notion-light"] .msg-text .code-block-wrapper {
+  border-radius: 3px !important;
+}
+html[data-theme="notion-light"] .hero-logo {
+  border-radius: 3px !important;
+}
+
+html[data-theme="notion-dark"] {
+  --shadow-xs: none;
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+  --comp-header-bg: #0f172a;
+}
+html[data-theme="notion-dark"] body,
+html[data-theme="notion-dark"] #app {
+  background: #0f172a !important;
+}
+html[data-theme="notion-dark"] .input-card,
+html[data-theme="notion-dark"] .tool-row,
+html[data-theme="notion-dark"] .tool-result,
+html[data-theme="notion-dark"] .suggestion-card {
+  border-radius: 3px !important;
+  box-shadow: none !important;
+}
+html[data-theme="notion-dark"] .msg-row.user .msg-text {
+  border-radius: 3px !important;
+  border-bottom-right-radius: 3px !important;
+  box-shadow: none !important;
+}
+html[data-theme="notion-dark"] .msg-row.assistant .msg-text {
+  border-radius: 3px !important;
+}
+html[data-theme="notion-dark"] .topbar {
+  background: #0f172a !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html[data-theme="notion-dark"] .ant-btn,
+html[data-theme="notion-dark"] .send-btn,
+html[data-theme="notion-dark"] .ant-tag {
+  border-radius: 3px !important;
+}
+html[data-theme="notion-dark"] .side-panel {
+  background: #0f172a !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.08) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html[data-theme="notion-dark"] .msg-text blockquote {
+  border-left-width: 3px !important;
+  border-radius: 0 !important;
+}
+html[data-theme="notion-dark"] .msg-text code,
+html[data-theme="notion-dark"] .msg-text .code-block-wrapper {
+  border-radius: 3px !important;
+}
+html[data-theme="notion-dark"] .hero-logo {
+  border-radius: 3px !important;
+}
+
+/* ━━ SUPABASE — 圆润渐变 + 柔和玻璃 ━━ */
+
+html[data-theme="supabase-light"] {
+  --bubble-user: linear-gradient(135deg, #3ecf8e 0%, #4ecdc4 100%);
+  --bubble-user-text: #ffffff;
+  --shadow-xs: 0 1px 2px rgba(62, 207, 142, 0.04);
+  --shadow-sm: 0 1px 3px rgba(62, 207, 142, 0.06), 0 1px 2px rgba(0, 0, 0, 0.03);
+  --shadow-md: 0 4px 16px rgba(62, 207, 142, 0.08), 0 2px 4px rgba(0, 0, 0, 0.03);
+  --shadow-lg: 0 12px 32px rgba(62, 207, 142, 0.12), 0 4px 8px rgba(0, 0, 0, 0.03);
+  --comp-header-bg: rgba(255, 255, 255, 0.82);
+}
+html[data-theme="supabase-light"] body,
+html[data-theme="supabase-light"] #app {
+  background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 30%, #ffffff 100%) !important;
+}
+html[data-theme="supabase-light"] .msg-row.user .msg-text {
+  border-radius: 28px !important;
+  border-bottom-right-radius: 10px !important;
+  box-shadow: 0 6px 20px rgba(62, 207, 142, 0.25) !important;
+}
+html[data-theme="supabase-light"] .input-card {
+  border-radius: 28px !important;
+  box-shadow: 0 2px 16px rgba(62, 207, 142, 0.08) !important;
+}
+html[data-theme="supabase-light"] .topbar {
+  background: rgba(255, 255, 255, 0.82) !important;
+  backdrop-filter: blur(18px) !important;
+  -webkit-backdrop-filter: blur(18px) !important;
+}
+html[data-theme="supabase-light"] .suggestion-card:hover {
+  box-shadow: 0 8px 32px rgba(62, 207, 142, 0.15) !important;
+  transform: translateY(-3px);
+}
+html[data-theme="supabase-light"] .side-panel {
+  background: rgba(255, 255, 255, 0.7) !important;
+  backdrop-filter: blur(18px) !important;
+  -webkit-backdrop-filter: blur(18px) !important;
+}
+html[data-theme="supabase-light"] .hero-logo {
+  border-radius: 16px !important;
+}
+
+html[data-theme="supabase-dark"] {
+  --bubble-user: linear-gradient(135deg, #3ecf8e 0%, #4ecdc4 100%);
+  --bubble-user-text: #ffffff;
+  --shadow-xs: 0 1px 2px rgba(62, 207, 142, 0.06);
+  --shadow-sm: 0 1px 3px rgba(62, 207, 142, 0.08), 0 1px 2px rgba(0, 0, 0, 0.15);
+  --shadow-md: 0 4px 16px rgba(62, 207, 142, 0.1), 0 2px 4px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 12px 32px rgba(62, 207, 142, 0.15), 0 4px 8px rgba(0, 0, 0, 0.3);
+  --comp-header-bg: rgba(17, 24, 39, 0.72);
+}
+html[data-theme="supabase-dark"] body,
+html[data-theme="supabase-dark"] #app {
+  background: linear-gradient(180deg, #0a1f15 0%, #111827 40%, #111827 100%) !important;
+}
+html[data-theme="supabase-dark"] .msg-row.user .msg-text {
+  border-radius: 28px !important;
+  border-bottom-right-radius: 10px !important;
+  box-shadow: 0 6px 24px rgba(62, 207, 142, 0.3) !important;
+}
+html[data-theme="supabase-dark"] .input-card {
+  border-radius: 28px !important;
+}
+html[data-theme="supabase-dark"] .topbar {
+  background: rgba(17, 24, 39, 0.72) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+}
+html[data-theme="supabase-dark"] .suggestion-card:hover {
+  box-shadow: 0 8px 32px rgba(62, 207, 142, 0.2) !important;
+  transform: translateY(-3px);
+}
+html[data-theme="supabase-dark"] .side-panel {
+  background: rgba(17, 24, 39, 0.6) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+}
+html[data-theme="supabase-dark"] .hero-logo {
+  border-radius: 16px !important;
+}
+
+/* ━━ LINEAR — 极简扁平 + 精准线条 ━━ */
+
+html[data-theme="linear-light"] {
+  --comp-header-bg: rgba(255, 255, 255, 0.92);
+}
+html[data-theme="linear-light"] body,
+html[data-theme="linear-light"] #app {
+  background: #fafafa !important;
+}
+html[data-theme="linear-light"] .topbar {
+  background: rgba(255, 255, 255, 0.92) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06) !important;
+}
+html[data-theme="linear-light"] .msg-row.user .msg-text {
+  border-radius: 22px !important;
+  border-bottom-right-radius: 4px !important;
+}
+html[data-theme="linear-light"] .suggestion-card:hover {
+  transform: translateY(-1px);
+}
+html[data-theme="linear-light"] .side-panel {
+  background: rgba(255, 255, 255, 0.85) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+}
+
+html[data-theme="linear-dark"] {
+  --comp-header-bg: rgba(17, 17, 17, 0.88);
+}
+html[data-theme="linear-dark"] body,
+html[data-theme="linear-dark"] #app {
+  background: #0a0a0a !important;
+}
+html[data-theme="linear-dark"] .topbar {
+  background: rgba(17, 17, 17, 0.88) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+html[data-theme="linear-dark"] .msg-row.user .msg-text {
+  border-radius: 22px !important;
+  border-bottom-right-radius: 4px !important;
+}
+html[data-theme="linear-dark"] .suggestion-card:hover {
+  transform: translateY(-1px);
+}
+html[data-theme="linear-dark"] .side-panel {
+  background: rgba(17, 17, 17, 0.8) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
 }

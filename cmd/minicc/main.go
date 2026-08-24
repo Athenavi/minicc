@@ -167,12 +167,13 @@ func main() {
 		}
 		if len(addrs) > 0 {
 			pythonClient = engine.NewPythonClient(addrs...)
-	// 定时自动化：cron_jobs 调度器（Webhook/手动触发复用同一执行器）
-	api.StartCronScheduler(ctx, pythonClient)
 			pythonClient.SetInternalToken(cfg.InternalToken)
 			if cfg.InternalToken == "" {
-				slog.Warn("INTERNAL_TOKEN not set; Python engine will reject gateway-impersonated requests")
+				slog.Error("INTERNAL_TOKEN not set but python engine is configured — refusing to start (set INTERNAL_TOKEN env var or remove PYTHON_ENGINE_ADDRESS)")
+				exitCode = 1
+				return
 			}
+			api.StartCronScheduler(ctx, pythonClient)
 			slog.Info("python engine configured", "addresses", addrs)
 		}
 	} else {
@@ -195,6 +196,9 @@ func main() {
 	// ── Session Manager ──
 	sessionMgr := session.NewManager(db.Pool, db.Redis)
 	slog.Info("session manager initialized")
+
+	// ── Background Maintenance ──
+	api.StartBlacklistCleaner(ctx)
 
 	// ── HTTP Server ──
 	router := api.NewGatewayRouter(cfg, pythonClient, eventHub, sessionMgr, atomicStore, atomicRedis, rpaHub)

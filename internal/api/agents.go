@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -68,19 +69,42 @@ type AgentSession struct {
 // ── 预置 Agent 播种（DB agents 表为空时插入内置 3 类） ──
 
 type presetAgent struct {
-	name        string
-	description string
-	prompt      string
-	tools       []map[string]any
-	llm         map[string]any
-	turns       int
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Prompt      string         `json:"prompt"`
+	Tools       []map[string]any `json:"tools"`
+	LLM         map[string]any `json:"llm"`
+	Turns       int            `json:"turns"`
+}
+
+// loadPresetAgents 从 configs/preset_agents.json 加载预置 Agent 定义。
+// 文件不存在时返回空列表（不播种任何预置 Agent）。
+func loadPresetAgents() []presetAgent {
+	candidates := []string{
+		"configs/preset_agents.json",
+		"/etc/minicc/preset_agents.json",
+	}
+	for _, path := range candidates {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		var presets []presetAgent
+		if err := json.Unmarshal(data, &presets); err != nil {
+			slog.Warn("parse preset agents config failed", "path", path, "error", err)
+			return nil
+		}
+		slog.Info("loaded preset agents from config", "path", path, "count", len(presets))
+		return presets
+	}
+	slog.Warn("preset agents config not found — no preset agents will be seeded")
+	return nil
 }
 
 func (h *AgentHandler) seedPresetAgents() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// 仅在 owner 租户下播种预置 Agent（避免每个租户重复播种）
 	ownerTenantID, err := h.resolveOwnerTenantID(ctx)
 	if err != nil {
 		slog.Warn("seed preset agents: resolve owner tenant failed", "error", err)
@@ -91,69 +115,31 @@ func (h *AgentHandler) seedPresetAgents() {
 	if err := db.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM agents WHERE tenant_id = $1`, ownerTenantID).Scan(&n); err != nil || n > 0 {
 		return
 	}
-	// 用户级隔离：预置 Agent 归属该租户首个 owner 用户
 	var ownerUserID string
 	if err := db.Pool.QueryRow(ctx, `SELECT id::text FROM users WHERE tenant_id = $1 AND role = 'owner' ORDER BY created_at LIMIT 1`, ownerTenantID).Scan(&ownerUserID); err != nil || ownerUserID == "" {
 		slog.Warn("seed preset agents: no owner user", "tenant", ownerTenantID)
 		return
 	}
 
-	presets := []presetAgent{
-		{
-			name:        "knowledge",
-			description: "知识检索与问答代理：搜索文件、抓取网页后回答问题",
-			prompt:      "你是知识检索与问答代理。使用可用工具查找信息（搜索文件、grep、读取文件、抓取网页），基于真实材料回答，不确定时说明不确定之处。",
-			tools: []map[string]any{
-				{"name": "search_files", "description": "按关键词搜索文件", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}},
-				{"name": "grep_files", "description": "在文件中查找文本", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}},
-				{"name": "read_file", "description": "读取文件内容", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}},
-				{"name": "web_fetch", "description": "抓取网页内容", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}},
-			},
-			llm:   map[string]any{"model": "deepseek-chat", "max_tokens": 4096, "temperature": 0.4},
-			turns: 6,
-		},
-		{
-			name:        "tool",
-			description: "通用工具代理：执行命令、操作文件完成具体任务",
-			prompt:      "你是通用工具代理。把任务拆解为可执行的工具调用（执行命令、读写文件等），逐步完成并汇报结果。",
-			tools: []map[string]any{
-				{"name": "shell_exec", "description": "执行 shell 命令", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}},
-				{"name": "write_file", "description": "写入文件", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}},
-				{"name": "read_file", "description": "读取文件内容", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}},
-			},
-			llm:   map[string]any{"model": "deepseek-chat", "max_tokens": 4096, "temperature": 0.6},
-			turns: 8,
-		},
-		{
-			name:        "browser",
-			description: "浏览器自动化代理：导航、点击、输入、截图完成网页任务",
-			prompt:      "你是浏览器自动化代理。使用浏览器工具导航网页、定位元素、点击与输入、截图确认，完成网页相关任务。",
-			tools: []map[string]any{
-				{"name": "browser_navigate", "description": "导航到 URL", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}},
-				{"name": "browser_click", "description": "点击页面元素", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}},
-				{"name": "browser_type", "description": "在输入框输入文本", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}},
-				{"name": "browser_read", "description": "读取页面文本", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}},
-				{"name": "browser_screenshot", "description": "页面截图", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}},
-			},
-			llm:   map[string]any{"model": "deepseek-chat", "max_tokens": 4096, "temperature": 0.5},
-			turns: 8,
-		},
+	presets := loadPresetAgents()
+	if len(presets) == 0 {
+		return
 	}
 
 	for _, p := range presets {
 		agentID, err := id.UUID()
 		if err != nil {
-			slog.Warn("seed preset agent: generate id", "name", p.name, "error", err)
+			slog.Warn("seed preset agent: generate id", "name", p.Name, "error", err)
 			continue
 		}
-		toolsJSON, _ := json.Marshal(p.tools)
-		llmJSON, _ := json.Marshal(p.llm)
+		toolsJSON, _ := json.Marshal(p.Tools)
+		llmJSON, _ := json.Marshal(p.LLM)
 		if _, err := db.Pool.Exec(ctx,
 			`INSERT INTO agents (id, tenant_id, user_id, name, description, system_prompt, tools, llm_config, max_turns, timeout_seconds, enabled)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true)`,
-			agentID, ownerTenantID, ownerUserID, p.name, p.description, p.prompt,
-			string(toolsJSON), string(llmJSON), p.turns, 120); err != nil {
-			slog.Warn("seed preset agent", "name", p.name, "error", err)
+			agentID, ownerTenantID, ownerUserID, p.Name, p.Description, p.Prompt,
+			string(toolsJSON), string(llmJSON), p.Turns, 120); err != nil {
+			slog.Warn("seed preset agent", "name", p.Name, "error", err)
 		}
 	}
 }
@@ -397,9 +383,18 @@ func (h *AgentHandler) Run(w http.ResponseWriter, r *http.Request) {
 		h.sem <- struct{}{}
 	}
 	go func() {
-		if h.sem != nil {
-			defer func() { <-h.sem }()
-		}
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("agent execution panic", "session", sessionID, "agent", agentID, "panic", r)
+				// Mark session as failed on panic
+				_, _ = db.Pool.Exec(context.Background(),
+					`UPDATE agent_sessions SET status = 'failed', result = $1, updated_at = NOW() WHERE id = $2`,
+					fmt.Sprintf(`{"error":"agent execution panicked: %v"}`, r), sessionID)
+			}
+			if h.sem != nil {
+				<-h.sem
+			}
+		}()
 		h.executeAgent(agent, body.Task, sessionID, claims.UserID, claims.TenantID, timeout)
 	}()
 

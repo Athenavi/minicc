@@ -97,18 +97,35 @@ async def test_submit_reuses_existing_session():
 async def test_get_session_messages_not_found():
     """查询不存在的会话必须明确报错,而非返回空列表冒充成功。"""
     handler = UnifiedChatHandler()
-    res = await handler.get_session_messages(session_id="missing-session")
+    res = await handler.get_session_messages(session_id="missing-session", tenant_id=TENANT)
     assert res["success"] is False
     assert "error" in res
+
+
+async def test_get_session_messages_requires_tenant():
+    """S 安全修复:不提供 tenant_id 必须被拒绝,杜绝无归属读取。"""
+    handler = UnifiedChatHandler()
+    res = await handler.get_session_messages(session_id="missing-session")
+    assert res["success"] is False
+    assert res["error"] == "tenant_id is required"
 
 
 async def test_get_session_messages_returns_history():
     handler = UnifiedChatHandler()
     res = await handler.submit_task(user_input="你好", tenant_id=TENANT)
-    history = await handler.get_session_messages(session_id=res["session_id"])
+    history = await handler.get_session_messages(session_id=res["session_id"], tenant_id=TENANT)
     assert history["success"] is True
     assert history["messages"][0]["role"] == "user"
     assert "shared_context" in history
+
+
+async def test_get_session_messages_cross_tenant_blocked():
+    """S 安全修复:其他租户不得读取本租户会话消息(跨租户隔离)。"""
+    handler = UnifiedChatHandler()
+    res = await handler.submit_task(user_input="机密消息", tenant_id=TENANT)
+    blocked = await handler.get_session_messages(session_id=res["session_id"], tenant_id="other-tenant")
+    assert blocked["success"] is False
+    assert blocked["error"] == "Session not found"
 
 
 # ── auto 模式 (TaskRouter,已实现) ───────────────────────────────────

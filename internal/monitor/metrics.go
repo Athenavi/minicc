@@ -11,35 +11,52 @@ import (
 // ── Duration Histogram ──
 
 // Histogram tracks duration percentiles (p50/p95/p99) for operations.
+// Uses a fixed-size ring buffer to avoid slice reallocations on every Record call.
 type Histogram struct {
 	mu   sync.Mutex
 	name string
-	buf  []time.Duration
-	max  int
+	data []time.Duration
+	pos  int // next write position
+	count int // number of samples recorded (up to max)
+	max  int // capacity
 }
 
 func NewHistogram(name string, maxSamples int) *Histogram {
-	return &Histogram{name: name, max: maxSamples}
+	return &Histogram{
+		name: name,
+		data: make([]time.Duration, maxSamples),
+		max:  maxSamples,
+	}
 }
 
+// Record adds a duration to the histogram. O(1) with ring buffer.
 func (h *Histogram) Record(d time.Duration) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if len(h.buf) >= h.max {
-		// Remove oldest, add newest (ring-ish behavior)
-		h.buf = h.buf[1:]
+	h.data[h.pos] = d
+	h.pos = (h.pos + 1) % h.max
+	if h.count < h.max {
+		h.count++
 	}
-	h.buf = append(h.buf, d)
 }
 
+// Snapshot returns current histogram statistics. Copies data out for sorting.
 func (h *Histogram) Snapshot() map[string]interface{} {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if len(h.buf) == 0 {
+	if h.count == 0 {
 		return map[string]interface{}{"name": h.name, "count": 0}
 	}
-	sorted := make([]time.Duration, len(h.buf))
-	copy(sorted, h.buf)
+	// Copy valid samples for sorting
+	sorted := make([]time.Duration, h.count)
+	// Data is written in a ring; the valid window is from pos-count to pos (mod max)
+	start := h.pos - h.count
+	if start < 0 {
+		start += h.max
+	}
+	for i := 0; i < h.count; i++ {
+		sorted[i] = h.data[(start+i)%h.max]
+	}
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
 	return map[string]interface{}{
 		"name":  h.name,
@@ -103,8 +120,18 @@ func IncToolError() {
 	Global.ToolErrorsTotal.Add(1)
 }
 
+var extraStatsMu sync.RWMutex
+var extraStatsFuncs []func() map[string]interface{}
+
+// RegisterExtraStats 允许外部包注册额外的统计信息提供者（如 DB 连接池、缓存等）。
+func RegisterExtraStats(fn func() map[string]interface{}) {
+	extraStatsMu.Lock()
+	defer extraStatsMu.Unlock()
+	extraStatsFuncs = append(extraStatsFuncs, fn)
+}
+
 func Snapshot() map[string]interface{} {
-	return map[string]interface{}{
+	snap := map[string]interface{}{
 		"requests_total":   Global.RequestsTotal.Load(),
 		"requests_active":  Global.RequestsActive.Load(),
 		"llm_calls":        Global.LLMCallsTotal.Load(),
@@ -114,6 +141,16 @@ func Snapshot() map[string]interface{} {
 		"uptime_seconds":   time.Since(Global.StartTime).Seconds(),
 		"started_at":       Global.StartTime.Format(time.RFC3339),
 	}
+	extraStatsMu.RLock()
+	for _, fn := range extraStatsFuncs {
+		if m := fn(); m != nil {
+			for k, v := range m {
+				snap[k] = v
+			}
+		}
+	}
+	extraStatsMu.RUnlock()
+	return snap
 }
 
 func Init() {
@@ -127,7 +164,9 @@ var (
 	costMu          sync.Mutex
 	costBySession    = make(map[string]*SessionCost)
 	maxSessionCosts  = 10000
-	sessionCostOrder []string // FIFO order for eviction
+	sessionCostRing  = make([]string, 10000) // ring buffer for FIFO eviction
+	sessionCostHead  = 0                      // next eviction position
+	sessionCostCount = 0                      // number of entries in ring
 )
 
 // SessionCost tracks token usage for a session.
@@ -145,13 +184,17 @@ func RecordSessionUsage(sessionID string, inputTokens, outputTokens int) {
 	if !ok {
 		// Evict oldest if at capacity
 		if len(costBySession) >= maxSessionCosts {
-			oldest := sessionCostOrder[0]
-			sessionCostOrder = sessionCostOrder[1:]
+			oldest := sessionCostRing[sessionCostHead]
 			delete(costBySession, oldest)
+			sessionCostHead = (sessionCostHead + 1) % maxSessionCosts
+			sessionCostCount--
 		}
 		s = &SessionCost{}
 		costBySession[sessionID] = s
-		sessionCostOrder = append(sessionCostOrder, sessionID)
+		// Add to ring buffer at tail
+		tail := (sessionCostHead + sessionCostCount) % maxSessionCosts
+		sessionCostRing[tail] = sessionID
+		sessionCostCount++
 	}
 	s.InputTokens += inputTokens
 	s.OutputTokens += outputTokens

@@ -242,11 +242,29 @@ async function handleLogin() {
 
 <template>
   <div class="login-container">
+    <!-- 左侧品牌展示（≥960px 可见） -->
+    <aside class="login-brand">
+      <div class="login-brand-badge">MiniCC · 企业级 AI Agent 平台</div>
+      <h1 class="login-brand-title">
+        让 AI Agent<br /><span>持续工作</span>
+      </h1>
+      <p class="login-brand-desc">
+        自托管、多租户、全栈可控的 AI Agent 平台。对话、Agent、工作流、技能、知识库与插件一体化。
+      </p>
+      <div class="login-brand-features">
+        <div class="login-brand-feature">多租户数据隔离</div>
+        <div class="login-brand-feature">端到端轨迹追踪</div>
+        <div class="login-brand-feature">MCP 插件生态</div>
+        <div class="login-brand-feature">HTTPOnly 安全会话</div>
+      </div>
+    </aside>
+
+    <!-- 右侧登录表单 -->
     <div class="login-card">
       <div class="login-header">
         <div class="login-logo">MC</div>
-        <div class="login-title">MiniCC</div>
-        <div class="login-subtitle">企业级 AI Agent 平台</div>
+        <div class="login-title">欢迎回来</div>
+        <div class="login-subtitle">登录进入你的 AI 工作台</div>
       </div>
       <Card :bordered="false" class="login-form-card">
         <Tabs v-model:activeKey="activeTab" centered>
@@ -393,13 +411,10 @@ async function handleLogin() {
 </template>
 
 <style scoped>
-/* 中性底色 + 顶部微弱 accent 光晕（克制，去 AI 紫渐变） */
 .login-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  display: grid;
+  grid-template-columns: 1fr;
   min-height: 100dvh;
-  padding: 24px 16px;
   background: var(--bg-page);
   position: relative;
   overflow: hidden;
@@ -408,91 +423,222 @@ async function handleLogin() {
 .login-container::before {
   content: '';
   position: absolute;
-  inset: -45% -20% auto -20%;
-  height: 60%;
-  background: radial-gradient(ellipse 55% 55% at 50% 0%, var(--primary-bg), transparent 72%);
+  inset: -20%;
+  background:
+    radial-gradient(ellipse 60% 50% at 20% 20%, var(--primary-bg), transparent 60%),
+    radial-gradient(ellipse 50% 45% at 85% 15%, var(--accent-bg), transparent 60%),
+    radial-gradient(ellipse 55% 50% at 50% 95%, var(--info-bg), transparent 65%);
   pointer-events: none;
+  filter: blur(40px);
+  opacity: 0.7;
+}
+
+.login-container::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--border-subtle) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: radial-gradient(ellipse 70% 70% at 50% 40%, black 15%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 70% at 50% 40%, black 15%, transparent 75%);
+  pointer-events: none;
+  opacity: 0.5;
 }
 
 .login-card {
-  width: 400px;
+  width: 420px;
   max-width: calc(100vw - 32px);
+  margin: auto;
   position: relative;
   z-index: 1;
+  padding: 32px 36px;
+  border-radius: var(--radius-2xl);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-lg), 0 0 0 1px var(--border-subtle) inset;
   animation: loginFadeIn 0.5s ease;
-}
-
-.login-form-card {
-  border-radius: var(--radius-lg) !important;
-  border: 1px solid var(--border-card);
-  box-shadow: var(--shadow-lg);
-  background: var(--bg-card);
 }
 
 .login-header {
   text-align: center;
-  margin-bottom: 24px;
+  margin-bottom: 28px;
 }
 
 .login-logo {
-  width: 44px;
-  height: 44px;
-  margin: 0 auto 14px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 16px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--primary), var(--accent));
   color: #fff;
   font-weight: 700;
-  font-size: 16px;
+  font-size: 18px;
   letter-spacing: 0.02em;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-md), 0 6px 20px var(--primary-bg);
 }
 
 .login-title {
-  font-size: 22px;
-  font-weight: 650;
+  font-size: 24px;
+  font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.01em;
 }
 
 .login-subtitle {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-tertiary);
-  margin-top: 4px;
+  margin-top: 6px;
+}
+
+.login-form-card {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+.login-form-card :deep(.ant-card-body) { padding: 0; }
+
+.login-form-card :deep(.ant-form-item-label > label) {
+  font-weight: 500;
+  color: var(--text-secondary);
+  font-size: 13px;
+  height: 24px;
+}
+
+.login-form-card :deep(.ant-input),
+.login-form-card :deep(.ant-input-affix-wrapper) {
+  font-size: 14px;
+  transition: border-color var(--dur-fast) var(--ease-out),
+              box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.login-form-card :deep(.ant-btn-primary) {
+  height: 44px;
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.01em;
+}
+
+.login-form-card :deep(.ant-tabs-tab) {
+  font-size: 13px;
+  font-weight: 500;
+}
+.login-form-card :deep(.ant-tabs-tab-active .ant-tabs-tab-btn) {
+  font-weight: 600;
 }
 
 @keyframes loginFadeIn {
-  from { opacity: 0; transform: translateY(20px); }
+  from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* 移动端（≤576px，与 .u-hide-sm 断点一致）：小屏顶部对齐，便于长表单滚动 */
-@media (max-width: 576px) {
-  .login-container { align-items: flex-start; padding: 16px 12px; }
-  .login-card { width: 100%; max-width: 100%; }
-  .login-logo { width: 40px; height: 40px; margin-bottom: 10px; }
-  .login-title { font-size: 20px; }
-  .login-subtitle { font-size: 13px; }
-  .login-header { margin-bottom: 18px; }
-  /* 表单贴边：卡片内边距收窄，让输入框更接近屏幕边缘 */
-  .login-form-card :deep(.ant-card-body) { padding: 20px 16px; }
-  /* iOS 聚焦防缩放：输入字号 ≥16px */
-  .login-form-card :deep(.ant-input) { font-size: 16px; }
-  /* 触控目标 ≥ 40px（排除输入框后缀里 small 的获取验证码按钮） */
-  .login-form-card :deep(.ant-btn:not(.ant-btn-sm)) { min-height: 40px; }
+/* 平板以上：左右分栏品牌展示 */
+@media (min-width: 960px) {
+  .login-container {
+    grid-template-columns: 1.1fr 1fr;
+  }
+  .login-brand {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 64px 56px;
+    position: relative;
+    z-index: 1;
+  }
+  .login-brand-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 12px;
+    border-radius: var(--radius-full);
+    background: var(--primary-bg);
+    color: var(--primary);
+    font-size: 12px;
+    font-weight: 600;
+    width: fit-content;
+    margin-bottom: 24px;
+  }
+  .login-brand-badge::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--primary);
+    box-shadow: 0 0 8px var(--primary);
+  }
+  .login-brand-title {
+    font-size: clamp(36px, 4.5vw, 52px);
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    margin-bottom: 16px;
+  }
+  .login-brand-title span {
+    background: linear-gradient(100deg, var(--primary), var(--accent));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .login-brand-desc {
+    font-size: 15px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+    max-width: 460px;
+  }
+  .login-brand-features {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px 28px;
+    margin-top: 32px;
+    max-width: 460px;
+  }
+  .login-brand-feature {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+  .login-brand-feature::before {
+    content: '✓';
+    color: var(--success);
+    font-weight: 700;
+    flex-shrink: 0;
+  }
 }
 
-/* 焦点可见性增强（键盘导航） */
+@media (max-width: 959px) {
+  .login-brand { display: none; }
+}
+
+/* 移动端 */
+@media (max-width: 576px) {
+  .login-card {
+    padding: 24px 20px;
+    border-radius: var(--radius-xl);
+  }
+  .login-logo { width: 44px; height: 44px; font-size: 16px; }
+  .login-title { font-size: 20px; }
+  .login-subtitle { font-size: 12px; }
+  .login-header { margin-bottom: 20px; }
+  .login-form-card :deep(.ant-input) { font-size: 16px; }
+  .login-form-card :deep(.ant-btn:not(.ant-btn-sm)) { min-height: 44px; }
+}
+
+/* 焦点可见性 */
 .login-form-card :deep(.ant-input:focus),
-.login-form-card :deep(.ant-input:focus-within),
+.login-form-card :deep(.ant-input-affix-wrapper-focused),
 .login-form-card :deep(.ant-btn:focus-visible) {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
 
-/* 减少动效偏好 */
 @media (prefers-reduced-motion: reduce) {
   .login-card { animation: none; }
 }

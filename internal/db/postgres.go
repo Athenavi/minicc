@@ -8,6 +8,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/athenavi/minicc/internal/monitor"
 )
 
 var Pool *pgxpool.Pool
@@ -45,6 +47,9 @@ func ConnectPostgres(ctx context.Context, dsn string, maxConn, minConn int) erro
 
 	Pool = pool
 	slog.Info("postgres connected", "max_conns", maxConn, "min_conns", minConn)
+
+	// 注册连接池监控到全局 metrics
+	monitor.RegisterExtraStats(PoolStats)
 	return nil
 }
 
@@ -64,4 +69,19 @@ func ReadPool() *pgxpool.Pool {
 		return Router.ReadPreferred()
 	}
 	return Pool
+}
+
+// PoolStats returns current PostgreSQL connection pool statistics for monitoring.
+func PoolStats() map[string]interface{} {
+	if Pool == nil {
+		return nil
+	}
+	s := Pool.Stat()
+	return map[string]interface{}{
+		"total_conns":     s.TotalConns(),
+		"idle_conns":      s.IdleConns(),
+		"acquired_conns":  s.AcquiredConns(),
+		"empty_acquire":   s.EmptyAcquireCount(),
+		"acquire_duration_ms": s.AcquireDuration().Milliseconds(),
+	}
 }

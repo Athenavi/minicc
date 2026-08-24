@@ -40,11 +40,11 @@ const suggestions = [
 .hero { position: relative; flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .hero-glow { position: absolute; inset: -40% -20% auto -20%; height: 70%; background: radial-gradient(ellipse 50% 50% at 50% 0%, var(--primary-bg), transparent 70%); pointer-events: none; }
 .hero-content { width: 560px; max-width: calc(100vw - 48px); text-align: center; position: relative; z-index: 1; }
-.hero-logo { width: 56px; height: 56px; margin: 0 auto 18px; border-radius: 16px; background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: #fff; font-weight: 700; font-size: 20px; display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-lg); }
+.hero-logo { width: 56px; height: 56px; margin: 0 auto 18px; border-radius: var(--sig-radius-card); background: linear-gradient(135deg, var(--primary), var(--accent)); color: #fff; font-weight: 700; font-size: 20px; display: flex; align-items: center; justify-content: center; box-shadow: var(--sig-shadow-hover); }
 .hero-title { font-size: 24px; font-weight: 650; color: var(--text-primary); letter-spacing: -0.01em; margin-bottom: 28px; }
 .suggestion-grid { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
-.suggestion-card { width: 250px; padding: 14px; border-radius: var(--radius-lg); border: 1px solid var(--border-card); background: var(--bg-card); cursor: pointer; transition: all 0.2s; text-align: left; box-shadow: var(--shadow-md); }
-.suggestion-card:hover { border-color: var(--primary); transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+.suggestion-card { width: 250px; padding: 14px; border-radius: var(--sig-radius-card); border: 1px solid var(--border-card); background: var(--bg-card); cursor: pointer; transition: all 0.2s; text-align: left; box-shadow: var(--sig-shadow-card); }
+.suggestion-card:hover { border-color: var(--primary); transform: translateY(-2px); box-shadow: var(--sig-shadow-hover); }
 .card-icon { font-size: 20px; margin-bottom: 8px; }
 .card-title { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
 .card-desc { font-size: 12px; color: var(--text-tertiary); line-height: 1.4; }
@@ -55,7 +55,7 @@ const suggestions = [
 /* ── 移动端：窄屏密度压缩 ── */
 @media (max-width: 576px) {
   .hero-content { padding: 0 16px; }
-  .hero-logo { width: 48px; height: 48px; font-size: 18px; border-radius: 14px; margin-bottom: 14px; }
+  .hero-logo { width: 48px; height: 48px; font-size: 18px; border-radius: var(--sig-radius-button); margin-bottom: 14px; }
   .hero-title { font-size: 20px; margin-bottom: 20px; }
   .suggestion-grid { gap: 8px; }
   .suggestion-card { padding: 12px; }

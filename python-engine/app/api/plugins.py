@@ -31,6 +31,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 
 from app.config import settings
+from app.tools.sandbox import sandboxed_env
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +120,8 @@ async def run_plugin_in_sandbox(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(runner_path.parent),
+            # S 安全修复:插件子进程清理宿主 env,防插件代码外带 API key
+            env=sandboxed_env(),
         )
         payload_bytes = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         stdout, stderr = await asyncio.wait_for(

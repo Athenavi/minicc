@@ -1,6 +1,7 @@
 # Context window management and compression
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 from typing import Optional
@@ -9,6 +10,36 @@ logger = logging.getLogger(__name__)
 
 # System message overhead per the OpenAI/Anthropic convention
 _SYSTEM_OVERHEAD_TOKENS = 4  # role framing per message
+
+# Global background task tracking for graceful shutdown
+_bg_tasks: set[asyncio.Task] = set()
+
+
+def _track_bg_task(task: asyncio.Task) -> None:
+    """Track a background task for graceful shutdown."""
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+
+
+async def wait_background_tasks(timeout: float = 10.0) -> None:
+    """Wait for all background tasks to complete with a timeout.
+    
+    Called during application shutdown to ensure pending tasks are not lost.
+    """
+    if not _bg_tasks:
+        return
+    logger.info("Waiting for %d background tasks to complete (timeout=%.1fs)", len(_bg_tasks), timeout)
+    done, pending = await asyncio.wait(
+        list(_bg_tasks),
+        timeout=timeout,
+        return_when=asyncio.ALL_COMPLETED,
+    )
+    if pending:
+        logger.warning("%d background tasks did not complete within %.1fs", len(pending), timeout)
+        for task in pending:
+            task.cancel()
+    if done:
+        logger.info("%d background tasks completed", len(done))
 
 
 class ContextManager:
@@ -207,11 +238,11 @@ class ContextManager:
         # 降级后：将被压缩的中间消息提交到后台巩固队列
         if degraded and memory_service is not None:
             try:
-                # 异步提交被压缩内容到 L3 巩固
-                import asyncio
-                asyncio.create_task(
+                # 异步提交被压缩内容到 L3 巩固，追踪以便优雅关闭
+                task = asyncio.create_task(
                     self._submit_degraded_content(middle, memory_service)
                 )
+                _track_bg_task(task)
             except Exception as exc:
                 logger.warning("Failed to submit degraded content: %s", exc)
 

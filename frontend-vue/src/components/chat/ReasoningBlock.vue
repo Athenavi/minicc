@@ -35,7 +35,7 @@ const summary = computed(() => {
 
 <style scoped>
 .reasoning-row { max-width: min(720px, 92%); margin: 4px auto 0; padding: 0 24px; }
-.reasoning-main { display: flex; align-items: center; gap: 6px; width: 100%; height: 28px; padding: 0 8px; border: none; background: none; color: var(--text-secondary); cursor: pointer; font-size: 13px; text-align: left; border-radius: 6px; }
+.reasoning-main { display: flex; align-items: center; gap: 6px; width: 100%; height: 28px; padding: 0 8px; border: none; background: none; color: var(--text-secondary); cursor: pointer; font-size: 13px; text-align: left; border-radius: var(--sig-radius-button); }
 .reasoning-main:hover { background: var(--bg-hover); }
 .chevron { font-size: 10px; color: var(--text-muted); transition: transform 0.2s; flex-shrink: 0; }
 .chevron.open { transform: rotate(90deg); }
@@ -51,7 +51,7 @@ const summary = computed(() => {
 @keyframes dotPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 .think-summary { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text-tertiary); font-size: 12px; text-align: left; }
 .reasoning-row[data-state='running'] .think-summary { color: var(--primary); }
-.think-body { padding: 10px 12px; font-size: 13px; line-height: 1.7; color: var(--text-secondary); background: var(--bg-secondary); border: 1px solid var(--border-card); border-radius: 6px; margin-top: 2px; white-space: pre-wrap; }
+.think-body { padding: 10px 12px; font-size: 13px; line-height: 1.7; color: var(--text-secondary); background: var(--bg-secondary); border: 1px solid var(--border-card); border-radius: var(--sig-radius-button); margin-top: 2px; white-space: pre-wrap; }
 @media (prefers-reduced-motion: reduce) { .state-dot.running::after { animation: none; } }
 /* 轻量展开动画（≤200ms） */
 .expand-enter-active, .expand-leave-active { transition: opacity 0.15s ease, transform 0.15s ease; overflow: hidden; }

@@ -26,6 +26,13 @@ _FIXTURE = os.path.join(
 )
 _STDIO_CMD = f"{sys.executable} {_FIXTURE}"
 
+# S 安全修复：MCP STDIO 命令须过 PLUGIN_COMMAND_ALLOWLIST 白名单(fail-close)。
+# 测试用当前 python 解释器作为 MCP 命令，须在测试环境列入白名单。
+os.environ.setdefault(
+    "PLUGIN_COMMAND_ALLOWLIST",
+    "python,python.exe,python3,node,node.exe,echo",
+)
+
 
 # ── STDIO 传输测试 ────────────────────────────────────────────────
 
@@ -92,7 +99,7 @@ async def test_stdio_bad_command_fails_loud():
     client = MCPClient(
         server_url="nonexistent-binary-xyz --flag", transport="stdio"
     )
-    with pytest.raises(RuntimeError, match="not found|failed to spawn"):
+    with pytest.raises((RuntimeError, ValueError), match="not allowed|not found|failed to spawn"):
         await client.discover_tools()
 
 
