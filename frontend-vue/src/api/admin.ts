@@ -242,3 +242,9 @@ export async function deleteApiKey(id: string): Promise<void> {
 export async function saveSettings(category: string, config: Record<string, any>): Promise<void> {
   await api.put('/v1/admin/settings', { category, config })
 }
+
+/** 读取已持久化的某类系统设置（rate_limit/degradation/cache/api_key） */
+export async function getSettings(category: string): Promise<Record<string, any>> {
+  const { data } = await api.get(`/v1/admin/settings?category=${encodeURIComponent(category)}`)
+  return data?.data?.config ?? {}
+}

@@ -393,7 +393,7 @@ func registerPublicEndpoints(
 	// Public share view (no auth; revoked shares return 410 Gone)
 	// 修复 P1：移除内层 publicMW 重复包裹（外层 publicMW(mux) 已包含日志/审计/追踪），
 	// 避免审计 XAdd 双写、请求 ID 被内层重新生成。
-	mux.Handle("GET /share/{id}", rlMW(http.HandlerFunc(shareHandler.PublicGet)))
+	mux.Handle("GET /v1/share/{id}", rlMW(http.HandlerFunc(shareHandler.PublicGet)))
 
 	mux.Handle("GET /health", rlMW(http.HandlerFunc(handleHealth)))
 	// Prometheus 指标端点：生产收敛为需要 PermAdminRead 权限，避免泄漏业务指标

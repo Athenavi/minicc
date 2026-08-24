@@ -157,9 +157,9 @@ export interface PublicShare {
   messages: SharedMessage[]
 }
 
-/** 公开分享读取（无鉴权；已撤销返回 410） */
+/** 公开分享读取（无鉴权；已撤销返回 410）。走 /v1/share/{id} 与 SPA /share/:id 路由分离（S 修复 路径冲突）。 */
 export async function getPublicShare(shareId: string): Promise<PublicShare> {
-  const { data } = await api.get(`/share/${encodeURIComponent(shareId)}`)
+  const { data } = await api.get(`/v1/share/${encodeURIComponent(shareId)}`)
   return data?.data
 }
 

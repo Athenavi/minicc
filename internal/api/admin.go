@@ -76,6 +76,7 @@ func (h *AdminHandler) RegisterRoutes(r *http.ServeMux) {
 
 	// 新增端点：系统设置
 	r.HandleFunc("PUT /settings", h.SaveSettings)
+	r.HandleFunc("GET /settings", h.GetSettings)
 }
 
 // 鈹€鈹€ Metrics 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€

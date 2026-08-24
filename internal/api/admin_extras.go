@@ -377,3 +377,31 @@ func (h *AdminHandler) SaveSettings(w http.ResponseWriter, r *http.Request) {
 		"category": body.Category,
 	})
 }
+
+// GetSettings GET /v1/admin/settings?category=... 读取某类已持久化配置。
+// 无存储/无记录时返回空 config（前端保留默认值）。
+func (h *AdminHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
+	category := r.URL.Query().Get("category")
+	if category == "" {
+		BadRequest(w, "category is required (rate_limit, degradation, cache, api_key)")
+		return
+	}
+	if h.settingsStore == nil && h.redis != nil {
+		h.settingsStore = newSettingsStore(h.redis)
+	}
+	if h.settingsStore == nil {
+		OK(w, map[string]interface{}{"category": category, "config": map[string]interface{}{}})
+		return
+	}
+	raw, ok := h.settingsStore.Get(r.Context(), category)
+	if !ok {
+		OK(w, map[string]interface{}{"category": category, "config": map[string]interface{}{}})
+		return
+	}
+	var config map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &config); err != nil {
+		OK(w, map[string]interface{}{"category": category, "config": map[string]interface{}{}})
+		return
+	}
+	OK(w, map[string]interface{}{"category": category, "config": config})
+}

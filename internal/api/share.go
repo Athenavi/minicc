@@ -190,7 +190,7 @@ func (h *ShareHandler) Revoke(w http.ResponseWriter, r *http.Request) {
 	OK(w, map[string]string{"status": "revoked"})
 }
 
-// PublicGet renders a share without authentication (GET /share/{id}).
+// PublicGet renders a share without authentication (GET /v1/share/{id}).
 // Returns 410 Gone once the owner revokes the share.
 func (h *ShareHandler) PublicGet(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("id")

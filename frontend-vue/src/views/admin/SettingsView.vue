@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { Card, Row, Col, Form, FormItem, InputNumber, Button, Switch, Slider, message } from 'ant-design-vue'
-import { saveSettings } from '@/api/admin'
+import { saveSettings, getSettings } from '@/api/admin'
 
 const saving = ref(false)
+const loading = ref(false)
 
 const rateLimitConfig = ref({
   rps: 10000,
@@ -195,6 +196,28 @@ const copyKernel = () => {
   navigator.clipboard.writeText(kernelConfig)
   message.success('已复制到剪贴板')
 }
+
+// S 修复：加载已持久化的真实配置（不再以写死的示例默认值覆盖线上配置）。
+// 按返回的 key 覆盖默认值；后端无记录时保留默认（本地为空态）。
+function mergeConfig(target: { value: Record<string, any> }, saved: Record<string, any>) {
+  for (const k of Object.keys(target.value)) {
+    if (saved[k] !== undefined) target.value[k] = saved[k]
+  }
+}
+
+onMounted(async () => {
+  loading.value = true
+  try {
+    mergeConfig(rateLimitConfig, await getSettings('rate_limit'))
+    mergeConfig(degradationConfig, await getSettings('degradation'))
+    mergeConfig(cacheConfig, await getSettings('cache'))
+    mergeConfig(apiKeyConfig, await getSettings('api_key'))
+  } catch {
+    // 拉取失败保留默认值，不阻断页面
+  } finally {
+    loading.value = false
+  }
+})
 </script>
 
 <template>
