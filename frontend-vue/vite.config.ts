@@ -37,6 +37,19 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
+      // S 修复：/submit /cancel /media 为网关非 /v1 前缀路由，dev 亦需代理
+      '/submit': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+      '/cancel': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+      '/media': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
     },
   },
   build: {

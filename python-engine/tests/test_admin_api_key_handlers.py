@@ -148,3 +148,63 @@ async def test_list_keys_includes_stable_id():
     resp = await admin_list_api_keys(FakeRequest(), pool=pool)
     assert resp["keys"][0]["id"] == key_id
     assert "stats" in resp
+
+
+# ── S 安全修复:admin API Key 仅允许可信网关(带 X-Internal-Token)访问 ──
+
+
+class _HeaderRequest:
+    def __init__(self, token: str):
+        self._token = token
+
+    @property
+    def headers(self) -> dict:
+        return {"X-Internal-Token": self._token}
+
+
+def _test_guard(monkeypatch, token: str):
+    from fastapi import HTTPException
+    from app.config import settings
+    from app.main import _require_gateway_internal
+
+    monkeypatch.setattr(settings, "internal_token", "svc-internal-secret")
+    return _require_gateway_internal(_HeaderRequest(token)), HTTPException
+
+
+def test_admin_guard_rejects_without_token(monkeypatch):
+    """S 修复:不带 X-Internal-Token 的 admin 调用必须被拒(401)。"""
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as ei:
+        _test_guard(monkeypatch, "")[0]
+    assert ei.value.status_code == 401
+
+
+def test_admin_guard_rejects_wrong_token(monkeypatch):
+    """S 修复:错误的 X-Internal-Token 必须被拒(401)。"""
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as ei:
+        _test_guard(monkeypatch, "wrong-token")[0]
+    assert ei.value.status_code == 401
+
+
+def test_admin_guard_accepts_gateway_token(monkeypatch):
+    """S 修复:匹配网关 internal token 时不抛异常(放行)。"""
+    from fastapi import HTTPException
+
+    fn = _test_guard(monkeypatch, "svc-internal-secret")[0]
+    # 不抛异常即为通过
+    assert fn is None
+
+
+def test_admin_guard_fail_closed_when_token_unset(monkeypatch):
+    """S 修复:引擎未配置 internal_token 时 fail-closed,拒绝 admin 调用。"""
+    from fastapi import HTTPException
+    from app.config import settings
+    from app.main import _require_gateway_internal
+
+    monkeypatch.setattr(settings, "internal_token", "")
+    with pytest.raises(HTTPException) as ei:
+        _require_gateway_internal(_HeaderRequest("svc-internal-secret"))
+    assert ei.value.status_code == 401

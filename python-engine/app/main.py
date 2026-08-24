@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 
 import redis.asyncio as aioredis
 import uvicorn
-from fastapi import FastAPI, Depends, Request
+from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.config import settings
@@ -730,9 +730,27 @@ async def kb_query(
 # ── Admin API Key 管理（SmartKeyPool 的 HTTP 接口） ──
 
 
+def _require_gateway_internal(request: Request) -> None:
+    """S 修复:admin API Key 管理仅允许经由可信网关(X-Internal-Token)到达。
+
+    Go 网关已在网关侧完成 admin/owner RBAC 后才转发(且 ForwardRequest 注入本 token)。
+    Python 引擎直连不可绕过角色校验,防止引擎端口可达时被任意调用方增删改密钥池。
+    """
+    import hmac
+
+    provided = request.headers.get("X-Internal-Token", "")
+    if not settings.internal_token or not provided or not hmac.compare_digest(
+        provided, settings.internal_token
+    ):
+        raise HTTPException(
+            status_code=401, detail="admin requires gateway internal token"
+        )
+
+
 async def admin_list_api_keys(
     request: Request,
     pool=Depends(get_key_pool),
+    _gateway=Depends(_require_gateway_internal),
 ):
     """获取所有 API Key 列表"""
     import json
@@ -744,6 +762,7 @@ async def admin_list_api_keys(
 async def admin_add_api_key(
     request: Request,
     pool=Depends(get_key_pool),
+    _gateway=Depends(_require_gateway_internal),
 ):
     """添加 API Key"""
     body = await request.json()
@@ -760,6 +779,7 @@ async def admin_add_api_key(
 async def admin_update_api_key(
     request: Request,
     pool=Depends(get_key_pool),
+    _gateway=Depends(_require_gateway_internal),
 ):
     """更新 API Key 状态（按稳定 ID 定位，active/rate_limited/circuit_open）"""
     from fastapi.responses import JSONResponse
@@ -784,6 +804,7 @@ async def admin_update_api_key(
 async def admin_delete_api_key(
     request: Request,
     pool=Depends(get_key_pool),
+    _gateway=Depends(_require_gateway_internal),
 ):
     """删除 API Key（按路径 ID；兼容请求体 provider+key 定位）"""
     key_id = request.path_params.get("key_id", "")
