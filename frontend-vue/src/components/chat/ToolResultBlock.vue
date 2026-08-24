@@ -6,7 +6,11 @@ import type { ToolResultItem } from './chat-types'
 const props = defineProps<{ item: ToolResultItem }>()
 const expanded = ref(false)
 
-const isImageData = computed(() => props.item.content.startsWith('data:image/'))
+// S 修复：仅放行安全光栅格式的 data: URI，拒绝 svg+xml 等可携带外部资源/脚本语义的类型
+const isImageData = computed(() => {
+  const c = props.item.content
+  return /^data:image\/(png|jpe?g|gif|webp);base64,/.test(c)
+})
 
 // 分型解析：read_file / 终端 / 搜索 / JSON / 文本
 const parsed = computed<{ kind: 'read' | 'terminal' | 'search' | 'json' | 'text'; read?: any; terminal?: any; search?: any; text: string }>(() => {

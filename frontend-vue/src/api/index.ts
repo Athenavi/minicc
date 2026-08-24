@@ -163,11 +163,7 @@ export async function getPublicShare(shareId: string): Promise<PublicShare> {
   return data?.data
 }
 
-// 请求拦截器：鉴权凭 httpOnly cookie 自动携带（withCredentials），无需手动设置 Authorization
-api.interceptors.request.use(
-  (config) => config,
-  (error) => Promise.reject(error)
-)
+// 鉴权凭 httpOnly cookie 自动携带（withCredentials），无需请求拦截器设置 Authorization。
 
 // 响应拦截器：处理错误
 api.interceptors.response.use(

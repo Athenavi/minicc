@@ -18,7 +18,7 @@ import ChatEmptyHero from '../components/chat/ChatEmptyHero.vue'
 import ChatInput from '../components/chat/ChatInput.vue'
 import CallChainTimeline from '../components/CallChainTimeline.vue'
 import { HistoryOutlined, ExportOutlined, BulbOutlined, BulbFilled } from '@ant-design/icons-vue'
-import { splitThinking, stripUserInputTag, throttleRaf, formatClock, formatSize } from '../components/chat/chat-types'
+import { splitThinking, stripUserInputTag, formatClock, formatSize } from '../components/chat/chat-types'
 import type { ChatItem, ChatSession, ChatAttachment } from '../components/chat/chat-types'
 
 const authStore = useAuthStore()
@@ -1045,8 +1045,6 @@ function flushStreamingFlags() {
   resetStreamState()
 }
 
-const scheduleTextFlush = throttleRaf(() => { /* rAF 已合并，Vue 响应式自动批量 */ })
-
 function onSSEMessage(raw: any) {
   const type = raw?.type
   const d = raw?.data || {}
@@ -1054,7 +1052,6 @@ function onSSEMessage(raw: any) {
     const text = d?.content ?? raw?.content ?? ''
     if (!text) return
     onTextChunk(text)
-    scheduleTextFlush()
   } else if (type === 'tool_call') {
     items.value.push({
       kind: 'tool_call', id: d?.id ?? String(Date.now()), name: d?.name ?? 'tool',
