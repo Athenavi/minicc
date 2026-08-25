@@ -113,7 +113,6 @@ class TestRunAgent:
 
         async def failing_stream(*_a, **_kw):
             raise Exception("LLM error")
-            yield  # pragma: no cover
 
         mock_gateway.chat_stream = failing_stream
 
