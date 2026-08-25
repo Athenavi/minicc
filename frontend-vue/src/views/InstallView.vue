@@ -2,17 +2,41 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { getInstallStatus, setupSystem, type InstallDep } from '../api/install'
+import {
+  getInstallStatus,
+  getInstallStep1,
+  postInstallStep2,
+  postInstallStep3,
+  setupSystem,
+  hasInstallToken,
+  type InstallDep,
+} from '../api/install'
 
 const router = useRouter()
 const loading = ref(true)
-const needed = ref(false)
 const error = ref(false)
 const submitting = ref(false)
+
+// ── 通用状态 ──
+const needed = ref(false)
 const deps = ref<InstallDep[]>([])
-const form = ref({ email: '', password: '', confirm: '', name: '' })
+const installed = ref(false)
+
+// ── 安装模式（setup）三步向导状态 ──
+// wizard: env=环境检测(APP_SECRET) / db=数据库配置 / admin=创建管理员 / done=安装完成 / token=缺少令牌
+const wizard = ref<'env' | 'db' | 'admin' | 'done' | 'token'>('env')
+const appSecretSet = ref(false)
+const dataWritable = ref(true)
+const step2Done = ref(false)
+
+const dbForm = ref({ postgres_dsn: '', redis_addr: '', redis_password: '', redis_db: 0 })
+const adminForm = ref({ email: '', password: '', confirm: '', name: '' })
+
+// ── 正常模式（DB 就绪但无管理员）单步表单 ──
+const legacyForm = ref({ email: '', password: '', confirm: '', name: '' })
 
 const depsReady = computed(() => deps.value.length > 0 && deps.value.every((d) => d.ok))
+const postgresOk = computed(() => deps.value.find((d) => d.name === 'postgres')?.ok ?? false)
 
 async function fetchStatus() {
   loading.value = true
@@ -27,6 +51,13 @@ async function fetchStatus() {
         { name: 'redis', ok: s.redis, message: s.redis ? 'Redis 连接正常' : 'Redis 不可用' },
       ]
     }
+    if (!s.needed) {
+      installed.value = true
+    } else if (!postgresOk.value) {
+      // PostgreSQL 不可达 → 安装模式，走三步向导（需要安装令牌）
+      await loadWizard()
+    }
+    // PostgreSQL 可达但无 owner → 正常模式单步创建管理员（depsReady 由模板控制表单可用性）
   } catch (e: any) {
     error.value = true
     message.error('无法连接后端服务，请确认服务已启动')
@@ -35,27 +66,110 @@ async function fetchStatus() {
   }
 }
 
-onMounted(fetchStatus)
+async function loadWizard() {
+  if (!hasInstallToken()) {
+    wizard.value = 'token'
+    return
+  }
+  try {
+    const s = await getInstallStep1()
+    if (s.completed) {
+      installed.value = true
+      return
+    }
+    appSecretSet.value = !!s.app_secret_set
+    dataWritable.value = !!s.data_writable
+    step2Done.value = !!s.step2_done
+    if (step2Done.value) {
+      wizard.value = 'admin'
+    } else if (appSecretSet.value) {
+      wizard.value = 'db'
+    } else {
+      wizard.value = 'env'
+    }
+  } catch (e: any) {
+    if (e?.response?.status === 401) {
+      wizard.value = 'token'
+    } else {
+      error.value = true
+      message.error(e?.response?.data?.error || '无法读取安装状态')
+    }
+  }
+}
 
-async function submit() {
-  if (!form.value.email || !form.value.name || !form.value.password) {
+// ── 三步向导提交 ──
+async function submitStep2() {
+  if (!dbForm.value.postgres_dsn.trim()) {
+    message.warning('PostgreSQL 连接串（DSN）必填')
+    return
+  }
+  submitting.value = true
+  try {
+    await postInstallStep2({
+      postgres_dsn: dbForm.value.postgres_dsn.trim(),
+      redis_addr: dbForm.value.redis_addr.trim() || undefined,
+      redis_password: dbForm.value.redis_password || undefined,
+      redis_db: dbForm.value.redis_db || undefined,
+    })
+    step2Done.value = true
+    wizard.value = 'admin'
+    message.success('数据库配置已保存并验证通过')
+  } catch (e: any) {
+    message.error(e?.response?.data?.error || '数据库配置失败')
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function submitStep3() {
+  if (!adminForm.value.email || !adminForm.value.name || !adminForm.value.password) {
     message.warning('邮箱、姓名、密码均必填')
     return
   }
-  if (form.value.password.length < 8) {
+  if (adminForm.value.password.length < 8) {
     message.warning('密码至少 8 位')
     return
   }
-  if (form.value.password !== form.value.confirm) {
+  if (adminForm.value.password !== adminForm.value.confirm) {
+    message.warning('两次密码不一致')
+    return
+  }
+  submitting.value = true
+  try {
+    await postInstallStep3({
+      email: adminForm.value.email,
+      password: adminForm.value.password,
+      name: adminForm.value.name,
+    })
+    wizard.value = 'done'
+    message.success('安装完成')
+  } catch (e: any) {
+    message.error(e?.response?.data?.error || '创建管理员失败')
+  } finally {
+    submitting.value = false
+  }
+}
+
+// ── 正常模式提交（DB 就绪、无 owner）──
+async function submitLegacy() {
+  if (!legacyForm.value.email || !legacyForm.value.name || !legacyForm.value.password) {
+    message.warning('邮箱、姓名、密码均必填')
+    return
+  }
+  if (legacyForm.value.password.length < 8) {
+    message.warning('密码至少 8 位')
+    return
+  }
+  if (legacyForm.value.password !== legacyForm.value.confirm) {
     message.warning('两次密码不一致')
     return
   }
   submitting.value = true
   try {
     await setupSystem({
-      email: form.value.email,
-      password: form.value.password,
-      name: form.value.name,
+      email: legacyForm.value.email,
+      password: legacyForm.value.password,
+      name: legacyForm.value.name,
     })
     message.success('初始化成功，请登录')
     router.replace('/login')
@@ -65,6 +179,8 @@ async function submit() {
     submitting.value = false
   }
 }
+
+onMounted(fetchStatus)
 </script>
 
 <template>
@@ -87,42 +203,171 @@ async function submit() {
         </div>
 
         <!-- 部署模型说明 -->
-        <div v-if="!error" class="install-hint hint-info">
+        <div v-if="!error && !installed" class="install-hint hint-info">
           本部署仅需在 .env 配置 <b>APP_SECRET</b>（唯一主密钥）。PostgreSQL / Redis / CORS / 存储 / 模型 / 支付等配置
-          初始化后可在后台「系统设置」统一管理，敏感值（密钥、密码）将加密入库。若数据库/Redis 不在本机默认地址，
-          请在启动前通过环境变量 POSTGRES_DSN / REDIS_ADDR 指定引导连接，之后可在后台切换集群。
+          初始化后可在后台「系统设置」统一管理。若数据库/Redis 不在本机默认地址，可在安装向导中填写连接信息，
+          保存后<b>重启服务</b>生效。
         </div>
 
-        <!-- 未初始化：显示初始化表单 -->
-        <template v-if="needed">
-          <p v-if="!depsReady" class="install-hint hint-warn">
-            系统依赖未全部就绪，无法进行初始化。请先确保 PostgreSQL 与 Redis 正常运行并可访问。
+        <!-- ══ 安装模式：缺少令牌 ══ -->
+        <template v-else-if="wizard === 'token' && !installed">
+          <p class="install-hint hint-warn">
+            当前处于<b>安装模式</b>（系统未配置数据库/主密钥）。安装页面受令牌保护：
           </p>
-          <template v-else>
-            <p class="install-hint hint-warn">
-              检测到系统尚未初始化。请创建首个管理员账户（owner 角色），该账户拥有全部管理权限。
-              初始化后此入口将自动关闭。
-            </p>
-            <a-form layout="vertical" @finish="submit">
-              <a-form-item label="邮箱" required>
-                <a-input v-model:value="form.email" type="email" placeholder="admin@example.com" />
-              </a-form-item>
-              <a-form-item label="姓名" required>
-                <a-input v-model:value="form.name" placeholder="管理员姓名" />
-              </a-form-item>
-              <a-form-item label="密码（至少 8 位）" required>
-                <a-input-password v-model:value="form.password" placeholder="至少 8 位" />
-              </a-form-item>
-              <a-form-item label="确认密码" required>
-                <a-input-password v-model:value="form.confirm" placeholder="再次输入密码" />
-              </a-form-item>
-              <a-button type="primary" html-type="submit" :loading="submitting" block>初始化系统</a-button>
-            </a-form>
-          </template>
+          <ol class="token-steps">
+            <li>查看服务启动日志中的 <code>install_url</code>（形如 <code>/install?token=xxx</code>）；</li>
+            <li>使用日志中的完整地址（含令牌）重新访问本页面。</li>
+          </ol>
+          <p class="install-hint hint-info">
+            提示：未配置 APP_SECRET 时令牌为随机生成（重启后变化）；配置 APP_SECRET 后令牌由其确定性派生。
+          </p>
+          <a-button type="primary" block @click="router.replace('/install')">重新访问安装页</a-button>
         </template>
 
-        <!-- 已初始化：显示系统状态 -->
-        <template v-else-if="!error">
+        <!-- ══ 安装模式 Step 1：环境检测（APP_SECRET）══ -->
+        <template v-else-if="wizard === 'env'">
+          <a-steps :current="0" size="small" class="wizard-steps">
+            <a-step title="环境检测" />
+            <a-step title="数据库配置" />
+            <a-step title="创建管理员" />
+          </a-steps>
+          <p class="install-hint hint-warn">
+            系统未检测到有效的 <b>APP_SECRET</b>（部署级主密钥，≥32 字符）。它是 JWT / 配置加密的唯一密钥来源，
+            必须先配置才能继续安装。
+          </p>
+          <div class="env-check">
+            <div class="dep-item">
+              <span class="dep-icon" :class="appSecretSet ? 'ok' : 'fail'">{{ appSecretSet ? '✓' : '✕' }}</span>
+              <span class="dep-name">APP_SECRET</span>
+              <span class="dep-msg">{{ appSecretSet ? '已配置' : '未配置或为弱值/占位符' }}</span>
+            </div>
+            <div class="dep-item">
+              <span class="dep-icon" :class="dataWritable ? 'ok' : 'fail'">{{ dataWritable ? '✓' : '✕' }}</span>
+              <span class="dep-name">数据目录</span>
+              <span class="dep-msg">{{ dataWritable ? '可写（install.lock 可落盘）' : '不可写：请检查 data/ 目录权限' }}</span>
+            </div>
+          </div>
+          <ol class="token-steps">
+            <li>编辑 <code>.env</code>，设置 <code>APP_SECRET</code>（<code>python -c "import secrets; print(secrets.token_urlsafe(32))"</code> 生成）；</li>
+            <li>重启服务后重新访问本页面（令牌由 APP_SECRET 派生，日志中的 <code>install_url</code> 将更新）。</li>
+          </ol>
+        </template>
+
+        <!-- ══ 安装模式 Step 2：数据库配置 ══ -->
+        <template v-else-if="wizard === 'db'">
+          <a-steps :current="1" size="small" class="wizard-steps">
+            <a-step title="环境检测" />
+            <a-step title="数据库配置" />
+            <a-step title="创建管理员" />
+          </a-steps>
+          <p class="install-hint hint-warn">
+            填写 PostgreSQL 连接信息（必填）与 Redis（选填，留空则按环境变量并降级运行）。
+            后端将<b>尝试连接验证</b>，通过后加密保存到 <code>data/install.lock</code>；重启服务后全面生效。
+          </p>
+          <a-form layout="vertical" @finish="submitStep2">
+            <a-form-item label="PostgreSQL 连接串（DSN）" required>
+              <a-input v-model:value="dbForm.postgres_dsn" placeholder="postgres://user:pass@host:5432/minicc?sslmode=disable" />
+            </a-form-item>
+            <a-form-item label="Redis 地址（选填）">
+              <a-input v-model:value="dbForm.redis_addr" placeholder="localhost:6379" />
+            </a-form-item>
+            <a-form-item label="Redis 密码（选填）">
+              <a-input-password v-model:value="dbForm.redis_password" placeholder="无密码可留空" />
+            </a-form-item>
+            <a-form-item label="Redis DB（选填）">
+              <a-input-number v-model:value="dbForm.redis_db" :min="0" :max="15" style="width: 100%" />
+            </a-form-item>
+            <a-button type="primary" html-type="submit" :loading="submitting" block>保存并验证连接</a-button>
+          </a-form>
+        </template>
+
+        <!-- ══ 安装模式 Step 3：创建管理员 ══ -->
+        <template v-else-if="wizard === 'admin'">
+          <a-steps :current="2" size="small" class="wizard-steps">
+            <a-step title="环境检测" />
+            <a-step title="数据库配置" />
+            <a-step title="创建管理员" />
+          </a-steps>
+          <p class="install-hint hint-warn">
+            数据库配置已保存并验证通过。请创建首个管理员账户（owner 角色），该账户拥有全部管理权限。
+            完成后安装入口将关闭。
+          </p>
+          <a-form layout="vertical" @finish="submitStep3">
+            <a-form-item label="邮箱" required>
+              <a-input v-model:value="adminForm.email" type="email" placeholder="admin@example.com" />
+            </a-form-item>
+            <a-form-item label="姓名" required>
+              <a-input v-model:value="adminForm.name" placeholder="管理员姓名" />
+            </a-form-item>
+            <a-form-item label="密码（至少 8 位）" required>
+              <a-input-password v-model:value="adminForm.password" placeholder="至少 8 位" />
+            </a-form-item>
+            <a-form-item label="确认密码" required>
+              <a-input-password v-model:value="adminForm.confirm" placeholder="再次输入密码" />
+            </a-form-item>
+            <a-button type="primary" html-type="submit" :loading="submitting" block>完成安装</a-button>
+          </a-form>
+        </template>
+
+        <!-- ══ 安装模式：完成 ══ -->
+        <template v-else-if="wizard === 'done'">
+          <div class="installed-state">
+            <div class="installed-icon">✓</div>
+            <h3 class="installed-title">安装完成</h3>
+            <p class="installed-desc">
+              管理员账户已创建，数据库配置已保存。请<b>重启服务</b>使全部功能生效，然后使用管理员凭据登录。
+            </p>
+            <a-button type="primary" size="large" block @click="router.replace('/login')">前往登录</a-button>
+          </div>
+        </template>
+
+        <!-- ══ 正常模式：DB 就绪、无管理员（创建首个 owner）══ -->
+        <template v-else-if="needed && depsReady && !installed">
+          <p class="install-hint hint-warn">
+            检测到系统尚未初始化。请创建首个管理员账户（owner 角色），该账户拥有全部管理权限。
+            初始化后此入口将自动关闭。
+          </p>
+          <a-form layout="vertical" @finish="submitLegacy">
+            <a-form-item label="邮箱" required>
+              <a-input v-model:value="legacyForm.email" type="email" placeholder="admin@example.com" />
+            </a-form-item>
+            <a-form-item label="姓名" required>
+              <a-input v-model:value="legacyForm.name" placeholder="管理员姓名" />
+            </a-form-item>
+            <a-form-item label="密码（至少 8 位）" required>
+              <a-input-password v-model:value="legacyForm.password" placeholder="至少 8 位" />
+            </a-form-item>
+            <a-form-item label="确认密码" required>
+              <a-input-password v-model:value="legacyForm.confirm" placeholder="再次输入密码" />
+            </a-form-item>
+            <a-button type="primary" html-type="submit" :loading="submitting" block>初始化系统</a-button>
+          </a-form>
+        </template>
+
+        <!-- ══ 正常模式：DB 就绪但 Redis 降级，仍可创建管理员 ══ -->
+        <template v-else-if="needed && postgresOk && !depsReady && !installed">
+          <p class="install-hint hint-warn">
+            PostgreSQL 连接正常，但 Redis 不可用（服务以降级模式运行）。仍可直接创建管理员账户完成初始化。
+          </p>
+          <a-form layout="vertical" @finish="submitLegacy">
+            <a-form-item label="邮箱" required>
+              <a-input v-model:value="legacyForm.email" type="email" placeholder="admin@example.com" />
+            </a-form-item>
+            <a-form-item label="姓名" required>
+              <a-input v-model:value="legacyForm.name" placeholder="管理员姓名" />
+            </a-form-item>
+            <a-form-item label="密码（至少 8 位）" required>
+              <a-input-password v-model:value="legacyForm.password" placeholder="至少 8 位" />
+            </a-form-item>
+            <a-form-item label="确认密码" required>
+              <a-input-password v-model:value="legacyForm.confirm" placeholder="再次输入密码" />
+            </a-form-item>
+            <a-button type="primary" html-type="submit" :loading="submitting" block>初始化系统</a-button>
+          </a-form>
+        </template>
+
+        <!-- ══ 已初始化 ══ -->
+        <template v-else-if="installed">
           <div class="installed-state">
             <div class="installed-icon">✓</div>
             <h3 class="installed-title">系统已初始化</h3>
@@ -133,7 +378,7 @@ async function submit() {
           </div>
         </template>
 
-        <!-- 错误：显示重试 -->
+        <!-- ══ 错误 ══ -->
         <template v-else>
           <div class="installed-state">
             <div class="error-icon">⚠</div>
@@ -171,7 +416,7 @@ async function submit() {
   pointer-events: none;
 }
 .install-card {
-  width: 420px;
+  width: 440px;
   max-width: calc(100vw - 32px);
   padding: 32px;
   background: var(--bg-card);
@@ -203,6 +448,9 @@ async function submit() {
   font-size: 14px;
   box-shadow: var(--shadow-md);
 }
+.wizard-steps {
+  margin: 0 0 20px;
+}
 .install-hint {
   margin: 0 0 20px;
   color: var(--text-secondary);
@@ -217,6 +465,12 @@ async function submit() {
   gap: 8px;
   margin: 0 0 20px;
   padding: 4px 0;
+}
+.env-check {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 16px;
 }
 .dep-item {
   display: flex;
@@ -233,9 +487,23 @@ async function submit() {
 .dep-name {
   font-weight: 600;
   color: var(--text-primary);
-  min-width: 70px;
+  min-width: 90px;
 }
 .dep-msg { font-size: 12px; }
+.token-steps {
+  margin: 0 0 20px;
+  padding-left: 18px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.8;
+}
+.token-steps code {
+  background: var(--bg-hover, rgba(128, 128, 128, 0.12));
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 12px;
+  word-break: break-all;
+}
 .hint-warn {
   background: var(--warning-bg, rgba(255, 197, 23, 0.1));
   border: 1px solid var(--warning-border, rgba(255, 197, 23, 0.3));

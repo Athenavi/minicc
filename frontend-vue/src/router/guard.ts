@@ -19,7 +19,9 @@ export async function authGuard(
 
   // admin 访问（或本地无会话态）时，以 httpOnly cookie 向后端拉取权威 profile。
   // fetchProfile 内部失败会登出；此处不抛错，继续按现有本地态降级判定。
-  if (to.meta.requiresAdmin || !auth.user) {
+  // meta.public 的页面（如安装向导）不需要登录态，跳过 profile 拉取
+  // （安装模式下 /v1/auth/profile 返回 503，避免触发全局错误提示）。
+  if (to.meta.requiresAdmin || (!auth.user && !to.meta.public)) {
     try {
       await auth.fetchProfile()
     } catch {

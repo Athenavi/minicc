@@ -127,6 +127,46 @@ func realIPHeader(trustedCIDRs []string) func(http.Handler) http.Handler {
 	}
 }
 
+// NewSetupRouter 安装模式路由：系统尚未配置 APP_SECRET / 数据库时，
+// 仅提供安装向导端点（/v1/install/*，需安装令牌）与健康检查；
+// 其余一切业务路由返回 503（未安装，请完成安装后重启）。
+// 前端静态页面由 nginx 等反向代理提供，Go 网关不负责托管。
+func NewSetupRouter(cfg *config.Config) http.Handler {
+	mux := http.NewServeMux()
+
+	publicMW := func(next http.Handler) http.Handler {
+		return middlewareChain(next,
+			RecoverMiddleware,
+			TracingMiddleware,
+			LoggingMiddleware,
+			SecurityHeadersMiddleware,
+			CORSMiddleware(cfg.CORSOrigins),
+			MonitoringMiddleware,
+			requestIDHeader,
+			realIPHeader(cfg.TrustedProxyCIDRs),
+		)
+	}
+
+	installHandler := NewInstallHandler(cfg)
+
+	// 安装端点：必须携带安装令牌（X-Install-Token header 或 ?token= 查询参数）
+	mux.Handle("GET /v1/install/step1", publicMW(installMW(http.HandlerFunc(installHandler.Step1))))
+	mux.Handle("POST /v1/install/step2", publicMW(installMW(http.HandlerFunc(installHandler.Step2))))
+	mux.Handle("POST /v1/install/step3", publicMW(installMW(http.HandlerFunc(installHandler.Step3))))
+	mux.Handle("GET /v1/install/status", publicMW(http.HandlerFunc(installHandler.Status)))
+
+	// 健康检查（编排器探活；就绪检查如实反映依赖状态）
+	mux.Handle("GET /health", publicMW(http.HandlerFunc(handleHealth)))
+	mux.Handle("GET /ready", publicMW(http.HandlerFunc(handleReadiness)))
+
+	// 其余所有未注册路由：业务不可用（未安装）
+	mux.Handle("/", publicMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ServiceUnavailable(w, "system not installed: configure database and create admin via /install")
+	})))
+
+	return mux
+}
+
 // NewGatewayRouter creates a pure gateway router that proxies all business logic to Python.
 func NewGatewayRouter(
 	cfg *config.Config,

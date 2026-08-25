@@ -108,7 +108,12 @@ func defaultExport(s *Span) {
 	if len(s.Tags) > 0 {
 		attrs = append(attrs, slog.Any("tags", s.Tags))
 	}
-	slog.Debug("span", attrs...)
+	// slog.Debug 参数为 ...any：显式展开 []slog.Attr（Go 1.26 不再接受切片直接展开）
+	args := make([]any, 0, len(attrs))
+	for _, a := range attrs {
+		args = append(args, a)
+	}
+	slog.Debug("span", args...)
 }
 
 // Global tracer instance.

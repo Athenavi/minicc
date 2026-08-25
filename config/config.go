@@ -121,6 +121,48 @@ type Config struct {
 }
 
 func Load() *Config {
+	cfg := loadConfig()
+
+	// APP_SECRET is required（部署级主密钥）。
+	if !cfg.ValidateAppSecret() {
+		os.Stderr.WriteString("FATAL: APP_SECRET environment variable must be set to a strong, unique value (32+ chars)\n")
+		os.Exit(1)
+	}
+
+	// 派生密钥：当 JWT_SECRET / INTERNAL_TOKEN 未显式设置时，由 APP_SECRET 域分离派生。
+	// 安全模型取舍：部署主密钥为唯一必填秘密；若需更强的密钥隔离，仍可显式设置 JWT_SECRET / INTERNAL_TOKEN 覆盖派生值。
+	if cfg.JWTSecret == "" {
+		cfg.JWTSecret = deriveSubsecret(cfg.AppSecret, "minicc-jwt")
+	}
+	if cfg.InternalToken == "" {
+		cfg.InternalToken = deriveSubsecret(cfg.AppSecret, "minicc-internal")
+	}
+
+	// JWT_SECRET is required (derived or explicit).
+	if !ValidateJWTSecret(cfg.JWTSecret) {
+		os.Stderr.WriteString("FATAL: JWT_SECRET (or its source APP_SECRET) must be set to a strong, unique value\n")
+		os.Exit(1)
+	}
+
+	return cfg
+}
+
+// LoadAllowUnconfigured 与 Load 相同，但允许 APP_SECRET / JWT_SECRET 缺失或弱值而不退出：
+// 供 cmd/minicc 在「安装模式」下启动（部署尚未配置唯一主密钥，无法派生 JWT / 加密密钥）。
+// APP_SECRET 有效时仍执行派生；调用方须用 cfg.ValidateAppSecret() 判断是否进入安装模式。
+func LoadAllowUnconfigured() *Config {
+	cfg := loadConfig()
+
+	if cfg.JWTSecret == "" {
+		cfg.JWTSecret = deriveSubsecret(cfg.AppSecret, "minicc-jwt")
+	}
+	if cfg.InternalToken == "" {
+		cfg.InternalToken = deriveSubsecret(cfg.AppSecret, "minicc-internal")
+	}
+	return cfg
+}
+
+func loadConfig() *Config {
 	loadDotEnv()     // .env file overrides config file
 	loadConfigFile() // JSON config file (lowest priority)
 	cfg := &Config{
@@ -192,27 +234,6 @@ func Load() *Config {
 
 		PluginsConfigPath: getEnv("PLUGINS_CONFIG_PATH", "./plugins.json"),
 		PluginDataDir:     getEnv("PLUGIN_DATA_DIR", "./data/plugins"),
-	}
-
-	// APP_SECRET is required（部署级主密钥）。
-	if !cfg.ValidateAppSecret() {
-		os.Stderr.WriteString("FATAL: APP_SECRET environment variable must be set to a strong, unique value (32+ chars)\n")
-		os.Exit(1)
-	}
-
-	// 派生密钥：当 JWT_SECRET / INTERNAL_TOKEN 未显式设置时，由 APP_SECRET 域分离派生。
-	// 安全模型取舍：部署主密钥为唯一必填秘密；若需更强的密钥隔离，仍可显式设置 JWT_SECRET / INTERNAL_TOKEN 覆盖派生值。
-	if cfg.JWTSecret == "" {
-		cfg.JWTSecret = deriveSubsecret(cfg.AppSecret, "minicc-jwt")
-	}
-	if cfg.InternalToken == "" {
-		cfg.InternalToken = deriveSubsecret(cfg.AppSecret, "minicc-internal")
-	}
-
-	// JWT_SECRET is required (derived or explicit).
-	if !ValidateJWTSecret(cfg.JWTSecret) {
-		os.Stderr.WriteString("FATAL: JWT_SECRET (or its source APP_SECRET) must be set to a strong, unique value\n")
-		os.Exit(1)
 	}
 
 	return cfg

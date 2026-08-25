@@ -16,9 +16,10 @@ import (
 )
 
 // ─────────────────────────────────────────────────────────────
-// 定时自动化：cron_jobs 执行�?// - 调度器每 60s 重载启用�?cron_jobs 并注册到 robfig/cron
-// - 任务 task 字段�?JSON：{"type":"agent","agent_id":..,"prompt":..}
-//                        �?{"type":"quick","user_input":..,"mode":"auto"}
+// 定时自动化：cron_jobs 执行器
+// - 调度器每 60s 重载启用的 cron_jobs 并注册到 robfig/cron
+// - 任务 task 字段为 JSON：{"type":"agent","agent_id":..,"prompt":..}
+//                        或 {"type":"quick","user_input":..,"mode":"auto"}
 // - 执行结果写回 last_run_at / last_status
 // ─────────────────────────────────────────────────────────────
 
@@ -34,7 +35,8 @@ type CronScheduler struct {
 	python  *engine.PythonClient
 }
 
-// cronSchedulerPython �?Webhook/手动触发复用执行器（StartCronScheduler 时注入）�?var cronSchedulerPython *engine.PythonClient
+// cronSchedulerPython 供 Webhook/手动触发复用执行器（StartCronScheduler 时注入）。
+var cronSchedulerPython *engine.PythonClient
 
 type jobRow struct {
 	ID       string
@@ -45,7 +47,8 @@ type jobRow struct {
 	UserID   string
 }
 
-// StartCronScheduler 启动调度器（goroutine 内运行）�?func StartCronScheduler(ctx context.Context, python *engine.PythonClient) {
+// StartCronScheduler 启动调度器（goroutine 内运行）。
+func StartCronScheduler(ctx context.Context, python *engine.PythonClient) {
 	s := &CronScheduler{
 		cron:    cron.New(),
 		entries: map[string]cronEntry{},
@@ -95,19 +98,19 @@ func (s *CronScheduler) sync() {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// 移除已停�?删除/�?schedule �?job
+	// 移除已停用/删除/改 schedule 的 job
 	for id, e := range s.entries {
 		if j, ok := jobs[id]; !ok || j.Schedule != e.schedule {
 			s.cron.Remove(e.eid)
 			delete(s.entries, id)
 		}
 	}
-	// 注册�?job / 更新 schedule
+	// 注册新 job / 更新 schedule
 	for id, j := range jobs {
 		if e, ok := s.entries[id]; ok && e.schedule == j.Schedule {
 			continue
 		}
-		j := j
+		j := j // 循环变量拷贝：闭包捕获稳定值（Go 1.22 前语义）
 		eid, err := s.cron.AddFunc(j.Schedule, func() { s.execute(context.Background(), j) })
 		if err != nil {
 			slog.Warn("cron register failed", "job", j.Name, "schedule", j.Schedule, "error", err)
@@ -223,7 +226,8 @@ func HandleCronWebhook(w http.ResponseWriter, r *http.Request) {
 		Forbidden(w, "invalid token or job disabled")
 		return
 	}
-	// 异步执行（webhook 尽快返回�?	go func() {
+	// 异步执行（webhook 尽快返回）
+	go func() {
 		defer func() {
 			if r := recover(); r != nil {
 				slog.Error("cron webhook async panic", "job", jobID, "panic", r)
@@ -279,4 +283,3 @@ func (h *AdminHandler) HandleCronTrigger(w http.ResponseWriter, r *http.Request)
 	_ = userID
 	OK(w, map[string]interface{}{"status": "triggered"})
 }
-
