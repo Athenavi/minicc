@@ -196,7 +196,7 @@ async function loadCaptcha() {
     const cfg = await getCaptchaAdminConfig()
     captcha.provider = cfg.provider || 'turnstile'
     captcha.site_key = cfg.site_key || ''
-    captcha.secret = '' // 密文不回显；空 = 保留原值
+    captcha.secret = '' // 安全：后端应主动脱敏 secret 字段，空 = 保留原值
     captcha.verify_url = cfg.verify_url || ''
     captcha.enabled = !!cfg.enabled
   } catch (e: any) {
@@ -271,7 +271,7 @@ async function loadSms() {
     sms.sign_name = cfg.sign_name || ''
     sms.template_id = cfg.template_id || ''
     sms.access_key_id = cfg.access_key_id || ''
-    sms.secret = '' // 密文不回显；空 = 保留原值
+    sms.secret = '' // 安全：后端应主动脱敏 secret 字段，空 = 保留原值
     sms.endpoint = cfg.endpoint || ''
     sms.code_ttl_seconds = cfg.code_ttl_seconds || 300
     sms.send_interval_seconds = cfg.send_interval_seconds ?? 60

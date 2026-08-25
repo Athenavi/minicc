@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # ── PostgreSQL ──
     # 默认空：强制通过 .env / POSTGRES_DSN 环境变量提供，避免误用开发库
     postgres_dsn: str = ""
+    # 连接池大小（水平扩展时注意总连接数不超过数据库上限）
+    db_pool_min_size: int = 5
+    db_pool_max_size: int = 20
 
     # ── Milvus ──
     milvus_address: str = "localhost:19530"

@@ -210,6 +210,7 @@ func WebSocketHandler(hub *WebSocketHub, eventHub *broadcast.Hub, authenticator 
 				slog.Debug("ws disconnected", "session", sessionID)
 			}()
 			for {
+				_ = conn.SetReadDeadline(time.Now().Add(5 * time.Minute))
 				_, message, err := conn.ReadMessage()
 				if err != nil {
 					break

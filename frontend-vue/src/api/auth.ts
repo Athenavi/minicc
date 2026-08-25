@@ -200,7 +200,8 @@ export interface SmsAdminConfig {
 export async function getSmsAdminConfig(): Promise<SmsAdminConfig> {
   const { data } = await api.get('/v1/ent/sms/config')
   const cfg: SmsAdminConfig = data?.data
-  // 前端脱敏处理：仅展示 secret 首尾各 2 字符，中间用 *** 替代
+  // 前端脱敏处理（纵深防御）：仅展示 secret 首尾各 2 字符，中间用 *** 替代
+  // 注意：后端 API 已主动脱敏 secret 字段（maskedSecret），前端脱敏仅作为纵深防御
   if (cfg && cfg.secret && cfg.secret.length > 6) {
     cfg.secret = cfg.secret.slice(0, 2) + '***' + cfg.secret.slice(-2)
   }
@@ -223,7 +224,8 @@ export async function updateSmsConfig(body: Partial<{
 }>): Promise<SmsAdminConfig> {
   const { data } = await api.put('/v1/ent/sms/config', body)
   const cfg: SmsAdminConfig = data?.data
-  // 前端脱敏处理：仅展示 secret 首尾各 2 字符，中间用 *** 替代
+  // 前端脱敏处理（纵深防御）：仅展示 secret 首尾各 2 字符，中间用 *** 替代
+  // 注意：后端 API 已主动脱敏 secret 字段（maskedSecret），前端脱敏仅作为纵深防御
   if (cfg && cfg.secret && cfg.secret.length > 6) {
     cfg.secret = cfg.secret.slice(0, 2) + '***' + cfg.secret.slice(-2)
   }

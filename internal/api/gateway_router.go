@@ -147,15 +147,20 @@ func NewGatewayRouter(
 	//   - Redis 不可用 + 开发/测试：降级内存限流（单实例有效，多副本失效）
 	var rlMW func(http.Handler) http.Handler
 	var distLimiter *DistributedRateLimiter
+	rateLimitRPM := cfg.RateLimitRPM
+	if rateLimitRPM <= 0 {
+		slog.Warn("RateLimitRPM is 0 or unset, using default 60 RPM")
+		rateLimitRPM = 60
+	}
 	if atomicRedis != nil {
 		distLimiter = NewDistributedRateLimiter(
 			atomicRedis.LoadRaw(),
-			cfg.RateLimitRPM*10, // 全局：单实例限制 × 10
-			cfg.RateLimitRPM*5,  // 租户：单实例限制 × 5
-			cfg.RateLimitRPM,    // 用户：单实例限制
+			rateLimitRPM*10, // 全局：单实例限制 × 10
+			rateLimitRPM*5,  // 租户：单实例限制 × 5
+			rateLimitRPM,    // 用户：单实例限制
 		)
 		rlMW = DistributedRateLimitMiddleware(distLimiter)
-		slog.Info("distributed rate limiter enabled", "global", cfg.RateLimitRPM*10)
+		slog.Info("distributed rate limiter enabled", "global", rateLimitRPM*10)
 	} else if cfg.RateLimitFailClose {
 		// 生产 fail-close：只读放行，写操作拒绝
 		rlMW = func(next http.Handler) http.Handler {
@@ -170,7 +175,7 @@ func NewGatewayRouter(
 		slog.Warn("Redis unavailable + fail-close enabled: write operations rejected")
 	} else {
 		// 开发/测试降级：内存限流（单实例有效，多副本部署下应改用 Redis）
-		rateLimiter := NewRateLimiter(cfg.RateLimitRPM)
+		rateLimiter := NewRateLimiter(rateLimitRPM)
 		rateLimiter.CleanupVisitors(5 * time.Minute)
 		rlMW = rateLimiter.Middleware
 		slog.Warn("local rate limiter enabled (no Redis); not safe for multi-replica production")
@@ -467,7 +472,7 @@ func registerAgentRoutes(
 		}
 
 		// Reject concurrent submits within the same session
-		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+		ctx, cancel := context.WithTimeout(r.Context(), 180*time.Second)
 		if _, loaded := sessionCancels.LoadOrStore(body.SessionID, sessionCancel{userID: userID, cancel: cancel}); loaded {
 			cancel() // cancel the new one since there's already an active task
 			BadRequest(w, "task already running for this session")

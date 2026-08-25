@@ -5,12 +5,14 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
-	"github.com/athenavi/minicc/internal/auth"
 	"log/slog"
 	"net/http"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/athenavi/minicc/internal/auth"
 	"github.com/gorilla/websocket"
 )
 
@@ -260,7 +262,24 @@ var rpaUpgrader = websocket.Upgrader{
 	ReadBufferSize:  4096,
 	WriteBufferSize: 4096,
 	CheckOrigin: func(r *http.Request) bool {
-		return true // 插件跨域连接，由 JWT 认证控制安全
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true // 服务端 ws 客户端无 Origin
+		}
+		allowed := os.Getenv("CORS_ORIGINS")
+		if allowed == "" || allowed == "*" {
+			slog.Warn("rpa websocket origin rejected: CORS_ORIGINS not configured",
+				"origin", origin, "path", r.URL.Path)
+			return false
+		}
+		for _, o := range strings.Split(allowed, ",") {
+			if strings.TrimSpace(o) == origin {
+				return true
+			}
+		}
+		slog.Warn("rpa websocket origin rejected: not in allowlist",
+			"origin", origin, "path", r.URL.Path)
+		return false
 	},
 }
 

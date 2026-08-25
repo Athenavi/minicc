@@ -66,7 +66,9 @@ _ARG_ESCAPE_RES: list[re.Pattern] = [re.compile(p) for p in TOOL_ARG_ESCAPE_PATT
 # 需要用户确认的危险工具
 DANGEROUS_TOOLS: frozenset[str] = frozenset({
     "shell_exec", "execute_command", "persistent_shell", "execute_python",
-    "run_code", "browser_navigate", "skill_install",
+    "run_code", "browser_navigate", "browser_click", "browser_type",
+    "browser_screenshot", "browser_close", "browser_refresh",
+    "web_fetch", "web_search", "skill_install",
 })
 
 

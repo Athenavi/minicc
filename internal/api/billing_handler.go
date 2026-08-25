@@ -85,7 +85,8 @@ func (h *BillingHandler) GetBalance(w http.ResponseWriter, r *http.Request) {
 
 	balance, err := h.mgr.GetBalance(userID)
 	if err != nil {
-		OK(w, map[string]interface{}{"user_id": userID, "balance": 0, "note": "new user"})
+		slog.Error("get balance failed", "user_id", userID, "error", err)
+		InternalError(w, "failed to get balance")
 		return
 	}
 
@@ -115,7 +116,8 @@ func (h *BillingHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 
 	history, err := h.mgr.GetHistory(r.Context(), userID, 50)
 	if err != nil {
-		OK(w, map[string]interface{}{"user_id": userID, "history": []interface{}{}})
+		slog.Error("get billing history failed", "user_id", userID, "error", err)
+		InternalError(w, "failed to get billing history")
 		return
 	}
 
@@ -140,7 +142,8 @@ func (h *BillingHandler) GetUsage(w http.ResponseWriter, r *http.Request) {
 		 GROUP BY DATE(created_at)
 		 ORDER BY day DESC`, userID)
 	if err != nil {
-		OK(w, map[string]interface{}{"daily": []interface{}{}})
+		slog.Error("get usage stats failed", "user_id", userID, "error", err)
+		InternalError(w, "failed to get usage stats")
 		return
 	}
 	defer rows.Close()
@@ -663,3 +666,8 @@ func (h *BillingHandler) payPalCaptureOrder(ctx context.Context, orderID string)
 	}
 	return r, nil
 }
+
+
+
+
+

@@ -60,7 +60,7 @@ DEFAULT_ENV = {
     "LOG_LEVEL": "info",
     # 生产部署必须通过 .env 显式设置 JWT_SECRET（≥32 字符，随机生成）
     # 未配置时服务将拒绝启动（Go 网关 config.go 会检测并 fail-fast）
-    "JWT_SECRET": "",
+    "JWT_SECRET": "",  # 必须通过 .env 设置，空值时 Go 网关会拒绝启动 (fail-fast)
     "POSTGRES_DSN": "postgres://minicc:minicc@localhost:5432/minicc?sslmode=disable",
     "REDIS_ADDR": "localhost:6379",
     "PYTHON_ENGINE_ADDRESS": "localhost:8000",

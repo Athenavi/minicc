@@ -16,8 +16,8 @@ _pool: Optional[asyncpg.Pool] = None
 async def init_pool(dsn: str) -> asyncpg.Pool:
     """Initialize the global connection pool."""
     global _pool
-    _pool = await asyncpg.create_pool(dsn, min_size=5, max_size=20)
-    logger.info("PostgreSQL connected (pool=5-20)")
+    _pool = await asyncpg.create_pool(dsn, min_size=settings.db_pool_min_size, max_size=settings.db_pool_max_size)
+    logger.info("PostgreSQL connected (pool=%d-%d)", settings.db_pool_min_size, settings.db_pool_max_size)
     return _pool
 
 

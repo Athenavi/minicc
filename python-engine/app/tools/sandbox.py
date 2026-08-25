@@ -95,7 +95,6 @@ _ALLOWED_EXECUTABLES: set[str] = {
     # 安全的基础命令
     "echo", "ls", "dir", "cat", "type", "head", "tail", "wc",
     "find", "grep", "sort", "uniq", "cut", "tr", "tee",
-    "pip", "pip3",
 }
 
 

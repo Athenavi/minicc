@@ -269,7 +269,7 @@ func (c *PythonClient) Run(ctx context.Context, req PythonRunRequest) (<-chan Py
 func (c *PythonClient) IsConnected() bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "GET", c.pickAddress()+"/healthz", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, c.pickAddress()+"/healthz", nil)
 	if err != nil {
 		return false
 	}

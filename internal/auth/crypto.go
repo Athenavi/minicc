@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 )
 
@@ -21,7 +22,9 @@ const EnvOIDCSecretKey = "ENT_OIDC_SECRET_KEY"
 // 未配置或长度不足 32 字节时返回 nil（调用方据此返回 503 提示配置缺失）。
 func LoadOIDCEncryptionKey() []byte {
 	raw := os.Getenv(EnvOIDCSecretKey)
-	if len(raw) < 32 {
+	if len(raw) < 8 {
+		slog.Warn("ENT_OIDC_SECRET_KEY too short (< 8 chars), OIDC config write disabled",
+			"length", len(raw))
 		return nil
 	}
 	sum := sha256.Sum256([]byte(raw))

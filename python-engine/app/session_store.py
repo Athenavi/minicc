@@ -32,6 +32,7 @@ class SessionStore:
 
     def __init__(self, redis_client=None, max_sessions: int = 200):
         self._redis = redis_client
+        self._redis_enabled = redis_client is not None
         self._max_sessions = max_sessions
         # 内存降级后端（仅 Redis 不可用时使用）
         self._local: OrderedDict[str, list[dict]] = OrderedDict()
@@ -48,12 +49,12 @@ class SessionStore:
             return self._local_get_or_init(session_id, history)
 
         # 尝试 Redis 后端
-        if self._redis is not None:
+        if self._redis_enabled:
             try:
                 return await self._redis_get_or_init(session_id, history)
             except Exception as e:
                 logger.warning("Redis session get failed, fallback to local: %s", e)
-                self._redis = None  # 降级
+                self._redis_enabled = False  # 降级（仅降级当前实例，不修改共享 self._redis）
 
         # 内存降级
         return self._local_get_or_init(session_id, history)
@@ -68,25 +69,25 @@ class SessionStore:
             self._local_set(session_id, messages)
             return
 
-        if self._redis is not None:
+        if self._redis_enabled:
             try:
                 await self._redis_set(session_id, messages)
                 return
             except Exception:
-                self._redis = None
+                self._redis_enabled = False
 
         self._local_set(session_id, messages)
 
     async def get(self, session_id: str) -> Optional[list[dict]]:
-        if self._redis is not None:
+        if self._redis_enabled:
             try:
                 return await self._redis_get(session_id)
             except Exception:
-                self._redis = None
+                self._redis_enabled = False
         return self._local.get(session_id)
 
     async def remove(self, session_id: str) -> None:
-        if self._redis is not None:
+        if self._redis_enabled:
             try:
                 await self._redis.delete(REDIS_KEY_PREFIX + session_id)
             except Exception:
@@ -95,7 +96,7 @@ class SessionStore:
 
     async def clear(self) -> None:
         self._local.clear()
-        if self._redis is not None:
+        if self._redis_enabled:
             try:
                 cursor = 0
                 while True:

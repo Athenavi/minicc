@@ -77,8 +77,8 @@ class MCPClientPool:
             await asyncio.sleep(POLL_INTERVAL)
             try:
                 await self.reconcile()
-            except Exception as e:  # noqa: BLE001 — 轮询失败不影响主流程
-                logger.warning("mcp reconcile failed: %s", e)
+            except Exception as e:  # 轮询失败不影响主流程
+                logger.warning("mcp reconcile failed: %s", e, exc_info=True)
 
     async def reconcile(self) -> None:
         """处理活跃用户的配置变动；回收不再活跃用户。"""
@@ -114,7 +114,7 @@ class MCPClientPool:
                 client = MCPClient([_server_to_def(server)])
                 try:
                     await client.start()
-                except Exception as e:  # noqa: BLE001 — 单个服务器失败不阻塞其余
+                except Exception as e:  # 单个服务器失败不阻塞其余
                     logger.warning("mcp connect %s failed for user %s: %s", server.name, uid, e)
                     continue
                 shared = _SharedConnection(key=key, client=client)

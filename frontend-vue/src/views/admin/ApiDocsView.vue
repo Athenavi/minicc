@@ -4,8 +4,8 @@ import { computed } from 'vue'
 // spec URL：开发环境指向后端 8080，生产同域
 const specUrl = computed(() => {
   const origin = window.location.origin
-  // 开发环境（5173）→ 后端 8080；生产同域
-  const apiOrigin = origin.replace(':5173', ':8080')
+  // 开发环境（5173）→ 后端 8080；生产同域（仅替换端口号，避免误匹配路径中的 5173）
+  const apiOrigin = origin.replace(/:5173(?=\/|$)/, ':8080')
   return `${apiOrigin}/docs/openapi.yaml`
 })
 

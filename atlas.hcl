@@ -216,6 +216,8 @@ table "messages" {
   column "content"    { type = text }
   column "tool_calls" { type = jsonb, null = true }
   column "created_at" { type = timestamptz }
+  // 安全：多租户隔离必须通过 JOIN sessions ON sessions.id = messages.session_id 实现，
+  // 不要直接查询 messages 表而不验证 tenant_id。
   primary_key { columns = [column.id] }
   foreign_key "fk_messages_session" {
     columns     = [column.session_id]
@@ -238,6 +240,8 @@ table "tool_calls" {
   column "is_error"   { type = boolean, default = false }
   column "duration_ms" { type = bigint }
   column "created_at" { type = timestamptz }
+  // 安全：多租户隔离必须通过 JOIN sessions ON sessions.id = tool_calls.session_id 实现，
+  // 不要直接查询 tool_calls 表而不验证 tenant_id。
   primary_key { columns = [column.id] }
   foreign_key "fk_tool_calls_session" {
     columns     = [column.session_id]

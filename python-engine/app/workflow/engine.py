@@ -50,10 +50,10 @@ class WorkflowInstance:
     
     def _should_timeout(self) -> bool:
         """P1-1: 检查是否超时 (>24 小时)"""
-        if not self.finished_at:
-            return False
         elapsed = time.time() - self.started_at
-        return elapsed > _INSTANCE_TIMEOUT_SECONDS
+        if elapsed > _INSTANCE_TIMEOUT_SECONDS:
+            return True
+        return False
 
 
 _instances: dict[str, WorkflowInstance] = {}

@@ -27,13 +27,12 @@ class SSEProducer:
         self._redis = redis
         self._maxlen = maxlen
     
-    async def publish(self, task_id: str, event: dict) -> None:
+    async def publish(self, task_id: str, event: dict) -> bool:
         """
         发布 SSE 事件到 Redis Stream
         
-        Args:
-            task_id: 任务 ID
-            event: 事件数据
+        Returns:
+            True 表示发布成功，False 表示发布失败（调用方应据此决定是否重试或终止）
         """
         stream_key = f"sse:{task_id}"
         
@@ -44,8 +43,10 @@ class SSEProducer:
                 maxlen=self._maxlen,
             )
             logger.debug("Published SSE event to %s: %s", stream_key, event.get("type"))
+            return True
         except Exception as e:
             logger.error("Failed to publish SSE event: %s", e)
+            return False
     
     async def publish_text(self, task_id: str, content: str) -> None:
         """发布文本事件"""

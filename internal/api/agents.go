@@ -387,7 +387,9 @@ func (h *AgentHandler) Run(w http.ResponseWriter, r *http.Request) {
 			if r := recover(); r != nil {
 				slog.Error("agent execution panic", "session", sessionID, "agent", agentID, "panic", r)
 				// Mark session as failed on panic
-				_, _ = db.Pool.Exec(context.Background(),
+				updateCtx, updateCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer updateCancel()
+				_, _ = db.Pool.Exec(updateCtx,
 					`UPDATE agent_sessions SET status = 'failed', result = $1, updated_at = NOW() WHERE id = $2`,
 					fmt.Sprintf(`{"error":"agent execution panicked: %v"}`, r), sessionID)
 			}

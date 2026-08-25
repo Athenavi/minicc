@@ -30,7 +30,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
             return JSONResponse(
                 {
                     "error": "Internal server error",
-                    "detail": str(e) if logger.isEnabledFor(logging.DEBUG) else "",
+                    "detail": str(e) if logger.isEnabledFor(logging.DEBUG) else "",  # 安全：生产环境 LOG_LEVEL=INFO 时不泄露异常详情
                     "request_id": req_id,
                 },
                 status_code=500,

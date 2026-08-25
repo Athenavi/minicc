@@ -4,6 +4,7 @@ import { Button } from 'ant-design-vue'
 import { ExclamationCircleOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 
 const error = ref<Error | null>(null)
+const isProduction = typeof window !== 'undefined' && window.location.hostname !== 'localhost' && !window.location.hostname.startsWith('127.')
 
 onErrorCaptured((err) => {
   error.value = err instanceof Error ? err : new Error(String(err))
@@ -25,7 +26,7 @@ function reload() {
     <div class="error-boundary" role="alert">
       <div class="error-icon"><ExclamationCircleOutlined /></div>
       <div class="error-title">页面渲染出错</div>
-      <div class="error-message">{{ error.message }}</div>
+      <div class="error-message">{{ isProduction ? 'An unexpected error occurred. Please try again.' : error.message }}</div>
       <div class="error-actions">
         <Button type="primary" size="small" @click="retry">
           <template #icon><ReloadOutlined /></template>

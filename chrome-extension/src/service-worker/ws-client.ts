@@ -32,7 +32,7 @@ export class WSClient {
       STORAGE_KEYS.WS_URL,
       STORAGE_KEYS.CLIENT_ID,
     ]);
-    this.url = stored[STORAGE_KEYS.WS_URL] || "ws://localhost:8080/ws/rpa";
+    this.url = stored[STORAGE_KEYS.WS_URL] || "ws://localhost:8080/ws/rpa"; // 生产环境应通过 STORAGE_KEYS.WS_URL 配置 wss:// 地址
     const clientId =
       stored[STORAGE_KEYS.CLIENT_ID] || this.generateClientId();
 

@@ -33,6 +33,7 @@ const routes = [
     path: '/share/:id',
     name: 'Share',
     component: () => import('../views/ShareView.vue'),
+    // 注意：无 requiresAuth — 共享会话可能公开访问，后端应验证 share_id 的权限范围
   },
   {
     path: '/agents',

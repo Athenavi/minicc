@@ -41,7 +41,10 @@ func LoadEffectivePerms(ctx context.Context, userID string) ([]string, error) {
 				return perms, nil
 			}
 			// 缓存内容损坏：删除脏键后回源 DB
-			rdb.Del(ctx, cacheKey)
+			if err := rdb.Del(ctx, cacheKey).Err(); err != nil {
+				slog.Warn("ent rbac: failed to delete corrupted cache key",
+					"user_id", userID, "error", err)
+			}
 		} else if !errors.Is(err, redis.Nil) {
 			slog.Warn("ent rbac: redis get failed, falling back to DB",
 				"user_id", userID, "error", err)

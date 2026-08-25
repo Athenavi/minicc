@@ -42,6 +42,7 @@ class AgentTaskConsumer:
         self._concurrency = concurrency
         self._running = False
         self._tasks: set[asyncio.Task] = set()
+        self._backoff = 0  # 指数退避秒数（0 = 不后退）
     
     async def start(self) -> None:
         """启动消费者"""
@@ -70,7 +71,12 @@ class AgentTaskConsumer:
                 break
             except Exception as e:
                 logger.error("Consumer error: %s", e)
-                await asyncio.sleep(1)
+                # 指数退避：连续失败时从 1s 递增到最大 30s
+                self._backoff = min((self._backoff or 1) * 2, 30)
+                await asyncio.sleep(self._backoff)
+                continue
+            # 成功时重置退避
+            self._backoff = 0
     
     async def stop(self) -> None:
         """停止消费者"""

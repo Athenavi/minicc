@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 # 允许的 scheme
 _ALLOWED_SCHEMES = {"http", "https"}
 # 允许的端口（防访问内网数据库/缓存/消息队列服务端口）
-_ALLOWED_PORTS = {80, 443, 8080, 8443, 8000, 5000}
+_ALLOWED_PORTS = {80, 443, 8080, 8443}
 
 # 被禁止的 IP 段（IPv4）
 _BLOCKED_IPV4 = [

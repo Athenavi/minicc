@@ -108,7 +108,13 @@ class ToolProxy:
 
         # 阻塞读 stdin（async 中用 run_in_executor 避免阻塞事件循环）
         loop = asyncio.get_event_loop()
-        line = await loop.run_in_executor(None, _read_msg)
+        try:
+            line = await asyncio.wait_for(
+                loop.run_in_executor(None, _read_msg),
+                timeout=30.0,  # 防止父进程崩溃后子进程无限阻塞
+            )
+        except asyncio.TimeoutError:
+            raise ToolCallError(name, "parent process did not respond within 30s (timeout)")
         if not line:
             raise ToolCallError(name, "parent closed stdin (worker killed?)")
 
@@ -191,6 +197,11 @@ def _run_program(code: str, tool_names: list[str]) -> int:
     body = "\n".join("    " + line if line.strip() else line for line in code.splitlines())
     src = f"async def _main():\n{body}\n"
 
+    # 安全假设：
+    # - ns["__builtins__"] = _safe_builtins() 提供运行时守卫（危险 builtin stub + 安全 import 白名单）
+    # - 静态守卫（BLOCKED_SUBCLASS_ATTRS）封禁 __class__/__subclasses__ 等逃逸链属性访问
+    # - safe_builtins() 移除 __builtins__ 键，防止通过 __builtins__["open"] 索引访问原始内置函数
+    # 纵深防御：子进程 OS 级隔离（RLIMIT + wall-clock 超时 SIGKILL 兜底）
     try:
         exec(compile(src, "<sandbox>", "exec"), ns)  # noqa: S102 — 沙箱语义由部署策略约束
         main_fn = ns["_main"]

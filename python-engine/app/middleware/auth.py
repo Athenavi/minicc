@@ -129,7 +129,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
                         logger.info("JWT rejected: blacklisted jti=%s", jti)
                         return None
                 except Exception as e:
-                    logger.warning("JWT blacklist check failed: %s", e)
+                    logger.warning("JWT blacklist check failed, rejecting token: %s", e)
+                    return None  # fail-close: Redis 不可用时拒绝而非放过
             return tid
         except InvalidTokenError:
             logger.debug("JWT validation failed for token")

@@ -117,7 +117,12 @@ func NewPluginHandler(cfg *config.Config, authenticator *auth.Authenticator) *Pl
 
 // userPluginPath 返回当前用户的插件配置文件路径。
 func (h *PluginHandler) userPluginPath(userID string) string {
-	return filepath.Join(h.dataDir, userID, "plugins.json")
+	// 安全：清理 userID 防止路径遍历（如 ../tenant/evil）
+	safe := filepath.Clean(filepath.Base(userID))
+	if safe == "." || safe == "" {
+		safe = "unknown"
+	}
+	return filepath.Join(h.dataDir, safe, "plugins.json")
 }
 
 // resolveUser 从请求认证信息取当前用户 ID（authMW 已保证登录）。

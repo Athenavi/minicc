@@ -78,7 +78,7 @@ func (h *SubmitHandler) HandleSubmit(ctx context.Context, userID, sessionID, con
 	// 落库专用 ctx：不继承主 ctx 的取消/超时。
 	// 流可能被 180s 超时、前端断开、会话取消等截断，但已产生的消息
 	// （user/assistant/tool_call）必须写入，否则刷新后对话丢失。
-	storeCtx, storeCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	storeCtx, storeCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer storeCancel()
 
 	// S 修复：上下文丢失 — 提交时立即持久化用户消息（SSE 中断/停止也不丢历史）

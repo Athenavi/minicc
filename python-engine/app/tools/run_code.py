@@ -305,35 +305,41 @@ def _kill_proc_sync(proc: "subprocess.Popen[str]") -> None:
         pass
 
 
+# 复用线程池，避免每次 _readline_with_deadline 创建新线程
+_READER_POOL: concurrent.futures.ThreadPoolExecutor | None = None
+
+
+def _get_reader_pool() -> concurrent.futures.ThreadPoolExecutor:
+    global _READER_POOL
+    if _READER_POOL is None:
+        _READER_POOL = concurrent.futures.ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="subproc_reader",
+        )
+    return _READER_POOL
+
+
 def _readline_with_deadline(proc: "subprocess.Popen[str]", deadline: float) -> str | None:
     """读一行 stdout，带 deadline 超时。
 
     返回 None 表示超时；返回空串表示 EOF；否则返回一行（含末尾 \\n）。
-    使用 daemon thread 读，避免 readline 在子进程无输出时永久阻塞。
+    使用线程池线程读，避免 readline 在子进程无输出时永久阻塞。
     """
-    result: list[str | None] = [None]
-    done = threading.Event()
-
-    def _reader():
-        try:
-            result[0] = proc.stdout.readline()
-        except Exception:  # noqa: BLE001
-            result[0] = ""
-        finally:
-            done.set()
-
-    t = threading.Thread(target=_reader, daemon=True)
-    t.start()
-
+    pool = _get_reader_pool()
+    fut = pool.submit(proc.stdout.readline)
     remaining = deadline - time.time()
     if remaining <= 0:
         return None
-    if done.wait(remaining):
-        return result[0]
-    # 超时：杀子进程让 reader 因 EOF 返回
-    _kill_proc_sync(proc)
-    done.wait(2.0)  # 等 reader 收到 EOF 退出
-    return None
+    try:
+        return fut.result(timeout=max(0.001, remaining))
+    except concurrent.futures.TimeoutError:
+        # 超时：杀子进程让 reader 因 EOF 返回
+        _kill_proc_sync(proc)
+        try:
+            return fut.result(timeout=2.0)
+        except (concurrent.futures.TimeoutError, Exception):
+            return None
+    except Exception:
+        return ""
 
 
 def _wait_proc_sync(proc: "subprocess.Popen[str]", timeout: float = 2.0) -> None:

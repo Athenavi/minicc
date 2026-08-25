@@ -40,6 +40,17 @@ class ServerConnection:
         self.name = name
         self._req_id = 0
         self._lock = asyncio.Lock()
+        # 异步读取 stderr 并记录到日志，避免 DEVNULL 丢弃错误信息
+        self._stderr_task = asyncio.ensure_future(self._read_stderr())
+
+    async def _read_stderr(self):
+        """异步读取 MCP 服务器 stderr 并记录到日志。"""
+        try:
+            async for line in self.proc.stderr:
+                if line.strip():
+                    logger.warning("MCP stderr [%s]: %s", self.name, line.decode().rstrip())
+        except Exception:
+            pass
 
     async def send_jsonrpc(self, method: str, params: Optional[dict] = None) -> dict[str, Any]:
         """Send a JSON-RPC request and read the response."""
@@ -113,7 +124,7 @@ class MCPClient:
             server.command, *server.args,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
             env=env,
         )
         conn = ServerConnection(proc, server.name)

@@ -198,7 +198,9 @@ func (h *TraceHandler) queryTraces(traceID, tenantID string) ([]TraceSpan, error
 	streamKey := "minicc:traces:" + tenantID
 	
 	// XRANGE: get all entries for this tenant's stream
-	entries, err := h.rdb.XRange(context.Background(), streamKey, "-", "+").Result()
+	queryCtx, queryCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer queryCancel()
+	entries, err := h.rdb.XRange(queryCtx, streamKey, "-", "+").Result()
 	if err != nil {
 		return nil, err
 	}
