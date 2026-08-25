@@ -51,7 +51,8 @@ export interface SetupResult {
 
 // 安装令牌（Jenkins 模式）：安装模式时由部署者从启动日志获取，URL 携带 ?token=xxx；
 // API 调用统一放入 X-Install-Token header（不依赖 URL 参数传递凭据）。
-// 支持从 location.search 和 location.hash 中提取（SPA 路由可能吞掉查询参数）。
+// 支持从 location.search、location.hash 和 localStorage 中提取（SPA 路由可能吞掉查询参数）。
+// 注意：每次调用 _extractToken 重新读取，以便手动输入令牌后能立即生效。
 const _extractToken = (): string => {
   const fromSearch = new URLSearchParams(window.location.search).get('token')
   if (fromSearch) return fromSearch
@@ -61,33 +62,44 @@ const _extractToken = (): string => {
     const params = new URLSearchParams(window.location.href.slice(hashIdx))
     return params.get('token') || ''
   }
+  // 从 localStorage 读取（用户首次输入后保存）
+  const fromStorage = localStorage.getItem('install_token')
+  if (fromStorage) return fromStorage
   return ''
 }
-const installToken = _extractToken()
-const installHeaders = installToken ? { 'X-Install-Token': installToken } : undefined
+
+export function saveInstallToken(token: string): void {
+  localStorage.setItem('install_token', token)
+}
+
+/** 动态获取当前安装令牌（每次调用都重新提取，确保手动输入后立即生效） */
+function getInstallHeaders(): Record<string, string> | undefined {
+  const token = _extractToken()
+  return token ? { 'X-Install-Token': token } : undefined
+}
 
 export function getInstallToken(): string {
-  return installToken
+  return _extractToken()
 }
 
 export function hasInstallToken(): boolean {
-  return installToken !== ''
+  return _extractToken() !== ''
 }
 
 // ── 安装模式三步向导（setup mode：数据库/主密钥未配置时）──
 
 export async function getInstallStep1(): Promise<InstallStep1> {
-  const { data } = await api.get('/v1/install/step1', { headers: installHeaders })
+  const { data } = await api.get('/v1/install/step1', { headers: getInstallHeaders() })
   return data?.data ?? data
 }
 
 export async function postInstallStep2(body: InstallStep2Body): Promise<InstallResult> {
-  const { data } = await api.post('/v1/install/step2', body, { headers: installHeaders })
+  const { data } = await api.post('/v1/install/step2', body, { headers: getInstallHeaders() })
   return data?.data ?? data
 }
 
 export async function postInstallStep3(body: InstallStep3Body): Promise<InstallResult> {
-  const { data } = await api.post('/v1/install/step3', body, { headers: installHeaders })
+  const { data } = await api.post('/v1/install/step3', body, { headers: getInstallHeaders() })
   return data?.data ?? data
 }
 

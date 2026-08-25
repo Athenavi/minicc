@@ -9,6 +9,7 @@ import {
   postInstallStep3,
   setupSystem,
   hasInstallToken,
+  saveInstallToken,
   type InstallDep,
 } from '../api/install'
 
@@ -54,7 +55,22 @@ async function fetchStatus() {
       ]
     }
     if (!s.needed) {
-      installed.value = true
+      // 先检查 install.lock 是否实际完成，避免数据库残留旧 owner 记录导致误判
+      try {
+        const step1 = await getInstallStep1()
+        if (step1.completed) {
+          installed.value = true
+          return
+        }
+      } catch {
+        // 忽略
+      }
+      // 未完成但后端返回 needed=false → 强制进入向导
+      if (!postgresOk.value) {
+        await loadWizard()
+      } else {
+        wizard.value = 'legacy'
+      }
     } else if (!postgresOk.value) {
       // PostgreSQL 不可达 → 安装模式，走三步向导（需要安装令牌）
       await loadWizard()
@@ -108,14 +124,15 @@ async function submitToken() {
     message.warning('请输入安装令牌')
     return
   }
-  // 替换 URL 中的查询参数，触发页面重新加载
-  const url = new URL(window.location.href)
-  url.searchParams.set('token', tok)
-  window.location.href = url.toString()
+  // 保存到 localStorage，后续页面刷新/导航无需 URL 参数
+  saveInstallToken(tok)
+  message.success('令牌已保存，正在加载安装向导...')
+  await loadWizard()
 }
 
 // ── Step 1：提交 APP_SECRET（或 APP_SECRET 已配置时直接跳转到数据库配置）──
 async function skipStep1() {
+  console.log('[Install] skipStep1 called, appSecretSet:', appSecretSet.value, 'dbForm.app_secret:', dbForm.value.app_secret)
   // 如果 APP_SECRET 已通过环境变量配置，直接跳转到数据库配置页
   if (appSecretSet.value) {
     wizard.value = 'db'
@@ -133,28 +150,33 @@ async function skipStep1() {
   // 将 APP_SECRET 保留在 dbForm 中，提交 Step 2 时一并发送
   appSecretSet.value = true
   wizard.value = 'db'
+  console.log('[Install] skipStep1 done, wizard now:', wizard.value)
   message.success('APP_SECRET 已设置，请继续配置数据库')
 }
 
 // ── 三步向导提交 ──
 async function submitStep2() {
+  console.log('[Install] submitStep2 called', dbForm.value)
   if (!dbForm.value.postgres_dsn.trim()) {
     message.warning('PostgreSQL 连接串（DSN）必填')
     return
   }
   submitting.value = true
   try {
-    await postInstallStep2({
+    console.log('[Install] calling postInstallStep2...')
+    const result = await postInstallStep2({
       app_secret: dbForm.value.app_secret.trim() || undefined,
       postgres_dsn: dbForm.value.postgres_dsn.trim(),
       redis_addr: dbForm.value.redis_addr.trim() || undefined,
       redis_password: dbForm.value.redis_password || undefined,
       redis_db: dbForm.value.redis_db || undefined,
     })
+    console.log('[Install] postInstallStep2 success', result)
     step2Done.value = true
     wizard.value = 'admin'
     message.success('数据库配置已保存并验证通过')
   } catch (e: any) {
+    console.error('[Install] postInstallStep2 error', e)
     message.error(e?.response?.data?.error || '数据库配置失败')
   } finally {
     submitting.value = false
@@ -162,6 +184,7 @@ async function submitStep2() {
 }
 
 async function submitStep3() {
+  console.log('[Install] submitStep3 called', adminForm.value)
   if (!adminForm.value.email || !adminForm.value.name || !adminForm.value.password) {
     message.warning('邮箱、姓名、密码均必填')
     return
@@ -176,18 +199,38 @@ async function submitStep3() {
   }
   submitting.value = true
   try {
+    console.log('[Install] calling postInstallStep3...')
     await postInstallStep3({
       email: adminForm.value.email,
       password: adminForm.value.password,
       name: adminForm.value.name,
     })
+    console.log('[Install] postInstallStep3 success')
     wizard.value = 'done'
     message.success('安装完成')
   } catch (e: any) {
-    message.error(e?.response?.data?.error || '创建管理员失败')
+    console.error('[Install] postInstallStep3 error', e)
+    const errMsg = e?.response?.data?.error || ''
+    if (errMsg.includes('数据库连接已失效') || errMsg.includes('请重新完成数据库配置')) {
+      message.warning('安装中断后数据库连接已失效，请重新配置数据库')
+      wizard.value = 'db'
+    } else {
+      message.error(errMsg || '创建管理员失败')
+    }
   } finally {
     submitting.value = false
   }
+}
+
+// ── 步骤回退 ──
+function goBackToEnv() {
+  wizard.value = 'env'
+  message.info('返回环境检测步骤')
+}
+
+function goBackToDb() {
+  wizard.value = 'db'
+  message.info('返回数据库配置步骤')
 }
 
 // ── 正常模式提交（DB 就绪、无 owner）──
@@ -287,7 +330,7 @@ onMounted(fetchStatus)
             <a-form-item label="安装令牌">
               <a-input v-model:value="manualToken" placeholder="在此粘贴启动日志中的 token" />
             </a-form-item>
-            <a-button type="primary" html-type="submit" block>提交令牌</a-button>
+            <a-button type="primary" html-type="submit" block @click="submitToken">提交令牌</a-button>
           </a-form>
           <a-button type="link" block @click="router.replace('/install')">重新访问安装页</a-button>
         </template>
@@ -319,7 +362,7 @@ onMounted(fetchStatus)
             <a-form-item label="APP_SECRET（部署主密钥，至少 32 字符）">
               <a-input-password v-model:value="dbForm.app_secret" placeholder="在此输入 APP_SECRET（或先在 .env 中配置后重启服务）" />
             </a-form-item>
-            <a-button type="primary" html-type="submit" :loading="submitting" block>
+            <a-button type="primary" html-type="submit" :loading="submitting" block @click="skipStep1">
               {{ appSecretSet ? '继续配置数据库' : '提交 APP_SECRET 并继续' }}
             </a-button>
           </a-form>
@@ -349,7 +392,8 @@ onMounted(fetchStatus)
             <a-form-item label="Redis DB（选填）">
               <a-input-number v-model:value="dbForm.redis_db" :min="0" :max="15" style="width: 100%" />
             </a-form-item>
-            <a-button type="primary" html-type="submit" :loading="submitting" block>保存并验证连接</a-button>
+            <a-button type="primary" html-type="submit" :loading="submitting" block @click="submitStep2">保存并验证连接</a-button>
+            <a-button style="margin-top: 8px" block @click="goBackToEnv">上一步：修改 APP_SECRET</a-button>
           </a-form>
         </template>
 
@@ -377,7 +421,8 @@ onMounted(fetchStatus)
             <a-form-item label="确认密码" required>
               <a-input-password v-model:value="adminForm.confirm" placeholder="再次输入密码" />
             </a-form-item>
-            <a-button type="primary" html-type="submit" :loading="submitting" block>完成安装</a-button>
+            <a-button type="primary" html-type="submit" :loading="submitting" block @click="submitStep3">完成安装</a-button>
+            <a-button style="margin-top: 8px" block @click="goBackToDb">上一步：修改数据库配置</a-button>
           </a-form>
         </template>
 
@@ -417,7 +462,7 @@ onMounted(fetchStatus)
             <a-form-item label="确认密码" required>
               <a-input-password v-model:value="legacyForm.confirm" placeholder="再次输入密码" />
             </a-form-item>
-            <a-button type="primary" html-type="submit" :loading="submitting" block>初始化系统</a-button>
+            <a-button type="primary" html-type="submit" :loading="submitting" block @click="submitLegacy">初始化系统</a-button>
           </a-form>
         </template>
       </a-spin>

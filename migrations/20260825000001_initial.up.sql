@@ -7,26 +7,6 @@ create table if not exists schema_migrations
     applied_at timestamp with time zone default now() not null
 );
 
--- 触发器函数：自动更新 updated_at 列（被各表的 before update 触发器调用）
-create or replace function update_updated_at_column()
-    returns trigger as
-$$
-begin
-    new.updated_at = now();
-    return new;
-end;
-$$ language 'plpgsql';
-
--- 触发器函数：knowledge_chunks 全文搜索向量（insert/update 时从 content 生成 search_vector）
-create or replace function knowledge_chunks_search_vector_update()
-    returns trigger as
-$$
-begin
-    new.search_vector = to_tsvector('english', coalesce(new.content, ''));
-    return new;
-end;
-$$ language 'plpgsql';
-
 create table if not exists agent_registry
 (
     agent_type  varchar(32)                               not null
@@ -36,18 +16,6 @@ create table if not exists agent_registry
     enabled     boolean                  default true     not null,
     config      jsonb                    default '{}'::jsonb,
     created_at  timestamp with time zone default now()    not null
-);
-
-create table if not exists episodes
-(
-    id          uuid                     default gen_random_uuid() not null
-        primary key,
-    task        text                     default ''::text          not null,
-    summary     text                     default ''::text          not null,
-    tools_used  text[]                   default '{}'::text[]      not null,
-    success     boolean                  default true              not null,
-    duration_ms bigint                   default 0                 not null,
-    created_at  timestamp with time zone default now()             not null
 );
 
 create table if not exists guest_storage
@@ -79,29 +47,32 @@ create index if not exists idx_stripe_payments_user
 
 create table if not exists tenants
 (
-    id         uuid                     default gen_random_uuid() not null
+    id         uuid                     default gen_random_uuid()           not null
         primary key,
-    name       varchar(255)                                       not null,
-    created_at timestamp with time zone default now()             not null
+    name       varchar(255)                                                 not null,
+    created_at timestamp with time zone default now()                       not null,
+    status     varchar(16)              default 'active'::character varying not null
 );
 
 create table if not exists agents
 (
-    id              uuid                     default gen_random_uuid() not null
+    id              uuid                     default gen_random_uuid()            not null
         primary key,
-    tenant_id       uuid                                               not null
+    tenant_id       uuid                                                          not null
         references tenants
             on delete cascade,
-    name            varchar(255)                                       not null,
+    name            varchar(255)                                                  not null,
     description     text,
     system_prompt   text,
     tools           jsonb                    default '[]'::jsonb,
     llm_config      jsonb                    default '{}'::jsonb,
     max_turns       integer                  default 10,
     timeout_seconds integer                  default 120,
-    enabled         boolean                  default true              not null,
-    created_at      timestamp with time zone default now()             not null,
-    updated_at      timestamp with time zone default now()             not null
+    enabled         boolean                  default true                         not null,
+    created_at      timestamp with time zone default now()                        not null,
+    updated_at      timestamp with time zone default now()                        not null,
+    user_id         uuid                                                          not null,
+    visibility      varchar(16)              default 'private'::character varying not null
 );
 
 create index if not exists idx_agents_name
@@ -109,6 +80,9 @@ create index if not exists idx_agents_name
 
 create index if not exists idx_agents_tenant
     on agents (tenant_id);
+
+create index if not exists idx_agents_tenant_user
+    on agents (tenant_id, user_id);
 
 create table if not exists enterprise_tasks
 (
@@ -211,6 +185,7 @@ create index if not exists idx_media_type
 create index if not exists idx_media_user
     on media_assets (user_id);
 
+
 create table if not exists meeting_notes
 (
     id           uuid                     default gen_random_uuid()     not null
@@ -286,6 +261,12 @@ create table if not exists tool_calls
 create index if not exists idx_tool_calls_session
     on tool_calls (session_id);
 
+create index if not exists idx_tool_calls_session_created
+    on tool_calls (session_id, created_at);
+
+create index if not exists idx_tool_calls_created
+    on tool_calls (created_at);
+
 create table if not exists users
 (
     id            uuid                     default gen_random_uuid()         not null
@@ -304,8 +285,19 @@ create table if not exists users
     updated_at    timestamp with time zone default now()                     not null,
     phone         varchar(32),
     password_set  boolean                  default true                      not null,
+    settings      jsonb                    default '{}'::jsonb               not null,
     unique (tenant_id, email)
 );
+
+create index if not exists idx_users_email
+    on users (email);
+
+create index if not exists idx_users_tenant
+    on users (tenant_id);
+
+create unique index if not exists uq_users_tenant_phone
+    on users (tenant_id, phone)
+    where (phone IS NOT NULL);
 
 create table if not exists agent_sessions
 (
@@ -322,7 +314,11 @@ create table if not exists agent_sessions
     status     varchar(16)              default 'pending'::character varying not null,
     result     text,
     created_at timestamp with time zone default now()                        not null,
-    updated_at timestamp with time zone default now()                        not null
+    updated_at timestamp with time zone default now()                        not null,
+    tenant_id  uuid                                                          not null
+        constraint fk_agent_sessions_tenant
+            references tenants
+            on delete cascade
 );
 
 create index if not exists idx_agent_sessions_status
@@ -330,6 +326,12 @@ create index if not exists idx_agent_sessions_status
 
 create index if not exists idx_agent_sessions_user
     on agent_sessions (user_id);
+
+create index if not exists idx_agent_sessions_tenant
+    on agent_sessions (tenant_id);
+
+create index if not exists idx_agent_sessions_tenant_user
+    on agent_sessions (tenant_id, user_id);
 
 create table if not exists api_keys
 (
@@ -342,7 +344,8 @@ create table if not exists api_keys
     key_hash     varchar(64)                                        not null,
     last_used_at timestamp with time zone,
     expires_at   timestamp with time zone,
-    created_at   timestamp with time zone default now()             not null
+    created_at   timestamp with time zone default now()             not null,
+    revoked      boolean                  default false             not null
 );
 
 create index if not exists idx_api_keys_user
@@ -439,6 +442,11 @@ create index if not exists idx_knowledge_bases_user
 create index if not exists idx_knowledge_bases_visibility
     on knowledge_bases (visibility);
 
+create trigger update_knowledge_bases_updated_at
+    before update
+    on knowledge_bases
+    for each row
+execute procedure update_updated_at_column();
 
 create table if not exists knowledge_documents
 (
@@ -465,6 +473,21 @@ create table if not exists knowledge_documents
     updated_at        timestamp with time zone default now(),
     content           bytea
 );
+
+create index if not exists idx_knowledge_documents_kb
+    on knowledge_documents (knowledge_base_id);
+
+create index if not exists idx_knowledge_documents_status
+    on knowledge_documents (status);
+
+create index if not exists idx_knowledge_documents_tenant
+    on knowledge_documents (tenant_id);
+
+create trigger update_knowledge_documents_updated_at
+    before update
+    on knowledge_documents
+    for each row
+execute procedure update_updated_at_column();
 
 create table if not exists knowledge_chunks
 (
@@ -498,16 +521,11 @@ create index if not exists idx_knowledge_chunks_search
 create index if not exists idx_knowledge_chunks_tenant
     on knowledge_chunks (tenant_id);
 
-
-create index if not exists idx_knowledge_documents_kb
-    on knowledge_documents (knowledge_base_id);
-
-create index if not exists idx_knowledge_documents_status
-    on knowledge_documents (status);
-
-create index if not exists idx_knowledge_documents_tenant
-    on knowledge_documents (tenant_id);
-
+create trigger knowledge_chunks_search_vector_trigger
+    before insert or update
+    on knowledge_chunks
+    for each row
+execute procedure knowledge_chunks_search_vector_update();
 
 create table if not exists sessions
 (
@@ -528,6 +546,21 @@ create table if not exists sessions
     updated_at timestamp with time zone default now()                       not null,
     pinned     boolean                  default false                       not null
 );
+
+create index if not exists idx_sessions_agent
+    on sessions (agent_id);
+
+create index if not exists idx_sessions_tenant
+    on sessions (tenant_id);
+
+create index if not exists idx_sessions_updated
+    on sessions (updated_at);
+
+create index if not exists idx_sessions_user
+    on sessions (user_id);
+
+create index if not exists idx_sessions_user_updated
+    on sessions (user_id asc, updated_at desc);
 
 create table if not exists billing_records
 (
@@ -580,17 +613,6 @@ create table if not exists messages
 create index if not exists idx_messages_session
     on messages (session_id, created_at);
 
-create index if not exists idx_sessions_agent
-    on sessions (agent_id);
-
-create index if not exists idx_sessions_tenant
-    on sessions (tenant_id);
-
-create index if not exists idx_sessions_updated
-    on sessions (updated_at);
-
-create index if not exists idx_sessions_user
-    on sessions (user_id);
 
 create table if not exists tasks
 (
@@ -619,16 +641,6 @@ create index if not exists idx_tasks_type
 
 create index if not exists idx_tasks_user
     on tasks (user_id);
-
-create index if not exists idx_users_email
-    on users (email);
-
-create index if not exists idx_users_tenant
-    on users (tenant_id);
-
-create unique index if not exists uq_users_tenant_phone
-    on users (tenant_id, phone)
-    where (phone IS NOT NULL);
 
 create table if not exists wiki_pages
 (
@@ -716,11 +728,21 @@ create table if not exists uploads
     chunks_received text[]                   default '{}'::text[]                 not null,
     status          varchar(16)              default 'pending'::character varying not null,
     created_at      timestamp with time zone default now()                        not null,
-    updated_at      timestamp with time zone default now()                        not null
+    updated_at      timestamp with time zone default now()                        not null,
+    tenant_id       uuid                                                          not null
+        constraint fk_uploads_tenant
+            references tenants
+            on delete cascade
 );
 
 create index if not exists idx_uploads_user
     on uploads (user_id asc, created_at desc);
+
+create index if not exists idx_uploads_tenant
+    on uploads (tenant_id);
+
+create index if not exists idx_uploads_tenant_user
+    on uploads (tenant_id, user_id);
 
 create table if not exists admin_api_keys
 (
@@ -739,7 +761,7 @@ create table if not exists admin_api_keys
     status         varchar(20)              default 'active'::character varying
         constraint chk_status
             check ((status)::text = ANY
-                   ((ARRAY ['active'::character varying, 'expired'::character varying, 'suspended'::character varying])::text[])),
+                   (ARRAY [('active'::character varying)::text, ('expired'::character varying)::text, ('suspended'::character varying)::text])),
     expires_at     timestamp with time zone,
     created_at     timestamp with time zone default now(),
     updated_at     timestamp with time zone default now(),
@@ -783,7 +805,7 @@ create table if not exists admin_model_configs
     status             varchar(20)              default 'active'::character varying
         constraint chk_model_status
             check ((status)::text = ANY
-                   ((ARRAY ['active'::character varying, 'deprecated'::character varying, 'maintenance'::character varying])::text[])),
+                   (ARRAY [('active'::character varying)::text, ('deprecated'::character varying)::text, ('maintenance'::character varying)::text])),
     is_default         boolean                  default false,
     input_cost_per_1m  double precision         default 0,
     output_cost_per_1m double precision         default 0,
@@ -813,7 +835,7 @@ create table if not exists admin_workflows
     error_handling_strategy varchar(20)              default 'fail_fast'::character varying
         constraint chk_error_strategy
             check ((error_handling_strategy)::text = ANY
-                   ((ARRAY ['fail_fast'::character varying, 'continue'::character varying, 'skip'::character varying])::text[])),
+                   (ARRAY [('fail_fast'::character varying)::text, ('continue'::character varying)::text, ('skip'::character varying)::text])),
     timeout_ms              integer                  default 30000,
     max_retries             integer                  default 3,
     version                 integer                  default 1,
@@ -821,7 +843,7 @@ create table if not exists admin_workflows
     status                  varchar(20)              default 'draft'::character varying
         constraint chk_workflow_status
             check ((status)::text = ANY
-                   ((ARRAY ['draft'::character varying, 'testing'::character varying, 'published'::character varying, 'archived'::character varying])::text[])),
+                   (ARRAY [('draft'::character varying)::text, ('testing'::character varying)::text, ('published'::character varying)::text, ('archived'::character varying)::text])),
     created_by              varchar(50),
     created_at              timestamp with time zone default now(),
     updated_at              timestamp with time zone default now(),
@@ -845,7 +867,7 @@ create table if not exists admin_workflow_executions
     status           varchar(20)              default 'running'::character varying
         constraint chk_execution_status
             check ((status)::text = ANY
-                   ((ARRAY ['running'::character varying, 'completed'::character varying, 'failed'::character varying, 'cancelled'::character varying])::text[])),
+                   (ARRAY [('running'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text, ('cancelled'::character varying)::text])),
     started_at       timestamp with time zone default now(),
     completed_at     timestamp with time zone,
     duration_ms      integer,
@@ -950,7 +972,7 @@ create table if not exists admin_tenants
     status                  varchar(20)              default 'active'::character varying
         constraint chk_tenant_status
             check ((status)::text = ANY
-                   ((ARRAY ['active'::character varying, 'suspended'::character varying, 'expired'::character varying])::text[])),
+                   (ARRAY [('active'::character varying)::text, ('suspended'::character varying)::text, ('expired'::character varying)::text])),
     expires_at              timestamp with time zone,
     created_at              timestamp with time zone default now(),
     updated_at              timestamp with time zone default now(),
@@ -1000,13 +1022,13 @@ create table if not exists admin_domains
     ssl_status     varchar(20)              default 'pending'::character varying
         constraint chk_ssl_status
             check ((ssl_status)::text = ANY
-                   ((ARRAY ['pending'::character varying, 'active'::character varying, 'expired'::character varying, 'failed'::character varying])::text[])),
+                   (ARRAY [('pending'::character varying)::text, ('active'::character varying)::text, ('expired'::character varying)::text, ('failed'::character varying)::text])),
     ssl_expires_at timestamp with time zone,
     auto_renew     boolean                  default true,
     status         varchar(20)              default 'active'::character varying
         constraint chk_domain_status
             check ((status)::text = ANY
-                   ((ARRAY ['active'::character varying, 'inactive'::character varying, 'verifying'::character varying])::text[])),
+                   (ARRAY [('active'::character varying)::text, ('inactive'::character varying)::text, ('verifying'::character varying)::text])),
     verified_at    timestamp with time zone,
     verified_by    varchar(50),
     created_at     timestamp with time zone default now(),
@@ -1077,14 +1099,14 @@ create table if not exists admin_database_backups
     backup_type      varchar(20)              default 'manual'::character varying
         constraint chk_backup_type
             check ((backup_type)::text = ANY
-                   ((ARRAY ['manual'::character varying, 'scheduled'::character varying])::text[])),
+                   (ARRAY [('manual'::character varying)::text, ('scheduled'::character varying)::text])),
     description      text,
     file_path        varchar(500),
     file_size_mb     double precision,
     status           varchar(20)              default 'running'::character varying
         constraint chk_backup_status
             check ((status)::text = ANY
-                   ((ARRAY ['running'::character varying, 'completed'::character varying, 'failed'::character varying, 'deleted'::character varying])::text[])),
+                   (ARRAY [('running'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text, ('deleted'::character varying)::text])),
     error_message    text,
     started_at       timestamp with time zone default now(),
     completed_at     timestamp with time zone,
@@ -1239,13 +1261,14 @@ create table if not exists ent_quota_pools
     resource_type varchar(20)                                                   not null
         constraint chk_quota_pool_resource
             check ((resource_type)::text = ANY
-                   ((ARRAY ['token'::character varying, 'storage_mb'::character varying, 'concurrency'::character varying, 'credits'::character varying])::text[])),
+                   (ARRAY [('token'::character varying)::text, ('storage_mb'::character varying)::text, ('concurrency'::character varying)::text, ('credits'::character varying)::text])),
     total_amount  bigint                   default 0                            not null
         constraint chk_quota_pool_amount
             check (total_amount >= 0),
     period        varchar(10)              default 'monthly'::character varying not null
         constraint chk_quota_pool_period
-            check ((period)::text = ANY ((ARRAY ['daily'::character varying, 'monthly'::character varying])::text[])),
+            check ((period)::text = ANY
+                   (ARRAY [('daily'::character varying)::text, ('monthly'::character varying)::text])),
     created_at    timestamp with time zone default now(),
     updated_at    timestamp with time zone default now(),
     unique (tenant_id, resource_type, period)
@@ -1262,7 +1285,8 @@ create table if not exists ent_quota_allocations
             on delete cascade,
     target_type varchar(10)                                        not null
         constraint chk_quota_alloc_target
-            check ((target_type)::text = ANY ((ARRAY ['group'::character varying, 'user'::character varying])::text[])),
+            check ((target_type)::text = ANY
+                   (ARRAY [('group'::character varying)::text, ('user'::character varying)::text])),
     target_id   uuid                                               not null,
     amount      bigint                   default 0                 not null
         constraint chk_quota_alloc_amount
@@ -1311,14 +1335,15 @@ create table if not exists ent_catalog_items
         primary key,
     type       varchar(8)                                                  not null
         constraint chk_catalog_item_type
-            check ((type)::text = ANY ((ARRAY ['plugin'::character varying, 'skill'::character varying])::text[])),
+            check ((type)::text = ANY
+                   ((ARRAY ['plugin'::character varying, 'skill'::character varying, 'agent'::character varying, 'mcp'::character varying])::text[])),
     name       varchar(128)                                                not null,
     version    varchar(32)              default '1.0.0'::character varying,
     manifest   jsonb                    default '{}'::jsonb,
     status     varchar(16)              default 'draft'::character varying not null
         constraint chk_catalog_item_status
             check ((status)::text = ANY
-                   ((ARRAY ['draft'::character varying, 'published'::character varying, 'retired'::character varying])::text[])),
+                   (ARRAY [('draft'::character varying)::text, ('published'::character varying)::text, ('retired'::character varying)::text])),
     created_by uuid,
     created_at timestamp with time zone default now(),
     updated_at timestamp with time zone default now()
@@ -1383,23 +1408,236 @@ create table if not exists ent_captcha_config
 
 comment on table ent_captcha_config is 'Per-tenant human verification (CAPTCHA) configuration (secret_enc encrypted at rest)';
 
+create table if not exists memory_summaries
+(
+    id               varchar(64)                                                  not null
+        primary key,
+    tenant_id        varchar(64)                                                  not null,
+    user_id          varchar(64)                                                  not null,
+    session_id       varchar(64)                                                  not null,
+    content          text                                                         not null,
+    topics           jsonb                    default '[]'::jsonb                 not null,
+    entities         jsonb                    default '{}'::jsonb                 not null,
+    turn_start       integer                  default 0                           not null,
+    turn_end         integer                  default 0                           not null,
+    content_hash     varchar(80)                                                  not null,
+    access_count     integer                  default 0                           not null
+        constraint chk_ms_access_count
+            check (access_count >= 0),
+    last_accessed_at timestamp with time zone,
+    status           varchar(16)              default 'active'::character varying not null
+        constraint chk_ms_status
+            check ((status)::text = ANY
+                   ((ARRAY ['active'::character varying, 'archived'::character varying, 'expired'::character varying])::text[])),
+    created_at       timestamp with time zone default now()                       not null,
+    constraint chk_ms_turn_range
+        check (turn_start <= turn_end)
+);
 
-create trigger update_knowledge_bases_updated_at
+comment on table memory_summaries is '对话摘要表（L3层）：存储跨会话的语义摘要记忆';
+
+comment on column memory_summaries.content is '摘要内容文本';
+
+comment on column memory_summaries.topics is '主题列表（JSONB数组）';
+
+comment on column memory_summaries.entities is '实体字典（JSONB对象），按类型分组';
+
+comment on column memory_summaries.turn_start is '摘要覆盖的起始轮次';
+
+comment on column memory_summaries.turn_end is '摘要覆盖的结束轮次';
+
+comment on column memory_summaries.content_hash is '内容哈希，用于去重';
+
+comment on column memory_summaries.access_count is '访问次数，用于计算 final_score';
+
+comment on column memory_summaries.last_accessed_at is '最近访问时间，用于计算 recency';
+
+comment on column memory_summaries.status is '状态：active（活跃）、archived（已归档）、expired（已过期）';
+
+create index if not exists idx_ms_lookup
+    on memory_summaries (tenant_id asc, user_id asc, status asc, created_at desc);
+
+create unique index if not exists uq_ms_hash
+    on memory_summaries (tenant_id, user_id, content_hash);
+
+create index if not exists idx_ms_access
+    on memory_summaries (tenant_id asc, user_id asc, last_accessed_at desc, access_count desc);
+
+create index if not exists idx_ms_session
+    on memory_summaries (session_id)
+    where ((status)::text = 'active'::text);
+
+create table if not exists unified_sessions
+(
+    id             text                                          not null
+        primary key,
+    tenant_id      text                                          not null,
+    user_id        text                                          not null,
+    title          text                     default ''::text     not null,
+    mode           text                     default 'auto'::text not null,
+    shared_context jsonb                    default '{}'::jsonb  not null,
+    created_at     timestamp with time zone default now()        not null,
+    updated_at     timestamp with time zone default now()        not null
+);
+
+create index if not exists idx_unified_sessions_user_updated
+    on unified_sessions (tenant_id asc, user_id asc, updated_at desc);
+
+create table if not exists unified_messages
+(
+    id         bigserial
+        primary key,
+    session_id text                                         not null
+        references unified_sessions
+            on delete cascade,
+    role       text                                         not null,
+    content    text                                         not null,
+    metadata   jsonb                    default '{}'::jsonb not null,
+    error      text                     default ''::text    not null,
+    created_at timestamp with time zone default now()       not null
+);
+
+create index if not exists idx_unified_messages_session
+    on unified_messages (session_id, created_at);
+
+create table if not exists domains
+(
+    id         uuid                     default gen_random_uuid()         not null
+        primary key,
+    tenant_id  uuid                                                       not null
+        references tenants
+            on delete cascade,
+    domain     varchar(255)                                               not null
+        unique,
+    ssl_status varchar(16)              default 'none'::character varying not null,
+    verified   boolean                  default false                     not null,
+    created_at timestamp with time zone default now()                     not null,
+    updated_at timestamp with time zone default now()                     not null
+);
+
+create table if not exists llm_models
+(
+    id             uuid                     default gen_random_uuid()     not null
+        primary key,
+    provider       varchar(32)                                            not null,
+    name           varchar(128)                                           not null,
+    display_name   varchar(128)             default ''::character varying not null,
+    enabled        boolean                  default true                  not null,
+    context_window integer                  default 8192                  not null,
+    created_at     timestamp with time zone default now()                 not null,
+    updated_at     timestamp with time zone default now()                 not null,
+    unique (provider, name)
+);
+
+create table if not exists cron_jobs
+(
+    id            uuid                     default gen_random_uuid()            not null
+        primary key,
+    name          varchar(128)                                                  not null,
+    schedule      varchar(64)                                                   not null,
+    task          varchar(255)                                                  not null,
+    enabled       boolean                  default true                         not null,
+    last_run_at   timestamp with time zone,
+    last_status   varchar(16)              default 'pending'::character varying not null,
+    created_at    timestamp with time zone default now()                        not null,
+    updated_at    timestamp with time zone default now()                        not null,
+    tenant_id     uuid,
+    user_id       uuid,
+    webhook_token varchar(64)              default ''::character varying        not null
+);
+
+create table if not exists ent_templates
+(
+    id          uuid                     default gen_random_uuid() not null
+        primary key,
+    type        varchar(16)                                        not null,
+    name        varchar(128)                                       not null,
+    description text                     default ''::text          not null,
+    payload     jsonb                                              not null,
+    published   boolean                  default true              not null,
+    created_at  timestamp with time zone default now()             not null,
+    updated_at  timestamp with time zone default now()             not null
+);
+
+create index if not exists idx_ent_templates_type
+    on ent_templates (type);
+
+create table if not exists user_memory_profile
+(
+    tenant_id          varchar(64)                                                   not null,
+    user_id            varchar(64)                                                   not null,
+    slot               varchar(32)                                                   not null
+        constraint chk_ump_slot
+            check ((slot)::text = ANY
+                   ((ARRAY ['identity'::character varying, 'preference'::character varying, 'decision'::character varying, 'fact'::character varying])::text[])),
+    item_key           varchar(128)                                                  not null,
+    item_value         jsonb                                                         not null,
+    confidence         smallint                 default 50                           not null
+        constraint chk_ump_confidence
+            check ((confidence >= 0) AND (confidence <= 100)),
+    source             varchar(16)              default 'derived'::character varying not null
+        constraint chk_ump_source
+            check ((source)::text = ANY
+                   ((ARRAY ['user_confirmed'::character varying, 'derived'::character varying, 'tool_written'::character varying])::text[])),
+    version            integer                  default 1                            not null,
+    confirmed_at       timestamp with time zone,
+    last_referenced_at timestamp with time zone,
+    created_at         timestamp with time zone default now()                        not null,
+    updated_at         timestamp with time zone default now()                        not null,
+    primary key (tenant_id, user_id, slot, item_key)
+);
+
+comment on table user_memory_profile is '用户记忆档案表（L2层）：存储跨会话稳定的结构化事实';
+
+comment on column user_memory_profile.slot is '槽位类型：identity（身份）、preference（偏好）、decision（关键决策）、fact（长期事实）';
+
+comment on column user_memory_profile.item_key is '槽位内键，如 "timezone" / "preferred_language"';
+
+comment on column user_memory_profile.item_value is '值，允许 JSONB 对象';
+
+comment on column user_memory_profile.confidence is '置信度 0-100，用于淘汰排序';
+
+comment on column user_memory_profile.source is '来源：user_confirmed（用户确认）、derived（提炼）、tool_written（工具写入）';
+
+comment on column user_memory_profile.version is '版本号，每次 upsert 递增';
+
+comment on column user_memory_profile.confirmed_at is '用户最后确认时间，NULL 表示未确认';
+
+comment on column user_memory_profile.last_referenced_at is '最近被召回引用时间，用于衰退归档（180天未引用且confidence<80）';
+
+create index if not exists idx_ump_reference
+    on user_memory_profile (tenant_id, user_id, last_referenced_at);
+
+create index if not exists idx_ump_conflict
+    on user_memory_profile (tenant_id, user_id, source)
+    where ((source)::text = 'user_confirmed'::text);
+
+create trigger trigger_ump_updated_at
     before update
-    on knowledge_bases
+    on user_memory_profile
     for each row
 execute procedure update_updated_at_column();
 
-create trigger update_knowledge_documents_updated_at
-    before update
-    on knowledge_documents
-    for each row
-execute procedure update_updated_at_column();
+create table if not exists system_settings
+(
+    id         bigserial
+        primary key,
+    category   varchar(32)                            not null,
+    key        varchar(64)                            not null,
+    value      jsonb                                  not null,
+    updated_at timestamp with time zone default now() not null,
+    updated_by uuid,
+    encrypted  boolean                  default false not null,
+    unique (category, key)
+);
 
-create trigger knowledge_chunks_search_vector_trigger
-    before insert or update
-    on knowledge_chunks
-    for each row
-execute procedure knowledge_chunks_search_vector_update();
+create index if not exists idx_system_settings_category
+    on system_settings (category);
 
 
+create index if not exists idx_media_assets_name_tsv
+    on media_assets using gin (to_tsvector('simple'::regconfig, COALESCE(name, ''::character varying)::text));
+
+
+create index if not exists idx_messages_content_tsv
+    on messages using gin (to_tsvector('simple'::regconfig, content));

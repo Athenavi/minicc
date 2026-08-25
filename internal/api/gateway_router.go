@@ -153,6 +153,7 @@ func NewSetupRouter(cfg *config.Config) http.Handler {
 	mux.Handle("GET /v1/install/step1", publicMW(installMW(http.HandlerFunc(installHandler.Step1))))
 	mux.Handle("POST /v1/install/step2", publicMW(installMW(http.HandlerFunc(installHandler.Step2))))
 	mux.Handle("POST /v1/install/step3", publicMW(installMW(http.HandlerFunc(installHandler.Step3))))
+	mux.Handle("POST /v1/install/setup", publicMW(installMW(http.HandlerFunc(installHandler.Setup))))
 	mux.Handle("GET /v1/install/status", publicMW(http.HandlerFunc(installHandler.Status)))
 
 	// 健康检查（编排器探活；就绪检查如实反映依赖状态）

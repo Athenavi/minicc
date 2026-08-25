@@ -586,20 +586,43 @@ func (h *InstallHandler) Step2(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// rebuildDBFromLock 从 install.lock 中解密 DSN 并重建 db.Pool（中断恢复用）。
+// 需要 APP_SECRET 有效，否则无法解密。
+func (h *InstallHandler) rebuildDBFromLock(lk *InstallLock, r *http.Request) error {
+	appSecret := h.cfg.AppSecret
+	if !h.cfg.ValidateAppSecret() {
+		// APP_SECRET 未在环境变量配置，但 lock 中可能保存了 AppSecretPlain
+		if lk.AppSecretPlain != "" {
+			appSecret = lk.AppSecretPlain
+		} else {
+			return fmt.Errorf("APP_SECRET not configured and no plain secret in lock")
+		}
+	}
+	dsn, err := decryptSecret(appSecret, lk.DSN)
+	if err != nil {
+		return fmt.Errorf("decrypt dsn: %w", err)
+	}
+	if dsn == "" {
+		return fmt.Errorf("empty dsn in lock")
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+	return db.ConnectPostgres(ctx, dsn, h.cfg.PostgresMaxConn, h.cfg.PostgresMinConn)
+}
+
 type Step3Request struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 	Name     string `json:"name"`
+	// AppSecret 在服务重启后 db.Pool 为 nil 时使用：从 lock 中解密 DSN 重建连接池
+	AppSecret string `json:"app_secret,omitempty"`
 }
 
-// Step3 创建首个 owner 管理员并标记安装完成。完成后安装入口关闭；
+// Step3 执行数据库迁移、创建首个 owner 管理员并标记安装完成。完成后安装入口关闭；
 // 由于 Step 2 保存的 DSN/Redis 配置需重启后全面生效，前端提示重启服务。
+// 支持中断恢复：当 db.Pool == nil 但 Step2Done == true 时尝试从 lock 解密 DSN 重建连接池。
 // POST /v1/install/step3
 func (h *InstallHandler) Step3(w http.ResponseWriter, r *http.Request) {
-	if db.Pool == nil {
-		BadRequest(w, "数据库尚未配置：请先完成数据库配置步骤")
-		return
-	}
 	lk, err := LoadInstallLock()
 	if err != nil {
 		slog.Error("install step3: read install lock", "error", err)
@@ -614,7 +637,93 @@ func (h *InstallHandler) Step3(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "请先完成数据库配置步骤")
 		return
 	}
+	// 中断恢复：Step2Done == true 但 db.Pool == nil（服务重启后），从 lock 解密 DSN 重建连接池
+	if db.Pool == nil {
+		// 先解码请求体，获取可能携带的 app_secret 用于解密 DSN
+		var req Step3Request
+		if err := DecodeJSON(w, r, &req); err != nil {
+			BadRequest(w, ErrInvalidReq)
+			return
+		}
+		if req.Email == "" || req.Password == "" || req.Name == "" {
+			BadRequest(w, "email, password, and name are required")
+			return
+		}
+		if len(req.Password) < 8 {
+			BadRequest(w, "password must be at least 8 characters")
+			return
+		}
+		// 如果 AppSecretPlain 为空，尝试用请求体中的 app_secret 兜底
+		if req.AppSecret != "" {
+			if !config.ValidateJWTSecret(req.AppSecret) {
+				BadRequest(w, "APP_SECRET 强度不足")
+				return
+			}
+			lk.AppSecretPlain = req.AppSecret
+		}
+		if err := h.rebuildDBFromLock(lk, r); err != nil {
+			slog.Error("install step3: rebuild pool from lock", "error", err)
+			BadRequest(w, "数据库连接已失效，请重新完成数据库配置步骤")
+			return
+		}
+		// 执行数据库迁移（幂等：已应用的迁移自动跳过）
+		migrateCtx, migrateCancel := context.WithTimeout(r.Context(), 60*time.Second)
+		defer migrateCancel()
+		if err := db.RunAtlasMigrations(migrateCtx, db.Pool, "migrations"); err != nil {
+			slog.Error("install step3: run migrations", "error", err)
+			InternalError(w, "数据库初始化失败，请检查日志确认迁移错误")
+			return
+		}
+		// 幂等 seed 默认租户
+		if err := db.EnsureDefaultTenant(migrateCtx, db.Pool); err != nil {
+			slog.Error("install step3: ensure default tenant", "error", err)
+			InternalError(w, "默认租户初始化失败")
+			return
+		}
 
+		userID, err := createOwnerAccount(r.Context(), req.Email, req.Name, req.Password)
+		if err != nil {
+			if errors.Is(err, ErrAlreadyInitialized) {
+				BadRequest(w, "system already initialized")
+				return
+			}
+			slog.Error("install step3: create owner", "error", err)
+			InternalError(w, "failed to create admin user")
+			return
+		}
+
+		// 标记安装完成
+		lk.Step3Done = true
+		lk.Completed = true
+		lk.CompletedAt = time.Now()
+		if err := SaveInstallLock(lk); err != nil {
+			slog.Error("install step3: save install lock", "error", err)
+			InternalError(w, "failed to save install.lock")
+			return
+		}
+
+		token, err := h.auth.GenerateToken(userID, req.Email, "owner", DefaultTenantID, auth.RolePermissions["owner"])
+		if err != nil {
+			InternalError(w, "authentication failed")
+			return
+		}
+
+		SetTokenCookie(w, token, int(h.cfg.JWTExpiration.Seconds()), h.cfg.CookieSecure)
+		Created(w, map[string]interface{}{
+			"message":   "安装完成，请重启服务使全部功能生效",
+			"completed": true,
+			"restart":   true,
+			"user": map[string]string{
+				"id":    userID,
+				"email": req.Email,
+				"name":  req.Name,
+				"role":  "owner",
+			},
+		})
+		return
+	}
+
+	// 非中断恢复路径：db.Pool 已就绪，直接解码请求体
 	var req Step3Request
 	if err := DecodeJSON(w, r, &req); err != nil {
 		BadRequest(w, ErrInvalidReq)
@@ -626,6 +735,21 @@ func (h *InstallHandler) Step3(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(req.Password) < 8 {
 		BadRequest(w, "password must be at least 8 characters")
+		return
+	}
+
+	// 执行数据库迁移（幂等：已应用的迁移自动跳过）
+	migrateCtx, migrateCancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer migrateCancel()
+	if err := db.RunAtlasMigrations(migrateCtx, db.Pool, "migrations"); err != nil {
+		slog.Error("install step3: run migrations", "error", err)
+		InternalError(w, "数据库初始化失败，请检查日志确认迁移错误")
+		return
+	}
+	// 幂等 seed 默认租户
+	if err := db.EnsureDefaultTenant(migrateCtx, db.Pool); err != nil {
+		slog.Error("install step3: ensure default tenant", "error", err)
+		InternalError(w, "默认租户初始化失败")
 		return
 	}
 
@@ -720,6 +844,8 @@ type SetupRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 	Name     string `json:"name"`
+	// AppSecret 在服务重启后 db.Pool 为 nil 时使用：从 lock 中解密 DSN 重建连接池
+	AppSecret string `json:"app_secret,omitempty"`
 }
 
 // Setup initializes the system with the first admin user.
@@ -738,6 +864,53 @@ func (h *InstallHandler) Setup(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(req.Password) < 8 {
 		BadRequest(w, "password must be at least 8 characters")
+		return
+	}
+
+	// 中断恢复：db.Pool == nil（服务重启后），从 lock 重建连接池
+	if db.Pool == nil {
+		lk, lkErr := LoadInstallLock()
+		if lkErr != nil {
+			slog.Error("install setup: read install lock", "error", lkErr)
+			InternalError(w, "failed to read install state")
+			return
+		}
+		if !lk.Step2Done {
+			InternalError(w, "数据库未配置，请先完成数据库配置步骤")
+			return
+		}
+		// 如果 AppSecretPlain 为空，尝试用请求体中的 app_secret 兜底
+		if req.AppSecret != "" {
+			if !config.ValidateJWTSecret(req.AppSecret) {
+				BadRequest(w, "APP_SECRET 强度不足")
+				return
+			}
+			lk.AppSecretPlain = req.AppSecret
+		}
+		if err := h.rebuildDBFromLock(lk, r); err != nil {
+			slog.Error("install setup: rebuild pool from lock", "error", err)
+			InternalError(w, "数据库连接已失效，请重新完成数据库配置步骤")
+			return
+		}
+	}
+
+	// 执行数据库迁移（幂等：已应用的迁移自动跳过）
+	migrateCtx, migrateCancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer migrateCancel()
+	if db.Pool != nil {
+		if err := db.RunAtlasMigrations(migrateCtx, db.Pool, "migrations"); err != nil {
+			slog.Error("install setup: run migrations", "error", err)
+			InternalError(w, "数据库初始化失败，请检查日志确认迁移错误")
+			return
+		}
+		// 幂等 seed 默认租户
+		if err := db.EnsureDefaultTenant(migrateCtx, db.Pool); err != nil {
+			slog.Error("install setup: ensure default tenant", "error", err)
+			InternalError(w, "默认租户初始化失败")
+			return
+		}
+	} else {
+		InternalError(w, "数据库连接不可用，请检查数据库配置")
 		return
 	}
 
