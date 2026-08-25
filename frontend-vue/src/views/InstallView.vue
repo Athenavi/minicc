@@ -18,18 +18,21 @@ const error = ref(false)
 const submitting = ref(false)
 
 // ── 通用状态 ──
-const needed = ref(false)
 const deps = ref<InstallDep[]>([])
 const installed = ref(false)
 
+// ── 手动输入令牌 ──
+const manualToken = ref('')
+
 // ── 安装模式（setup）三步向导状态 ──
-// wizard: env=环境检测(APP_SECRET) / db=数据库配置 / admin=创建管理员 / done=安装完成 / token=缺少令牌
-const wizard = ref<'env' | 'db' | 'admin' | 'done' | 'token'>('env')
+// wizard: env=环境检测(APP_SECRET) / db=数据库配置 / admin=创建管理员 / done=安装完成 /
+//         token=缺少令牌 / legacy=正常模式（DB 就绪但无 owner）单步创建管理员
+const wizard = ref<'env' | 'db' | 'admin' | 'done' | 'token' | 'legacy'>('env')
 const appSecretSet = ref(false)
 const dataWritable = ref(true)
 const step2Done = ref(false)
 
-const dbForm = ref({ postgres_dsn: '', redis_addr: '', redis_password: '', redis_db: 0 })
+const dbForm = ref({ app_secret: '', postgres_dsn: '', redis_addr: '', redis_password: '', redis_db: 0 })
 const adminForm = ref({ email: '', password: '', confirm: '', name: '' })
 
 // ── 正常模式（DB 就绪但无管理员）单步表单 ──
@@ -43,7 +46,6 @@ async function fetchStatus() {
   error.value = false
   try {
     const s = await getInstallStatus()
-    needed.value = s.needed
     deps.value = s.deps ?? []
     if (deps.value.length === 0) {
       deps.value = [
@@ -56,8 +58,10 @@ async function fetchStatus() {
     } else if (!postgresOk.value) {
       // PostgreSQL 不可达 → 安装模式，走三步向导（需要安装令牌）
       await loadWizard()
+    } else {
+      // PostgreSQL 可达但无 owner → 正常模式单步创建管理员
+      wizard.value = 'legacy'
     }
-    // PostgreSQL 可达但无 owner → 正常模式单步创建管理员（depsReady 由模板控制表单可用性）
   } catch (e: any) {
     error.value = true
     message.error('无法连接后端服务，请确认服务已启动')
@@ -97,6 +101,41 @@ async function loadWizard() {
   }
 }
 
+// ── 手动输入令牌 ──
+async function submitToken() {
+  const tok = manualToken.value.trim()
+  if (!tok) {
+    message.warning('请输入安装令牌')
+    return
+  }
+  // 替换 URL 中的查询参数，触发页面重新加载
+  const url = new URL(window.location.href)
+  url.searchParams.set('token', tok)
+  window.location.href = url.toString()
+}
+
+// ── Step 1：提交 APP_SECRET（或 APP_SECRET 已配置时直接跳转到数据库配置）──
+async function skipStep1() {
+  // 如果 APP_SECRET 已通过环境变量配置，直接跳转到数据库配置页
+  if (appSecretSet.value) {
+    wizard.value = 'db'
+    return
+  }
+  // APP_SECRET 未配置，用户必须输入
+  if (!dbForm.value.app_secret.trim()) {
+    message.warning('请输入 APP_SECRET（部署主密钥，至少 32 字符）')
+    return
+  }
+  if (dbForm.value.app_secret.trim().length < 32) {
+    message.warning('APP_SECRET 长度不足，请使用至少 32 字符的随机字符串')
+    return
+  }
+  // 将 APP_SECRET 保留在 dbForm 中，提交 Step 2 时一并发送
+  appSecretSet.value = true
+  wizard.value = 'db'
+  message.success('APP_SECRET 已设置，请继续配置数据库')
+}
+
 // ── 三步向导提交 ──
 async function submitStep2() {
   if (!dbForm.value.postgres_dsn.trim()) {
@@ -106,6 +145,7 @@ async function submitStep2() {
   submitting.value = true
   try {
     await postInstallStep2({
+      app_secret: dbForm.value.app_secret.trim() || undefined,
       postgres_dsn: dbForm.value.postgres_dsn.trim(),
       redis_addr: dbForm.value.redis_addr.trim() || undefined,
       redis_password: dbForm.value.redis_password || undefined,
@@ -209,19 +249,47 @@ onMounted(fetchStatus)
           保存后<b>重启服务</b>生效。
         </div>
 
+        <!-- 错误（无法连接后端，优先显示） -->
+        <template v-if="error">
+          <div class="installed-state">
+            <div class="error-icon">⚠</div>
+            <h3 class="installed-title">无法检查系统状态</h3>
+            <p class="installed-desc">请确认后端服务已启动（默认端口 8080）。</p>
+            <a-button type="primary" block @click="fetchStatus">重试</a-button>
+          </div>
+        </template>
+
+        <!-- 已初始化（优先于向导） -->
+        <template v-else-if="installed">
+          <div class="installed-state">
+            <div class="installed-icon">✓</div>
+            <h3 class="installed-title">系统已初始化</h3>
+            <p class="installed-desc">
+              管理员账户已创建，请使用管理员凭据登录系统。
+            </p>
+            <a-button type="primary" size="large" block @click="router.push('/login')">前往登录</a-button>
+          </div>
+        </template>
+
         <!-- ══ 安装模式：缺少令牌 ══ -->
-        <template v-else-if="wizard === 'token' && !installed">
+        <template v-else-if="wizard === 'token'">
           <p class="install-hint hint-warn">
             当前处于<b>安装模式</b>（系统未配置数据库/主密钥）。安装页面受令牌保护：
           </p>
           <ol class="token-steps">
             <li>查看服务启动日志中的 <code>install_url</code>（形如 <code>/install?token=xxx</code>）；</li>
-            <li>使用日志中的完整地址（含令牌）重新访问本页面。</li>
+            <li>使用日志中的完整地址（含令牌）重新访问本页面，或<b>在下方输入令牌</b>。</li>
           </ol>
           <p class="install-hint hint-info">
             提示：未配置 APP_SECRET 时令牌为随机生成（重启后变化）；配置 APP_SECRET 后令牌由其确定性派生。
           </p>
-          <a-button type="primary" block @click="router.replace('/install')">重新访问安装页</a-button>
+          <a-form layout="vertical" @finish="submitToken">
+            <a-form-item label="安装令牌">
+              <a-input v-model:value="manualToken" placeholder="在此粘贴启动日志中的 token" />
+            </a-form-item>
+            <a-button type="primary" html-type="submit" block>提交令牌</a-button>
+          </a-form>
+          <a-button type="link" block @click="router.replace('/install')">重新访问安装页</a-button>
         </template>
 
         <!-- ══ 安装模式 Step 1：环境检测（APP_SECRET）══ -->
@@ -232,8 +300,8 @@ onMounted(fetchStatus)
             <a-step title="创建管理员" />
           </a-steps>
           <p class="install-hint hint-warn">
-            系统未检测到有效的 <b>APP_SECRET</b>（部署级主密钥，≥32 字符）。它是 JWT / 配置加密的唯一密钥来源，
-            必须先配置才能继续安装。
+            系统未检测到有效的 <b>APP_SECRET</b>（部署级主密钥，≥32 字符）。它是 JWT / 配置加密的唯一密钥来源。
+            您可以<b>在下方输入 APP_SECRET</b>，或在 <code>.env</code> 中配置后重启服务。
           </p>
           <div class="env-check">
             <div class="dep-item">
@@ -247,10 +315,14 @@ onMounted(fetchStatus)
               <span class="dep-msg">{{ dataWritable ? '可写（install.lock 可落盘）' : '不可写：请检查 data/ 目录权限' }}</span>
             </div>
           </div>
-          <ol class="token-steps">
-            <li>编辑 <code>.env</code>，设置 <code>APP_SECRET</code>（<code>python -c "import secrets; print(secrets.token_urlsafe(32))"</code> 生成）；</li>
-            <li>重启服务后重新访问本页面（令牌由 APP_SECRET 派生，日志中的 <code>install_url</code> 将更新）。</li>
-          </ol>
+          <a-form layout="vertical" @finish="skipStep1">
+            <a-form-item label="APP_SECRET（部署主密钥，至少 32 字符）">
+              <a-input-password v-model:value="dbForm.app_secret" placeholder="在此输入 APP_SECRET（或先在 .env 中配置后重启服务）" />
+            </a-form-item>
+            <a-button type="primary" html-type="submit" :loading="submitting" block>
+              {{ appSecretSet ? '继续配置数据库' : '提交 APP_SECRET 并继续' }}
+            </a-button>
+          </a-form>
         </template>
 
         <!-- ══ 安装模式 Step 2：数据库配置 ══ -->
@@ -321,11 +393,16 @@ onMounted(fetchStatus)
           </div>
         </template>
 
-        <!-- ══ 正常模式：DB 就绪、无管理员（创建首个 owner）══ -->
-        <template v-else-if="needed && depsReady && !installed">
+        <!-- ══ 正常模式：DB 就绪、无管理员（创建首个 owner；Redis 可选降级）══ -->
+        <template v-else-if="wizard === 'legacy'">
           <p class="install-hint hint-warn">
-            检测到系统尚未初始化。请创建首个管理员账户（owner 角色），该账户拥有全部管理权限。
-            初始化后此入口将自动关闭。
+            <template v-if="depsReady">
+              检测到系统尚未初始化。请创建首个管理员账户（owner 角色），该账户拥有全部管理权限。
+              初始化后此入口将自动关闭。
+            </template>
+            <template v-else>
+              PostgreSQL 连接正常，但 Redis 不可用（服务以降级模式运行）。仍可直接创建管理员账户完成初始化。
+            </template>
           </p>
           <a-form layout="vertical" @finish="submitLegacy">
             <a-form-item label="邮箱" required>
@@ -342,50 +419,6 @@ onMounted(fetchStatus)
             </a-form-item>
             <a-button type="primary" html-type="submit" :loading="submitting" block>初始化系统</a-button>
           </a-form>
-        </template>
-
-        <!-- ══ 正常模式：DB 就绪但 Redis 降级，仍可创建管理员 ══ -->
-        <template v-else-if="needed && postgresOk && !depsReady && !installed">
-          <p class="install-hint hint-warn">
-            PostgreSQL 连接正常，但 Redis 不可用（服务以降级模式运行）。仍可直接创建管理员账户完成初始化。
-          </p>
-          <a-form layout="vertical" @finish="submitLegacy">
-            <a-form-item label="邮箱" required>
-              <a-input v-model:value="legacyForm.email" type="email" placeholder="admin@example.com" />
-            </a-form-item>
-            <a-form-item label="姓名" required>
-              <a-input v-model:value="legacyForm.name" placeholder="管理员姓名" />
-            </a-form-item>
-            <a-form-item label="密码（至少 8 位）" required>
-              <a-input-password v-model:value="legacyForm.password" placeholder="至少 8 位" />
-            </a-form-item>
-            <a-form-item label="确认密码" required>
-              <a-input-password v-model:value="legacyForm.confirm" placeholder="再次输入密码" />
-            </a-form-item>
-            <a-button type="primary" html-type="submit" :loading="submitting" block>初始化系统</a-button>
-          </a-form>
-        </template>
-
-        <!-- ══ 已初始化 ══ -->
-        <template v-else-if="installed">
-          <div class="installed-state">
-            <div class="installed-icon">✓</div>
-            <h3 class="installed-title">系统已初始化</h3>
-            <p class="installed-desc">
-              管理员账户已创建，请使用管理员凭据登录系统。
-            </p>
-            <a-button type="primary" size="large" block @click="router.push('/login')">前往登录</a-button>
-          </div>
-        </template>
-
-        <!-- ══ 错误 ══ -->
-        <template v-else>
-          <div class="installed-state">
-            <div class="error-icon">⚠</div>
-            <h3 class="installed-title">无法检查系统状态</h3>
-            <p class="installed-desc">请确认后端服务已启动（默认端口 8080）。</p>
-            <a-button type="primary" block @click="fetchStatus">重试</a-button>
-          </div>
         </template>
       </a-spin>
 

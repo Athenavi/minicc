@@ -581,6 +581,10 @@ func registerSystemRoutes(
 	// Install (public, rate limited)
 	mux.Handle("GET /v1/install/status", rlMW(http.HandlerFunc(installHandler.Status)))
 	mux.Handle("POST /v1/install/setup", rlMW(http.HandlerFunc(installHandler.Setup)))
+	// Install wizard steps (setup mode: database/master key not configured)
+	mux.Handle("GET /v1/install/step1", rlMW(http.HandlerFunc(installHandler.Step1)))
+	mux.Handle("POST /v1/install/step2", rlMW(http.HandlerFunc(installHandler.Step2)))
+	mux.Handle("POST /v1/install/step3", rlMW(http.HandlerFunc(installHandler.Step3)))
 
 	// Editor (admin 权限 + rate limited)
 	// S 安全修复：编辑器直接读写共享服务器工作区（含沙箱/分片/插件数据），

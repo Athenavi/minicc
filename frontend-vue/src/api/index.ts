@@ -170,6 +170,11 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
+      // 安装向导端点不触发跳转登录（安装模式下/install端点返回401表示令牌无效）
+      const url = error.config?.url || ''
+      if (url.startsWith('/v1/install/')) {
+        return Promise.reject(error)
+      }
       // Cookie 过期/失效：清本地 user 态，跳转登录（后端 cookie 由 /v1/auth/logout 清除）
       localStorage.removeItem('user')
       window.dispatchEvent(new CustomEvent('api:error', {

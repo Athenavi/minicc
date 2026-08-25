@@ -2,8 +2,7 @@
   <div class="workstation-nav"></div>
 </template>
 
-<!-- 普通 script 块：与 <script setup> 共享模块作用域。
-     导出 executeQuickCommand 供全局停靠坞（AppLayout）复用同一套
+<!-- 普通 script 块：导出 executeQuickCommand 供全局停靠坞（AppLayout）复用同一套
      快速命令执行逻辑：创建 uni 会话 → /v1/quick-execute → 跳转 /chat?task= -->
 <script lang="ts">
 import { api } from '../api'
@@ -37,6 +36,10 @@ export async function executeQuickCommand(command: string): Promise<QuickCommand
     throw error
   }
 }
+</script>
+
+<script setup lang="ts">
+// 空的 setup 块，确保组件有默认导出
 </script>
 
 

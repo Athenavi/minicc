@@ -93,6 +93,7 @@ type InstallLock struct {
 	Step2Done     bool      `json:"step2_done"`
 	Step3Done     bool      `json:"step3_done"`
 	AppSecretSet  bool      `json:"app_secret_set"`
+	AppSecretPlain string   `json:"app_secret_plain,omitempty"` // 安装向导中用户提交的 APP_SECRET（仅内存使用，不落盘）
 	DSN           string    `json:"dsn,omitempty"`            // AES-256-GCM 加密
 	RedisAddr     string    `json:"redis_addr,omitempty"`     // AES-256-GCM 加密
 	RedisPassword string    `json:"redis_password,omitempty"` // AES-256-GCM 加密
@@ -364,6 +365,7 @@ func (h *InstallHandler) Step1(w http.ResponseWriter, r *http.Request) {
 }
 
 type Step2Request struct {
+	AppSecret     string `json:"app_secret,omitempty"`
 	PostgresDSN   string `json:"postgres_dsn"`
 	RedisAddr     string `json:"redis_addr,omitempty"`
 	RedisPassword string `json:"redis_password,omitempty"`
@@ -373,10 +375,123 @@ type Step2Request struct {
 // Step2 保存数据库配置：验证 PG 连接（成功即建立全局连接池供 Step 3 使用）→
 // Redis 可选（填写则验证连通性）→ 敏感字段 AES-256-GCM 加密后写入 install.lock。
 // 配置在重启服务后全面生效（与现有「重启生效」的架构一致）。
+// 当 APP_SECRET 未在环境变量中配置时，允许通过请求体提交 app_secret，
+// 用于加密落盘并供 Step 3 创建管理员使用（重启后仍需要在 .env 中配置）。
 // POST /v1/install/step2
 func (h *InstallHandler) Step2(w http.ResponseWriter, r *http.Request) {
+	// 确定用于加密的 APP_SECRET：环境变量优先，其次请求体提交
+	appSecret := h.cfg.AppSecret
 	if !h.cfg.ValidateAppSecret() {
-		BadRequest(w, "APP_SECRET 未配置：请先在 .env 配置 APP_SECRET 并重启服务")
+		// APP_SECRET 未配置，允许从请求体中提交
+		// 但此时无法解密之前的 lock，因此暂不处理已有 lock 的情况
+		// 先解析请求体获取 app_secret
+		lk, lkErr := LoadInstallLock()
+		if lkErr != nil {
+			slog.Error("install step2: read install lock", "error", lkErr)
+			InternalError(w, "failed to read install state")
+			return
+		}
+		if lk.Completed {
+			BadRequest(w, "系统已完成安装")
+			return
+		}
+
+		// 先解码请求体（不提前校验 app_secret，让后续逻辑处理）
+		var req Step2Request
+		if err := DecodeJSON(w, r, &req); err != nil {
+			BadRequest(w, ErrInvalidReq)
+			return
+		}
+		req.PostgresDSN = strings.TrimSpace(req.PostgresDSN)
+		if req.PostgresDSN == "" {
+			BadRequest(w, "postgres_dsn 必填")
+			return
+		}
+		appSecret = strings.TrimSpace(req.AppSecret)
+		if appSecret == "" {
+			BadRequest(w, "APP_SECRET 未配置：请在表单中填写部署主密钥（APP_SECRET），或先在 .env 配置后重启服务")
+			return
+		}
+		// 临时校验：用提交的 app_secret 验证强度
+		if !config.ValidateJWTSecret(appSecret) {
+			BadRequest(w, "APP_SECRET 强度不足：请使用 32 位以上的随机字符串")
+			return
+		}
+		// 保存到 lock 中供后续步骤使用
+		lk.AppSecretPlain = appSecret
+		lk.AppSecretSet = true
+		if lk.CreatedAt.IsZero() {
+			lk.CreatedAt = time.Now()
+		}
+		lk.Step1Done = true
+		// 暂不保存 lock（Step 3 完成时一起保存）
+
+		// 1) 验证 PostgreSQL 连接
+		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+		defer cancel()
+		if err := db.ConnectPostgres(ctx, req.PostgresDSN, h.cfg.PostgresMaxConn, h.cfg.PostgresMinConn); err != nil {
+			slog.Warn("install step2: postgres connect failed", "error", err)
+			BadRequest(w, "PostgreSQL 连接失败：请检查 DSN 地址、端口、账号密码与网络连通性")
+			return
+		}
+
+		// 2) Redis 可选
+		redisAddr := strings.TrimSpace(req.RedisAddr)
+		redisSet := redisAddr != ""
+		if redisSet {
+			rcfg := db.RedisConfig{
+				Mode:     "single",
+				Addr:     redisAddr,
+				Password: req.RedisPassword,
+				DB:       req.RedisDB,
+				PoolSize: h.cfg.RedisPoolSize,
+			}
+			rc, rerr := db.NewRedisClient(rcfg)
+			if rerr != nil {
+				slog.Warn("install step2: redis init failed", "error", rerr)
+				BadRequest(w, "Redis 连接失败：请检查地址、端口与密码")
+				return
+			}
+			pingCtx, cancelPing := context.WithTimeout(r.Context(), 5*time.Second)
+			perr := rc.Ping(pingCtx).Err()
+			cancelPing()
+			_ = rc.Close()
+			if perr != nil {
+				slog.Warn("install step2: redis ping failed", "error", perr)
+				BadRequest(w, "Redis 连接失败：请检查地址、端口与密码")
+				return
+			}
+		}
+
+		// 3) 加密落盘（密钥使用提交的 app_secret）
+		dsnEnc, err := encryptSecret(appSecret, req.PostgresDSN)
+		if err != nil {
+			slog.Error("install step2: encrypt dsn", "error", err)
+			InternalError(w, "failed to encrypt dsn")
+			return
+		}
+		redisAddrEnc, _ := encryptSecret(appSecret, redisAddr)
+		redisPwdEnc, _ := encryptSecret(appSecret, req.RedisPassword)
+
+		lk.Step2Done = true
+		lk.DSN = dsnEnc
+		lk.RedisAddr = redisAddrEnc
+		lk.RedisPassword = redisPwdEnc
+		lk.RedisDB = req.RedisDB
+		// 不保存 app_secret_plain 到磁盘
+		clearAppSecret := lk.AppSecretPlain
+		lk.AppSecretPlain = ""
+		if err := SaveInstallLock(lk); err != nil {
+			slog.Error("install step2: save install lock", "error", err)
+			InternalError(w, "failed to save install.lock")
+			return
+		}
+		lk.AppSecretPlain = clearAppSecret // 恢复内存中供后续使用
+
+		OK(w, map[string]interface{}{
+			"step2_done": true,
+			"message":    "数据库配置已保存并验证通过；请继续创建管理员账户",
+		})
 		return
 	}
 	lk, err := LoadInstallLock()

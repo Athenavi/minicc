@@ -24,6 +24,7 @@ export interface InstallStep1 {
 }
 
 export interface InstallStep2Body {
+  app_secret?: string
   postgres_dsn: string
   redis_addr?: string
   redis_password?: string
@@ -50,7 +51,19 @@ export interface SetupResult {
 
 // 安装令牌（Jenkins 模式）：安装模式时由部署者从启动日志获取，URL 携带 ?token=xxx；
 // API 调用统一放入 X-Install-Token header（不依赖 URL 参数传递凭据）。
-const installToken = new URLSearchParams(window.location.search).get('token') || ''
+// 支持从 location.search 和 location.hash 中提取（SPA 路由可能吞掉查询参数）。
+const _extractToken = (): string => {
+  const fromSearch = new URLSearchParams(window.location.search).get('token')
+  if (fromSearch) return fromSearch
+  // 兼容 hash 模式路由（如 /#/install?token=xxx）
+  const hashIdx = window.location.href.indexOf('?token=')
+  if (hashIdx >= 0) {
+    const params = new URLSearchParams(window.location.href.slice(hashIdx))
+    return params.get('token') || ''
+  }
+  return ''
+}
+const installToken = _extractToken()
 const installHeaders = installToken ? { 'X-Install-Token': installToken } : undefined
 
 export function getInstallToken(): string {
