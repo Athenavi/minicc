@@ -148,7 +148,11 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 
 		// Write audit log for non-GET requests
 		if r.Method != "GET" && r.Method != "OPTIONS" && rw.status < 500 {
-			db.AuditLog(r.Context(), "", r.Method, r.URL.Path, "", r.RemoteAddr, map[string]interface{}{
+			auditUserID := ""
+			if claims := auth.GetClaims(r.Context()); claims != nil {
+				auditUserID = claims.UserID
+			}
+			db.AuditLog(r.Context(), auditUserID, r.Method, r.URL.Path, "", r.RemoteAddr, map[string]interface{}{
 				"status": rw.status,
 				"method": r.Method,
 				"path":   r.URL.Path,

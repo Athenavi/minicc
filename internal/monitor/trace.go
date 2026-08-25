@@ -108,7 +108,7 @@ func defaultExport(s *Span) {
 	if len(s.Tags) > 0 {
 		attrs = append(attrs, slog.Any("tags", s.Tags))
 	}
-	slog.LogAttrs(context.Background(), slog.LevelDebug, "span", attrs...)
+	slog.Debug("span", attrs...)
 }
 
 // Global tracer instance.

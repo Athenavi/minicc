@@ -86,10 +86,12 @@ func (pm *PermissionManager) WaitForApproval(taskID string, timeout time.Duratio
 	pm.mu.Unlock()
 
 	// Wait for approval/rejection or timeout
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
 	select {
 	case <-result.Done:
 		return result.Approved, nil
-	case <-time.After(timeout):
+	case <-timer.C:
 		pm.mu.Lock()
 		delete(pm.pending, taskID)
 		pm.mu.Unlock()

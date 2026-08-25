@@ -62,6 +62,24 @@ func isAdminRole(r *http.Request) bool {
 	return claims.Role == "owner" || claims.Role == "admin"
 }
 
+// maskSensitiveEnv 对 MCPPlugin.Env 中疑似敏感字段做脱敏处理
+func maskSensitiveEnv(plugins []MCPPlugin) {
+	sensitiveKeys := []string{"key", "secret", "token", "password", "api_key", "apikey"}
+	for i := range plugins {
+		for k, v := range plugins[i].Env {
+			if len(v) <= 4 {
+				continue
+			}
+			for _, sk := range sensitiveKeys {
+				if strings.Contains(strings.ToLower(k), sk) {
+					plugins[i].Env[k] = v[:2] + "***" + v[len(v)-2:]
+					break
+				}
+			}
+		}
+	}
+}
+
 // PluginHandler manages per-user MCP plugin configurations.
 // 配置存储：{PluginDataDir}/{user_id}/plugins.json（用户级隔离，S 安全修复：
 // 原实现全局单文件，任何登录用户都可读写/修改其他用户的插件配置）。
@@ -147,6 +165,7 @@ func (h *PluginHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	// 叠加市场已授权插件（来源标注 market；查询失败静默跳过，不影响本地列表）
 	plugins = h.overlayMarketPlugins(r, plugins)
+	maskSensitiveEnv(plugins)
 	OK(w, plugins)
 }
 

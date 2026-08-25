@@ -35,7 +35,7 @@ services:
       retries: 5
 
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-03-12T18-04-18Z
     command: server /data --console-address ":9001"
     ports:
       # 娴犲懐绮︾€规碍婀伴張鍝勬礀閻滎垽绱橲 鐎瑰鍙忛崝鐘叉祼閿?
@@ -107,7 +107,7 @@ services:
         condition: service_completed_successfully
     environment:
       PORT: "8080"
-      POSTGRES_DSN: "postgres://minicc:minicc@postgres:5432/minicc?sslmode=disable"
+      POSTGRES_DSN: "postgres://minicc:${POSTGRES_PASSWORD:-minicc_dev_change_in_production}@postgres:5432/minicc?sslmode=disable"
       REDIS_ADDR: "redis:6379"
       REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
       STORAGE_BACKEND: "s3"
@@ -117,6 +117,7 @@ services:
       S3_SECRET_KEY: "${MINIO_ROOT_PASSWORD:?S3_SECRET_KEY must be set in .env}"
       JWT_SECRET: "${JWT_SECRET:?JWT_SECRET must be set in .env (openssl rand -base64 48)}"
       COOKIE_SECURE: "${COOKIE_SECURE:-false}"
+      METRICS_TOKEN: "${METRICS_TOKEN:-}"
       # Python AI 瀵洘鎼搁崷鏉挎絻
       PYTHON_ENGINE_ADDRESS: "python-engine:8000"
       # Temporal 閸︽澘娼?
@@ -155,7 +156,7 @@ services:
     environment:
       HTTP_PORT: "8000"
       REDIS_URL: "redis://:${REDIS_PASSWORD:-}@redis:6379"
-      POSTGRES_DSN: "postgres://minicc:minicc@postgres:5432/minicc?sslmode=disable"
+      POSTGRES_DSN: "postgres://minicc:${POSTGRES_PASSWORD:-minicc_dev_change_in_production}@postgres:5432/minicc?sslmode=disable"
       MILVUS_ADDRESS: "milvus-standalone:19530"
       # LLM Provider Keys
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
@@ -186,7 +187,7 @@ services:
     command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
 
   minio-setup:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-03-12T18-04-18Z
     depends_on:
       minio:
         condition: service_healthy
@@ -200,7 +201,7 @@ services:
     restart: "no"
 
   milvus-standalone:
-    image: milvusdb/milvus:latest
+    image: milvusdb/milvus:v2.5.8
     command: ["milvus", "run", "standalone"]
     environment:
       ETCD_ENDPOINTS: etcd:2379
@@ -240,7 +241,7 @@ services:
   # 閳光偓閳光偓 Prometheus 閻╂垶甯?閳光偓閳光偓
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.2.1
     ports:
       - "127.0.0.1:9090:9090"
     volumes:

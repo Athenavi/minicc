@@ -4,14 +4,14 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 # 安装依赖
-COPY package*.json ./
-RUN npm ci
+COPY package.json pnpm-lock.yaml ./
+RUN npm install -g pnpm && pnpm install --frozen-lockfile
 
 # 复制源码
 COPY . .
 
 # 构建
-RUN npm run build
+RUN pnpm run build
 
 # ── Production Stage ──
 FROM nginx:alpine

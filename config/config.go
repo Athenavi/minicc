@@ -131,7 +131,7 @@ func Load() *Config {
 		IdleTimeout:     getDuration("IDLE_TIMEOUT", 120*time.Second),
 		// 引导连接：仅当未显式设置 POSTGRES_DSN 时使用默认，供「只留 app_secret」初始化后从
 		// system_settings 读取数据库集群配置覆盖（切换集群重启生效）。
-		PostgresDSN:         getEnv("POSTGRES_DSN", "postgres://postgres@localhost:5432/minicc?sslmode=disable"),
+		PostgresDSN:         getEnv("POSTGRES_DSN", ""),
 		PostgresMaxConn:     getInt("POSTGRES_MAX_CONN", 20),
 		PostgresMinConn:     getInt("POSTGRES_MIN_CONN", 2),
 		PostgresReadDSNs:    getStringSlice("POSTGRES_READ_DSNS", []string{}),

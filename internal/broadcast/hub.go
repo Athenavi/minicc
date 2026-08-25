@@ -101,9 +101,11 @@ func (h *Hub) Publish(event Event) {
 						}
 						<-slowSubSem
 					}()
+					timer := time.NewTimer(3 * time.Second)
+					defer timer.Stop()
 					select {
 					case c <- event:
-					case <-time.After(3 * time.Second):
+					case <-timer.C:
 						slog.Warn("subscriber too slow, dropping event after 3s timeout")
 					}
 				}(ch)
@@ -160,9 +162,11 @@ func (h *Hub) redisListener() {
 							}
 							<-slowSubSem
 						}()
+						timer := time.NewTimer(3 * time.Second)
+						defer timer.Stop()
 						select {
 						case c <- env.Event:
-						case <-time.After(3 * time.Second):
+						case <-timer.C:
 							slog.Warn("subscriber slow, dropping after 3s timeout")
 						}
 					}(subCh)

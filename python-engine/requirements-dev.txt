@@ -1,0 +1,6 @@
+# 测试依赖
+pytest==8.4.1
+pytest-asyncio==1.0.0
+
+# S3 存储（可选，用于 MediaStore S3 后端）
+boto3==1.40.76

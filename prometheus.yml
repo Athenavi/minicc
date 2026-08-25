@@ -11,7 +11,7 @@ scrape_configs:
     # 部署时请将 REPLACE_WITH_METRICS_TOKEN 替换为 gateway 的 METRICS_TOKEN 环境变量值。
     authorization:
       type: Bearer
-      credentials: REPLACE_WITH_METRICS_TOKEN
+      credentials: ${METRICS_TOKEN}
     static_configs:
       - targets: ['gateway:8080']
         labels:
