@@ -107,9 +107,12 @@ async def lifespan(app: FastAPI):
         _session_cache._redis = _redis
         logger.info("SessionStore switched to Redis backend")
     except Exception as e:
-        # 产品决策(2026-08-22)：Redis 为必需依赖，无降级模式；连不上直接拒启。
-        logger.critical("FATAL: Redis is required (no degraded mode). Start Redis and restart engine. error=%s", e)
-        raise RuntimeError(f"Redis required but unavailable: {e}") from e
+        # 产品决策(2026-08-22)「Redis 必需、无降级」已修订(2026-09)：与 Go 网关一致，
+        # Redis 不可用时降级启动——SessionStore 回退进程内内存模式，
+        # 依赖 Redis 的功能（分布式限流/会话多实例共享/队列）返回 503，不阻断引擎启动。
+        logger.warning(
+            "Redis unavailable — degraded mode (session cache in-process, distributed features disabled): %s", e)
+        _redis = None
     # ── 2.5. PostgreSQL ──
     if settings.postgres_dsn:
         from app.db import init_pool, ensure_tables

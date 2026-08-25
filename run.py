@@ -108,6 +108,28 @@ def is_port_open(port: int, host: str = "localhost", timeout: float = 1.0) -> bo
         return False
 
 
+def gateway_needs_rebuild(exe_path: Path) -> bool:
+    """Go 网关源码（cmd/minicc + internal）是否比编译产物新。
+
+    run.py start 只在 exe 缺失时自动构建；改动 Go 源码后若沿用旧 exe，
+    会启动过期版本（例如数据库降级/安装模式修复未生效）。这里对比 mtime，
+    任一 .go 文件比 exe 新则返回 True（提示重建）。
+    """
+    if not exe_path.exists():
+        return True
+    exe_mtime = exe_path.stat().st_mtime
+    for root in (BASE_DIR / "cmd" / "minicc", BASE_DIR / "internal"):
+        if not root.exists():
+            continue
+        try:
+            for p in root.rglob("*.go"):
+                if p.stat().st_mtime > exe_mtime:
+                    return True
+        except OSError:
+            continue
+    return False
+
+
 def get_pid_file(service: str) -> Path:
     return PID_DIR / f"{service}.pid"
 
@@ -217,7 +239,10 @@ class ServiceManager:
     def _build_env(self, service_key: str) -> dict:
         """构建服务环境变量"""
         env = os.environ.copy()
-        env.update(DEFAULT_ENV)
+        # 只注入非空默认值：空字符串注入会覆盖 .env / 系统环境中已生效的配置
+        # （例如 DEFAULT_ENV 的 JWT_SECRET="" 会覆盖 .env 的 JWT_SECRET，
+        # 导致 python-engine 的 pydantic 校验拒绝启动）
+        env.update({k: v for k, v in DEFAULT_ENV.items() if v})
         if service_key in SERVICES:
             env.update(SERVICES[service_key].get("env", {}))
         return env
@@ -369,7 +394,7 @@ class ServiceManager:
 
         write_pid(key, proc.pid)
 
-        # 等待端口就绪
+        # 等待端口就绪；子进程已退出（如依赖缺失/配置错误导致崩溃）时立即报错，避免空等
         for _ in range(20):
             if is_port_open(port):
                 # 找到实际的服务进程 PID
@@ -378,6 +403,10 @@ class ServiceManager:
                     write_pid(key, actual_pid)
                 print(f"  {name}: {green('已启动')} (PID {actual_pid or proc.pid}, 端口 {port})")
                 return True
+            if proc.poll() is not None:
+                print(f"  {name}: {red('启动失败（进程已退出）')} (退出码 {proc.returncode})")
+                remove_pid(key)
+                return False
             time.sleep(1)
 
         print(f"  {name}: {yellow('已启动但端口未就绪')} (PID {proc.pid})")
@@ -414,11 +443,14 @@ class ServiceManager:
 
         targets = services or list(SERVICES.keys())
 
-        # gateway 依赖编译产物 minicc.exe；缺失时先自动构建（README: start 自动构建 Go）
-        if "gateway" in targets and not os.path.exists(SERVICES["gateway"]["cmd"][0]):
-            print(yellow("Go Gateway 二进制不存在，先编译..."))
-            if not self.build():
-                return False
+        # gateway 依赖编译产物 minicc.exe；缺失或源码比产物新时自动构建
+        # （README: start 自动构建 Go；避免启动过期版本导致修复未生效）
+        if "gateway" in targets:
+            exe_path = Path(SERVICES["gateway"]["cmd"][0])
+            if gateway_needs_rebuild(exe_path):
+                print(yellow("Go Gateway 需要编译（产物缺失或源码已更新）..."))
+                if not self.build():
+                    return False
 
         results = {}
         for key in targets:

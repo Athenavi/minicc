@@ -110,8 +110,12 @@ class Settings(BaseSettings):
     queue_worker_concurrency: int = 10
 
     # ── JWT ──
-    # 默认空：生产必须在环境变量或 .env 中显式配置
+    # 默认空：未显式配置时若存在 APP_SECRET，则由其派生（与 Go 网关 deriveSubsecret 一致），
+    # 保证引擎签发的 token 与 Go 网关共享同一密钥
     jwt_secret: str = ""
+
+    # ── 部署级主密钥（与 Go 网关共享；.env 的 APP_SECRET 经 extra="ignore" 之外需显式声明才能读取）──
+    app_secret: str = ""
 
     # ── Go 网关内部互信 token ──
     # 与 Go 网关共享，Python 仅在 X-Internal-Token 匹配时才接受
@@ -144,9 +148,20 @@ class Settings(BaseSettings):
         生产模式（APP_ENV=production 或 PYTHON_ENV=production）下额外禁止
         sslmode=disable；开发模式允许，便于本地 docker postgres。
         """
+        import base64
+        import hashlib
+        import hmac
         import os
         is_prod = os.getenv("APP_ENV", "").lower() == "production" or \
                   os.getenv("PYTHON_ENV", "").lower() == "production"
+
+        # JWT_SECRET 未显式配置时，由 APP_SECRET 派生（与 Go 网关 deriveSubsecret 完全一致：
+        # HMAC-SHA256(APP_SECRET, "minicc-jwt") → base64url 无 padding）。
+        # 这样「仅配置 APP_SECRET」的部署模型下引擎也能启动，且与网关共享签名密钥。
+        if not self.jwt_secret and self.app_secret:
+            self.jwt_secret = base64.urlsafe_b64encode(
+                hmac.new(self.app_secret.encode("utf-8"), b"minicc-jwt", hashlib.sha256).digest()
+            ).decode("ascii").rstrip("=")
 
         WEAK_SECRETS = {
             "",
@@ -165,9 +180,11 @@ class Settings(BaseSettings):
                 f"JWT_SECRET too short ({len(self.jwt_secret)} chars); "
                 "must be at least 32 characters for HMAC-SHA256 security"
             )
-        if not self.postgres_dsn:
+        # PostgreSQL：开发/安装模式允许未配置（引擎降级启动，PG 相关功能不可用，
+        # main.py 仅在 postgres_dsn 非空时初始化连接池）；生产模式仍强制。
+        if not self.postgres_dsn and is_prod:
             raise ValueError(
-                "POSTGRES_DSN must be explicitly set via env or .env"
+                "POSTGRES_DSN must be explicitly set via env or .env (production)"
             )
         if is_prod and "sslmode=disable" in self.postgres_dsn:
             raise ValueError(
