@@ -243,7 +243,9 @@ func EnsureDatabase(ctx context.Context, dsn string) error {
 	defer adminPool.Close()
 
 	var exists int
-	adminPool.QueryRow(ctx, "SELECT 1 FROM pg_database WHERE datname = $1", dbName).Scan(&exists)
+	if err := adminPool.QueryRow(ctx, "SELECT 1 FROM pg_database WHERE datname = $1", dbName).Scan(&exists); err != nil {
+		slog.Warn("check database existence failed, will attempt to create", "error", err)
+	}
 	if exists == 0 {
 		slog.Info("creating database", "name", dbName)
 		_, err := adminPool.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s", pqQuoteIdentifier(dbName)))

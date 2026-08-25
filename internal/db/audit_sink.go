@@ -150,10 +150,14 @@ func WriteAuditLogs(ctx context.Context, entries []AuditEntry) error {
 		if auditSinkUUIDRe.MatchString(e.UserID) {
 			userID = e.UserID
 		}
-		details, _ := json.Marshal(map[string]any{
-			"detail":  e.Detail,
-			"success": e.Success,
-			"error":   e.Error,
+		details, _ := json.Marshal(struct {
+			Detail  string `json:"detail"`
+			Success bool   `json:"success"`
+			Error   string `json:"error"`
+		}{
+			Detail:  e.Detail,
+			Success: e.Success,
+			Error:   e.Error,
 		})
 		if i > 0 {
 			sb.WriteString(", ")

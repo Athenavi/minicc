@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -12,6 +13,11 @@ import (
 	"github.com/athenavi/minicc/internal/monitor"
 )
 
+// PoolMu guards Pool for concurrent access (e.g. hot-reload reconnection).
+var PoolMu sync.RWMutex
+
+// Pool is the global PostgreSQL connection pool.
+// Protected by PoolMu for concurrent read/write access.
 var Pool *pgxpool.Pool
 
 func ConnectPostgres(ctx context.Context, dsn string, maxConn, minConn int) error {
@@ -45,7 +51,9 @@ func ConnectPostgres(ctx context.Context, dsn string, maxConn, minConn int) erro
 		return fmt.Errorf("pgx ping: %w", err)
 	}
 
+	PoolMu.Lock()
 	Pool = pool
+	PoolMu.Unlock()
 	slog.Info("postgres connected", "max_conns", maxConn, "min_conns", minConn)
 
 	// 注册连接池监控到全局 metrics
@@ -54,9 +62,12 @@ func ConnectPostgres(ctx context.Context, dsn string, maxConn, minConn int) erro
 }
 
 func ClosePostgres() {
-	if Pool != nil {
-		Pool.Close()
-		Pool = nil
+	PoolMu.Lock()
+	p := Pool
+	Pool = nil
+	PoolMu.Unlock()
+	if p != nil {
+		p.Close()
 		slog.Info("postgres disconnected")
 	}
 }
@@ -65,18 +76,24 @@ func ClosePostgres() {
 // If a DatabaseRouter with read replicas is configured, returns a healthy replica.
 // Otherwise falls back to the primary Pool.
 func ReadPool() *pgxpool.Pool {
+	PoolMu.RLock()
+	p := Pool
+	PoolMu.RUnlock()
 	if Router != nil {
 		return Router.ReadPreferred()
 	}
-	return Pool
+	return p
 }
 
 // PoolStats returns current PostgreSQL connection pool statistics for monitoring.
 func PoolStats() map[string]interface{} {
-	if Pool == nil {
+	PoolMu.RLock()
+	p := Pool
+	PoolMu.RUnlock()
+	if p == nil {
 		return nil
 	}
-	s := Pool.Stat()
+	s := p.Stat()
 	return map[string]interface{}{
 		"total_conns":     s.TotalConns(),
 		"idle_conns":      s.IdleConns(),

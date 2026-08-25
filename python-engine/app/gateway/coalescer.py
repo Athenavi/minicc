@@ -126,12 +126,10 @@ class RequestCoalescer:
                 self._pending_count -= 1
     
     def _compute_key(self, prompt: str, kwargs: dict) -> str:
-        """计算请求哈希（S 修复：内置 hash() 受 PYTHONHASHSEED 影响且不可靠，
-        改确定性 md5；并纳入全部参数，避免仅取 4 个造成错误合并）。"""
-        key_parts = [prompt]
-        for k in sorted(kwargs.keys()):
-            key_parts.append(f"{k}={kwargs[k]}")
-        key_str = "|".join(key_parts)
+        """计算请求哈希（内置 hash() 受 PYTHONHASHSEED 影响不可靠，
+        改确定性 md5 + json.dumps 确保键值序列化唯一）。"""
+        kwargs_str = json.dumps(kwargs, sort_keys=True, ensure_ascii=False)
+        key_str = f"{prompt}|{kwargs_str}"
         return hashlib.md5(key_str.encode("utf-8")).hexdigest()
     
     def get_stats(self) -> dict:

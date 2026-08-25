@@ -144,9 +144,13 @@ def _build_node_fns(graph_json: dict, gateway: GatewayRouter) -> dict[str, NodeF
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
         text = ""
-        async for chunk in gateway.chat_stream(messages=messages, model=model or "gpt-4o-mini"):
-            if chunk.content:
-                text += chunk.content
+        try:
+            async for chunk in gateway.chat_stream(messages=messages, model=model or "gpt-4o-mini"):
+                if chunk.content:
+                    text += chunk.content
+        except Exception as e:
+            text = f"llm error: {e}"
+            logger.warning("LLM node %s failed: %s", node_id, e)
         return {f"__out_{node_id}__": text}
 
     async def _tool_node(state: dict, node_id: str) -> dict:
@@ -324,16 +328,6 @@ async def run_workflow(
                 (time.time() - instance.started_at) / 3600
             )
             _persist_workflow_instance(instance)  # type: ignore
-        
-        # FIFO 淘汰：超过最大数量时删除最旧实例
-        _instance_order.append(instance.instance_id)
-        if len(_instances) > _MAX_INSTANCES:
-            oldest = _instance_order.pop(0)
-            _instances.pop(oldest, None)
-            logger.warning(
-                "Workflow instances exceeded limit (%d), removed oldest: %s",
-                _MAX_INSTANCES, oldest
-            )
 
     return instance
 
