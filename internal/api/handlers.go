@@ -27,11 +27,11 @@ func handleReadiness(w http.ResponseWriter, r *http.Request) {
 	ready := true
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
-	if db.Pool == nil || db.Pool.Ping(ctx) != nil {
+	if db.Pool() == nil || db.Pool().Ping(ctx) != nil {
 		deps["postgres"] = "down"
 		ready = false
 	}
-	if db.Redis == nil || db.Redis.Ping(ctx).Err() != nil {
+	if db.Redis() == nil || db.Redis().Ping(ctx).Err() != nil {
 		deps["redis"] = "down"
 		ready = false
 	}

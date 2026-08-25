@@ -33,6 +33,8 @@ def get_pool() -> asyncpg.Pool:
     """Get the global connection pool."""
     if _pool is None:
         raise RuntimeError("PostgreSQL pool not initialized")
+    if _pool.is_closed():
+        raise RuntimeError("PostgreSQL pool was closed")
     return _pool
 
 

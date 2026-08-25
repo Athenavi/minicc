@@ -211,7 +211,7 @@ def _load_gateway_config() -> dict:
     url = f"{settings.gateway_internal_url.rstrip('/')}/v1/internal/engine-config"
     try:
         req = urllib.request.Request(url, headers={"X-Internal-Token": settings.internal_token})
-        with urllib.request.urlopen(req, timeout=3) as resp:
+        with urllib.request.urlopen(req, timeout=1) as resp:
             payload = json.loads(resp.read().decode())
         data = payload.get("data", payload) if isinstance(payload, dict) else {}
         return {k: v for k, v in data.items() if v is not None}

@@ -4,7 +4,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/athenavi/minicc/internal/auth"
@@ -83,13 +85,11 @@ func SSEHandler(hub *broadcast.Hub, sessionMgr *session.Manager) http.HandlerFun
 		if subID == "" {
 			var buf [8]byte
 			if _, err := rand.Read(buf[:]); err != nil {
-				// 极端回退：rand 失败用时间纳秒填充，保证 ID 非空且唯一
-				nano := time.Now().UnixNano()
-				for i := range buf {
-					buf[i] = byte(nano >> (i * 8))
-				}
+				// 极端回退：crypto/rand 几乎不会失败，此处仅作防御性兜底
+				subID = fmt.Sprintf("anon-%d-%d", os.Getpid(), time.Now().UnixNano())
+			} else {
+				subID = "anon-" + hex.EncodeToString(buf[:])
 			}
-			subID = "anon-" + hex.EncodeToString(buf[:])
 		}
 		sessionID := r.URL.Query().Get("session_id")
 		// P0-S5: 必须显式指定 session_id，否则订阅到全站事件流（含其他用户对话内容）

@@ -50,46 +50,58 @@ class SSEProducer:
     
     async def publish_text(self, task_id: str, content: str) -> None:
         """发布文本事件"""
-        await self.publish(task_id, {
+        ok = await self.publish(task_id, {
             "type": "text",
             "content": content,
         })
-    
+        if not ok:
+            logger.warning("publish_text failed for task %s", task_id)
+
     async def publish_tool_call(self, task_id: str, tool_id: str, name: str, arguments: str) -> None:
         """发布工具调用事件"""
-        await self.publish(task_id, {
+        ok = await self.publish(task_id, {
             "type": "tool_call",
             "id": tool_id,
             "name": name,
             "arguments": arguments,
         })
-    
+        if not ok:
+            logger.warning("publish_tool_call failed for task %s", task_id)
+
     async def publish_tool_result(self, task_id: str, tool_id: str, result: dict) -> None:
         """发布工具结果事件"""
-        await self.publish(task_id, {
+        ok = await self.publish(task_id, {
             "type": "tool_result",
             "id": tool_id,
             "result": result,
         })
-    
+        if not ok:
+            logger.warning("publish_tool_result failed for task %s", task_id)
+
     async def publish_done(self, task_id: str, session_id: str = "") -> None:
         """发布完成事件"""
-        await self.publish(task_id, {
+        ok = await self.publish(task_id, {
             "type": "done",
             "session_id": session_id,
         })
-    
+        if not ok:
+            logger.warning("publish_done failed for task %s", task_id)
+
     async def publish_error(self, task_id: str, error: str) -> None:
         """发布错误事件"""
-        await self.publish(task_id, {
+        ok = await self.publish(task_id, {
             "type": "error",
             "message": error,
         })
-    
+        if not ok:
+            logger.warning("publish_error failed for task %s", task_id)
+
     async def publish_usage(self, task_id: str, input_tokens: int, output_tokens: int) -> None:
         """发布 Token 用量事件"""
-        await self.publish(task_id, {
+        ok = await self.publish(task_id, {
             "type": "usage",
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
         })
+        if not ok:
+            logger.warning("publish_usage failed for task %s", task_id)

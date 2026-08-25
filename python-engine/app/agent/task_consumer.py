@@ -134,7 +134,7 @@ class AgentTaskConsumer:
             # 执行 Agent 推理
             async for event in self._runtime.run(task):
                 # 发布 SSE 事件
-                await self._sse.publish(task.id, {
+                ok = await self._sse.publish(task.id, {
                     "type": event.type,
                     "content": event.content,
                     "id": event.tool_call_id,
@@ -144,6 +144,8 @@ class AgentTaskConsumer:
                     "output_tokens": event.output_tokens,
                     "message": event.error,
                 })
+                if not ok:
+                    logger.warning("publish SSE event failed for task %s (type=%s)", task.id, event.type)
             
             # ACK 消息
             await self._redis.xack(self._stream_key, self._group_name, msg_id)
