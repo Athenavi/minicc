@@ -42,7 +42,7 @@ function handleClick(e: MouseEvent) {
   const code = decodeURIComponent(btn.dataset.code || '')
   if (!code) return
   navigator.clipboard.writeText(code).then(() => {
-    btn.textContent = '已复制'
+    btn.textContent = '已复�?
     setTimeout(() => { btn.textContent = '复制' }, 2000)
   }).catch(() => { /* clipboard unavailable */ })
 }
@@ -53,8 +53,8 @@ onMounted(async () => {
     share.value = await getPublicShare(id)
   } catch (e: any) {
     const status = e?.response?.status
-    if (status === 410) error.value = '此分享已被创建者取消'
-    else if (status === 404) error.value = '分享不存在或已失效'
+    if (status === 410) error.value = '此分享已被创建者取�?
+    else if (status === 404) error.value = '分享不存在或已失�?
     else error.value = '加载失败，请稍后重试'
   } finally {
     loading.value = false
@@ -64,7 +64,7 @@ onMounted(async () => {
 function formatDate(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return `${d.getFullYear()}�?{d.getMonth() + 1}�?{d.getDate()}�?${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 </script>
 
@@ -73,7 +73,7 @@ function formatDate(iso: string): string {
     <header class="share-header">
       <div class="share-brand">
         <span class="share-brand-mark">MC</span>
-        <span>MiniCC · 对话分享</span>
+        <span>Chiron · 对话分享</span>
       </div>
     </header>
 
@@ -82,9 +82,9 @@ function formatDate(iso: string): string {
       <EmptyState v-else-if="error" size="page" :description="error" />
       <template v-else-if="share">
         <div class="share-head">
-          <h1 class="share-title">{{ share.title || '新对话' }}</h1>
+          <h1 class="share-title">{{ share.title || '新对�? }}</h1>
           <div class="share-meta">
-            {{ formatDate(share.created_at) }} · {{ share.messages.length }} 条消息
+            {{ formatDate(share.created_at) }} · {{ share.messages.length }} 条消�?
           </div>
         </div>
 
@@ -99,7 +99,7 @@ function formatDate(iso: string): string {
       </template>
     </main>
 
-    <footer class="share-footer">由 MiniCC 生成 · 本页可被任何获得链接的人查看</footer>
+    <footer class="share-footer">�?Chiron 生成 · 本页可被任何获得链接的人查看</footer>
   </div>
 </template>
 
@@ -148,7 +148,7 @@ function formatDate(iso: string): string {
 .share-msg-text :deep(th) { background: var(--bg-secondary); font-weight: 600; }
 .share-footer { padding: 18px 24px; text-align: center; font-size: 12px; color: var(--text-muted); border-top: 1px solid var(--border); }
 
-/* 移动端：小屏收紧 padding 和字号 */
+/* 移动端：小屏收紧 padding 和字�?*/
 @media (max-width: 640px) {
   .share-header { height: 48px; padding: 0 16px; }
   .share-main { padding: 20px 16px 40px; }
@@ -164,7 +164,7 @@ function formatDate(iso: string): string {
   .share-footer { padding: 14px 16px; font-size: 11px; }
 }
 
-/* 窄屏（≤576px）：复制按钮触控目标 ≥ 40px */
+/* 窄屏（≤576px）：复制按钮触控目标 �?40px */
 @media (max-width: 576px) {
   .share-msg-text :deep(.code-copy) { min-height: 40px; padding: 8px 14px; font-size: 13px; }
 }

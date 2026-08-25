@@ -1,14 +1,14 @@
-# Prometheus 鎶撳彇閰嶇疆
+﻿# Prometheus 閹舵挸褰囬柊宥囩枂
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
 scrape_configs:
-  # MiniCC Go 缃戝叧
-  - job_name: 'minicc-gateway'
+  # chiron Go 缂冩垵鍙?
+  - job_name: 'chiron-gateway'
     metrics_path: '/metrics'
-    # P1 修复：网关 /metrics 需 PermAdminRead 或 METRICS_TOKEN（Bearer）。
-    # 部署时请将 REPLACE_WITH_METRICS_TOKEN 替换为 gateway 的 METRICS_TOKEN 环境变量值。
+    # P1 淇锛氱綉鍏?/metrics 闇€ PermAdminRead 鎴?METRICS_TOKEN锛圔earer锛夈€?
+    # 閮ㄧ讲鏃惰灏?REPLACE_WITH_METRICS_TOKEN 鏇挎崲涓?gateway 鐨?METRICS_TOKEN 鐜鍙橀噺鍊笺€?
     authorization:
       type: Bearer
       credentials: ${METRICS_TOKEN}
@@ -17,13 +17,14 @@ scrape_configs:
         labels:
           service: 'gateway'
 
-  # Python AI 寮曟搸锛堝鏈?/metrics 绔偣锛?  - job_name: 'minicc-python-engine'
+  # Python AI 瀵洘鎼搁敍鍫濐洤閺?/metrics 缁旑垳鍋ｉ敍?  - job_name: 'chiron-python-engine'
     metrics_path: '/metrics'
     static_configs:
       - targets: ['python-engine:8000']
         labels:
           service: 'python-engine'
 
-  # Prometheus 鑷洃鎺?  - job_name: 'prometheus'
+  # Prometheus 閼奉亞娲冮幒?  - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
+

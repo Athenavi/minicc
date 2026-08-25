@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /**
- * OAuthProvidersView — 管理端：三方登录 Provider 管理 + 人机验证配置 + 短信服务配置
+ * OAuthProvidersView �?管理端：三方登录 Provider 管理 + 人机验证配置 + 短信服务配置
  *
- * - Provider CRUD：/v1/ent/sso/providers（协议 OIDC/OAuth2、模板类型、端点覆盖）
- * - 人机验证：/v1/ent/captcha/config（turnstile/recaptcha/hcaptcha/tencent/custom）
- * - 短信服务：/v1/ent/sms/config（aliyun/tencent/custom，验证码登录）
+ * - Provider CRUD�?v1/ent/sso/providers（协�?OIDC/OAuth2、模板类型、端点覆盖）
+ * - 人机验证�?v1/ent/captcha/config（turnstile/recaptcha/hcaptcha/tencent/custom�?
+ * - 短信服务�?v1/ent/sms/config（aliyun/tencent/custom，验证码登录�?
  */
 import { ref, reactive, onMounted } from 'vue'
 import {
@@ -36,7 +36,7 @@ async function loadProviders() {
 
 const columns = [
   { title: '名称', dataIndex: 'name', key: 'name' },
-  { title: '展示名', dataIndex: 'display_name', key: 'display_name' },
+  { title: '展示�?, dataIndex: 'display_name', key: 'display_name' },
   { title: '协议', dataIndex: 'protocol', key: 'protocol' },
   { title: '类型', dataIndex: 'provider_type', key: 'provider_type' },
   { title: 'Client ID', dataIndex: 'client_id', key: 'client_id', ellipsis: true },
@@ -53,7 +53,7 @@ const providerTypes = [
   { value: 'dingtalk', label: '钉钉 (OAuth2)' },
   { value: 'feishu', label: '飞书 (OAuth2)' },
   { value: 'qq', label: 'QQ (OAuth2)' },
-  { value: 'custom', label: '自定义' },
+  { value: 'custom', label: '自定�? },
 ]
 
 // ── 新建 / 编辑表单 ──
@@ -95,7 +95,7 @@ function openEdit(p: SsoProvider) {
     name: p.name,
     issuer: p.issuer,
     client_id: p.client_id,
-    client_secret: '', // 密文不回显；空 = 保留原值
+    client_secret: '', // 密文不回显；�?= 保留原�?
     scopes: (p.scopes || []).join(' '),
     enabled: p.enabled,
     auto_provision: p.auto_provision,
@@ -112,7 +112,7 @@ function openEdit(p: SsoProvider) {
 
 async function handleSave() {
   if (!providerForm.name || !providerForm.client_id) {
-    message.warning('名称与 Client ID 必填')
+    message.warning('名称�?Client ID 必填')
     return
   }
   if (providerForm.protocol === 'oidc' && !providerForm.issuer) {
@@ -146,10 +146,10 @@ async function handleSave() {
   try {
     if (editingId.value) {
       await updateSsoProvider(editingId.value, body)
-      message.success('已更新')
+      message.success('已更�?)
     } else {
       await createSsoProvider(body)
-      message.success('已创建')
+      message.success('已创�?)
     }
     modalVisible.value = false
     await loadProviders()
@@ -163,7 +163,7 @@ async function handleSave() {
 async function handleDelete(p: SsoProvider) {
   try {
     await deleteSsoProvider(p.id)
-    message.success('已删除')
+    message.success('已删�?)
     await loadProviders()
   } catch (e: any) {
     message.error(e.response?.data?.error || '删除失败')
@@ -186,8 +186,8 @@ const captchaProviders = [
   { value: 'turnstile', label: 'Cloudflare Turnstile' },
   { value: 'recaptcha', label: 'Google reCAPTCHA' },
   { value: 'hcaptcha', label: 'hCaptcha' },
-  { value: 'tencent', label: '腾讯防水墙' },
-  { value: 'custom', label: '自定义（HTTP 端点）' },
+  { value: 'tencent', label: '腾讯防水�? },
+  { value: 'custom', label: '自定义（HTTP 端点�? },
 ]
 
 async function loadCaptcha() {
@@ -196,11 +196,11 @@ async function loadCaptcha() {
     const cfg = await getCaptchaAdminConfig()
     captcha.provider = cfg.provider || 'turnstile'
     captcha.site_key = cfg.site_key || ''
-    captcha.secret = '' // 安全：后端应主动脱敏 secret 字段，空 = 保留原值
+    captcha.secret = '' // 安全：后端应主动脱敏 secret 字段，空 = 保留原�?
     captcha.verify_url = cfg.verify_url || ''
     captcha.enabled = !!cfg.enabled
   } catch (e: any) {
-    message.error(e.response?.data?.error || '验证码配置加载失败')
+    message.error(e.response?.data?.error || '验证码配置加载失�?)
   } finally {
     captchaLoading.value = false
   }
@@ -209,7 +209,7 @@ async function loadCaptcha() {
 async function handleSaveCaptcha() {
   if (captcha.enabled) {
     if (captcha.provider !== 'custom' && !captcha.site_key) {
-      message.warning('启用前必须填写 Site Key')
+      message.warning('启用前必须填�?Site Key')
       return
     }
     if (captcha.provider === 'custom' && !captcha.verify_url) {
@@ -258,9 +258,9 @@ const smsLoading = ref(false)
 const smsSaving = ref(false)
 
 const smsProviders = [
-  { value: 'aliyun', label: '阿里云短信' },
-  { value: 'tencent', label: '腾讯云短信' },
-  { value: 'custom', label: '自定义（HTTP 端点）' },
+  { value: 'aliyun', label: '阿里云短�? },
+  { value: 'tencent', label: '腾讯云短�? },
+  { value: 'custom', label: '自定义（HTTP 端点�? },
 ]
 
 async function loadSms() {
@@ -271,7 +271,7 @@ async function loadSms() {
     sms.sign_name = cfg.sign_name || ''
     sms.template_id = cfg.template_id || ''
     sms.access_key_id = cfg.access_key_id || ''
-    sms.secret = '' // 安全：后端应主动脱敏 secret 字段，空 = 保留原值
+    sms.secret = '' // 安全：后端应主动脱敏 secret 字段，空 = 保留原�?
     sms.endpoint = cfg.endpoint || ''
     sms.code_ttl_seconds = cfg.code_ttl_seconds || 300
     sms.send_interval_seconds = cfg.send_interval_seconds ?? 60
@@ -289,16 +289,16 @@ async function loadSms() {
 async function handleSaveSms() {
   if (sms.enabled) {
     if (sms.provider !== 'custom') {
-      if (!sms.sign_name) { message.warning('启用前必须填写短信签名'); return }
-      if (!sms.template_id) { message.warning('启用前必须填写模板 ID'); return }
+      if (!sms.sign_name) { message.warning('启用前必须填写短信签�?); return }
+      if (!sms.template_id) { message.warning('启用前必须填写模�?ID'); return }
     }
     if (sms.provider === 'custom' && !sms.endpoint) {
-      message.warning('custom 类型必须填写发送端点 URL')
+      message.warning('custom 类型必须填写发送端�?URL')
       return
     }
   }
   if (sms.login_enabled && !sms.enabled) {
-    message.warning('短信登录依赖发送能力，请同时启用短信服务')
+    message.warning('短信登录依赖发送能力，请同时启用短信服�?)
     return
   }
   const body: any = {
@@ -319,7 +319,7 @@ async function handleSaveSms() {
   smsSaving.value = true
   try {
     await updateSmsConfig(body)
-    message.success('短信配置已保存')
+    message.success('短信配置已保�?)
     sms.secret = ''
     await loadSms()
   } catch (e: any) {
@@ -347,7 +347,7 @@ onMounted(() => {
         type="info"
         show-icon
         style="margin-bottom: 16px"
-        message="选择内置类型（GitHub/微信/钉钉等）时授权端点自动套用模板；自定义端点留空即可。"
+        message="选择内置类型（GitHub/微信/钉钉等）时授权端点自动套用模板；自定义端点留空即可�?
       />
 
       <Table
@@ -366,14 +366,14 @@ onMounted(() => {
             <Tag :color="record.enabled ? 'green' : 'default'">{{ record.enabled ? '启用' : '停用' }}</Tag>
           </template>
           <template v-else-if="column.key === 'auto_provision'">
-            <Tag :color="record.auto_provision ? 'blue' : 'default'">{{ record.auto_provision ? '是' : '否' }}</Tag>
+            <Tag :color="record.auto_provision ? 'blue' : 'default'">{{ record.auto_provision ? '�? : '�? }}</Tag>
           </template>
           <template v-else-if="column.key === 'protocol'">
             <Tag :color="record.protocol === 'oauth2' ? 'purple' : 'cyan'">{{ record.protocol }}</Tag>
           </template>
           <template v-else-if="column.key === 'actions'">
             <Button size="small" style="margin-right: 8px" @click="openEdit(record as SsoProvider)">编辑</Button>
-            <Popconfirm title="确定删除该 Provider？" ok-text="删除" cancel-text="取消" @confirm="handleDelete(record as SsoProvider)">
+            <Popconfirm title="确定删除�?Provider�? ok-text="删除" cancel-text="取消" @confirm="handleDelete(record as SsoProvider)">
               <Button size="small" danger>删除</Button>
             </Popconfirm>
           </template>
@@ -381,22 +381,22 @@ onMounted(() => {
       </Table>
     </Card>
 
-    <Card title="人机验证（防接口滥用）" style="margin-top: 16px" :loading="captchaLoading">
+    <Card title="人机验证（防接口滥用�? style="margin-top: 16px" :loading="captchaLoading">
       <Alert
         type="info"
         show-icon
         style="margin-bottom: 16px"
-        message="启用后登录/注册必须携带验证码 token；未启用时同 IP 连续失败 5 次也会自动升级为强制验证码，30 次直接拒绝。"
+        message="启用后登�?注册必须携带验证�?token；未启用时同 IP 连续失败 5 次也会自动升级为强制验证码，30 次直接拒绝�?
       />
       <Form layout="vertical" style="max-width: 520px">
-        <FormItem label="验证服务商">
+        <FormItem label="验证服务�?>
           <Select v-model:value="captcha.provider" :options="captchaProviders" />
         </FormItem>
         <FormItem v-if="captcha.provider !== 'custom'" label="Site Key">
           <Input v-model:value="captcha.site_key" placeholder="前端渲染组件用的站点密钥" />
         </FormItem>
         <FormItem label="Secret（留空保留原值）">
-          <Input v-model:value="captcha.secret" placeholder="服务端校验密钥（AES-GCM 加密存储）" />
+          <Input v-model:value="captcha.secret" placeholder="服务端校验密钥（AES-GCM 加密存储�? />
         </FormItem>
         <FormItem v-if="captcha.provider === 'custom'" label="验证端点 URL">
           <Input v-model:value="captcha.verify_url" placeholder="https://your-captcha.example.com/verify" />
@@ -410,43 +410,43 @@ onMounted(() => {
       </Form>
     </Card>
 
-    <Card title="短信服务（验证码登录）" style="margin-top: 16px" :loading="smsLoading">
+    <Card title="短信服务（验证码登录�? style="margin-top: 16px" :loading="smsLoading">
       <Alert
         type="info"
         show-icon
         style="margin-bottom: 16px"
-        message="启用后登录页出现「短信登录」标签页，个人中心可绑定手机号；验证码发送有冷却与每日上限防滥用。AccessKeySecret 加密存储、回显脱敏。"
+        message="启用后登录页出现「短信登录」标签页，个人中心可绑定手机号；验证码发送有冷却与每日上限防滥用。AccessKeySecret 加密存储、回显脱敏�?
       />
       <Form layout="vertical" style="max-width: 520px">
-        <FormItem label="短信服务商">
+        <FormItem label="短信服务�?>
           <Select v-model:value="sms.provider" :options="smsProviders" />
         </FormItem>
         <template v-if="sms.provider !== 'custom'">
-          <FormItem label="短信签名（SignName）">
-            <Input v-model:value="sms.sign_name" placeholder="如 MiniCC" />
+          <FormItem label="短信签名（SignName�?>
+            <Input v-model:value="sms.sign_name" placeholder="�?Chiron" />
           </FormItem>
-          <FormItem label="模板 ID（阿里云 TemplateCode / 腾讯云 TemplateId）">
-            <Input v-model:value="sms.template_id" placeholder="如 SMS_12345678（模板参数需含 code）" />
+          <FormItem label="模板 ID（阿里云 TemplateCode / 腾讯�?TemplateId�?>
+            <Input v-model:value="sms.template_id" placeholder="�?SMS_12345678（模板参数需�?code�? />
           </FormItem>
-          <FormItem label="AccessKeyID（腾讯云填 SmsSdkAppId）">
+          <FormItem label="AccessKeyID（腾讯云�?SmsSdkAppId�?>
             <Input v-model:value="sms.access_key_id" />
           </FormItem>
         </template>
-        <FormItem v-if="sms.provider === 'custom'" label="发送端点 URL">
+        <FormItem v-if="sms.provider === 'custom'" label="发送端�?URL">
           <Input v-model:value="sms.endpoint" placeholder="https://your-sms.example.com/send" />
         </FormItem>
         <FormItem label="AccessKeySecret（留空保留原值）">
           <Input v-model:value="sms.secret" type="password" placeholder="AES-GCM 加密存储" />
         </FormItem>
         <div class="form-grid">
-          <FormItem label="验证码有效期（秒）">
+          <FormItem label="验证码有效期（秒�?>
             <InputNumber v-model:value="sms.code_ttl_seconds" :min="60" :max="900" style="width: 100%" />
           </FormItem>
           <FormItem label="发送冷却（秒）">
             <InputNumber v-model:value="sms.send_interval_seconds" :min="0" :max="3600" style="width: 100%" />
           </FormItem>
         </div>
-        <FormItem label="同一手机号每日发送上限">
+        <FormItem label="同一手机号每日发送上�?>
           <InputNumber v-model:value="sms.daily_limit" :min="1" :max="100" style="width: 100%" />
         </FormItem>
         <div class="switch-row">
@@ -456,7 +456,7 @@ onMounted(() => {
           <FormItem label="短信登录入口">
             <Switch v-model:checked="sms.login_enabled" />
           </FormItem>
-          <FormItem label="未注册自动建号">
+          <FormItem label="未注册自动建�?>
             <Switch v-model:checked="sms.auto_register" />
           </FormItem>
         </div>
@@ -477,10 +477,10 @@ onMounted(() => {
     >
       <Form layout="vertical">
         <div class="form-grid">
-          <FormItem label="名称（唯一）">
-            <Input v-model:value="providerForm.name" placeholder="如 corporate-okta" />
+          <FormItem label="名称（唯一�?>
+            <Input v-model:value="providerForm.name" placeholder="�?corporate-okta" />
           </FormItem>
-          <FormItem label="展示名">
+          <FormItem label="展示�?>
             <Input v-model:value="providerForm.display_name" placeholder="登录按钮文案，默认同名称" />
           </FormItem>
           <FormItem label="协议">
@@ -509,7 +509,7 @@ onMounted(() => {
           <Input v-model:value="providerForm.scopes" placeholder="openid email profile" />
         </FormItem>
         <div class="form-grid">
-          <FormItem label="授权端点覆盖（OAuth2 可留空用模板）">
+          <FormItem label="授权端点覆盖（OAuth2 可留空用模板�?>
             <Input v-model:value="providerForm.auth_url" placeholder="留空 = 模板缺省" />
           </FormItem>
           <FormItem label="Token 端点覆盖">
@@ -523,7 +523,7 @@ onMounted(() => {
           <FormItem label="启用">
             <Switch v-model:checked="providerForm.enabled" />
           </FormItem>
-          <FormItem label="自动建号（未绑定用户首次登录自动注册）">
+          <FormItem label="自动建号（未绑定用户首次登录自动注册�?>
             <Switch v-model:checked="providerForm.auto_provision" />
           </FormItem>
         </div>
@@ -560,7 +560,7 @@ onMounted(() => {
 .empty-icon { font-size: 26px; line-height: 1; opacity: 0.8; }
 .empty-text { font-size: 13px; }
 
-/* 窄屏:表单单列、开关竖排、操作列吸底、触控目标 ≥ 40px */
+/* 窄屏:表单单列、开关竖排、操作列吸底、触控目�?�?40px */
 @media (max-width: 768px) {
   .form-grid {
     grid-template-columns: 1fr;
@@ -580,7 +580,7 @@ onMounted(() => {
     inset: -8px;
     border-radius: inherit;
   }
-  /* 操作列固定在右缘,不挤压主列 */
+  /* 操作列固定在右缘,不挤压主�?*/
   .oauth-providers-view :deep(.ant-table-thead > tr > th:last-child),
   .oauth-providers-view :deep(.ant-table-tbody > tr > td:last-child) {
     position: sticky;

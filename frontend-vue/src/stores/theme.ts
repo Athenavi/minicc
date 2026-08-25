@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+﻿import { defineStore } from 'pinia'
 import { ref, watch, computed } from 'vue'
 
 export type ThemeId = 'linear' | 'supabase' | 'notion' | 'futuristic'
@@ -19,11 +19,11 @@ export interface ThemePreset {
 const THEME_REGISTRY: Record<ThemeId, ThemePreset> = {
   linear: {
     id: 'linear',
-    name: '极简专业',
-    description: 'Linear 风格，黑白灰主色，极简专业',
-    icon: '◼',
-    lightLabel: 'Linear 浅色',
-    darkLabel: 'Linear 深色',
+    name: '鏋佺畝涓撲笟',
+    description: 'Linear 椋庢牸锛岄粦鐧界伆涓昏壊锛屾瀬绠€涓撲笟',
+    icon: '鈼?,
+    lightLabel: 'Linear 娴呰壊',
+    darkLabel: 'Linear 娣辫壊',
     lightTokens: {
       colorPrimary: '#0a0a0a',
       colorInfo: '#0a0a0a',
@@ -57,11 +57,11 @@ const THEME_REGISTRY: Record<ThemeId, ThemePreset> = {
   },
   supabase: {
     id: 'supabase',
-    name: '精致现代',
-    description: 'Supabase 风格，柔和渐变，琥珀主色',
-    icon: '◆',
-    lightLabel: 'Supabase 浅色',
-    darkLabel: 'Supabase 深色',
+    name: '绮捐嚧鐜颁唬',
+    description: 'Supabase 椋庢牸锛屾煍鍜屾笎鍙橈紝鐞ョ弨涓昏壊',
+    icon: '鈼?,
+    lightLabel: 'Supabase 娴呰壊',
+    darkLabel: 'Supabase 娣辫壊',
     lightTokens: {
       colorPrimary: '#eab308',
       colorInfo: '#eab308',
@@ -95,11 +95,11 @@ const THEME_REGISTRY: Record<ThemeId, ThemePreset> = {
   },
   notion: {
     id: 'notion',
-    name: '极简功能',
-    description: 'Notion 风格，高信息密度，清晰排版',
-    icon: '■',
-    lightLabel: 'Notion 浅色',
-    darkLabel: 'Notion 深色',
+    name: '鏋佺畝鍔熻兘',
+    description: 'Notion 椋庢牸锛岄珮淇℃伅瀵嗗害锛屾竻鏅版帓鐗?,
+    icon: '鈻?,
+    lightLabel: 'Notion 娴呰壊',
+    darkLabel: 'Notion 娣辫壊',
     lightTokens: {
       colorPrimary: '#0f172a',
       colorInfo: '#0f172a',
@@ -133,11 +133,11 @@ const THEME_REGISTRY: Record<ThemeId, ThemePreset> = {
   },
   futuristic: {
     id: 'futuristic',
-    name: '未来科技',
-    description: '霓虹渐变，玻璃拟态，科技感十足',
-    icon: '◈',
-    lightLabel: '科技浅色',
-    darkLabel: '科技深色',
+    name: '鏈潵绉戞妧',
+    description: '闇撹櫣娓愬彉锛岀幓鐠冩嫙鎬侊紝绉戞妧鎰熷崄瓒?,
+    icon: '鈼?,
+    lightLabel: '绉戞妧娴呰壊',
+    darkLabel: '绉戞妧娣辫壊',
     lightTokens: {
       colorPrimary: '#0d9488',
       colorInfo: '#0d9488',
@@ -216,13 +216,13 @@ export const useThemeStore = defineStore('theme', () => {
 
   function setTheme(themeId: ThemeId) {
     activeThemeId.value = themeId
-    localStorage.setItem('minicc-theme', themeId)
+    localStorage.setItem('chiron-theme', themeId)
     applyTheme()
   }
 
   function setMode(newMode: ThemePreference) {
     preference.value = newMode
-    localStorage.setItem('minicc-theme-pref', newMode)
+    localStorage.setItem('chiron-theme-pref', newMode)
     applyTheme()
   }
 
@@ -237,10 +237,10 @@ export const useThemeStore = defineStore('theme', () => {
   function setAccent(color: string | null) {
     if (color && /^#[0-9a-fA-F]{6}$/.test(color)) {
       accent.value = color
-      localStorage.setItem('minicc-accent', color)
+      localStorage.setItem('chiron-accent', color)
     } else if (color === null) {
       accent.value = null
-      localStorage.removeItem('minicc-accent')
+      localStorage.removeItem('chiron-accent')
     }
   }
 
@@ -250,17 +250,17 @@ export const useThemeStore = defineStore('theme', () => {
 
   // Initialization
   function init() {
-    const savedTheme = localStorage.getItem('minicc-theme') as ThemeId | null
+    const savedTheme = localStorage.getItem('chiron-theme') as ThemeId | null
     if (savedTheme && savedTheme in THEME_REGISTRY) {
       activeThemeId.value = savedTheme
     }
 
-    const savedPref = localStorage.getItem('minicc-theme-pref') as ThemePreference | null
+    const savedPref = localStorage.getItem('chiron-theme-pref') as ThemePreference | null
     if (savedPref) {
       preference.value = savedPref
     }
 
-    const savedAccent = localStorage.getItem('minicc-accent')
+    const savedAccent = localStorage.getItem('chiron-accent')
     if (savedAccent && /^#[0-9a-fA-F]{6}$/.test(savedAccent)) {
       accent.value = savedAccent
     }
@@ -298,3 +298,4 @@ export const useThemeStore = defineStore('theme', () => {
     init,
   }
 })
+

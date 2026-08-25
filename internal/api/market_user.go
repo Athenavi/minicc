@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -8,16 +8,14 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/athenavi/minicc/config"
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/db"
-	"github.com/athenavi/minicc/internal/engine"
-	"github.com/athenavi/minicc/internal/id"
+	"github.com/athenavi/chiron/config"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/db"
+	"github.com/athenavi/chiron/internal/engine"
+	"github.com/athenavi/chiron/internal/id"
 )
 
-// UserMarketHandler 面向用户的三大市场（技能/Agent/MCP）浏览与一键安装。
-// 管理端发布与租户授权仍走 market_handler.go（ent_catalog_items / ent_catalog_installs）。
-type UserMarketHandler struct {
+// UserMarketHandler 闈㈠悜鐢ㄦ埛鐨勪笁澶у競鍦猴紙鎶€鑳?Agent/MCP锛夋祻瑙堜笌涓€閿畨瑁呫€?// 绠＄悊绔彂甯冧笌绉熸埛鎺堟潈浠嶈蛋 market_handler.go锛坋nt_catalog_items / ent_catalog_installs锛夈€?type UserMarketHandler struct {
 	cfg          *config.Config
 	pythonClient *engine.PythonClient
 }
@@ -26,8 +24,7 @@ func NewUserMarketHandler(cfg *config.Config, pythonClient *engine.PythonClient)
 	return &UserMarketHandler{cfg: cfg, pythonClient: pythonClient}
 }
 
-// marketItemSummary 用户可见的市场条目（已发布 + 租户授权 fail-open）。
-type marketItemSummary struct {
+// marketItemSummary 鐢ㄦ埛鍙鐨勫競鍦烘潯鐩紙宸插彂甯?+ 绉熸埛鎺堟潈 fail-open锛夈€?type marketItemSummary struct {
 	ID        string          `json:"id"`
 	Type      string          `json:"type"` // skill / agent / mcp
 	Name      string          `json:"name"`
@@ -37,7 +34,7 @@ type marketItemSummary struct {
 	Installed bool            `json:"installed"`
 }
 
-// List 浏览市场：GET /v1/market?type=skill|agent|mcp
+// List 娴忚甯傚満锛欸ET /v1/market?type=skill|agent|mcp
 func (h *UserMarketHandler) List(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	if claims == nil || claims.TenantID == "" {
@@ -71,7 +68,7 @@ func (h *UserMarketHandler) List(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		it.Manifest = json.RawMessage(manifest)
-		// 租户授权 fail-open：有授权记录则必须 enabled；无记录放行
+		// 绉熸埛鎺堟潈 fail-open锛氭湁鎺堟潈璁板綍鍒欏繀椤?enabled锛涙棤璁板綍鏀捐
 		if enabled, err := itemEnabledForTenant(r.Context(), it.ID, claims.TenantID); err == nil {
 			it.Installed = enabled
 		}
@@ -80,8 +77,7 @@ func (h *UserMarketHandler) List(w http.ResponseWriter, r *http.Request) {
 	OK(w, map[string]interface{}{"items": items})
 }
 
-// itemEnabledForTenant 查询租户安装记录（fail-open：无记录视为未安装）。
-func itemEnabledForTenant(ctx context.Context, itemID, tenantID string) (bool, error) {
+// itemEnabledForTenant 鏌ヨ绉熸埛瀹夎璁板綍锛坒ail-open锛氭棤璁板綍瑙嗕负鏈畨瑁咃級銆?func itemEnabledForTenant(ctx context.Context, itemID, tenantID string) (bool, error) {
 	var enabled bool
 	err := db.ReadPool().QueryRow(ctx,
 		`SELECT COALESCE(enabled, false) FROM ent_catalog_installs WHERE item_id = $1 AND tenant_id = $2`,
@@ -92,7 +88,7 @@ func itemEnabledForTenant(ctx context.Context, itemID, tenantID string) (bool, e
 	return enabled, nil
 }
 
-// Install 一键安装：POST /v1/market/{type}/{itemID}/install
+// Install 涓€閿畨瑁咃細POST /v1/market/{type}/{itemID}/install
 func (h *UserMarketHandler) Install(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	if claims == nil || claims.TenantID == "" {
@@ -133,8 +129,7 @@ func (h *UserMarketHandler) Install(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// installSkill 技能安装：将 manifest 定义写入 Python SkillStore（用户可于对话/Agent 中调用）。
-func (h *UserMarketHandler) installSkill(w http.ResponseWriter, r *http.Request, claims *auth.Claims, m map[string]interface{}) {
+// installSkill 鎶€鑳藉畨瑁咃細灏?manifest 瀹氫箟鍐欏叆 Python SkillStore锛堢敤鎴峰彲浜庡璇?Agent 涓皟鐢級銆?func (h *UserMarketHandler) installSkill(w http.ResponseWriter, r *http.Request, claims *auth.Claims, m map[string]interface{}) {
 	if h.pythonClient == nil {
 		InternalError(w, "python engine not available")
 		return
@@ -160,8 +155,7 @@ func (h *UserMarketHandler) installSkill(w http.ResponseWriter, r *http.Request,
 	OK(w, map[string]interface{}{"success": true, "type": "skill", "name": skillName, "detail": resp})
 }
 
-// installAgent Agent 安装：manifest 快照复制为当前用户的私有 Agent（严格私有）。
-func (h *UserMarketHandler) installAgent(w http.ResponseWriter, r *http.Request, claims *auth.Claims, m map[string]interface{}) {
+// installAgent Agent 瀹夎锛歮anifest 蹇収澶嶅埗涓哄綋鍓嶇敤鎴风殑绉佹湁 Agent锛堜弗鏍肩鏈夛級銆?func (h *UserMarketHandler) installAgent(w http.ResponseWriter, r *http.Request, claims *auth.Claims, m map[string]interface{}) {
 	agentID, err := id.UUID()
 	if err != nil {
 		InternalError(w, "generate id failed")
@@ -190,8 +184,7 @@ func (h *UserMarketHandler) installAgent(w http.ResponseWriter, r *http.Request,
 	OK(w, map[string]interface{}{"success": true, "type": "agent", "id": agentID, "name": name})
 }
 
-// installMCP MCP 安装：将 manifest 的 MCP server 配置追加到当前用户 plugins.json（命令需命中白名单）。
-func (h *UserMarketHandler) installMCP(w http.ResponseWriter, r *http.Request, claims *auth.Claims, m map[string]interface{}) {
+// installMCP MCP 瀹夎锛氬皢 manifest 鐨?MCP server 閰嶇疆杩藉姞鍒板綋鍓嶇敤鎴?plugins.json锛堝懡浠ら渶鍛戒腑鐧藉悕鍗曪級銆?func (h *UserMarketHandler) installMCP(w http.ResponseWriter, r *http.Request, claims *auth.Claims, m map[string]interface{}) {
 	pName, _ := m["name"].(string)
 	command, _ := m["command"].(string)
 	if pName == "" || command == "" {
@@ -223,7 +216,7 @@ func (h *UserMarketHandler) installMCP(w http.ResponseWriter, r *http.Request, c
 	OK(w, map[string]interface{}{"success": true, "type": "mcp", "name": pName})
 }
 
-// ── 小工具 ──
+// 鈹€鈹€ 灏忓伐鍏?鈹€鈹€
 
 func mustJSON(v interface{}) string {
 	b, _ := json.Marshal(v)
@@ -272,13 +265,11 @@ func toStringMap(v interface{}) map[string]string {
 	return out
 }
 
-// userPluginPath 返回用户插件配置路径（与 plugin_handler.go 同规则）。
-func userPluginPath(dataDir, userID string) string {
+// userPluginPath 杩斿洖鐢ㄦ埛鎻掍欢閰嶇疆璺緞锛堜笌 plugin_handler.go 鍚岃鍒欙級銆?func userPluginPath(dataDir, userID string) string {
 	return dataDir + "/" + userID + "/plugins.json"
 }
 
-// appendPlugin 读取用户 plugins.json 并追加 MCP 插件（幂等：同名覆盖）。
-func appendPlugin(dataDir, userID string, plugin MCPPlugin) error {
+// appendPlugin 璇诲彇鐢ㄦ埛 plugins.json 骞惰拷鍔?MCP 鎻掍欢锛堝箓绛夛細鍚屽悕瑕嗙洊锛夈€?func appendPlugin(dataDir, userID string, plugin MCPPlugin) error {
 	path := userPluginPath(dataDir, userID)
 	plugins := []MCPPlugin{}
 	if data, err := os.ReadFile(path); err == nil && len(data) > 0 {

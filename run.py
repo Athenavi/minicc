@@ -1,17 +1,11 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
-MiniCC 一键运行脚本
-支持 Linux / Windows / macOS
+Chiron 涓€閿繍琛岃剼鏈?鏀寔 Linux / Windows / macOS
 
-用法:
-    python run.py start          # 启动所有服务
-    python run.py start --bg     # 后台启动所有服务
-    python run.py stop           # 停止所有服务
-    python run.py restart        # 重启所有服务
-    python run.py status         # 查看服务状态
-    python run.py logs           # 查看日志
-    python run.py build          # 编译 Go 服务
-    python run.py setup          # 首次安装依赖
+鐢ㄦ硶:
+    python run.py start          # 鍚姩鎵€鏈夋湇鍔?    python run.py start --bg     # 鍚庡彴鍚姩鎵€鏈夋湇鍔?    python run.py stop           # 鍋滄鎵€鏈夋湇鍔?    python run.py restart        # 閲嶅惎鎵€鏈夋湇鍔?    python run.py status         # 鏌ョ湅鏈嶅姟鐘舵€?    python run.py logs           # 鏌ョ湅鏃ュ織
+    python run.py build          # 缂栬瘧 Go 鏈嶅姟
+    python run.py setup          # 棣栨瀹夎渚濊禆
 """
 
 import os
@@ -27,7 +21,7 @@ import socket
 from pathlib import Path
 from typing import Optional
 
-# ── 配置 ──────────────────────────────────────────────────────
+# 鈹€鈹€ 閰嶇疆 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 BASE_DIR = Path(__file__).parent.resolve()
 PID_DIR = BASE_DIR / ".pids"
@@ -38,7 +32,7 @@ SERVICES = {
     "gateway": {
         "name": "Go Gateway",
         "port": 8080,
-        "cmd": [str(BASE_DIR / ("minicc.exe" if platform.system() == "Windows" else "minicc"))],
+        "cmd": [str(BASE_DIR / ("Chiron.exe" if platform.system() == "Windows" else "Chiron"))],
         "env": {
             "PORT": "8080",
             "STORAGE_BACKEND": "local",
@@ -46,7 +40,7 @@ SERVICES = {
         },
     },
     "python-engine": {
-        "name": "Python AI 引擎",
+        "name": "Python AI 寮曟搸",
         "port": 8000,
         "cmd": [sys.executable, "-m", "app.main"],
         "cwd": str(BASE_DIR / "python-engine"),
@@ -58,21 +52,20 @@ SERVICES = {
 
 DEFAULT_ENV = {
     "LOG_LEVEL": "info",
-    # 生产部署必须通过 .env 显式设置 JWT_SECRET（≥32 字符，随机生成）
-    # 未配置时服务将拒绝启动（Go 网关 config.go 会检测并 fail-fast）
-    "JWT_SECRET": "",  # 必须通过 .env 设置，空值时 Go 网关会拒绝启动 (fail-fast)
-    "POSTGRES_DSN": "postgres://minicc:minicc@localhost:5432/minicc?sslmode=disable",
+    # 鐢熶骇閮ㄧ讲蹇呴』閫氳繃 .env 鏄惧紡璁剧疆 JWT_SECRET锛堚墺32 瀛楃锛岄殢鏈虹敓鎴愶級
+    # 鏈厤缃椂鏈嶅姟灏嗘嫆缁濆惎鍔紙Go 缃戝叧 config.go 浼氭娴嬪苟 fail-fast锛?    "JWT_SECRET": "",  # 蹇呴』閫氳繃 .env 璁剧疆锛岀┖鍊兼椂 Go 缃戝叧浼氭嫆缁濆惎鍔?(fail-fast)
+    "POSTGRES_DSN": "postgres://Chiron:Chiron@localhost:5432/Chiron?sslmode=disable",
     "REDIS_ADDR": "localhost:6379",
     "PYTHON_ENGINE_ADDRESS": "localhost:8000",
-    # 插件 per-user 配置目录：与 Go 网关 PLUGIN_DATA_DIR 指向同一位置
+    # 鎻掍欢 per-user 閰嶇疆鐩綍锛氫笌 Go 缃戝叧 PLUGIN_DATA_DIR 鎸囧悜鍚屼竴浣嶇疆
     "PLUGIN_DATA_DIR": str(BASE_DIR / "data" / "plugins"),
-    # 内部端点共享密钥（Go 网关 LLM_GATEWAY_KEY，插件 reload 等校验）
+    # 鍐呴儴绔偣鍏变韩瀵嗛挜锛圙o 缃戝叧 LLM_GATEWAY_KEY锛屾彃浠?reload 绛夋牎楠岋級
     "LLM_GATEWAY_KEY": "",
 }
 
 
 def load_env_file():
-    """从 .env 文件加载环境变量，覆盖 DEFAULT_ENV 中的默认值"""
+    """浠?.env 鏂囦欢鍔犺浇鐜鍙橀噺锛岃鐩?DEFAULT_ENV 涓殑榛樿鍊?""
     env_file = BASE_DIR / ".env"
     if not env_file.exists():
         return
@@ -84,23 +77,22 @@ def load_env_file():
             key, _, value = line.partition("=")
             key = key.strip()
             value = value.strip()
-            # 只覆盖 DEFAULT_ENV 中已有的键，或添加新的环境变量
-            if key:
+            # 鍙鐩?DEFAULT_ENV 涓凡鏈夌殑閿紝鎴栨坊鍔犳柊鐨勭幆澧冨彉閲?            if key:
                 DEFAULT_ENV[key] = value
 
 
-# 启动时加载 .env 文件
+# 鍚姩鏃跺姞杞?.env 鏂囦欢
 load_env_file()
 
 
-# ── 工具函数 ──────────────────────────────────────────────────
+# 鈹€鈹€ 宸ュ叿鍑芥暟 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 def is_windows() -> bool:
     return platform.system() == "Windows"
 
 
 def is_port_open(port: int, host: str = "localhost", timeout: float = 1.0) -> bool:
-    """检查端口是否在监听"""
+    """妫€鏌ョ鍙ｆ槸鍚﹀湪鐩戝惉"""
     try:
         with socket.create_connection((host, port), timeout=timeout):
             return True
@@ -109,16 +101,12 @@ def is_port_open(port: int, host: str = "localhost", timeout: float = 1.0) -> bo
 
 
 def gateway_needs_rebuild(exe_path: Path) -> bool:
-    """Go 网关源码（cmd/minicc + internal）是否比编译产物新。
-
-    run.py start 只在 exe 缺失时自动构建；改动 Go 源码后若沿用旧 exe，
-    会启动过期版本（例如数据库降级/安装模式修复未生效）。这里对比 mtime，
-    任一 .go 文件比 exe 新则返回 True（提示重建）。
-    """
+    """Go 缃戝叧婧愮爜锛坈md/Chiron + internal锛夋槸鍚︽瘮缂栬瘧浜х墿鏂般€?
+    run.py start 鍙湪 exe 缂哄け鏃惰嚜鍔ㄦ瀯寤猴紱鏀瑰姩 Go 婧愮爜鍚庤嫢娌跨敤鏃?exe锛?    浼氬惎鍔ㄨ繃鏈熺増鏈紙渚嬪鏁版嵁搴撻檷绾?瀹夎妯″紡淇鏈敓鏁堬級銆傝繖閲屽姣?mtime锛?    浠讳竴 .go 鏂囦欢姣?exe 鏂板垯杩斿洖 True锛堟彁绀洪噸寤猴級銆?    """
     if not exe_path.exists():
         return True
     exe_mtime = exe_path.stat().st_mtime
-    for root in (BASE_DIR / "cmd" / "minicc", BASE_DIR / "internal"):
+    for root in (BASE_DIR / "cmd" / "Chiron", BASE_DIR / "internal"):
         if not root.exists():
             continue
         try:
@@ -156,7 +144,7 @@ def remove_pid(service: str):
 
 
 def is_process_running(pid: int) -> bool:
-    """检查进程是否在运行"""
+    """妫€鏌ヨ繘绋嬫槸鍚﹀湪杩愯"""
     try:
         if is_windows():
             result = subprocess.run(
@@ -172,7 +160,7 @@ def is_process_running(pid: int) -> bool:
 
 
 def kill_process(pid: int):
-    """终止进程"""
+    """缁堟杩涚▼"""
     try:
         if is_windows():
             subprocess.run(["taskkill", "/F", "/PID", str(pid)],
@@ -191,9 +179,9 @@ def get_log_file(service: str, stream: str = "stdout") -> Path:
 
 
 def color(text: str, code: str) -> str:
-    """ANSI 颜色输出"""
+    """ANSI 棰滆壊杈撳嚭"""
     if is_windows():
-        # Windows 10+ 支持 ANSI
+        # Windows 10+ 鏀寔 ANSI
         try:
             import ctypes
             kernel32 = ctypes.windll.kernel32
@@ -227,7 +215,7 @@ def gray(text: str) -> str:
     return color(text, "90")
 
 
-# ── 服务管理 ──────────────────────────────────────────────────
+# 鈹€鈹€ 鏈嶅姟绠＄悊 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 class ServiceManager:
     def __init__(self):
@@ -237,41 +225,38 @@ class ServiceManager:
         (WORKSPACE_DIR / "skills").mkdir(exist_ok=True)
 
     def _build_env(self, service_key: str) -> dict:
-        """构建服务环境变量"""
+        """鏋勫缓鏈嶅姟鐜鍙橀噺"""
         env = os.environ.copy()
-        # 只注入非空默认值：空字符串注入会覆盖 .env / 系统环境中已生效的配置
-        # （例如 DEFAULT_ENV 的 JWT_SECRET="" 会覆盖 .env 的 JWT_SECRET，
-        # 导致 python-engine 的 pydantic 校验拒绝启动）
-        env.update({k: v for k, v in DEFAULT_ENV.items() if v})
+        # 鍙敞鍏ラ潪绌洪粯璁ゅ€硷細绌哄瓧绗︿覆娉ㄥ叆浼氳鐩?.env / 绯荤粺鐜涓凡鐢熸晥鐨勯厤缃?        # 锛堜緥濡?DEFAULT_ENV 鐨?JWT_SECRET="" 浼氳鐩?.env 鐨?JWT_SECRET锛?        # 瀵艰嚧 python-engine 鐨?pydantic 鏍￠獙鎷掔粷鍚姩锛?        env.update({k: v for k, v in DEFAULT_ENV.items() if v})
         if service_key in SERVICES:
             env.update(SERVICES[service_key].get("env", {}))
         return env
 
     def build(self):
-        """编译 Go 服务"""
-        print(bold("编译 Go Gateway..."))
+        """缂栬瘧 Go 鏈嶅姟"""
+        print(bold("缂栬瘧 Go Gateway..."))
 
         try:
             result = subprocess.run(
                 ["go", "build", "-o",
-                 "minicc.exe" if is_windows() else "minicc",
-                 "./cmd/minicc/"],
+                 "Chiron.exe" if is_windows() else "Chiron",
+                 "./cmd/Chiron/"],
                 cwd=str(BASE_DIR),
                 capture_output=True, text=True
             )
         except FileNotFoundError:
-            print(red("未找到 go 命令，请先安装 Go (https://go.dev/dl/)"))
+            print(red("鏈壘鍒?go 鍛戒护锛岃鍏堝畨瑁?Go (https://go.dev/dl/)"))
             return False
 
         if result.returncode != 0:
-            print(red(f"编译失败:\n{result.stderr}"))
+            print(red(f"缂栬瘧澶辫触:\n{result.stderr}"))
             return False
 
-        print(green("编译成功"))
+        print(green("缂栬瘧鎴愬姛"))
         return True
 
     def _find_service_pid(self, key: str, port: int) -> Optional[int]:
-        """找到监听指定端口的进程 PID"""
+        """鎵惧埌鐩戝惉鎸囧畾绔彛鐨勮繘绋?PID"""
         try:
             if is_windows():
                 result = subprocess.run(
@@ -298,33 +283,33 @@ class ServiceManager:
         return None
 
     def setup(self):
-        """首次安装依赖"""
-        print(bold("安装依赖..."))
+        """棣栨瀹夎渚濊禆"""
+        print(bold("瀹夎渚濊禆..."))
 
-        # 检查 Go
+        # 妫€鏌?Go
         try:
             result = subprocess.run(["go", "version"], capture_output=True, text=True)
             print(f"  Go: {result.stdout.strip()}")
         except FileNotFoundError:
-            print(red("  Go 未安装，请先安装 Go"))
+            print(red("  Go 鏈畨瑁咃紝璇峰厛瀹夎 Go"))
             return False
 
-        # 检查 Python
+        # 妫€鏌?Python
         print(f"  Python: {platform.python_version()}")
 
-        # 编译 Go
+        # 缂栬瘧 Go
         if not self.build():
             return False
 
 
-        # 检查 Python 依赖
-        print("  检查 Python 依赖...")
+        # 妫€鏌?Python 渚濊禆
+        print("  妫€鏌?Python 渚濊禆...")
         result = subprocess.run(
             [sys.executable, "-c", "import uvicorn; print('OK')"],
             capture_output=True, text=True
         )
         if "OK" not in result.stdout:
-            print(yellow("  安装 Python 依赖..."))
+            print(yellow("  瀹夎 Python 渚濊禆..."))
             req_file = BASE_DIR / "python-engine" / "requirements.txt"
             if req_file.exists():
                 subprocess.run(
@@ -332,11 +317,11 @@ class ServiceManager:
                     capture_output=True
                 )
 
-        print(green("依赖安装完成"))
+        print(green("渚濊禆瀹夎瀹屾垚"))
         return True
 
     def _start_service(self, key: str, background: bool = True):
-        """启动单个服务"""
+        """鍚姩鍗曚釜鏈嶅姟"""
         svc = SERVICES[key]
         name = svc["name"]
         port = svc["port"]
@@ -344,37 +329,34 @@ class ServiceManager:
         cwd = svc.get("cwd", str(BASE_DIR))
         env = self._build_env(key)
 
-        # 检查是否已在运行
-        pid = read_pid(key)
+        # 妫€鏌ユ槸鍚﹀凡鍦ㄨ繍琛?        pid = read_pid(key)
         if pid and is_process_running(pid):
-            print(f"  {name}: {yellow('已在运行')} (PID {pid})")
+            print(f"  {name}: {yellow('宸插湪杩愯')} (PID {pid})")
             return True
 
-        # 检查端口占用
-        if is_port_open(port):
-            print(f"  {name}: {yellow(f'端口 {port} 已被占用')}")
+        # 妫€鏌ョ鍙ｅ崰鐢?        if is_port_open(port):
+            print(f"  {name}: {yellow(f'绔彛 {port} 宸茶鍗犵敤')}")
             return False
 
         if not background:
-            # 前台模式
-            print(f"  {name}: {blue('启动中...')} (前台模式, Ctrl+C 停止)")
+            # 鍓嶅彴妯″紡
+            print(f"  {name}: {blue('鍚姩涓?..')} (鍓嶅彴妯″紡, Ctrl+C 鍋滄)")
             try:
                 proc = subprocess.Popen(cmd, cwd=cwd, env=env)
                 write_pid(key, proc.pid)
                 proc.wait()
             except KeyboardInterrupt:
-                print(f"\n  {name}: 停止中...")
+                print(f"\n  {name}: 鍋滄涓?..")
             finally:
                 remove_pid(key)
             return True
 
-        # 后台模式
+        # 鍚庡彴妯″紡
         stdout_log = get_log_file(key, "stdout")
         stderr_log = get_log_file(key, "stderr")
 
         if is_windows():
-            # Windows: 直接使用 Popen 后台启动，重定向输出到日志文件
-            out = open(stdout_log, "w")
+            # Windows: 鐩存帴浣跨敤 Popen 鍚庡彴鍚姩锛岄噸瀹氬悜杈撳嚭鍒版棩蹇楁枃浠?            out = open(stdout_log, "w")
             err = open(stderr_log, "w")
             proc = subprocess.Popen(
                 cmd, cwd=cwd, env=env,
@@ -383,7 +365,7 @@ class ServiceManager:
                 close_fds=True
             )
         else:
-            # Linux/macOS: 使用 nohup
+            # Linux/macOS: 浣跨敤 nohup
             out = open(stdout_log, "w")
             err = open(stderr_log, "w")
             proc = subprocess.Popen(
@@ -394,61 +376,58 @@ class ServiceManager:
 
         write_pid(key, proc.pid)
 
-        # 等待端口就绪；子进程已退出（如依赖缺失/配置错误导致崩溃）时立即报错，避免空等
-        for _ in range(20):
+        # 绛夊緟绔彛灏辩华锛涘瓙杩涚▼宸查€€鍑猴紙濡備緷璧栫己澶?閰嶇疆閿欒瀵艰嚧宕╂簝锛夋椂绔嬪嵆鎶ラ敊锛岄伩鍏嶇┖绛?        for _ in range(20):
             if is_port_open(port):
-                # 找到实际的服务进程 PID
+                # 鎵惧埌瀹為檯鐨勬湇鍔¤繘绋?PID
                 actual_pid = self._find_service_pid(key, port)
                 if actual_pid:
                     write_pid(key, actual_pid)
-                print(f"  {name}: {green('已启动')} (PID {actual_pid or proc.pid}, 端口 {port})")
+                print(f"  {name}: {green('宸插惎鍔?)} (PID {actual_pid or proc.pid}, 绔彛 {port})")
                 return True
             if proc.poll() is not None:
-                print(f"  {name}: {red('启动失败（进程已退出）')} (退出码 {proc.returncode})")
+                print(f"  {name}: {red('鍚姩澶辫触锛堣繘绋嬪凡閫€鍑猴級')} (閫€鍑虹爜 {proc.returncode})")
                 remove_pid(key)
                 return False
             time.sleep(1)
 
-        print(f"  {name}: {yellow('已启动但端口未就绪')} (PID {proc.pid})")
+        print(f"  {name}: {yellow('宸插惎鍔ㄤ絾绔彛鏈氨缁?)} (PID {proc.pid})")
         return True
 
     def stop_service(self, key: str):
-        """停止单个服务"""
+        """鍋滄鍗曚釜鏈嶅姟"""
         svc = SERVICES[key]
         name = svc["name"]
 
         pid = read_pid(key)
         if not pid:
-            print(f"  {name}: {yellow('未运行')}")
+            print(f"  {name}: {yellow('鏈繍琛?)}")
             return
 
         if not is_process_running(pid):
-            print(f"  {name}: {yellow('已停止')}")
+            print(f"  {name}: {yellow('宸插仠姝?)}")
             remove_pid(key)
             return
 
-        print(f"  {name}: 停止中 (PID {pid})...")
+        print(f"  {name}: 鍋滄涓?(PID {pid})...")
         kill_process(pid)
         time.sleep(1)
 
         if is_process_running(pid):
-            print(f"  {name}: {red('停止失败')}")
+            print(f"  {name}: {red('鍋滄澶辫触')}")
         else:
-            print(f"  {name}: {green('已停止')}")
+            print(f"  {name}: {green('宸插仠姝?)}")
         remove_pid(key)
 
     def start(self, background: bool = True, services: list = None):
-        """启动服务"""
-        print(bold("\n═══ MiniCC 服务启动 ═══\n"))
+        """鍚姩鏈嶅姟"""
+        print(bold("\n鈺愨晲鈺?Chiron 鏈嶅姟鍚姩 鈺愨晲鈺怽n"))
 
         targets = services or list(SERVICES.keys())
 
-        # gateway 依赖编译产物 minicc.exe；缺失或源码比产物新时自动构建
-        # （README: start 自动构建 Go；避免启动过期版本导致修复未生效）
-        if "gateway" in targets:
+        # gateway 渚濊禆缂栬瘧浜х墿 Chiron.exe锛涚己澶辨垨婧愮爜姣斾骇鐗╂柊鏃惰嚜鍔ㄦ瀯寤?        # 锛圧EADME: start 鑷姩鏋勫缓 Go锛涢伩鍏嶅惎鍔ㄨ繃鏈熺増鏈鑷翠慨澶嶆湭鐢熸晥锛?        if "gateway" in targets:
             exe_path = Path(SERVICES["gateway"]["cmd"][0])
             if gateway_needs_rebuild(exe_path):
-                print(yellow("Go Gateway 需要编译（产物缺失或源码已更新）..."))
+                print(yellow("Go Gateway 闇€瑕佺紪璇戯紙浜х墿缂哄け鎴栨簮鐮佸凡鏇存柊锛?.."))
                 if not self.build():
                     return False
 
@@ -465,8 +444,8 @@ class ServiceManager:
         return all(results.values())
 
     def stop(self, services: list = None):
-        """停止服务"""
-        print(bold("\n═══ MiniCC 服务停止 ═══\n"))
+        """鍋滄鏈嶅姟"""
+        print(bold("\n鈺愨晲鈺?Chiron 鏈嶅姟鍋滄 鈺愨晲鈺怽n"))
 
         targets = services or list(SERVICES.keys())
         for key in targets:
@@ -475,16 +454,16 @@ class ServiceManager:
         print()
 
     def restart(self, services: list = None):
-        """重启服务"""
+        """閲嶅惎鏈嶅姟"""
         self.stop(services)
         time.sleep(1)
         self.start(services=services)
 
     def status(self):
-        """查看服务状态"""
-        print(bold("\n═══ MiniCC 服务状态 ═══\n"))
-        print(f"{'服务':<20} {'状态':<12} {'PID':<10} {'端口':<8} {'端口状态'}")
-        print("─" * 70)
+        """鏌ョ湅鏈嶅姟鐘舵€?""
+        print(bold("\n鈺愨晲鈺?Chiron 鏈嶅姟鐘舵€?鈺愨晲鈺怽n"))
+        print(f"{'鏈嶅姟':<20} {'鐘舵€?:<12} {'PID':<10} {'绔彛':<8} {'绔彛鐘舵€?}")
+        print("鈹€" * 70)
 
         for key, svc in SERVICES.items():
             name = svc["name"]
@@ -493,20 +472,20 @@ class ServiceManager:
 
             if pid and is_process_running(pid):
                 port_ok = is_port_open(port)
-                status_text = green("运行中")
+                status_text = green("杩愯涓?)
                 pid_text = str(pid)
-                port_text = green("监听中") if port_ok else yellow("未就绪")
+                port_text = green("鐩戝惉涓?) if port_ok else yellow("鏈氨缁?)
             else:
-                status_text = red("已停止")
+                status_text = red("宸插仠姝?)
                 pid_text = "-"
-                port_text = gray("未监听") if not is_port_open(port) else yellow("被占用")
+                port_text = gray("鏈洃鍚?) if not is_port_open(port) else yellow("琚崰鐢?)
 
             print(f"{name:<20} {status_text:<12} {pid_text:<10} {port:<8} {port_text}")
 
         print()
 
     def logs(self, service: str = None, follow: bool = False, tail: int = 50):
-        """查看日志"""
+        """鏌ョ湅鏃ュ織"""
         if service:
             self._show_log(service, follow, tail)
         else:
@@ -514,20 +493,20 @@ class ServiceManager:
                 self._show_log(key, follow=False, tail=10)
 
     def _show_log(self, key: str, follow: bool = False, tail: int = 50):
-        """显示单个服务的日志"""
+        """鏄剧ず鍗曚釜鏈嶅姟鐨勬棩蹇?""
         svc = SERVICES[key]
         name = svc["name"]
 
-        print(bold(f"\n═══ {name} 日志 ═══\n"))
+        print(bold(f"\n鈺愨晲鈺?{name} 鏃ュ織 鈺愨晲鈺怽n"))
 
         log_file = get_log_file(key, "stdout")
         if not log_file.exists():
-            print(yellow("  暂无日志"))
+            print(yellow("  鏆傛棤鏃ュ織"))
             return
 
         if follow:
-            # 实时跟踪
-            print(f"  跟踪 {log_file} (Ctrl+C 退出)")
+            # 瀹炴椂璺熻釜
+            print(f"  璺熻釜 {log_file} (Ctrl+C 閫€鍑?")
             try:
                 proc = subprocess.Popen(
                     ["tail", "-f", str(log_file)] if not is_windows() else
@@ -539,53 +518,46 @@ class ServiceManager:
             except KeyboardInterrupt:
                 proc.terminate()
         else:
-            # 显示最后 N 行
-            lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
+            # 鏄剧ず鏈€鍚?N 琛?            lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
             for line in lines[-tail:]:
                 print(f"  {line}")
 
     def _print_summary(self):
-        """打印启动摘要"""
-        print(bold("\n═══ 服务访问地址 ═══\n"))
+        """鎵撳嵃鍚姩鎽樿"""
+        print(bold("\n鈺愨晲鈺?鏈嶅姟璁块棶鍦板潃 鈺愨晲鈺怽n"))
         print(f"  Gateway:      http://localhost:{SERVICES['gateway']['port']}")
-        print(f"  HTTP 引擎:    http://localhost:8000")
+        print(f"  HTTP 寮曟搸:    http://localhost:8000")
         print()
-        print(f"  日志目录:     {LOG_DIR}")
-        print(f"  PID 目录:     {PID_DIR}")
+        print(f"  鏃ュ織鐩綍:     {LOG_DIR}")
+        print(f"  PID 鐩綍:     {PID_DIR}")
         print()
-        print(f"  停止服务:     python run.py stop")
-        print(f"  查看状态:     python run.py status")
-        print(f"  查看日志:     python run.py logs")
+        print(f"  鍋滄鏈嶅姟:     python run.py stop")
+        print(f"  鏌ョ湅鐘舵€?     python run.py status")
+        print(f"  鏌ョ湅鏃ュ織:     python run.py logs")
         print()
 
 
-# ── CLI ──────────────────────────────────────────────────────
+# 鈹€鈹€ CLI 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 def main():
     parser = argparse.ArgumentParser(
-        description="MiniCC 一键运行脚本",
+        description="Chiron 涓€閿繍琛岃剼鏈?,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-示例:
-  python run.py setup           首次安装依赖
-  python run.py build           编译 Go 服务
-  python run.py start           后台启动所有服务
-  python run.py start --fg      前台启动（调试用）
-  python run.py stop            停止所有服务
-  python run.py restart         重启所有服务
-  python run.py status          查看服务状态
-  python run.py logs            查看所有日志
-  python run.py logs gateway    查看 Gateway 日志
+绀轰緥:
+  python run.py setup           棣栨瀹夎渚濊禆
+  python run.py build           缂栬瘧 Go 鏈嶅姟
+  python run.py start           鍚庡彴鍚姩鎵€鏈夋湇鍔?  python run.py start --fg      鍓嶅彴鍚姩锛堣皟璇曠敤锛?  python run.py stop            鍋滄鎵€鏈夋湇鍔?  python run.py restart         閲嶅惎鎵€鏈夋湇鍔?  python run.py status          鏌ョ湅鏈嶅姟鐘舵€?  python run.py logs            鏌ョ湅鎵€鏈夋棩蹇?  python run.py logs gateway    鏌ョ湅 Gateway 鏃ュ織
         """
     )
 
     parser.add_argument("command", choices=[
         "setup", "build", "start", "stop", "restart", "status", "logs"
-    ], help="命令")
+    ], help="鍛戒护")
 
-    parser.add_argument("service", nargs="?", help="指定服务 (gateway/python-engine)")
-    parser.add_argument("--fg", action="store_true", help="前台模式运行")
-    parser.add_argument("--tail", type=int, default=50, help="日志行数")
+    parser.add_argument("service", nargs="?", help="鎸囧畾鏈嶅姟 (gateway/python-engine)")
+    parser.add_argument("--fg", action="store_true", help="鍓嶅彴妯″紡杩愯")
+    parser.add_argument("--tail", type=int, default=50, help="鏃ュ織琛屾暟")
 
     args = parser.parse_args()
 
@@ -620,3 +592,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

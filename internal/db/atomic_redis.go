@@ -1,4 +1,4 @@
-package db
+﻿package db
 
 import (
 	"context"
@@ -24,7 +24,7 @@ func NewAtomicRedis(initial RedisClient) *AtomicRedis {
 func (a *AtomicRedis) load() RedisClient {
 	p := a.current.Load()
 	if p == nil {
-		panic("AtomicRedis: not initialized — use NewAtomicRedis")
+		panic("AtomicRedis: not initialized 鈥?use NewAtomicRedis")
 	}
 	return *p
 }

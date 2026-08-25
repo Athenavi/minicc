@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"bytes"
@@ -8,16 +8,15 @@ import (
 	"os"
 	"testing"
 
-	"github.com/athenavi/minicc/config"
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/broadcast"
-	"github.com/athenavi/minicc/internal/db"
-	"github.com/athenavi/minicc/internal/engine"
-	"github.com/athenavi/minicc/internal/session"
+	"github.com/athenavi/chiron/config"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/broadcast"
+	"github.com/athenavi/chiron/internal/db"
+	"github.com/athenavi/chiron/internal/engine"
+	"github.com/athenavi/chiron/internal/session"
 )
 
-// testRouterWithPython 构建注入指定 Python 客户端的网关路由器。
-func testRouterWithPython(t *testing.T, pyClient *engine.PythonClient) http.Handler {
+// testRouterWithPython 鏋勫缓娉ㄥ叆鎸囧畾 Python 瀹㈡埛绔殑缃戝叧璺敱鍣ㄣ€?func testRouterWithPython(t *testing.T, pyClient *engine.PythonClient) http.Handler {
 	t.Helper()
 	os.Setenv("JWT_SECRET", "test-secret-that-is-at-least-32-bytes-long!")
 	os.Setenv("APP_SECRET", "test-app-secret-that-is-at-least-32-bytes-long!")
@@ -27,8 +26,7 @@ func testRouterWithPython(t *testing.T, pyClient *engine.PythonClient) http.Hand
 	return NewGatewayRouter(cfg, pyClient, eventHub, sessionMgr, nil, nil, nil)
 }
 
-// TestMemoryProxy_RoutesExist 验证所有记忆路由都已正确注册。
-func TestMemoryProxy_RoutesExist(t *testing.T) {
+// TestMemoryProxy_RoutesExist 楠岃瘉鎵€鏈夎蹇嗚矾鐢遍兘宸叉纭敞鍐屻€?func TestMemoryProxy_RoutesExist(t *testing.T) {
 	router := testRouter(t)
 
 	routes := []struct {
@@ -55,16 +53,14 @@ func TestMemoryProxy_RoutesExist(t *testing.T) {
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
 
-			// 未认证请求应返回 401（由 authMW 保护）
-			if w.Code != http.StatusUnauthorized {
+			// 鏈璇佽姹傚簲杩斿洖 401锛堢敱 authMW 淇濇姢锛?			if w.Code != http.StatusUnauthorized {
 				t.Errorf("%s %s: expected 401 (auth required), got %d", r.method, r.path, w.Code)
 			}
 		})
 	}
 }
 
-// TestMemoryProxy_AuthRequired 验证记忆路由需要认证。
-func TestMemoryProxy_AuthRequired(t *testing.T) {
+// TestMemoryProxy_AuthRequired 楠岃瘉璁板繂璺敱闇€瑕佽璇併€?func TestMemoryProxy_AuthRequired(t *testing.T) {
 	router := testRouter(t)
 
 	paths := []struct {
@@ -89,11 +85,9 @@ func TestMemoryProxy_AuthRequired(t *testing.T) {
 	}
 }
 
-// TestMemoryProxy_ProxyForwardsCorrectly 验证代理请求正确转发到 Python 引擎。
-func TestMemoryProxy_ProxyForwardsCorrectly(t *testing.T) {
-	// 启动一个模拟 Python 引擎的 HTTP 服务器
-	pythonServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// 验证查询参数中包含 user_id 和 tenant_id
+// TestMemoryProxy_ProxyForwardsCorrectly 楠岃瘉浠ｇ悊璇锋眰姝ｇ‘杞彂鍒?Python 寮曟搸銆?func TestMemoryProxy_ProxyForwardsCorrectly(t *testing.T) {
+	// 鍚姩涓€涓ā鎷?Python 寮曟搸鐨?HTTP 鏈嶅姟鍣?	pythonServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 楠岃瘉鏌ヨ鍙傛暟涓寘鍚?user_id 鍜?tenant_id
 		query := r.URL.Query()
 		if query.Get("user_id") == "" {
 			t.Error("missing user_id in proxied request")
@@ -110,7 +104,7 @@ func TestMemoryProxy_ProxyForwardsCorrectly(t *testing.T) {
 	pyClient := engine.NewPythonClient(pythonServer.URL)
 	router := testRouterWithPython(t, pyClient)
 
-	// 生成认证 token
+	// 鐢熸垚璁よ瘉 token
 	token := testToken(t)
 
 	t.Run("GET /v1/memory/profile", func(t *testing.T) {
@@ -136,8 +130,7 @@ func TestMemoryProxy_ProxyForwardsCorrectly(t *testing.T) {
 	})
 }
 
-// TestMemoryProxy_PathParameters 验证路径参数路由正确转发。
-func TestMemoryProxy_PathParameters(t *testing.T) {
+// TestMemoryProxy_PathParameters 楠岃瘉璺緞鍙傛暟璺敱姝ｇ‘杞彂銆?func TestMemoryProxy_PathParameters(t *testing.T) {
 	var receivedPath string
 	pythonServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedPath = r.URL.RequestURI()
@@ -151,7 +144,7 @@ func TestMemoryProxy_PathParameters(t *testing.T) {
 	router := testRouterWithPython(t, pyClient)
 	token := testToken(t)
 
-	// 测试 DELETE /v1/memory/profile/{id}
+	// 娴嬭瘯 DELETE /v1/memory/profile/{id}
 	t.Run("DELETE profile with id", func(t *testing.T) {
 		req := httptest.NewRequest("DELETE", "/v1/memory/profile/item-123", nil)
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -161,13 +154,12 @@ func TestMemoryProxy_PathParameters(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Errorf("expected 200, got %d", w.Code)
 		}
-		// 验证路径参数被正确传递
-		if receivedPath != "/v1/memory/profile/item-123?user_id=test-user-id&tenant_id="+url.QueryEscape(db.DefaultTenantID) {
+		// 楠岃瘉璺緞鍙傛暟琚纭紶閫?		if receivedPath != "/v1/memory/profile/item-123?user_id=test-user-id&tenant_id="+url.QueryEscape(db.DefaultTenantID) {
 			t.Errorf("unexpected path: %s", receivedPath)
 		}
 	})
 
-	// 测试 DELETE /v1/memory/conflicts/{conflict_id}
+	// 娴嬭瘯 DELETE /v1/memory/conflicts/{conflict_id}
 	t.Run("DELETE conflict with id", func(t *testing.T) {
 		req := httptest.NewRequest("DELETE", "/v1/memory/conflicts/conflict-456", nil)
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -182,11 +174,9 @@ func TestMemoryProxy_PathParameters(t *testing.T) {
 		}
 	})
 
-	// 测试 POST /v1/memory/conflicts/{conflict_id}/resolve
+	// 娴嬭瘯 POST /v1/memory/conflicts/{conflict_id}/resolve
 	t.Run("POST resolve conflict", func(t *testing.T) {
-		// 注意：POST 请求必须提供合法 JSON body，否则 DecodeJSON 会因空 body 返回 io.EOF，
-		// 代理处理逻辑提前 return，导致 Python 端从未收到请求，响应体为空。
-		req := httptest.NewRequest("POST", "/v1/memory/conflicts/conflict-789/resolve",
+		// 娉ㄦ剰锛歅OST 璇锋眰蹇呴』鎻愪緵鍚堟硶 JSON body锛屽惁鍒?DecodeJSON 浼氬洜绌?body 杩斿洖 io.EOF锛?		// 浠ｇ悊澶勭悊閫昏緫鎻愬墠 return锛屽鑷?Python 绔粠鏈敹鍒拌姹傦紝鍝嶅簲浣撲负绌恒€?		req := httptest.NewRequest("POST", "/v1/memory/conflicts/conflict-789/resolve",
 			bytes.NewBufferString(`{}`))
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
@@ -202,9 +192,8 @@ func TestMemoryProxy_PathParameters(t *testing.T) {
 	})
 }
 
-// TestMemoryProxy_MissingPythonEngine 验证 Python 引擎不可用时返回 503。
-func TestMemoryProxy_MissingPythonEngine(t *testing.T) {
-	// pyClient 指向不存在的地址
+// TestMemoryProxy_MissingPythonEngine 楠岃瘉 Python 寮曟搸涓嶅彲鐢ㄦ椂杩斿洖 503銆?func TestMemoryProxy_MissingPythonEngine(t *testing.T) {
+	// pyClient 鎸囧悜涓嶅瓨鍦ㄧ殑鍦板潃
 	pyClient := engine.NewPythonClient("http://localhost:9999")
 	router := testRouterWithPython(t, pyClient)
 	token := testToken(t)
@@ -214,15 +203,13 @@ func TestMemoryProxy_MissingPythonEngine(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	// 代理请求会失败，因为 Python 引擎不可达
-	// 根据实现，这可能返回 500 或 503
+	// 浠ｇ悊璇锋眰浼氬け璐ワ紝鍥犱负 Python 寮曟搸涓嶅彲杈?	// 鏍规嵁瀹炵幇锛岃繖鍙兘杩斿洖 500 鎴?503
 	if w.Code == http.StatusUnauthorized || w.Code == http.StatusOK {
 		t.Errorf("expected error when python engine unavailable, got %d", w.Code)
 	}
 }
 
-// TestMemoryProxy_MissingTenantContext 验证缺少租户上下文时返回 401。
-func TestMemoryProxy_MissingTenantContext(t *testing.T) {
+// TestMemoryProxy_MissingTenantContext 楠岃瘉缂哄皯绉熸埛涓婁笅鏂囨椂杩斿洖 401銆?func TestMemoryProxy_MissingTenantContext(t *testing.T) {
 	pythonServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -231,11 +218,11 @@ func TestMemoryProxy_MissingTenantContext(t *testing.T) {
 	pyClient := engine.NewPythonClient(pythonServer.URL)
 	router := testRouterWithPython(t, pyClient)
 
-	// 使用自定义 claims，tenant_id 为空
+	// 浣跨敤鑷畾涔?claims锛宼enant_id 涓虹┖
 	claims := &auth.Claims{
 		UserID:  "test-user",
 		Role:    "user",
-		TenantID: "", // 空租户 ID
+		TenantID: "", // 绌虹鎴?ID
 	}
 	req := httptest.NewRequest("GET", "/v1/memory/profile", nil)
 	req = req.WithContext(auth.WithClaims(req.Context(), claims))

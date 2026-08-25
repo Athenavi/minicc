@@ -1,4 +1,4 @@
-package billing
+﻿package billing
 
 import (
 	"context"
@@ -8,9 +8,7 @@ import (
 	"time"
 )
 
-// mockStore 模拟 PG 原子余额语义：AtomicDeduct/Add 直接修改内存余额，
-// 与生产 PGStore 的 UPDATE ... RETURNING 行为一致。
-type mockStore struct {
+// mockStore 妯℃嫙 PG 鍘熷瓙浣欓璇箟锛欰tomicDeduct/Add 鐩存帴淇敼鍐呭瓨浣欓锛?// 涓庣敓浜?PGStore 鐨?UPDATE ... RETURNING 琛屼负涓€鑷淬€?type mockStore struct {
 	mu      sync.Mutex
 	balance int
 }
@@ -50,7 +48,7 @@ func (m *mockStore) AtomicAddBalance(ctx context.Context, userID string, amount 
 	return m.balance, nil
 }
 
-// ── PaymentStore（测试空实现） ──
+// 鈹€鈹€ PaymentStore锛堟祴璇曠┖瀹炵幇锛?鈹€鈹€
 func (m *mockStore) CreatePayment(ctx context.Context, p *Payment) error { return nil }
 func (m *mockStore) GetPayment(ctx context.Context, id string) (*Payment, error) {
 	return nil, nil
@@ -114,9 +112,8 @@ func TestManager_CloseDoubleCall(t *testing.T) {
 }
 
 
-// TestTransactionRecorder_RecordsRealBalance 验证交易记录携带交易后真实余额，
-// 且金额符号正确（加为正、扣为负）。
-func TestTransactionRecorder_RecordsRealBalance(t *testing.T) {
+// TestTransactionRecorder_RecordsRealBalance 楠岃瘉浜ゆ槗璁板綍鎼哄甫浜ゆ槗鍚庣湡瀹炰綑棰濓紝
+// 涓旈噾棰濈鍙锋纭紙鍔犱负姝ｃ€佹墸涓鸿礋锛夈€?func TestTransactionRecorder_RecordsRealBalance(t *testing.T) {
 	store := &recordingStore{}
 	mgr := NewManager(store)
 	defer mgr.Close()
@@ -143,8 +140,7 @@ func TestTransactionRecorder_RecordsRealBalance(t *testing.T) {
 	}
 }
 
-// TestTransactionRecorder_SkipsFreeChat 验证 free_chat 用量标记不写入交易历史。
-func TestTransactionRecorder_SkipsFreeChat(t *testing.T) {
+// TestTransactionRecorder_SkipsFreeChat 楠岃瘉 free_chat 鐢ㄩ噺鏍囪涓嶅啓鍏ヤ氦鏄撳巻鍙层€?func TestTransactionRecorder_SkipsFreeChat(t *testing.T) {
 	store := &recordingStore{}
 	recorder := NewTransactionRecorder(store)
 

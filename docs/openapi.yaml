@@ -1,44 +1,38 @@
-openapi: 3.0.3
+﻿openapi: 3.0.3
 info:
-  title: MiniCC API
+  title: chiron API
   description: |
-    多租户 SaaS AI Agent 平台 API 文档。
+    澶氱鎴?SaaS AI Agent 骞冲彴 API 鏂囨。銆?
+    ## 璁よ瘉
+    - 鐧诲綍鍚庣鐐硅缃?`chiron_token` httpOnly cookie
+    - 鍚庣画璇锋眰鑷姩鎼哄甫 cookie锛坄withCredentials: true`锛?    - SSO 鐧诲綍閫氳繃 `/v1/auth/sso/login/{providerID}` 鍙戣捣
 
-    ## 认证
-    - 登录后端点设置 `minicc_token` httpOnly cookie
-    - 后续请求自动携带 cookie（`withCredentials: true`）
-    - SSO 登录通过 `/v1/auth/sso/login/{providerID}` 发起
-
-    ## 多租户
-    - JWT claims 含 `tenant_id`，所有查询自动按租户隔离
-    - 企业功能需 `audit:read`/`ent:manage`/`policy:manage`/`market:manage`/`sso:manage` 权限点
-  version: 1.0.0
+    ## 澶氱鎴?    - JWT claims 鍚?`tenant_id`锛屾墍鏈夋煡璇㈣嚜鍔ㄦ寜绉熸埛闅旂
+    - 浼佷笟鍔熻兘闇€ `audit:read`/`ent:manage`/`policy:manage`/`market:manage`/`sso:manage` 鏉冮檺鐐?  version: 1.0.0
   contact:
-    name: MiniCC
+    name: chiron
 servers:
   - url: http://localhost:8080
-    description: 本地开发
-  - url: https://api.minicc.example.com
-    description: 生产
+    description: 鏈湴寮€鍙?  - url: https://api.chiron.example.com
+    description: 鐢熶骇
 
 tags:
   - name: auth
-    description: 认证与会话
-  - name: chat
-    description: AI 对话
+    description: 璁よ瘉涓庝細璇?  - name: chat
+    description: AI 瀵硅瘽
   - name: enterprise
-    description: 企业功能（需企业权限点）
+    description: 浼佷笟鍔熻兘锛堥渶浼佷笟鏉冮檺鐐癸級
   - name: sso
-    description: 单点登录
+    description: 鍗曠偣鐧诲綍
   - name: system
-    description: 系统监控
+    description: 绯荤粺鐩戞帶
 
 paths:
-  # ── 认证 ──
+  # 鈹€鈹€ 璁よ瘉 鈹€鈹€
   /v1/auth/login:
     post:
       tags: [auth]
-      summary: 邮箱密码登录
+      summary: 閭瀵嗙爜鐧诲綍
       requestBody:
         required: true
         content:
@@ -53,7 +47,7 @@ paths:
                 captcha_code: { type: string }
       responses:
         '200':
-          description: 登录成功，设置 httpOnly cookie
+          description: 鐧诲綍鎴愬姛锛岃缃?httpOnly cookie
           content:
             application/json:
               schema:
@@ -70,7 +64,7 @@ paths:
   /v1/auth/register:
     post:
       tags: [auth]
-      summary: 用户注册
+      summary: 鐢ㄦ埛娉ㄥ唽
       requestBody:
         required: true
         content:
@@ -83,21 +77,20 @@ paths:
                 password: { type: string }
                 name: { type: string }
       responses:
-        '201': { description: 注册成功 }
-        '409': { description: 邮箱已存在 }
+        '201': { description: 娉ㄥ唽鎴愬姛 }
+        '409': { description: 閭宸插瓨鍦?}
 
   /v1/auth/logout:
     post:
       tags: [auth]
-      summary: 登出（清除 httpOnly cookie）
-      security: [{ cookieAuth: [] }]
+      summary: 鐧诲嚭锛堟竻闄?httpOnly cookie锛?      security: [{ cookieAuth: [] }]
       responses:
-        '200': { description: 登出成功 }
+        '200': { description: 鐧诲嚭鎴愬姛 }
 
   /v1/auth/me:
     get:
       tags: [auth]
-      summary: 获取当前用户
+      summary: 鑾峰彇褰撳墠鐢ㄦ埛
       security: [{ cookieAuth: [] }]
       responses:
         '200':
@@ -109,12 +102,11 @@ paths:
                   data: { $ref: '#/components/schemas/User' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
-  # ── SSO ──
+  # 鈹€鈹€ SSO 鈹€鈹€
   /v1/auth/sso/providers:
     get:
       tags: [sso]
-      summary: 列出 SSO provider（公开）
-      responses:
+      summary: 鍒楀嚭 SSO provider锛堝叕寮€锛?      responses:
         '200':
           content:
             application/json:
@@ -128,21 +120,20 @@ paths:
   /v1/auth/sso/login/{providerID}:
     get:
       tags: [sso]
-      summary: 发起 SSO 登录（重定向到 IdP）
-      parameters:
+      summary: 鍙戣捣 SSO 鐧诲綍锛堥噸瀹氬悜鍒?IdP锛?      parameters:
         - name: providerID
           in: path
           required: true
           schema: { type: string }
       responses:
-        '302': { description: 重定向到 IdP 授权 URL }
-        '404': { description: provider 不存在 }
+        '302': { description: 閲嶅畾鍚戝埌 IdP 鎺堟潈 URL }
+        '404': { description: provider 涓嶅瓨鍦?}
 
-  # ── 聊天 ──
+  # 鈹€鈹€ 鑱婂ぉ 鈹€鈹€
   /v1/agent/submit:
     post:
       tags: [chat]
-      summary: 提交对话
+      summary: 鎻愪氦瀵硅瘽
       security: [{ cookieAuth: [] }]
       requestBody:
         required: true
@@ -157,15 +148,14 @@ paths:
                 model: { type: string, example: deepseek-chat }
       responses:
         '200':
-          description: 对话已提交，通过 SSE 流式返回
+          description: 瀵硅瘽宸叉彁浜わ紝閫氳繃 SSE 娴佸紡杩斿洖
         '401': { $ref: '#/components/responses/Unauthorized' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
 
   /v1/agent/events:
     get:
       tags: [chat]
-      summary: SSE 事件流（流式响应）
-      security: [{ cookieAuth: [] }]
+      summary: SSE 浜嬩欢娴侊紙娴佸紡鍝嶅簲锛?      security: [{ cookieAuth: [] }]
       parameters:
         - name: session_id
           in: query
@@ -173,14 +163,13 @@ paths:
           schema: { type: string }
       responses:
         '200':
-          description: SSE 流（text/event-stream）
-
-  # ── 企业功能 ──
+          description: SSE 娴侊紙text/event-stream锛?
+  # 鈹€鈹€ 浼佷笟鍔熻兘 鈹€鈹€
   /v1/ent/audit:
     get:
       tags: [enterprise]
-      summary: 操作审计日志
-      description: 需要 `audit:read` 权限
+      summary: 鎿嶄綔瀹¤鏃ュ織
+      description: 闇€瑕?`audit:read` 鏉冮檺
       security: [{ cookieAuth: [] }]
       parameters:
         - { name: start, in: query, schema: { type: string, format: date-time } }
@@ -208,8 +197,8 @@ paths:
   /v1/ent/roles:
     get:
       tags: [enterprise]
-      summary: 角色列表
-      description: 需要 `ent:manage` 权限
+      summary: 瑙掕壊鍒楄〃
+      description: 闇€瑕?`ent:manage` 鏉冮檺
       security: [{ cookieAuth: [] }]
       responses:
         '200':
@@ -223,20 +212,20 @@ paths:
                     items: { $ref: '#/components/schemas/Role' }
     post:
       tags: [enterprise]
-      summary: 创建角色
+      summary: 鍒涘缓瑙掕壊
       security: [{ cookieAuth: [] }]
       requestBody:
         content:
           application/json:
             schema: { $ref: '#/components/schemas/RoleInput' }
       responses:
-        '201': { description: 创建成功 }
-        '409': { description: 角色名已存在 }
+        '201': { description: 鍒涘缓鎴愬姛 }
+        '409': { description: 瑙掕壊鍚嶅凡瀛樺湪 }
 
   /v1/ent/groups:
     get:
       tags: [enterprise]
-      summary: 群组列表
+      summary: 缇ょ粍鍒楄〃
       security: [{ cookieAuth: [] }]
       responses:
         '200':
@@ -252,8 +241,7 @@ paths:
   /v1/ent/cost/summary:
     get:
       tags: [enterprise]
-      summary: 成本汇总
-      security: [{ cookieAuth: [] }]
+      summary: 鎴愭湰姹囨€?      security: [{ cookieAuth: [] }]
       parameters:
         - { name: start, in: query, schema: { type: string, format: date } }
         - { name: end, in: query, schema: { type: string, format: date } }
@@ -269,8 +257,7 @@ paths:
   /v1/ent/quotas:
     get:
       tags: [enterprise]
-      summary: 配额池列表
-      security: [{ cookieAuth: [] }]
+      summary: 閰嶉姹犲垪琛?      security: [{ cookieAuth: [] }]
       responses:
         '200':
           content:
@@ -285,7 +272,7 @@ paths:
   /v1/ent/privacy:
     get:
       tags: [enterprise]
-      summary: 隐私模式配置
+      summary: 闅愮妯″紡閰嶇疆
       security: [{ cookieAuth: [] }]
       responses:
         '200':
@@ -297,19 +284,19 @@ paths:
                   data: { $ref: '#/components/schemas/PrivacyConfig' }
     put:
       tags: [enterprise]
-      summary: 更新隐私模式
+      summary: 鏇存柊闅愮妯″紡
       security: [{ cookieAuth: [] }]
       requestBody:
         content:
           application/json:
             schema: { $ref: '#/components/schemas/PrivacyConfig' }
       responses:
-        '200': { description: 更新成功 }
+        '200': { description: 鏇存柊鎴愬姛 }
 
   /v1/ent/model-policies:
     get:
       tags: [enterprise]
-      summary: 模型策略列表
+      summary: 妯″瀷绛栫暐鍒楄〃
       security: [{ cookieAuth: [] }]
       responses:
         '200':
@@ -325,7 +312,7 @@ paths:
   /v1/ent/market/items:
     get:
       tags: [enterprise]
-      summary: 能力市场条目
+      summary: 鑳藉姏甯傚満鏉＄洰
       security: [{ cookieAuth: [] }]
       responses:
         '200':
@@ -338,19 +325,18 @@ paths:
                     type: array
                     items: { $ref: '#/components/schemas/MarketItem' }
 
-  # ── 系统 ──
+  # 鈹€鈹€ 绯荤粺 鈹€鈹€
   /health:
     get:
       tags: [system]
-      summary: 健康检查
-      responses:
+      summary: 鍋ュ悍妫€鏌?      responses:
         '200':
           description: ok
 
   /metrics:
     get:
       tags: [system]
-      summary: Prometheus 指标
+      summary: Prometheus 鎸囨爣
       responses:
         '200':
           content:
@@ -360,7 +346,7 @@ paths:
   /v1/system/health:
     get:
       tags: [system]
-      summary: 系统健康评分
+      summary: 绯荤粺鍋ュ悍璇勫垎
       security: [{ cookieAuth: [] }]
       responses:
         '200':
@@ -376,8 +362,8 @@ components:
     cookieAuth:
       type: apiKey
       in: cookie
-      name: minicc_token
-      description: httpOnly cookie，登录后自动设置
+      name: chiron_token
+      description: httpOnly cookie锛岀櫥褰曞悗鑷姩璁剧疆
 
   schemas:
     User:
@@ -484,8 +470,7 @@ components:
 
   responses:
     Unauthorized:
-      description: 未认证
-      content:
+      description: 鏈璇?      content:
         application/json:
           schema:
             type: object
@@ -493,7 +478,7 @@ components:
               error: { type: string }
 
     Forbidden:
-      description: 权限不足
+      description: 鏉冮檺涓嶈冻
       content:
         application/json:
           schema:
@@ -502,10 +487,11 @@ components:
               error: { type: string }
 
     TooManyRequests:
-      description: 限流
+      description: 闄愭祦
       content:
         application/json:
           schema:
             type: object
             properties:
               error: { type: string }
+

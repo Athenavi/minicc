@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -8,17 +8,17 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/athenavi/minicc/internal/db"
-	"github.com/athenavi/minicc/internal/enterprise"
+	"github.com/athenavi/chiron/internal/db"
+	"github.com/athenavi/chiron/internal/enterprise"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// ── DB 访问抽象 ──────────────────────────────────────────
+// 鈹€鈹€ DB 璁块棶鎶借薄 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 //
-// 生产实现 pgEntStore 委托 db.ReadPool()/db.Pool（沿用 rbac.go 的读写分离模式）；
-// 抽象成接口是为了单元测试可以注入 fake（覆盖内置角色 409 保护等分支）。
+// 鐢熶骇瀹炵幇 pgEntStore 濮旀墭 db.ReadPool()/db.Pool锛堟部鐢?rbac.go 鐨勮鍐欏垎绂绘ā寮忥級锛?
+// 鎶借薄鎴愭帴鍙ｆ槸涓轰簡鍗曞厓娴嬭瘯鍙互娉ㄥ叆 fake锛堣鐩栧唴缃鑹?409 淇濇姢绛夊垎鏀級銆?
 
 type entQuerier interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
@@ -28,7 +28,7 @@ type entQuerier interface {
 
 var errEntDBUnavailable = errors.New("ent: database unavailable")
 
-// pgEntStore 是 entQuerier 的生产实现：读走 ReadPool，写走主 Pool。
+// pgEntStore 鏄?entQuerier 鐨勭敓浜у疄鐜帮細璇昏蛋 ReadPool锛屽啓璧颁富 Pool銆?
 type pgEntStore struct{}
 
 func (pgEntStore) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
@@ -54,15 +54,15 @@ func (pgEntStore) Exec(ctx context.Context, sql string, args ...any) (pgconn.Com
 	return db.Pool.Exec(ctx, sql, args...)
 }
 
-// deadRow 在连接池缺失时返回确定性错误（避免 nil pgx.Row panic）。
+// deadRow 鍦ㄨ繛鎺ユ睜缂哄け鏃惰繑鍥炵‘瀹氭€ч敊璇紙閬垮厤 nil pgx.Row panic锛夈€?
 type deadRow struct{ err error }
 
 func (d deadRow) Scan(dest ...any) error { return d.err }
 
-// ── Handler ─────────────────────────────────────────────
+// 鈹€鈹€ Handler 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// EntIdentityHandler 企业版账号身份管理（用户角色/群组/租户查询）。
-// 所有端点由 authMW + RequireEntPerm("ent:manage") 保护（见 RegisterRoutes）。
+// EntIdentityHandler 浼佷笟鐗堣处鍙疯韩浠界鐞嗭紙鐢ㄦ埛瑙掕壊/缇ょ粍/绉熸埛鏌ヨ锛夈€?
+// 鎵€鏈夌鐐圭敱 authMW + RequireEntPerm("ent:manage") 淇濇姢锛堣 RegisterRoutes锛夈€?
 type EntIdentityHandler struct {
 	db entQuerier
 }
@@ -71,9 +71,9 @@ func NewEntIdentityHandler() *EntIdentityHandler {
 	return &EntIdentityHandler{db: pgEntStore{}}
 }
 
-// RegisterRoutes 挂载身份管理路由。authMW 为网关 JWT 认证中间件，
-// 每个端点再叠加 RequireEntPerm("ent:manage") 企业权限校验。
-// 注意：本方法供 Phase 7 集成任务调用，当前不在 gateway_router.go 注册。
+// RegisterRoutes 鎸傝浇韬唤绠＄悊璺敱銆俛uthMW 涓虹綉鍏?JWT 璁よ瘉涓棿浠讹紝
+// 姣忎釜绔偣鍐嶅彔鍔?RequireEntPerm("ent:manage") 浼佷笟鏉冮檺鏍￠獙銆?
+// 娉ㄦ剰锛氭湰鏂规硶渚?Phase 7 闆嗘垚浠诲姟璋冪敤锛屽綋鍓嶄笉鍦?gateway_router.go 娉ㄥ唽銆?
 func (h *EntIdentityHandler) RegisterRoutes(mux *http.ServeMux, authMW func(http.Handler) http.Handler) {
 	ent := func(hf http.HandlerFunc) http.Handler {
 		return authMW(RequireEntPerm("ent:manage")(hf))
@@ -99,7 +99,7 @@ func (h *EntIdentityHandler) RegisterRoutes(mux *http.ServeMux, authMW func(http
 	mux.Handle("GET /v1/ent/tenants", ent(h.ListTenants))
 }
 
-// ── 用户 ────────────────────────────────────────────────
+// 鈹€鈹€ 鐢ㄦ埛 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 type entUserItem struct {
 	ID        string          `json:"id"`
@@ -112,7 +112,7 @@ type entUserItem struct {
 }
 
 // ListUsers GET /v1/ent/users?search=&page=&page_size=
-// users LEFT JOIN ent_user_roles/ent_roles + 群组信息，email/姓名模糊搜索 + 分页。
+// users LEFT JOIN ent_user_roles/ent_roles + 缇ょ粍淇℃伅锛宔mail/濮撳悕妯＄硦鎼滅储 + 鍒嗛〉銆?
 func (h *EntIdentityHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	search := r.URL.Query().Get("search")
 	page, pageSize := parsePageQuery(r)
@@ -173,7 +173,7 @@ type setUserRolesRequest struct {
 	RoleIDs []string `json:"role_ids"`
 }
 
-// SetUserRoles PUT /v1/ent/users/{id}/roles 全量替换用户角色。
+// SetUserRoles PUT /v1/ent/users/{id}/roles 鍏ㄩ噺鏇挎崲鐢ㄦ埛瑙掕壊銆?
 func (h *EntIdentityHandler) SetUserRoles(w http.ResponseWriter, r *http.Request) {
 	userID := r.PathValue("id")
 	if !isValidUUID(userID) {
@@ -200,7 +200,7 @@ func (h *EntIdentityHandler) SetUserRoles(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// 全量替换 = 删除不在新集合的绑定 + 幂等插入新绑定
+	// 鍏ㄩ噺鏇挎崲 = 鍒犻櫎涓嶅湪鏂伴泦鍚堢殑缁戝畾 + 骞傜瓑鎻掑叆鏂扮粦瀹?
 	if _, err := h.db.Exec(ctx,
 		`DELETE FROM ent_user_roles WHERE user_id = $1 AND NOT (role_id = ANY($2::uuid[]))`,
 		userID, req.RoleIDs); err != nil {
@@ -223,7 +223,7 @@ type setUserGroupsRequest struct {
 	GroupIDs []string `json:"group_ids"`
 }
 
-// SetUserGroups PUT /v1/ent/users/{id}/groups 全量替换用户群组。
+// SetUserGroups PUT /v1/ent/users/{id}/groups 鍏ㄩ噺鏇挎崲鐢ㄦ埛缇ょ粍銆?
 func (h *EntIdentityHandler) SetUserGroups(w http.ResponseWriter, r *http.Request) {
 	userID := r.PathValue("id")
 	if !isValidUUID(userID) {
@@ -266,7 +266,7 @@ func (h *EntIdentityHandler) SetUserGroups(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// 受影响群组 = 旧 ∪ 新；同时失效用户自身缓存
+	// 鍙楀奖鍝嶇兢缁?= 鏃?鈭?鏂帮紱鍚屾椂澶辨晥鐢ㄦ埛鑷韩缂撳瓨
 	for _, gid := range unionStringSet(oldGroups, req.GroupIDs) {
 		enterprise.InvalidateGroupMembersPerms(ctx, gid)
 	}
@@ -274,7 +274,7 @@ func (h *EntIdentityHandler) SetUserGroups(w http.ResponseWriter, r *http.Reques
 	OK(w, map[string]string{"status": "updated"})
 }
 
-// ── 角色 CRUD ───────────────────────────────────────────
+// 鈹€鈹€ 瑙掕壊 CRUD 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 type entRoleResponse struct {
 	ID          string    `json:"id"`
@@ -368,7 +368,7 @@ type createRoleRequest struct {
 	Permissions []string `json:"permissions"`
 }
 
-// CreateRole POST /v1/ent/roles（新建角色一律 is_builtin=false）。
+// CreateRole POST /v1/ent/roles锛堟柊寤鸿鑹蹭竴寰?is_builtin=false锛夈€?
 func (h *EntIdentityHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
 	var req createRoleRequest
 	if err := DecodeJSON(w, r, &req); err != nil {
@@ -411,8 +411,8 @@ type updateRoleRequest struct {
 	Permissions *[]string `json:"permissions"`
 }
 
-// UpdateRole PUT /v1/ent/roles/{id}。
-// 内置角色禁止修改 name/permissions，违反返回 409。
+// UpdateRole PUT /v1/ent/roles/{id}銆?
+// 鍐呯疆瑙掕壊绂佹淇敼 name/permissions锛岃繚鍙嶈繑鍥?409銆?
 func (h *EntIdentityHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if !isValidUUID(id) {
@@ -472,7 +472,7 @@ func (h *EntIdentityHandler) UpdateRole(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// 权限变更后失效受影响用户缓存（直接绑定 + 经群组间接绑定）
+	// 鏉冮檺鍙樻洿鍚庡け鏁堝彈褰卞搷鐢ㄦ埛缂撳瓨锛堢洿鎺ョ粦瀹?+ 缁忕兢缁勯棿鎺ョ粦瀹氾級
 	if req.Permissions != nil {
 		for _, uid := range h.usersAffectedByRole(ctx, id) {
 			enterprise.InvalidateUserPerms(ctx, uid)
@@ -481,7 +481,7 @@ func (h *EntIdentityHandler) UpdateRole(w http.ResponseWriter, r *http.Request) 
 	OK(w, map[string]string{"status": "updated"})
 }
 
-// DeleteRole DELETE /v1/ent/roles/{id}。内置角色禁止删除（409）。
+// DeleteRole DELETE /v1/ent/roles/{id}銆傚唴缃鑹茬姝㈠垹闄わ紙409锛夈€?
 func (h *EntIdentityHandler) DeleteRole(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if !isValidUUID(id) {
@@ -505,7 +505,7 @@ func (h *EntIdentityHandler) DeleteRole(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// 先收集受影响用户（级联删除后关联即消失），再执行删除
+	// 鍏堟敹闆嗗彈褰卞搷鐢ㄦ埛锛堢骇鑱斿垹闄ゅ悗鍏宠仈鍗虫秷澶憋級锛屽啀鎵ц鍒犻櫎
 	affected := h.usersAffectedByRole(ctx, id)
 	tag, err := h.db.Exec(ctx, `DELETE FROM ent_roles WHERE id = $1`, id)
 	if err != nil {
@@ -522,7 +522,7 @@ func (h *EntIdentityHandler) DeleteRole(w http.ResponseWriter, r *http.Request) 
 	OK(w, map[string]string{"status": "deleted"})
 }
 
-// ── 群组 CRUD ───────────────────────────────────────────
+// 鈹€鈹€ 缇ょ粍 CRUD 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 type entGroupResponse struct {
 	ID          string    `json:"id"`
@@ -710,7 +710,7 @@ func (h *EntIdentityHandler) DeleteGroup(w http.ResponseWriter, r *http.Request)
 	}
 	ctx := r.Context()
 
-	// 成员/角色关联随群组级联删除；先收集成员以便失效其权限缓存
+	// 鎴愬憳/瑙掕壊鍏宠仈闅忕兢缁勭骇鑱斿垹闄わ紱鍏堟敹闆嗘垚鍛樹互渚垮け鏁堝叾鏉冮檺缂撳瓨
 	members := h.groupMemberIDs(ctx, id)
 	tag, err := h.db.Exec(ctx, `DELETE FROM ent_groups WHERE id = $1`, id)
 	if err != nil {
@@ -731,7 +731,7 @@ type setGroupMembersRequest struct {
 	UserIDs []string `json:"user_ids"`
 }
 
-// SetGroupMembers PUT /v1/ent/groups/{id}/members 全量替换群组成员。
+// SetGroupMembers PUT /v1/ent/groups/{id}/members 鍏ㄩ噺鏇挎崲缇ょ粍鎴愬憳銆?
 func (h *EntIdentityHandler) SetGroupMembers(w http.ResponseWriter, r *http.Request) {
 	groupID := r.PathValue("id")
 	if !isValidUUID(groupID) {
@@ -774,7 +774,7 @@ func (h *EntIdentityHandler) SetGroupMembers(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// 被移除的成员单独失效；仍/新在组内的成员经群组批量失效
+	// 琚Щ闄ょ殑鎴愬憳鍗曠嫭澶辨晥锛涗粛/鏂板湪缁勫唴鐨勬垚鍛樼粡缇ょ粍鎵归噺澶辨晥
 	newSet := make(map[string]struct{}, len(req.UserIDs))
 	for _, uid := range req.UserIDs {
 		newSet[uid] = struct{}{}
@@ -792,7 +792,7 @@ type setGroupRolesRequest struct {
 	RoleIDs []string `json:"role_ids"`
 }
 
-// SetGroupRoles PUT /v1/ent/groups/{id}/roles 全量替换群组角色绑定。
+// SetGroupRoles PUT /v1/ent/groups/{id}/roles 鍏ㄩ噺鏇挎崲缇ょ粍瑙掕壊缁戝畾銆?
 func (h *EntIdentityHandler) SetGroupRoles(w http.ResponseWriter, r *http.Request) {
 	groupID := r.PathValue("id")
 	if !isValidUUID(groupID) {
@@ -837,19 +837,19 @@ func (h *EntIdentityHandler) SetGroupRoles(w http.ResponseWriter, r *http.Reques
 	OK(w, map[string]string{"status": "updated"})
 }
 
-// ── 租户 ────────────────────────────────────────────────
+// 鈹€鈹€ 绉熸埛 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 type entTenantItem struct {
 	ID        string          `json:"id"`
 	Name      string          `json:"name"`
-	Status    string          `json:"status"` // 真实 tenants 表无状态列，恒为 "active"
+	Status    string          `json:"status"` // 鐪熷疄 tenants 琛ㄦ棤鐘舵€佸垪锛屾亽涓?"active"
 	CreatedAt time.Time       `json:"created_at"`
 	UserCount int             `json:"user_count"`
 	Quotas    json.RawMessage `json:"quotas"`
 }
 
 // ListTenants GET /v1/ent/tenants?page=&page_size=
-// 读真实 tenants 表 + LEFT JOIN ent_quota_pools 汇总（不引用影子表 admin_tenants）。
+// 璇荤湡瀹?tenants 琛?+ LEFT JOIN ent_quota_pools 姹囨€伙紙涓嶅紩鐢ㄥ奖瀛愯〃 admin_tenants锛夈€?
 func (h *EntIdentityHandler) ListTenants(w http.ResponseWriter, r *http.Request) {
 	page, pageSize := parsePageQuery(r)
 	ctx := r.Context()
@@ -900,7 +900,7 @@ func (h *EntIdentityHandler) ListTenants(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// ── 内部辅助 ────────────────────────────────────────────
+// 鈹€鈹€ 鍐呴儴杈呭姪 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func (h *EntIdentityHandler) userExists(ctx context.Context, id string) bool {
 	var one int
@@ -912,7 +912,7 @@ func (h *EntIdentityHandler) groupExists(ctx context.Context, id string) bool {
 	return h.db.QueryRow(ctx, `SELECT 1 FROM ent_groups WHERE id = $1`, id).Scan(&one) == nil
 }
 
-// allExist 校验 ids 全部存在于目标表（countSQL 需返回 DISTINCT 计数，$1 为 uuid[]）。
+// allExist 鏍￠獙 ids 鍏ㄩ儴瀛樺湪浜庣洰鏍囪〃锛坈ountSQL 闇€杩斿洖 DISTINCT 璁℃暟锛?1 涓?uuid[]锛夈€?
 func (h *EntIdentityHandler) allExist(ctx context.Context, countSQL string, ids []string) bool {
 	var count int
 	if err := h.db.QueryRow(ctx, countSQL, ids).Scan(&count); err != nil {
@@ -949,7 +949,7 @@ func (h *EntIdentityHandler) queryIDList(ctx context.Context, sql string, arg an
 	return ids
 }
 
-// usersAffectedByRole 返回角色影响到的全部用户（直接绑定 + 经群组间接绑定）。
+// usersAffectedByRole 杩斿洖瑙掕壊褰卞搷鍒扮殑鍏ㄩ儴鐢ㄦ埛锛堢洿鎺ョ粦瀹?+ 缁忕兢缁勯棿鎺ョ粦瀹氾級銆?
 func (h *EntIdentityHandler) usersAffectedByRole(ctx context.Context, roleID string) []string {
 	return h.queryIDList(ctx,
 		`SELECT user_id FROM ent_user_roles WHERE role_id = $1
@@ -973,7 +973,7 @@ func validateUUIDList(ids []string) error {
 	return nil
 }
 
-// parsePageQuery 解析分页参数：page ≥ 1（默认 1），page_size 1..100（默认 20）。
+// parsePageQuery 瑙ｆ瀽鍒嗛〉鍙傛暟锛歱age 鈮?1锛堥粯璁?1锛夛紝page_size 1..100锛堥粯璁?20锛夈€?
 func parsePageQuery(r *http.Request) (int, int) {
 	page := 1
 	if v, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && v > 0 {
@@ -989,9 +989,9 @@ func parsePageQuery(r *http.Request) (int, int) {
 	return page, pageSize
 }
 
-// isUniqueViolation 复用 ent_costcenter_handler.go 中的定义（SQLSTATE 23505 判定）。
+// isUniqueViolation 澶嶇敤 ent_costcenter_handler.go 涓殑瀹氫箟锛圫QLSTATE 23505 鍒ゅ畾锛夈€?
 
-// equalStringSet 以集合语义比较两个字符串切片（权限数组顺序不敏感）。
+// equalStringSet 浠ラ泦鍚堣涔夋瘮杈冧袱涓瓧绗︿覆鍒囩墖锛堟潈闄愭暟缁勯『搴忎笉鏁忔劅锛夈€?
 func equalStringSet(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
@@ -1008,7 +1008,7 @@ func equalStringSet(a, b []string) bool {
 	return true
 }
 
-// unionStringSet 返回两个字符串切片的去重并集（保持首次出现顺序）。
+// unionStringSet 杩斿洖涓や釜瀛楃涓插垏鐗囩殑鍘婚噸骞堕泦锛堜繚鎸侀娆″嚭鐜伴『搴忥級銆?
 func unionStringSet(a, b []string) []string {
 	seen := make(map[string]struct{}, len(a)+len(b))
 	out := make([]string, 0, len(a)+len(b))

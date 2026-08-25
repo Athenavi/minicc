@@ -1,4 +1,4 @@
-package auth
+﻿package auth
 
 import (
 	"encoding/base64"
@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-// signLegacyState 构造旧版格式 state（payload 无 m/u 字段），
-// 模拟历史签发令牌以验证向后兼容。
+// signLegacyState 鏋勯€犳棫鐗堟牸寮?state锛坧ayload 鏃?m/u 瀛楁锛夛紝
+// 妯℃嫙鍘嗗彶绛惧彂浠ょ墝浠ラ獙璇佸悜鍚庡吋瀹广€?
 func signLegacyState(c *StateCodec, payloadJSON string) string {
 	body := base64.RawURLEncoding.EncodeToString([]byte(payloadJSON))
 	return body + "." + c.sign(body)
@@ -41,19 +41,19 @@ func TestGetProviderProfile_Unknown(t *testing.T) {
 }
 
 func TestResolveEndpoints_TemplateFillAndOverride(t *testing.T) {
-	// 模板填充
+	// 妯℃澘濉厖
 	issuer, authURL, tokenURL, userinfoURL := ResolveEndpoints(ProviderGitHub, "", "", "", "")
 	if issuer != "" || authURL != "https://github.com/login/oauth/authorize" ||
 		tokenURL != "https://github.com/login/oauth/access_token" ||
 		userinfoURL != "https://api.github.com/user" {
 		t.Fatalf("template fill wrong: %q %q %q %q", issuer, authURL, tokenURL, userinfoURL)
 	}
-	// 显式覆盖优先（例如 GitHub Enterprise）
+	// 鏄惧紡瑕嗙洊浼樺厛锛堜緥濡?GitHub Enterprise锛?
 	_, authURL, _, _ = ResolveEndpoints(ProviderGitHub, "", "https://ghe.corp/login/oauth/authorize", "", "")
 	if authURL != "https://ghe.corp/login/oauth/authorize" {
 		t.Fatalf("override lost: %q", authURL)
 	}
-	// 未知类型原样返回
+	// 鏈煡绫诲瀷鍘熸牱杩斿洖
 	_, authURL, _, _ = ResolveEndpoints("nope", "iss", "au", "tu", "uu")
 	if authURL != "au" {
 		t.Fatalf("unknown type must pass through, got %q", authURL)
@@ -76,7 +76,7 @@ func TestBuildAuthURL_Params(t *testing.T) {
 			t.Fatalf("missing %q in %s", want, u)
 		}
 	}
-	// 已带 query 的 base 用 & 拼接
+	// 宸插甫 query 鐨?base 鐢?& 鎷兼帴
 	u2 := buildAuthURL("https://idp.example.com/authorize?x=1", "cid", "http://cb", nil, "st", nil)
 	if !strings.Contains(u2, "authorize?x=1&") {
 		t.Fatalf("expected & join, got %s", u2)
@@ -86,16 +86,16 @@ func TestBuildAuthURL_Params(t *testing.T) {
 func TestStateCodecIssueMode(t *testing.T) {
 	codec := NewStateCodec([]byte("k"), 0)
 
-	// bind 模式必须带 uid
+	// bind 妯″紡蹇呴』甯?uid
 	if _, err := codec.IssueMode("p", "n", StateModeBind, ""); err == nil {
 		t.Fatal("expected error for bind without uid")
 	}
-	// 未知模式
+	// 鏈煡妯″紡
 	if _, err := codec.IssueMode("p", "n", "other", ""); err == nil {
 		t.Fatal("expected error for unknown mode")
 	}
 
-	// bind 令牌往返
+	// bind 浠ょ墝寰€杩?
 	state, err := codec.IssueMode("prov-1", "n-1", StateModeBind, "user-1")
 	if err != nil {
 		t.Fatal(err)
@@ -108,7 +108,7 @@ func TestStateCodecIssueMode(t *testing.T) {
 		t.Fatalf("payload = %+v", payload)
 	}
 
-	// login 令牌不携带 uid（防篡改升级）
+	// login 浠ょ墝涓嶆惡甯?uid锛堥槻绡℃敼鍗囩骇锛?
 	state, err = codec.Issue("prov-1", "n-1")
 	if err != nil {
 		t.Fatal(err)
@@ -122,9 +122,9 @@ func TestStateCodecIssueMode(t *testing.T) {
 	}
 }
 
-// TestStateCodecLegacyFormat 旧格式 state（无 mode 字段）按 login 处理。
+// TestStateCodecLegacyFormat 鏃ф牸寮?state锛堟棤 mode 瀛楁锛夋寜 login 澶勭悊銆?
 func TestStateCodecLegacyFormat(t *testing.T) {
-	// 手工构造旧 payload（无 m/u 字段）
+	// 鎵嬪伐鏋勯€犳棫 payload锛堟棤 m/u 瀛楁锛?
 	legacy := `{"p":"prov-1","n":"n-1","e":9999999999}`
 	codec := NewStateCodec([]byte("k"), 0)
 	state := signLegacyState(codec, legacy)

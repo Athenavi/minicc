@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -9,15 +9,15 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/db"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/db"
 	"github.com/redis/go-redis/v9"
 )
 
-// ErrTenantQuotaExceeded 表示租户当期 token 配额已耗尽（EnforceTenantQuota 唯一非 nil 返回）。
+// ErrTenantQuotaExceeded 琛ㄧず绉熸埛褰撴湡 token 閰嶉宸茶€楀敖锛圗nforceTenantQuota 鍞竴闈?nil 杩斿洖锛夈€?
 var ErrTenantQuotaExceeded = errors.New("tenant quota exceeded")
 
-// quotaRedis 是配额计数所需的最小 Redis 接口（db.RedisClient 满足；测试可注入 fake）。
+// quotaRedis 鏄厤棰濊鏁版墍闇€鐨勬渶灏?Redis 鎺ュ彛锛坉b.RedisClient 婊¤冻锛涙祴璇曞彲娉ㄥ叆 fake锛夈€?
 type quotaRedis interface {
 	Exists(ctx context.Context, keys ...string) *redis.IntCmd
 	Get(ctx context.Context, key string) *redis.StringCmd
@@ -25,37 +25,37 @@ type quotaRedis interface {
 	Eval(ctx context.Context, script string, keys []string, args ...interface{}) *redis.Cmd
 }
 
-// quotaStore 是配额强制所需的最小数据访问接口（pgEntCostStore 满足）。
+// quotaStore 鏄厤棰濆己鍒舵墍闇€鐨勬渶灏忔暟鎹闂帴鍙ｏ紙pgEntCostStore 婊¤冻锛夈€?
 type quotaStore interface {
 	ResolveTenantID(ctx context.Context, userID string) (string, error)
 	TenantTokenPools(ctx context.Context, tenantID string) ([]EntQuotaPool, error)
 	TokenUsageSQL(ctx context.Context, tenantID string, since time.Time) (int64, error)
 }
 
-// quotaIncrScript 原子自增并刷新月末/日末过期时间，返回自增后的值。
+// quotaIncrScript 鍘熷瓙鑷骞跺埛鏂版湀鏈?鏃ユ湯杩囨湡鏃堕棿锛岃繑鍥炶嚜澧炲悗鐨勫€笺€?
 const quotaIncrScript = `
 local v = redis.call('INCRBY', KEYS[1], ARGV[1])
 redis.call('EXPIREAT', KEYS[1], ARGV[2])
 return v`
 
-// tenantQuotaEnforcer 组合 store/redis/时钟，便于单测注入。
+// tenantQuotaEnforcer 缁勫悎 store/redis/鏃堕挓锛屼究浜庡崟娴嬫敞鍏ャ€?
 type tenantQuotaEnforcer struct {
 	store quotaStore
 	redis quotaRedis
 	now   func() time.Time
 }
 
-// EnforceTenantQuota 是聊天请求的租户 token 配额预检（fail-open）。
+// EnforceTenantQuota 鏄亰澶╄姹傜殑绉熸埛 token 閰嶉棰勬锛坒ail-open锛夈€?
 //
-// 语义：
-//   - 租户无 token 配额池配置 → 直接放行（nil）。
-//   - Redis 计数器 ent:quota:tokens:{tenantID}:{yyyymm|yyyymmdd} INCR（Lua 原子自增 +
-//     周期末过期）；缓存键缺失时先从 billing_records SQL 聚合回填。
-//   - 任何策略/存储查询失败一律 fail-open（返回 nil + slog.Warn），
-//     保证现有聊天链路永不因配额子系统中断。
+// 璇箟锛?
+//   - 绉熸埛鏃?token 閰嶉姹犻厤缃?鈫?鐩存帴鏀捐锛坣il锛夈€?
+//   - Redis 璁℃暟鍣?ent:quota:tokens:{tenantID}:{yyyymm|yyyymmdd} INCR锛圠ua 鍘熷瓙鑷 +
+//     鍛ㄦ湡鏈繃鏈燂級锛涚紦瀛橀敭缂哄け鏃跺厛浠?billing_records SQL 鑱氬悎鍥炲～銆?
+//   - 浠讳綍绛栫暐/瀛樺偍鏌ヨ澶辫触涓€寰?fail-open锛堣繑鍥?nil + slog.Warn锛夛紝
+//     淇濊瘉鐜版湁鑱婂ぉ閾捐矾姘镐笉鍥犻厤棰濆瓙绯荤粺涓柇銆?
 //
-// 接线点（集成任务）：gateway_router.go registerAgentRoutes 中 POST /submit
-// 现有 billing 预检（billingMgr.DailyFreeCount / GetBalance）旁，一行调用：
+// 鎺ョ嚎鐐癸紙闆嗘垚浠诲姟锛夛細gateway_router.go registerAgentRoutes 涓?POST /submit
+// 鐜版湁 billing 棰勬锛坆illingMgr.DailyFreeCount / GetBalance锛夋梺锛屼竴琛岃皟鐢細
 //
 //	if err := api.EnforceTenantQuota(r.Context(), r, claims, 0); errors.Is(err, api.ErrTenantQuotaExceeded) {
 //	    TooManyRequests(w); return
@@ -72,10 +72,10 @@ func EnforceTenantQuota(ctx context.Context, r *http.Request, claims *auth.Claim
 	return e.enforce(ctx, claims, estimatedTokens)
 }
 
-// enforce 是核心逻辑（可注入依赖，独立可测）。
+// enforce 鏄牳蹇冮€昏緫锛堝彲娉ㄥ叆渚濊禆锛岀嫭绔嬪彲娴嬶級銆?
 func (e *tenantQuotaEnforcer) enforce(ctx context.Context, claims *auth.Claims, estimatedTokens int64) error {
 	if claims == nil || claims.UserID == "" {
-		return nil // 无身份信息无从强制，放行
+		return nil // 鏃犺韩浠戒俊鎭棤浠庡己鍒讹紝鏀捐
 	}
 	if ctx == nil {
 		var cancel context.CancelFunc
@@ -83,7 +83,7 @@ func (e *tenantQuotaEnforcer) enforce(ctx context.Context, claims *auth.Claims, 
 		defer cancel()
 	}
 	if estimatedTokens <= 0 {
-		estimatedTokens = 1 // 无预估时最小增量，保持计数器热度
+		estimatedTokens = 1 // 鏃犻浼版椂鏈€灏忓閲忥紝淇濇寔璁℃暟鍣ㄧ儹搴?
 	}
 
 	tenantID := claims.TenantID
@@ -104,16 +104,16 @@ func (e *tenantQuotaEnforcer) enforce(ctx context.Context, claims *auth.Claims, 
 		return nil
 	}
 	if len(pools) == 0 {
-		return nil // 该租户无配额池配置 → 直接放行
+		return nil // 璇ョ鎴锋棤閰嶉姹犻厤缃?鈫?鐩存帴鏀捐
 	}
 
 	for _, pool := range pools {
 		if pool.TotalAmount <= 0 {
-			continue // 0 = 无限制，仅计数不拦截
+			continue // 0 = 鏃犻檺鍒讹紝浠呰鏁颁笉鎷︽埅
 		}
 		used, ok := e.consume(ctx, tenantID, pool, estimatedTokens)
 		if !ok {
-			continue // 计数链路任何失败 → fail-open
+			continue // 璁℃暟閾捐矾浠讳綍澶辫触 鈫?fail-open
 		}
 		if used > pool.TotalAmount {
 			return fmt.Errorf("%w: tenant %s token %s used %d/%d",
@@ -123,8 +123,8 @@ func (e *tenantQuotaEnforcer) enforce(ctx context.Context, claims *auth.Claims, 
 	return nil
 }
 
-// consume 对单个配额池执行"回填（如需）+ 原子自增"，返回自增后的用量。
-// ok=false 表示计数失败，调用方应 fail-open。
+// consume 瀵瑰崟涓厤棰濇睜鎵ц"鍥炲～锛堝闇€锛? 鍘熷瓙鑷"锛岃繑鍥炶嚜澧炲悗鐨勭敤閲忋€?
+// ok=false 琛ㄧず璁℃暟澶辫触锛岃皟鐢ㄦ柟搴?fail-open銆?
 func (e *tenantQuotaEnforcer) consume(ctx context.Context, tenantID string, pool EntQuotaPool, delta int64) (int64, bool) {
 	if e.redis == nil {
 		slog.Warn("quota enforce: redis unavailable, fail-open", "tenant_id", tenantID)
@@ -136,7 +136,7 @@ func (e *tenantQuotaEnforcer) consume(ctx context.Context, tenantID string, pool
 	}
 	key, periodStart, expireAt := quotaPeriodKey(tenantID, pool.Period, now)
 
-	// 缓存键缺失 → 从 billing_records SQL 聚合回填
+	// 缂撳瓨閿己澶?鈫?浠?billing_records SQL 鑱氬悎鍥炲～
 	if n, err := e.redis.Exists(ctx, key).Result(); err != nil {
 		slog.Warn("quota enforce: redis exists failed, fail-open", "key", key, "error", err)
 		return 0, false
@@ -167,8 +167,8 @@ func (e *tenantQuotaEnforcer) consume(ctx context.Context, tenantID string, pool
 	return used, true
 }
 
-// quotaPeriodKey 返回计数器键、周期起点与过期时间（UTC）。
-// monthly → ent:quota:tokens:{tenant}:{yyyymm}；daily → ent:quota:tokens:{tenant}:{yyyymmdd}。
+// quotaPeriodKey 杩斿洖璁℃暟鍣ㄩ敭銆佸懆鏈熻捣鐐逛笌杩囨湡鏃堕棿锛圲TC锛夈€?
+// monthly 鈫?ent:quota:tokens:{tenant}:{yyyymm}锛沝aily 鈫?ent:quota:tokens:{tenant}:{yyyymmdd}銆?
 func quotaPeriodKey(tenantID, period string, now time.Time) (key string, start, expireAt time.Time) {
 	now = now.UTC()
 	if period == "daily" {
@@ -181,8 +181,8 @@ func quotaPeriodKey(tenantID, period string, now time.Time) (key string, start, 
 		start, start.AddDate(0, 1, 0)
 }
 
-// tenantTokenUsage 读取租户当期 token 用量：优先 Redis 计数器，缺失时
-// billing_records SQL 聚合（只读，不回填）。供 QuotaUsage 端点复用。
+// tenantTokenUsage 璇诲彇绉熸埛褰撴湡 token 鐢ㄩ噺锛氫紭鍏?Redis 璁℃暟鍣紝缂哄け鏃?
+// billing_records SQL 鑱氬悎锛堝彧璇伙紝涓嶅洖濉級銆備緵 QuotaUsage 绔偣澶嶇敤銆?
 func tenantTokenUsage(ctx context.Context, store quotaStore, r quotaRedis, tenantID, period string, now time.Time) (int64, string) {
 	if r != nil {
 		key, _, _ := quotaPeriodKey(tenantID, period, now)

@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"encoding/json"
@@ -6,15 +6,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/db"
-	"github.com/athenavi/minicc/internal/engine"
-	"github.com/athenavi/minicc/internal/id"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/db"
+	"github.com/athenavi/chiron/internal/engine"
+	"github.com/athenavi/chiron/internal/id"
 )
 
-// ─────────────────────────────────────────────────────────────
-// 模板市场：工作流 / Agent / 技能 一键"使用"复制到自己的工作台
-// ─────────────────────────────────────────────────────────────
+// 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// 妯℃澘甯傚満锛氬伐浣滄祦 / Agent / 鎶€鑳?涓€閿?浣跨敤"澶嶅埗鍒拌嚜宸辩殑宸ヤ綔鍙?// 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 type TemplateHandler struct {
 	pythonClient *engine.PythonClient
@@ -84,7 +83,7 @@ func (h *TemplateHandler) Get(w http.ResponseWriter, r *http.Request) {
 	OK(w, t)
 }
 
-// Use POST /v1/templates/{id}/use —— 一键复制到自己的工作台
+// Use POST /v1/templates/{id}/use 鈥斺€?涓€閿鍒跺埌鑷繁鐨勫伐浣滃彴
 func (h *TemplateHandler) Use(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	if claims == nil || claims.TenantID == "" {
@@ -109,7 +108,7 @@ func (h *TemplateHandler) Use(w http.ResponseWriter, r *http.Request) {
 	case "agent":
 		h.useAgent(w, r, claims, m)
 	case "workflow":
-		// 工作流模板：返回 payload，前端加载进画布
+		// 宸ヤ綔娴佹ā鏉匡細杩斿洖 payload锛屽墠绔姞杞借繘鐢诲竷
 		OK(w, map[string]interface{}{"type": "workflow", "payload": m, "name": t.Name, "description": t.Description})
 	case "skill":
 		h.useSkill(w, r, claims, m)

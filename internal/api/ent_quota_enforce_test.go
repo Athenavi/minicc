@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/athenavi/minicc/internal/auth"
+	"github.com/athenavi/chiron/internal/auth"
 	"github.com/redis/go-redis/v9"
 )
 
-// ── fake 依赖 ──
+// 鈹€鈹€ fake 渚濊禆 鈹€鈹€
 
 type fakeQuotaStore struct {
 	pools       []EntQuotaPool
@@ -104,9 +104,9 @@ func testTokenPool(total int64) EntQuotaPool {
 	}
 }
 
-// ── 用例 ──
+// 鈹€鈹€ 鐢ㄤ緥 鈹€鈹€
 
-// 无配额池配置 → 直接放行（nil），且不触碰 Redis
+// 鏃犻厤棰濇睜閰嶇疆 鈫?鐩存帴鏀捐锛坣il锛夛紝涓斾笉瑙︾ Redis
 func TestEnforceNoQuotaConfigPasses(t *testing.T) {
 	rr := &fakeQuotaRedis{}
 	e := newTestEnforcer(&fakeQuotaStore{pools: nil}, rr)
@@ -118,7 +118,7 @@ func TestEnforceNoQuotaConfigPasses(t *testing.T) {
 	}
 }
 
-// 无 claims → 放行
+// 鏃?claims 鈫?鏀捐
 func TestEnforceNilClaimsPasses(t *testing.T) {
 	e := newTestEnforcer(&fakeQuotaStore{}, &fakeQuotaRedis{})
 	if err := e.enforce(context.Background(), nil, 100); err != nil {
@@ -126,39 +126,39 @@ func TestEnforceNilClaimsPasses(t *testing.T) {
 	}
 }
 
-// 策略查询失败一律 fail-open
+// 绛栫暐鏌ヨ澶辫触涓€寰?fail-open
 func TestEnforceStoreFailureFailOpen(t *testing.T) {
 	e := newTestEnforcer(&fakeQuotaStore{poolsErr: errors.New("db down")}, &fakeQuotaRedis{})
 	if err := e.enforce(context.Background(), quotaTestClaims("t-1"), 100); err != nil {
 		t.Fatalf("pool query failure must fail-open, got %v", err)
 	}
 
-	// claims 无 TenantID 且租户解析失败 → fail-open
+	// claims 鏃?TenantID 涓旂鎴疯В鏋愬け璐?鈫?fail-open
 	e2 := newTestEnforcer(&fakeQuotaStore{resolveErr: errors.New("db down")}, &fakeQuotaRedis{})
 	if err := e2.enforce(context.Background(), &auth.Claims{UserID: "u-1"}, 100); err != nil {
 		t.Fatalf("tenant resolve failure must fail-open, got %v", err)
 	}
 }
 
-// Redis 失败（含不可用）一律 fail-open
+// Redis 澶辫触锛堝惈涓嶅彲鐢級涓€寰?fail-open
 func TestEnforceRedisFailureFailOpen(t *testing.T) {
 	pool := testTokenPool(100)
 
-	// Exists 失败
+	// Exists 澶辫触
 	e := newTestEnforcer(&fakeQuotaStore{pools: []EntQuotaPool{pool}},
 		&fakeQuotaRedis{existsErr: errors.New("redis down")})
 	if err := e.enforce(context.Background(), quotaTestClaims("t-1"), 100); err != nil {
 		t.Fatalf("redis exists failure must fail-open, got %v", err)
 	}
 
-	// Eval（INCRBY）失败
+	// Eval锛圛NCRBY锛夊け璐?
 	e = newTestEnforcer(&fakeQuotaStore{pools: []EntQuotaPool{pool}},
 		&fakeQuotaRedis{existsVal: 1, evalErr: errors.New("redis down")})
 	if err := e.enforce(context.Background(), quotaTestClaims("t-1"), 100); err != nil {
 		t.Fatalf("redis incr failure must fail-open, got %v", err)
 	}
 
-	// Redis 完全不可用（nil 接口）
+	// Redis 瀹屽叏涓嶅彲鐢紙nil 鎺ュ彛锛?
 	e = &tenantQuotaEnforcer{
 		store: &fakeQuotaStore{pools: []EntQuotaPool{pool}},
 		redis: nil,
@@ -169,7 +169,7 @@ func TestEnforceRedisFailureFailOpen(t *testing.T) {
 	}
 }
 
-// 用量超出配额 → ErrTenantQuotaExceeded
+// 鐢ㄩ噺瓒呭嚭閰嶉 鈫?ErrTenantQuotaExceeded
 func TestEnforceQuotaExceeded(t *testing.T) {
 	pool := testTokenPool(100)
 	rr := &fakeQuotaRedis{existsVal: 1, evalVal: 150}
@@ -187,7 +187,7 @@ func TestEnforceQuotaExceeded(t *testing.T) {
 	}
 }
 
-// 用量在配额内 → 放行
+// 鐢ㄩ噺鍦ㄩ厤棰濆唴 鈫?鏀捐
 func TestEnforceWithinQuota(t *testing.T) {
 	pool := testTokenPool(100)
 	e := newTestEnforcer(&fakeQuotaStore{pools: []EntQuotaPool{pool}},
@@ -197,7 +197,7 @@ func TestEnforceWithinQuota(t *testing.T) {
 	}
 }
 
-// total_amount=0（无限制）→ 不拦截
+// total_amount=0锛堟棤闄愬埗锛夆啋 涓嶆嫤鎴?
 func TestEnforceUnlimitedPoolPasses(t *testing.T) {
 	pool := testTokenPool(0)
 	e := newTestEnforcer(&fakeQuotaStore{pools: []EntQuotaPool{pool}},
@@ -207,7 +207,7 @@ func TestEnforceUnlimitedPoolPasses(t *testing.T) {
 	}
 }
 
-// 缓存键缺失 → 从 billing_records SQL 聚合回填后再自增
+// 缂撳瓨閿己澶?鈫?浠?billing_records SQL 鑱氬悎鍥炲～鍚庡啀鑷
 func TestEnforceBackfillsMissingCounter(t *testing.T) {
 	pool := testTokenPool(100)
 	store := &fakeQuotaStore{pools: []EntQuotaPool{pool}, usageSQL: 40}
@@ -226,7 +226,7 @@ func TestEnforceBackfillsMissingCounter(t *testing.T) {
 	}
 }
 
-// 回填查询失败 → fail-open
+// 鍥炲～鏌ヨ澶辫触 鈫?fail-open
 func TestEnforceBackfillFailureFailOpen(t *testing.T) {
 	pool := testTokenPool(100)
 	store := &fakeQuotaStore{pools: []EntQuotaPool{pool}, usageSQLErr: errors.New("db down")}
@@ -236,7 +236,7 @@ func TestEnforceBackfillFailureFailOpen(t *testing.T) {
 	}
 }
 
-// 计数器键与周期边界
+// 璁℃暟鍣ㄩ敭涓庡懆鏈熻竟鐣?
 func TestQuotaPeriodKey(t *testing.T) {
 	now := time.Date(2026, 8, 17, 3, 0, 0, 0, time.UTC)
 
@@ -246,7 +246,7 @@ func TestQuotaPeriodKey(t *testing.T) {
 	}
 	if !start.Equal(time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)) ||
 		!exp.Equal(time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)) {
-		t.Fatalf("monthly bounds: %v → %v", start, exp)
+		t.Fatalf("monthly bounds: %v 鈫?%v", start, exp)
 	}
 
 	key, start, exp = quotaPeriodKey("t-1", "daily", now)
@@ -254,11 +254,11 @@ func TestQuotaPeriodKey(t *testing.T) {
 		t.Fatalf("daily key: %s", key)
 	}
 	if exp.Sub(start) != 24*time.Hour {
-		t.Fatalf("daily bounds: %v → %v", start, exp)
+		t.Fatalf("daily bounds: %v 鈫?%v", start, exp)
 	}
 }
 
-// tenantTokenUsage：Redis 优先，缺失回退 SQL
+// tenantTokenUsage锛歊edis 浼樺厛锛岀己澶卞洖閫€ SQL
 func TestTenantTokenUsageSources(t *testing.T) {
 	store := &fakeQuotaStore{usageSQL: 321}
 	rr := &fakeQuotaRedis{getVal: "123"}
@@ -275,7 +275,7 @@ func TestTenantTokenUsageSources(t *testing.T) {
 		t.Fatalf("want 321/sql, got %d/%s", used, source)
 	}
 
-	// Redis 与 SQL 都失败 → 0/none（不 panic）
+	// Redis 涓?SQL 閮藉け璐?鈫?0/none锛堜笉 panic锛?
 	store.usageSQLErr = errors.New("db down")
 	used, source = tenantTokenUsage(context.Background(), store, rr, "t-1", "monthly", now)
 	if used != 0 || source != "none" {
@@ -283,7 +283,7 @@ func TestTenantTokenUsageSources(t *testing.T) {
 	}
 }
 
-// 导出函数签名烟雾测试：无 claims 时直接放行（不触达 DB/Redis）
+// 瀵煎嚭鍑芥暟绛惧悕鐑熼浘娴嬭瘯锛氭棤 claims 鏃剁洿鎺ユ斁琛岋紙涓嶈Е杈?DB/Redis锛?
 func TestEnforceTenantQuotaExportedNoClaims(t *testing.T) {
 	if err := EnforceTenantQuota(context.Background(), nil, nil, 10); err != nil {
 		t.Fatalf("nil claims must pass, got %v", err)

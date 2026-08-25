@@ -1,4 +1,4 @@
-# Python AI 引擎入口 — 无状态 FastAPI + 连接池 + 健康检查 + 依赖注入
+﻿# Python AI 寮曟搸鍏ュ彛 鈥?鏃犵姸鎬?FastAPI + 杩炴帴姹?+ 鍋ュ悍妫€鏌?+ 渚濊禆娉ㄥ叆
 from __future__ import annotations
 
 import asyncio
@@ -18,15 +18,15 @@ from app.config import settings
 from app.core.container import GlobalContainer, get_container
 from app.session_store import SessionStore
 
-# 全局会话消息缓存（lifespan 中接入 Redis 实现多实例共享）
+# 鍏ㄥ眬浼氳瘽娑堟伅缂撳瓨锛坙ifespan 涓帴鍏?Redis 瀹炵幇澶氬疄渚嬪叡浜級
 _session_cache = SessionStore(max_sessions=200)
-# 活跃 AgentRuntime 注册表（S 安全修复：工具确认端点按 session_id 定位 runtime；
-# 值为 (runtime, owner_user_id)，用于确认时校验来电者是否为会话 owner）
+# 娲昏穬 AgentRuntime 娉ㄥ唽琛紙S 瀹夊叏淇锛氬伐鍏风‘璁ょ鐐规寜 session_id 瀹氫綅 runtime锛?
+# 鍊间负 (runtime, owner_user_id)锛岀敤浜庣‘璁ゆ椂鏍￠獙鏉ョ數鑰呮槸鍚︿负浼氳瘽 owner锛?
 _ACTIVE_RUNTIMES: dict[str, tuple[AgentRuntime, str]] = {}
 
 logger = logging.getLogger(__name__)
 
-# 全局引用（lifespan 中初始化）
+# 鍏ㄥ眬寮曠敤锛坙ifespan 涓垵濮嬪寲锛?
 _start_time = time.monotonic()
 _redis: aioredis.Redis | None = None
 _gateway = None  # GatewayRouter
@@ -35,66 +35,66 @@ _mcp_client = None  # MCPClient
 _key_pool = None  # SmartAPIKeyPool
 
 
-# ── FastAPI 依赖注入 ──
+# 鈹€鈹€ FastAPI 渚濊禆娉ㄥ叆 鈹€鈹€
 
 async def get_redis() -> aioredis.Redis:
-    """获取 Redis 连接（FastAPI Depends）"""
+    """鑾峰彇 Redis 杩炴帴锛團astAPI Depends锛?""
     if _redis is None:
         raise RuntimeError("Redis not initialized")
     return _redis
 
 
 async def get_gateway():
-    """获取 Gateway Router（FastAPI Depends）"""
+    """鑾峰彇 Gateway Router锛團astAPI Depends锛?""
     if _gateway is None:
         raise RuntimeError("Gateway not initialized")
     return _gateway
 
 
 async def get_key_pool():
-    """获取 SmartAPIKeyPool（FastAPI Depends）"""
+    """鑾峰彇 SmartAPIKeyPool锛團astAPI Depends锛?""
     if _key_pool is None:
         raise RuntimeError("Key pool not initialized")
     return _key_pool
 
 
-# ── 插件 MCP 连接池（无状态友好：配置存磁盘，连接为可重建缓存） ──
+# 鈹€鈹€ 鎻掍欢 MCP 杩炴帴姹狅紙鏃犵姸鎬佸弸濂斤細閰嶇疆瀛樼鐩橈紝杩炴帴涓哄彲閲嶅缓缂撳瓨锛?鈹€鈹€
 
 _plugin_pool = None  # MCPClientPool
 
 
 def get_plugin_pool():
-    """获取 MCP 插件连接池（FastAPI Depends / 内部调用）。"""
+    """鑾峰彇 MCP 鎻掍欢杩炴帴姹狅紙FastAPI Depends / 鍐呴儴璋冪敤锛夈€?""
     if _plugin_pool is None:
         raise RuntimeError("Plugin pool not initialized")
     return _plugin_pool
 
 
 def touch_user(user_id: str) -> None:
-    """标记用户活跃（有会话/工具/Agent 请求时调用），驱动 MCP 轮询范围。"""
+    """鏍囪鐢ㄦ埛娲昏穬锛堟湁浼氳瘽/宸ュ叿/Agent 璇锋眰鏃惰皟鐢級锛岄┍鍔?MCP 杞鑼冨洿銆?""
     if _plugin_pool is not None and user_id:
-        _plugin_pool._tracker.touch(user_id)  # noqa: SLF001 — 池内专用入口
+        _plugin_pool._tracker.touch(user_id)  # noqa: SLF001 鈥?姹犲唴涓撶敤鍏ュ彛
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用生命周期：启动初始化 + 关闭清理"""
+    """搴旂敤鐢熷懡鍛ㄦ湡锛氬惎鍔ㄥ垵濮嬪寲 + 鍏抽棴娓呯悊"""
     global _redis, _gateway, _queue_worker, _key_pool
 
-    # ── 1. 可观测性 ──
+    # 鈹€鈹€ 1. 鍙娴嬫€?鈹€鈹€
     from app.observability.logging import configure_logging
     from app.observability.tracing import configure_tracing
     from app.observability.metrics import ENGINE_INFO, INSTANCE_UPTIME
 
     configure_logging(settings.log_level)
     configure_tracing(service_name="python-engine", otlp_endpoint=settings.otel_endpoint)
-    ENGINE_INFO.info({"version": "3.0.0", "instance_id": _get_instance_id()})
+    ENGINE_INFO.info({"version": "0.1.260825.01", "instance_id": _get_instance_id()})
 
     logger.info("=" * 60)
-    logger.info("MiniCC Python AI Engine v3.0 — Enterprise Edition")
+    logger.info("Chiron Python AI Engine v0.1.260825.01 鈥?Enterprise Edition")
     logger.info("=" * 60)
 
-    # ── 2. Redis 连接池 ──
+    # 鈹€鈹€ 2. Redis 杩炴帴姹?鈹€鈹€
     _redis = aioredis.from_url(
         settings.redis_url,
         decode_responses=False,
@@ -103,17 +103,17 @@ async def lifespan(app: FastAPI):
     try:
         await _redis.ping()
         logger.info("Redis connected: %s (pool=%d)", settings.redis_url, settings.redis_max_connections)
-        # 将 SessionStore 接入 Redis，实现多实例共享
+        # 灏?SessionStore 鎺ュ叆 Redis锛屽疄鐜板瀹炰緥鍏变韩
         _session_cache._redis = _redis
         logger.info("SessionStore switched to Redis backend")
     except Exception as e:
-        # 产品决策(2026-08-22)「Redis 必需、无降级」已修订(2026-09)：与 Go 网关一致，
-        # Redis 不可用时降级启动——SessionStore 回退进程内内存模式，
-        # 依赖 Redis 的功能（分布式限流/会话多实例共享/队列）返回 503，不阻断引擎启动。
+        # 浜у搧鍐崇瓥(2026-08-22)銆孯edis 蹇呴渶銆佹棤闄嶇骇銆嶅凡淇(2026-09)锛氫笌 Go 缃戝叧涓€鑷达紝
+        # Redis 涓嶅彲鐢ㄦ椂闄嶇骇鍚姩鈥斺€擲essionStore 鍥為€€杩涚▼鍐呭唴瀛樻ā寮忥紝
+        # 渚濊禆 Redis 鐨勫姛鑳斤紙鍒嗗竷寮忛檺娴?浼氳瘽澶氬疄渚嬪叡浜?闃熷垪锛夎繑鍥?503锛屼笉闃绘柇寮曟搸鍚姩銆?
         logger.warning(
-            "Redis unavailable — degraded mode (session cache in-process, distributed features disabled): %s", e)
+            "Redis unavailable 鈥?degraded mode (session cache in-process, distributed features disabled): %s", e)
         _redis = None
-    # ── 2.5. PostgreSQL ──
+    # 鈹€鈹€ 2.5. PostgreSQL 鈹€鈹€
     if settings.postgres_dsn:
         from app.db import init_pool, ensure_tables
         try:
@@ -123,7 +123,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("PostgreSQL not available: %s", e)
 
-    # ── 3. LLM Gateway ──
+    # 鈹€鈹€ 3. LLM Gateway 鈹€鈹€
     from app.gateway.provider import LLMProvider
     from app.gateway.router import GatewayRouter
     from app.gateway.cache import SemanticCache
@@ -151,7 +151,7 @@ async def lifespan(app: FastAPI):
     if not providers:
         logger.warning("No LLM providers configured! Set ANTHROPIC_API_KEY / OPENAI_API_KEY / DEEPSEEK_API_KEY or LLM_API_KEY")
 
-    # 创建 embedding 函数（用于语义缓存）
+    # 鍒涘缓 embedding 鍑芥暟锛堢敤浜庤涔夌紦瀛橈級
     async def _embed_for_cache(text: str) -> list[float]:
         if "openai" in providers:
             resp = await providers["openai"].embed(text, settings.embedding_model)
@@ -179,20 +179,20 @@ async def lifespan(app: FastAPI):
     )
     logger.info("LLM Gateway: %s providers", ", ".join(providers.keys()) or "none")
 
-    # ── 3.4. 工具/工作流 gateway 注入（六大互通：对话/agent 可调用工作流） ──
+    # 鈹€鈹€ 3.4. 宸ュ叿/宸ヤ綔娴?gateway 娉ㄥ叆锛堝叚澶т簰閫氾細瀵硅瘽/agent 鍙皟鐢ㄥ伐浣滄祦锛?鈹€鈹€
     from app.tools.graph import bind_gateway as bind_graph_gateway
     from app.tools.pm import bind_gateway as bind_pm_gateway
     from app.workflow.tools import bind_gateway as bind_workflow_gateway
     bind_graph_gateway(_gateway)
     bind_pm_gateway(_gateway)
     bind_workflow_gateway(_gateway)
-    # LLM client（RAG 检索嵌入）同样接入 gateway
+    # LLM client锛圧AG 妫€绱㈠祵鍏ワ級鍚屾牱鎺ュ叆 gateway
     from app.llm.client import llm_client
     llm_client.bind_gateway(_gateway)
     logger.info("Tool/Workflow gateways bound")
 
-    # ── 3.45 记忆服务（L2 档案卡：跨会话长期记忆 + 语义检索）──
-    # 依赖 PostgreSQL 连接池与嵌入链路；任一不可用则记忆服务不启用（API 返回 503 fail-loud）
+    # 鈹€鈹€ 3.45 璁板繂鏈嶅姟锛圠2 妗ｆ鍗★細璺ㄤ細璇濋暱鏈熻蹇?+ 璇箟妫€绱級鈹€鈹€
+    # 渚濊禆 PostgreSQL 杩炴帴姹犱笌宓屽叆閾捐矾锛涗换涓€涓嶅彲鐢ㄥ垯璁板繂鏈嶅姟涓嶅惎鐢紙API 杩斿洖 503 fail-loud锛?
     try:
         from app.db import get_pool
         from app.memory.profile import ProfileStore
@@ -218,14 +218,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Memory service not available: %s", e)
 
-    # ── 3.6. 六大工作台能力注册（互通基础：TaskRouter 依赖能力注册中心） ──
+    # 鈹€鈹€ 3.6. 鍏ぇ宸ヤ綔鍙拌兘鍔涙敞鍐岋紙浜掗€氬熀纭€锛歍askRouter 渚濊禆鑳藉姏娉ㄥ唽涓績锛?鈹€鈹€
     from app.core.capabilities import preload_default_capabilities
     await preload_default_capabilities()
 
-    # ── 3.5. SmartAPIKeyPool ──
+    # 鈹€鈹€ 3.5. SmartAPIKeyPool 鈹€鈹€
     from app.gateway.smart_key_pool import SmartAPIKeyPool
     _key_pool = SmartAPIKeyPool()
-    # 从 settings 注册已有 key
+    # 浠?settings 娉ㄥ唽宸叉湁 key
     if settings.openai_api_key:
         await _key_pool.add_key("openai", settings.openai_api_key, "from env")
     if settings.deepseek_api_key:
@@ -234,7 +234,7 @@ async def lifespan(app: FastAPI):
         await _key_pool.add_key("anthropic", settings.anthropic_api_key, "from env")
     logger.info("SmartAPIKeyPool initialized with %d providers", len(providers))
 
-    # ── 4. 限流器（middleware 需要） ──
+    # 鈹€鈹€ 4. 闄愭祦鍣紙middleware 闇€瑕侊級 鈹€鈹€
     if _redis is not None:
         limiter = TenantRateLimiter(
             redis=_redis,
@@ -245,7 +245,7 @@ async def lifespan(app: FastAPI):
         limiter = None
     app.state.limiter = limiter
 
-    # ── 5. MCP Plugin System（用户级连接池：25s 轮询活跃用户配置） ──
+    # 鈹€鈹€ 5. MCP Plugin System锛堢敤鎴风骇杩炴帴姹狅細25s 杞娲昏穬鐢ㄦ埛閰嶇疆锛?鈹€鈹€
     global _plugin_pool
     from app.plugins.pool import MCPClientPool
     from app.plugins.store import ActiveTracker, PluginStore
@@ -253,20 +253,20 @@ async def lifespan(app: FastAPI):
     await _plugin_pool.start()
     logger.info("MCP plugin pool started (poll=%ds)", 25)
 
-    # ── 6. 启动 Queue Worker ──
+    # 鈹€鈹€ 6. 鍚姩 Queue Worker 鈹€鈹€
     if _redis is not None:
         _queue_worker = asyncio.create_task(_run_queue_worker(_redis, _gateway))
         logger.info("Queue worker started (concurrency=%d)", settings.queue_worker_concurrency)
     else:
         logger.info("Queue worker skipped (Redis not available)")
 
-    # ── 8. 实例注册 ──
+    # 鈹€鈹€ 8. 瀹炰緥娉ㄥ唽 鈹€鈹€
     instance_id = _get_instance_id()
     if _redis is not None:
         await _redis.hset(f"instance:{instance_id}", mapping={
             "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "pod_name": settings.pod_name or socket.gethostname(),
-            "version": "3.0.0",
+            "version": "0.1.260825.01",
         })
         await _redis.expire(f"instance:{instance_id}", 60)
         logger.info("Instance registered: %s", instance_id)
@@ -275,16 +275,16 @@ async def lifespan(app: FastAPI):
     logger.info("Ready. HTTP port: %d", settings.http_port)
     logger.info("=" * 60)
 
-    yield  # ── 应用运行中 ──
+    yield  # 鈹€鈹€ 搴旂敤杩愯涓?鈹€鈹€
 
-    # ── 关闭 ──
+    # 鈹€鈹€ 鍏抽棴 鈹€鈹€
     logger.info("Shutting down...")
 
-    # 注销实例
+    # 娉ㄩ攢瀹炰緥
     if _redis is not None:
         await _redis.delete(f"instance:{instance_id}")
 
-    # 停止队列 worker
+    # 鍋滄闃熷垪 worker
     if _queue_worker:
         _queue_worker.cancel()
         try:
@@ -292,27 +292,27 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
-    # 等待后台任务完成（上下文巩固等）
+    # 绛夊緟鍚庡彴浠诲姟瀹屾垚锛堜笂涓嬫枃宸╁浐绛夛級
     from app.context.manager import wait_background_tasks
     await wait_background_tasks(timeout=10.0)
 
-    # 关闭 PostgreSQL
+    # 鍏抽棴 PostgreSQL
     from app.db import close_pool
     await close_pool()
 
-    # 关闭 MCP 插件池
+    # 鍏抽棴 MCP 鎻掍欢姹?
     if _plugin_pool:
         await _plugin_pool.stop()
         _plugin_pool = None
 
-    # 关闭 Gateway
+    # 鍏抽棴 Gateway
     if _gateway:
         try:
             await _gateway.close()
         except Exception as e:
             logger.warning("Gateway close error: %s", e)
 
-    # 关闭 Redis
+    # 鍏抽棴 Redis
     if _redis:
         await _redis.close()
 
@@ -327,21 +327,21 @@ def _get_instance_id() -> str:
     return f"{socket.gethostname()}-{uuid.uuid4().hex[:8]}"
 
 
-# ── 附件内容注入：自动下载文件并注入到 LLM 上下文中 ──
+# 鈹€鈹€ 闄勪欢鍐呭娉ㄥ叆锛氳嚜鍔ㄤ笅杞芥枃浠跺苟娉ㄥ叆鍒?LLM 涓婁笅鏂囦腑 鈹€鈹€
 
 _MEDIA_URL_RE = re.compile(r'(!?)\[([^\]]+)\]\(([^)]+)\)')
 
 
 async def _resolve_attachments(content: str) -> str:
-    """解析用户消息中的附件 Markdown 链接，下载文件内容并注入到消息文本中。
+    """瑙ｆ瀽鐢ㄦ埛娑堟伅涓殑闄勪欢 Markdown 閾炬帴锛屼笅杞芥枃浠跺唴瀹瑰苟娉ㄥ叆鍒版秷鎭枃鏈腑銆?
 
-    支持：
-    - Markdown 图片 ![](url) 和普通链接 [name](url)
-    - 文本类文件（.txt, .md, .csv, .json, .py 等）：自动下载并注入内容
-    - PDF 文件：提取文本内容
-    - 图片文件：保留原链接并添加说明
+    鏀寔锛?
+    - Markdown 鍥剧墖 ![](url) 鍜屾櫘閫氶摼鎺?[name](url)
+    - 鏂囨湰绫绘枃浠讹紙.txt, .md, .csv, .json, .py 绛夛級锛氳嚜鍔ㄤ笅杞藉苟娉ㄥ叆鍐呭
+    - PDF 鏂囦欢锛氭彁鍙栨枃鏈唴瀹?
+    - 鍥剧墖鏂囦欢锛氫繚鐣欏師閾炬帴骞舵坊鍔犺鏄?
 
-    失败时优雅退化——保留原始链接，LLM 仍可通过 web_fetch 工具访问。
+    澶辫触鏃朵紭闆呴€€鍖栤€斺€斾繚鐣欏師濮嬮摼鎺ワ紝LLM 浠嶅彲閫氳繃 web_fetch 宸ュ叿璁块棶銆?
     """
     if not content:
         return content
@@ -353,8 +353,8 @@ async def _resolve_attachments(content: str) -> str:
     import httpx
     from app.tools.ssrf import fetch_url_safe
 
-    # S 安全修复：禁用自动重定向，改用 ssrf.fetch_url_safe 逐跳校验
-    # scheme/端口/DNS/IP（含重定向绕过）后再获取，防止附件 URL 打内网/云元数据。
+    # S 瀹夊叏淇锛氱鐢ㄨ嚜鍔ㄩ噸瀹氬悜锛屾敼鐢?ssrf.fetch_url_safe 閫愯烦鏍￠獙
+    # scheme/绔彛/DNS/IP锛堝惈閲嶅畾鍚戠粫杩囷級鍚庡啀鑾峰彇锛岄槻姝㈤檮浠?URL 鎵撳唴缃?浜戝厓鏁版嵁銆?
     async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
         for is_image, name, url in matches:
             try:
@@ -365,7 +365,7 @@ async def _resolve_attachments(content: str) -> str:
                 content_type = resp.headers.get("content-type", "") or ""
                 file_ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
 
-                # ── 文本类文件：直接注入内容 ──
+                # 鈹€鈹€ 鏂囨湰绫绘枃浠讹細鐩存帴娉ㄥ叆鍐呭 鈹€鈹€
                 if (content_type.startswith("text/")
                         or file_ext in ("txt", "md", "csv", "json", "xml", "yaml", "yml",
                                         "py", "js", "ts", "go", "java", "c", "cpp", "h",
@@ -375,15 +375,15 @@ async def _resolve_attachments(content: str) -> str:
                     MAX_CHARS = 8000
                     snippet = text[:MAX_CHARS]
                     file_block = (
-                        f"\n\n===== 附件「{name}」内容 ({(len(text))} 字符) ====\n"
+                        f"\n\n===== 闄勪欢銆寋name}銆嶅唴瀹?({(len(text))} 瀛楃) ====\n"
                         f"{snippet}"
                     )
                     if len(text) > MAX_CHARS:
-                        file_block += f"\n... (已截断，仅显示前 {MAX_CHARS} 字符)"
-                    file_block += "\n===== 附件结束 ====="
+                        file_block += f"\n... (宸叉埅鏂紝浠呮樉绀哄墠 {MAX_CHARS} 瀛楃)"
+                    file_block += "\n===== 闄勪欢缁撴潫 ====="
                     content = content.replace(f"{'!' if is_image else ''}[{name}]({url})", file_block)
 
-                # ── PDF：尝试提取文本 ──
+                # 鈹€鈹€ PDF锛氬皾璇曟彁鍙栨枃鏈?鈹€鈹€
                 elif (content_type == "application/pdf" or file_ext == "pdf"):
                     try:
                         import pymupdf
@@ -393,25 +393,25 @@ async def _resolve_attachments(content: str) -> str:
                         MAX_PDF_CHARS = 8000
                         snippet = pdf_text[:MAX_PDF_CHARS]
                         file_block = (
-                            f"\n\n===== 附件「{name}」内容 (PDF, {len(pdf_text)} 字符) ====\n"
+                            f"\n\n===== 闄勪欢銆寋name}銆嶅唴瀹?(PDF, {len(pdf_text)} 瀛楃) ====\n"
                             f"{snippet}"
                         )
                         if len(pdf_text) > MAX_PDF_CHARS:
-                            file_block += f"\n... (PDF 较长，已截断前 {MAX_PDF_CHARS} 字符)"
-                        file_block += "\n===== 附件结束 ====="
+                            file_block += f"\n... (PDF 杈冮暱锛屽凡鎴柇鍓?{MAX_PDF_CHARS} 瀛楃)"
+                        file_block += "\n===== 闄勪欢缁撴潫 ====="
                         content = content.replace(f"{'!' if is_image else ''}[{name}]({url})", file_block)
                     except Exception:
-                        # PDF 解析失败，保留原始链接
+                        # PDF 瑙ｆ瀽澶辫触锛屼繚鐣欏師濮嬮摼鎺?
                         pass
 
-                # ── 图片：保留 Markdown 格式，添加说明 ──
+                # 鈹€鈹€ 鍥剧墖锛氫繚鐣?Markdown 鏍煎紡锛屾坊鍔犺鏄?鈹€鈹€
                 elif content_type.startswith("image/"):
                     content = content.replace(
                         f"![{name}]({url})",
-                        f"![{name}]({url})\n[图片附件：{name}]",
+                        f"![{name}]({url})\n[鍥剧墖闄勪欢锛歿name}]",
                     )
 
-                # ── 其他二进制文件：尝试作为文本读取 ──
+                # 鈹€鈹€ 鍏朵粬浜岃繘鍒舵枃浠讹細灏濊瘯浣滀负鏂囨湰璇诲彇 鈹€鈹€
                 else:
                     try:
                         text = resp.text
@@ -419,32 +419,32 @@ async def _resolve_attachments(content: str) -> str:
                             MAX_CHARS = 4000
                             snippet = text[:MAX_CHARS]
                             file_block = (
-                                f"\n\n===== 附件「{name}」内容 ====\n"
+                                f"\n\n===== 闄勪欢銆寋name}銆嶅唴瀹?====\n"
                                 f"{snippet}"
                             )
                             if len(text) > MAX_CHARS:
-                                file_block += f"\n... (已截断)"
-                            file_block += "\n===== 附件结束 ====="
+                                file_block += f"\n... (宸叉埅鏂?"
+                            file_block += "\n===== 闄勪欢缁撴潫 ====="
                             content = content.replace(f"[{name}]({url})", file_block)
                     except Exception:
                         pass
 
             except Exception as e:
-                logger.warning("解析附件失败: %s — %s", url, e)
+                logger.warning("瑙ｆ瀽闄勪欢澶辫触: %s 鈥?%s", url, e)
                 continue
 
     return content
 
 
 def _setup_middleware(app: FastAPI, redis: aioredis.Redis, limiter) -> None:
-    """注册中间件链（注意：FastAPI 后注册的先执行）"""
+    """娉ㄥ唽涓棿浠堕摼锛堟敞鎰忥細FastAPI 鍚庢敞鍐岀殑鍏堟墽琛岋級"""
     from app.middleware.error_handler import ErrorHandlerMiddleware
     from app.middleware.metrics import MetricsMiddleware
     from app.middleware.rate_limit import RateLimitMiddleware
     from app.middleware.auth import AuthMiddleware
     from app.middleware.request_context import RequestContextMiddleware
 
-    # 执行顺序: RequestContext → Auth → RateLimit → Metrics → ErrorHandler → handler
+    # 鎵ц椤哄簭: RequestContext 鈫?Auth 鈫?RateLimit 鈫?Metrics 鈫?ErrorHandler 鈫?handler
     app.add_middleware(ErrorHandlerMiddleware)
     app.add_middleware(MetricsMiddleware)
     app.add_middleware(RateLimitMiddleware, limiter=limiter)
@@ -458,12 +458,12 @@ def _setup_middleware(app: FastAPI, redis: aioredis.Redis, limiter) -> None:
 
 
 def _setup_routes(app: FastAPI) -> None:
-    """注册所有 HTTP 路由"""
+    """娉ㄥ唽鎵€鏈?HTTP 璺敱"""
     import time as _time
 
     from app.observability.metrics import QUEUE_DEPTH
 
-    # ── 健康检查 ──
+    # 鈹€鈹€ 鍋ュ悍妫€鏌?鈹€鈹€
 
     @app.get("/healthz")
     async def healthz():
@@ -471,7 +471,7 @@ def _setup_routes(app: FastAPI) -> None:
 
     @app.get("/readyz")
     async def readyz():
-        """K8s readiness: Redis + 至少一个 Provider 可用"""
+        """K8s readiness: Redis + 鑷冲皯涓€涓?Provider 鍙敤"""
         if _redis is None:
             return JSONResponse({"status": "not_ready", "reason": "redis not available"}, status_code=503)
         try:
@@ -483,40 +483,40 @@ def _setup_routes(app: FastAPI) -> None:
     @app.get("/info")
     async def info():
         return {
-            "version": "3.0.0",
+            "version": "0.1.260825.01",
             "instance_id": _get_instance_id(),
             "uptime_seconds": int(_time.monotonic() - _start_time),
             "gateway": _gateway.stats() if _gateway else None,
         }
 
-    # ── Agent 推理（模块级路由函数） ──
+    # 鈹€鈹€ Agent 鎺ㄧ悊锛堟ā鍧楃骇璺敱鍑芥暟锛?鈹€鈹€
     app.post("/v1/agent/run")(agent_run)
     app.post("/v1/agent/submit")(agent_submit)
     app.post("/v1/agent/approval")(agent_approval)
 
-    # ── 知识库（模块级路由函数） ──
+    # 鈹€鈹€ 鐭ヨ瘑搴擄紙妯″潡绾ц矾鐢卞嚱鏁帮級 鈹€鈹€
     app.post("/v1/kb/build")(kb_build)
     app.post("/v1/kb/query")(kb_query)
 
-    # ── Tools API（Phase 1） ──
+    # 鈹€鈹€ Tools API锛圥hase 1锛?鈹€鈹€
     from app.api import api_router
     app.include_router(api_router)
 
-    # ── Admin API Keys（模块级路由函数） ──
+    # 鈹€鈹€ Admin API Keys锛堟ā鍧楃骇璺敱鍑芥暟锛?鈹€鈹€
     app.get("/v1/admin/api-keys")(admin_list_api_keys)
     app.post("/v1/admin/api-keys")(admin_add_api_key)
     app.put("/v1/admin/api-keys/{key_id}")(admin_update_api_key)
     app.delete("/v1/admin/api-keys/{key_id}")(admin_delete_api_key)
 
 
-# ── 模块级路由处理函数（FastAPI 需在模块作用域才能正确推断 body 类型） ──
+# 鈹€鈹€ 妯″潡绾ц矾鐢卞鐞嗗嚱鏁帮紙FastAPI 闇€鍦ㄦā鍧椾綔鐢ㄥ煙鎵嶈兘姝ｇ‘鎺ㄦ柇 body 绫诲瀷锛?鈹€鈹€
 
 
 async def agent_run(
     request: Request,
     gateway=Depends(get_gateway),
 ):
-    """流式 Agent 推理 — SSE 输出"""
+    """娴佸紡 Agent 鎺ㄧ悊 鈥?SSE 杈撳嚭"""
     import json
     from app.agent.loop import run_agent
 
@@ -553,34 +553,34 @@ async def agent_submit(
     request: Request,
     gateway=Depends(get_gateway),
 ):
-    """Go 网关代理端点 — 完整 ReAct 循环，SSE 输出"""
+    """Go 缃戝叧浠ｇ悊绔偣 鈥?瀹屾暣 ReAct 寰幆锛孲SE 杈撳嚭"""
     import json
     body = await request.json()
     from app.agent.runtime import AgentRuntime, AgentTask
-    import app.tools.core  # noqa: F401 — 确保核心工具已注册
-    import app.tools.subagent  # noqa: F401 — 多 agent 委派工具
-    import app.tools.terminal  # noqa: F401 — 持久终端
-    import app.tools.jobs  # noqa: F401 — 后台任务
-    import app.tools.web  # noqa: F401 — 网页搜索/抓取
-    import app.tools.run_code  # noqa: F401 — PTC 模式
-    import app.tools.mode_admin  # noqa: F401 — 创造模式
-    # ── 六大工作台互联互通：注册各工作台工具,使 CHAT 的 LLM 可通过 function-calling 调用 ──
-    import app.tools.skill  # noqa: F401 — SKILLS 工作台 (skill_list/skill_run/skill_install)
-    import app.tools.kb  # noqa: F401 — KNOWLEDGE 工作台 (kb_list/kb_search)
-    import app.tools.agent  # noqa: F401 — AGENTS 工作台 (agent_dispatch 等)
-    import app.workflow.tools  # noqa: F401 — WORKFLOW 工作台 (workflow_run/workflow_list)
-    import app.tools.memory  # noqa: F401 — 长期记忆 (跨工作台共享上下文)
-    import app.tools.edit_file  # noqa: F401 — 文件编辑 (创造模式常用)
-    import app.tools.browser  # noqa: F401 — 浏览器自动化 (PLUGINS/MCP 扩展)
-    # PLUGINS 工作台: MCP 工具由 app.plugins.pool / app.mcp.registry 动态注册,启动时已加载
+    import app.tools.core  # noqa: F401 鈥?纭繚鏍稿績宸ュ叿宸叉敞鍐?
+    import app.tools.subagent  # noqa: F401 鈥?澶?agent 濮旀淳宸ュ叿
+    import app.tools.terminal  # noqa: F401 鈥?鎸佷箙缁堢
+    import app.tools.jobs  # noqa: F401 鈥?鍚庡彴浠诲姟
+    import app.tools.web  # noqa: F401 鈥?缃戦〉鎼滅储/鎶撳彇
+    import app.tools.run_code  # noqa: F401 鈥?PTC 妯″紡
+    import app.tools.mode_admin  # noqa: F401 鈥?鍒涢€犳ā寮?
+    # 鈹€鈹€ 鍏ぇ宸ヤ綔鍙颁簰鑱斾簰閫氾細娉ㄥ唽鍚勫伐浣滃彴宸ュ叿,浣?CHAT 鐨?LLM 鍙€氳繃 function-calling 璋冪敤 鈹€鈹€
+    import app.tools.skill  # noqa: F401 鈥?SKILLS 宸ヤ綔鍙?(skill_list/skill_run/skill_install)
+    import app.tools.kb  # noqa: F401 鈥?KNOWLEDGE 宸ヤ綔鍙?(kb_list/kb_search)
+    import app.tools.agent  # noqa: F401 鈥?AGENTS 宸ヤ綔鍙?(agent_dispatch 绛?
+    import app.workflow.tools  # noqa: F401 鈥?WORKFLOW 宸ヤ綔鍙?(workflow_run/workflow_list)
+    import app.tools.memory  # noqa: F401 鈥?闀挎湡璁板繂 (璺ㄥ伐浣滃彴鍏变韩涓婁笅鏂?
+    import app.tools.edit_file  # noqa: F401 鈥?鏂囦欢缂栬緫 (鍒涢€犳ā寮忓父鐢?
+    import app.tools.browser  # noqa: F401 鈥?娴忚鍣ㄨ嚜鍔ㄥ寲 (PLUGINS/MCP 鎵╁睍)
+    # PLUGINS 宸ヤ綔鍙? MCP 宸ュ叿鐢?app.plugins.pool / app.mcp.registry 鍔ㄦ€佹敞鍐?鍚姩鏃跺凡鍔犺浇
 
-    # ── 解析附件文件内容并注入到用户消息中 ──
+    # 鈹€鈹€ 瑙ｆ瀽闄勪欢鏂囦欢鍐呭骞舵敞鍏ュ埌鐢ㄦ埛娑堟伅涓?鈹€鈹€
     raw_content = body.get("content", "")
     resolved_content = await _resolve_attachments(raw_content)
     body["content"] = resolved_content
 
-    # ── 身份：优先信任网关注入的 X-User-ID（S2 安全修复） ──
-    # Python 端口仅应经 Go 网关可达；直连时若缺失 header 才回退 body（不信任 body 伪造）
+    # 鈹€鈹€ 韬唤锛氫紭鍏堜俊浠荤綉鍏虫敞鍏ョ殑 X-User-ID锛圫2 瀹夊叏淇锛?鈹€鈹€
+    # Python 绔彛浠呭簲缁?Go 缃戝叧鍙揪锛涚洿杩炴椂鑻ョ己澶?header 鎵嶅洖閫€ body锛堜笉淇′换 body 浼€狅級
     gw_user = request.headers.get("x-user-id", "")
 
     task = AgentTask(
@@ -593,42 +593,42 @@ async def agent_submit(
         max_turns=max(1, min(body.get("max_turns") or settings.max_turns, settings.max_turns)),
     )
 
-    # ── 深度推理模式：设置 system_prompt 要求输出思考过程 ──
+    # 鈹€鈹€ 娣卞害鎺ㄧ悊妯″紡锛氳缃?system_prompt 瑕佹眰杈撳嚭鎬濊€冭繃绋?鈹€鈹€
     llm_config = body.get("llm_config", {}) or {}
     if llm_config.get("deep_reasoning"):
         task.system_prompt = (
-            "You are MiniCC. First output your reasoning process inside "
+            "You are Chiron. First output your reasoning process inside "
             "[thinking]...[/thinking] tags, then output your final concise answer.\n"
             "Example: [thinking]I need to analyze...[/thinking]The answer is..."
         )
-        # 深度模式需要更大的输出 token 预算以容纳思考过程
+        # 娣卞害妯″紡闇€瑕佹洿澶х殑杈撳嚭 token 棰勭畻浠ュ绾虫€濊€冭繃绋?
         if "max_tokens" not in llm_config:
             llm_config["max_tokens"] = 8192
         task.llm_config = llm_config
     else:
         task.system_prompt = (
-            "You are MiniCC. Reply briefly in Chinese. "
-            "When the user says 'this code' / '这段代码' / '上面的代码', they mean "
-            "the code you generated in previous turns of this conversation — use it "
+            "You are Chiron. Reply briefly in Chinese. "
+            "When the user says 'this code' / '杩欐浠ｇ爜' / '涓婇潰鐨勪唬鐮?, they mean "
+            "the code you generated in previous turns of this conversation 鈥?use it "
             "directly, don't ask them to re-paste it. "
             "You can save files with the write_file tool. "
-            "When the user says '媒体库' / 'media library', they mean the "
+            "When the user says '濯掍綋搴? / 'media library', they mean the "
             "media directory inside your sandbox workspace (create it with "
             "mkdir if needed); you only have access to your own sandbox "
-            "workspace — never use absolute paths or try to access "
+            "workspace 鈥?never use absolute paths or try to access "
             "directories outside it (they are blocked). "
-            "Code or text files can be saved there too — just save the file, "
+            "Code or text files can be saved there too 鈥?just save the file, "
             "don't refuse because it isn't an image/video/audio."
         )
         task.llm_config = llm_config
 
-    # ── 运行模式（常规/极简/PTC/创造）：前端下拉 → body.mode 或 llm_config.mode ──
-    # runtime 内 get_mode_config 兜底未知值回退 NORMAL
+    # 鈹€鈹€ 杩愯妯″紡锛堝父瑙?鏋佺畝/PTC/鍒涢€狅級锛氬墠绔笅鎷?鈫?body.mode 鎴?llm_config.mode 鈹€鈹€
+    # runtime 鍐?get_mode_config 鍏滃簳鏈煡鍊煎洖閫€ NORMAL
     mode = body.get("mode") or llm_config.get("mode")
     if mode:
         task.llm_config = {**task.llm_config, "mode": mode}
 
-    # 注入记忆服务（L2 档案卡 + L3 摘要），不可用时 None（行为不变）
+    # 娉ㄥ叆璁板繂鏈嶅姟锛圠2 妗ｆ鍗?+ L3 鎽樿锛夛紝涓嶅彲鐢ㄦ椂 None锛堣涓轰笉鍙橈級
     from app.memory.service import get_service as get_memory_service
     runtime = AgentRuntime(
         gateway=gateway, session_store=_session_cache,
@@ -659,7 +659,7 @@ async def agent_submit(
 async def agent_approval(
     request: Request,
 ):
-    """工具确认端点：解决 agent 循环中等待用户确认的工具调用（S 安全修复）。"""
+    """宸ュ叿纭绔偣锛氳В鍐?agent 寰幆涓瓑寰呯敤鎴风‘璁ょ殑宸ュ叿璋冪敤锛圫 瀹夊叏淇锛夈€?""
     body = await request.json()
     session_id = body.get("session_id", "")
     tool_call_id = body.get("tool_call_id", "")
@@ -669,9 +669,9 @@ async def agent_approval(
     if entry is None:
         return {"ok": False, "error": "no active agent for this session"}
 
-    # S 安全修复：校验来电者是否为会话 owner，防止他人代批/拒批危险工具。
-    # 可信 user_id 由 Go 网关从已验证 JWT claims 写入 body(或 X-User-ID 头)，
-    # 直连路径无该身份时不得放行他人。
+    # S 瀹夊叏淇锛氭牎楠屾潵鐢佃€呮槸鍚︿负浼氳瘽 owner锛岄槻姝粬浜轰唬鎵?鎷掓壒鍗遍櫓宸ュ叿銆?
+    # 鍙俊 user_id 鐢?Go 缃戝叧浠庡凡楠岃瘉 JWT claims 鍐欏叆 body(鎴?X-User-ID 澶?锛?
+    # 鐩磋繛璺緞鏃犺韬唤鏃朵笉寰楁斁琛屼粬浜恒€?
     runtime, owner_uid = entry
     caller = request.headers.get("x-user-id", "") or body.get("user_id", "")
     if owner_uid and caller and owner_uid != caller:
@@ -686,7 +686,7 @@ async def kb_build(
     request: Request,
     gateway=Depends(get_gateway),
 ):
-    """文档 RAG 索引 — SSE 流式进度"""
+    """鏂囨。 RAG 绱㈠紩 鈥?SSE 娴佸紡杩涘害"""
     import json, base64
     from app.rag.builder import RAGBuilder
 
@@ -725,7 +725,7 @@ async def kb_query(
     request: Request,
     gateway=Depends(get_gateway),
 ):
-    """查询知识库"""
+    """鏌ヨ鐭ヨ瘑搴?""
     from app.rag.builder import RAGBuilder
 
     body = await request.json()
@@ -740,14 +740,14 @@ async def kb_query(
     return {"success": True, "results": results, "count": len(results)}
 
 
-# ── Admin API Key 管理（SmartKeyPool 的 HTTP 接口） ──
+# 鈹€鈹€ Admin API Key 绠＄悊锛圫martKeyPool 鐨?HTTP 鎺ュ彛锛?鈹€鈹€
 
 
 def _require_gateway_internal(request: Request) -> None:
-    """S 修复:admin API Key 管理仅允许经由可信网关(X-Internal-Token)到达。
+    """S 淇:admin API Key 绠＄悊浠呭厑璁哥粡鐢卞彲淇＄綉鍏?X-Internal-Token)鍒拌揪銆?
 
-    Go 网关已在网关侧完成 admin/owner RBAC 后才转发(且 ForwardRequest 注入本 token)。
-    Python 引擎直连不可绕过角色校验,防止引擎端口可达时被任意调用方增删改密钥池。
+    Go 缃戝叧宸插湪缃戝叧渚у畬鎴?admin/owner RBAC 鍚庢墠杞彂(涓?ForwardRequest 娉ㄥ叆鏈?token)銆?
+    Python 寮曟搸鐩磋繛涓嶅彲缁曡繃瑙掕壊鏍￠獙,闃叉寮曟搸绔彛鍙揪鏃惰浠绘剰璋冪敤鏂瑰鍒犳敼瀵嗛挜姹犮€?
     """
     import hmac
 
@@ -765,7 +765,7 @@ async def admin_list_api_keys(
     pool=Depends(get_key_pool),
     _gateway=Depends(_require_gateway_internal),
 ):
-    """获取所有 API Key 列表"""
+    """鑾峰彇鎵€鏈?API Key 鍒楄〃"""
     import json
     keys = pool.get_all_keys()
     stats = pool.get_stats()
@@ -777,7 +777,7 @@ async def admin_add_api_key(
     pool=Depends(get_key_pool),
     _gateway=Depends(_require_gateway_internal),
 ):
-    """添加 API Key"""
+    """娣诲姞 API Key"""
     body = await request.json()
     provider = body.get("provider", "")
     key = body.get("key", "")
@@ -794,7 +794,7 @@ async def admin_update_api_key(
     pool=Depends(get_key_pool),
     _gateway=Depends(_require_gateway_internal),
 ):
-    """更新 API Key 状态（按稳定 ID 定位，active/rate_limited/circuit_open）"""
+    """鏇存柊 API Key 鐘舵€侊紙鎸夌ǔ瀹?ID 瀹氫綅锛宎ctive/rate_limited/circuit_open锛?""
     from fastapi.responses import JSONResponse
 
     key_id = request.path_params.get("key_id", "")
@@ -819,7 +819,7 @@ async def admin_delete_api_key(
     pool=Depends(get_key_pool),
     _gateway=Depends(_require_gateway_internal),
 ):
-    """删除 API Key（按路径 ID；兼容请求体 provider+key 定位）"""
+    """鍒犻櫎 API Key锛堟寜璺緞 ID锛涘吋瀹硅姹備綋 provider+key 瀹氫綅锛?""
     key_id = request.path_params.get("key_id", "")
     try:
         try:
@@ -849,7 +849,7 @@ async def admin_delete_api_key(
 
 
 async def _run_queue_worker(redis: aioredis.Redis, gateway=None) -> None:
-    """后台队列消费者"""
+    """鍚庡彴闃熷垪娑堣垂鑰?""
     from app.queue.worker import QueueWorker
 
     worker = QueueWorker(redis=redis, concurrency=settings.queue_worker_concurrency, gateway=gateway)
@@ -860,22 +860,22 @@ async def _run_queue_worker(redis: aioredis.Redis, gateway=None) -> None:
 
 
 def main():
-    """主函数"""
+    """涓诲嚱鏁?""
     uvicorn.run(
         "app.main:create_app",
         factory=True,
         host=settings.http_host,
         port=settings.http_port,
-        log_level="warning",  # 我们用 structlog，不需要 uvicorn 的日志
+        log_level="warning",  # 鎴戜滑鐢?structlog锛屼笉闇€瑕?uvicorn 鐨勬棩蹇?
         access_log=False,
     )
 
 
 def create_app() -> FastAPI:
-    """创建 FastAPI 应用实例（供 uvicorn factory 模式使用）"""
+    """鍒涘缓 FastAPI 搴旂敤瀹炰緥锛堜緵 uvicorn factory 妯″紡浣跨敤锛?""
     app = FastAPI(
-        title="MiniCC Python AI Engine",
-        version="3.0.0",
+        title="Chiron Python AI Engine",
+        version="0.1.260825.01",
         lifespan=lifespan,
     )
     _setup_middleware_early(app)
@@ -884,13 +884,13 @@ def create_app() -> FastAPI:
 
 
 def _setup_middleware_early(app: FastAPI) -> None:
-    """注册中间件（在 app 创建时调用，lifespan 中补充 redis 依赖）"""
+    """娉ㄥ唽涓棿浠讹紙鍦?app 鍒涘缓鏃惰皟鐢紝lifespan 涓ˉ鍏?redis 渚濊禆锛?""
     from app.middleware.error_handler import ErrorHandlerMiddleware
     from app.middleware.metrics import MetricsMiddleware
     from app.middleware.request_context import RequestContextMiddleware
     from app.middleware.privacy_middleware import PrivacyModeMiddleware
 
-    # 执行顺序: PrivacyMode → RequestContext → Auth → RateLimit → Metrics → ErrorHandler → handler
+    # 鎵ц椤哄簭: PrivacyMode 鈫?RequestContext 鈫?Auth 鈫?RateLimit 鈫?Metrics 鈫?ErrorHandler 鈫?handler
     app.add_middleware(ErrorHandlerMiddleware)
     app.add_middleware(MetricsMiddleware)
     app.add_middleware(RequestContextMiddleware)
@@ -899,3 +899,5 @@ def _setup_middleware_early(app: FastAPI) -> None:
 
 if __name__ == "__main__":
     main()
+
+

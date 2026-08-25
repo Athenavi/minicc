@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"encoding/json"
@@ -12,7 +12,7 @@ import (
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show service status",
-	Long:  `Show the current status of MiniCC services.`,
+	Long:  `Show the current status of Chiron services.`,
 	RunE:  runStatus,
 }
 
@@ -22,7 +22,7 @@ func init() {
 	statusCmd.Flags().StringVarP(&statusAddr, "addr", "a", "http://localhost:8080", "Service address")
 }
 
-// ServiceStatus represents the status response from a MiniCC service.
+// ServiceStatus represents the status response from a Chiron service.
 type ServiceStatus struct {
 	Status   string            `json:"status"`
 	Version  string            `json:"version"`
@@ -46,7 +46,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	// Print status
-	fmt.Printf("MiniCC Service Status\n")
+	fmt.Printf("chiron Service Status\n")
 	fmt.Printf("=====================\n")
 	fmt.Printf("Status:    %s\n", status.Status)
 	fmt.Printf("Version:   %s\n", status.Version)
@@ -60,3 +60,4 @@ func runStatus(cmd *cobra.Command, args []string) error {
 
 	return nil
 }
+

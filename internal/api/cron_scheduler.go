@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -10,18 +10,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/athenavi/minicc/internal/db"
-	"github.com/athenavi/minicc/internal/engine"
+	"github.com/athenavi/chiron/internal/db"
+	"github.com/athenavi/chiron/internal/engine"
 	"github.com/robfig/cron/v3"
 )
 
-// ─────────────────────────────────────────────────────────────
-// 定时自动化：cron_jobs 执行器
-// - 调度器每 60s 重载启用的 cron_jobs 并注册到 robfig/cron
-// - 任务 task 字段为 JSON：{"type":"agent","agent_id":..,"prompt":..}
-//                        或 {"type":"quick","user_input":..,"mode":"auto"}
-// - 执行结果写回 last_run_at / last_status
-// ─────────────────────────────────────────────────────────────
+// 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// 瀹氭椂鑷姩鍖栵細cron_jobs 鎵ц鍣?
+// - 璋冨害鍣ㄦ瘡 60s 閲嶈浇鍚敤鐨?cron_jobs 骞舵敞鍐屽埌 robfig/cron
+// - 浠诲姟 task 瀛楁涓?JSON锛歿"type":"agent","agent_id":..,"prompt":..}
+//                        鎴?{"type":"quick","user_input":..,"mode":"auto"}
+// - 鎵ц缁撴灉鍐欏洖 last_run_at / last_status
+// 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 type cronEntry struct {
 	eid      cron.EntryID
@@ -35,7 +35,7 @@ type CronScheduler struct {
 	python  *engine.PythonClient
 }
 
-// cronSchedulerPython 供 Webhook/手动触发复用执行器（StartCronScheduler 时注入）。
+// cronSchedulerPython 渚?Webhook/鎵嬪姩瑙﹀彂澶嶇敤鎵ц鍣紙StartCronScheduler 鏃舵敞鍏ワ級銆?
 var cronSchedulerPython *engine.PythonClient
 
 type jobRow struct {
@@ -47,7 +47,7 @@ type jobRow struct {
 	UserID   string
 }
 
-// StartCronScheduler 启动调度器（goroutine 内运行）。
+// StartCronScheduler 鍚姩璋冨害鍣紙goroutine 鍐呰繍琛岋級銆?
 func StartCronScheduler(ctx context.Context, python *engine.PythonClient) {
 	s := &CronScheduler{
 		cron:    cron.New(),
@@ -98,19 +98,19 @@ func (s *CronScheduler) sync() {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// 移除已停用/删除/改 schedule 的 job
+	// 绉婚櫎宸插仠鐢?鍒犻櫎/鏀?schedule 鐨?job
 	for id, e := range s.entries {
 		if j, ok := jobs[id]; !ok || j.Schedule != e.schedule {
 			s.cron.Remove(e.eid)
 			delete(s.entries, id)
 		}
 	}
-	// 注册新 job / 更新 schedule
+	// 娉ㄥ唽鏂?job / 鏇存柊 schedule
 	for id, j := range jobs {
 		if e, ok := s.entries[id]; ok && e.schedule == j.Schedule {
 			continue
 		}
-		j := j // 循环变量拷贝：闭包捕获稳定值（Go 1.22 前语义）
+		j := j // 寰幆鍙橀噺鎷疯礉锛氶棴鍖呮崟鑾风ǔ瀹氬€硷紙Go 1.22 鍓嶈涔夛級
 		eid, err := s.cron.AddFunc(j.Schedule, func() { s.execute(context.Background(), j) })
 		if err != nil {
 			slog.Warn("cron register failed", "job", j.Name, "schedule", j.Schedule, "error", err)
@@ -145,7 +145,7 @@ func (s *CronScheduler) execute(ctx context.Context, j jobRow) {
 			} else if err := s.runAgent(execCtx, j.TenantID, j.UserID, t.AgentID, t.Prompt); err != nil {
 				status, errMsg = "failed", err.Error()
 			}
-		default: // quick / 通用统一任务
+		default: // quick / 閫氱敤缁熶竴浠诲姟
 			var t struct {
 				UserInput string `json:"user_input"`
 				Mode      string `json:"mode"`
@@ -206,7 +206,7 @@ func (s *CronScheduler) runQuick(ctx context.Context, tenantID, userID, input, m
 		"/v1/chat/submit?user_id="+userID+"&tenant_id="+tenantID, body, &resp)
 }
 
-// ── Webhook 触发：POST /v1/hooks/{jobID}?token=xxx ──
+// 鈹€鈹€ Webhook 瑙﹀彂锛歅OST /v1/hooks/{jobID}?token=xxx 鈹€鈹€
 
 func HandleCronWebhook(w http.ResponseWriter, r *http.Request) {
 	jobID := r.PathValue("jobID")
@@ -226,7 +226,7 @@ func HandleCronWebhook(w http.ResponseWriter, r *http.Request) {
 		Forbidden(w, "invalid token or job disabled")
 		return
 	}
-	// 异步执行（webhook 尽快返回）
+	// 寮傛鎵ц锛坵ebhook 灏藉揩杩斿洖锛?
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -252,7 +252,7 @@ func HandleCronWebhook(w http.ResponseWriter, r *http.Request) {
 	OK(w, map[string]interface{}{"status": "triggered"})
 }
 
-// HandleCronTrigger 管理端手动触发：POST /v1/admin/cron-jobs/{id}/trigger
+// HandleCronTrigger 绠＄悊绔墜鍔ㄨЕ鍙戯細POST /v1/admin/cron-jobs/{id}/trigger
 func (h *AdminHandler) HandleCronTrigger(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var tenantID, userID string

@@ -1,4 +1,4 @@
-package billing
+﻿package billing
 
 import (
 	"context"
@@ -11,8 +11,7 @@ import (
 	"time"
 )
 
-// TestAlipaySignVerify 验证 RSA2 签名/验签自洽（同一对密钥）。
-func TestAlipaySignVerify(t *testing.T) {
+// TestAlipaySignVerify 楠岃瘉 RSA2 绛惧悕/楠岀鑷唇锛堝悓涓€瀵瑰瘑閽ワ級銆?func TestAlipaySignVerify(t *testing.T) {
 	client := newTestAlipayClient(t)
 
 	params := map[string]string{
@@ -30,15 +29,13 @@ func TestAlipaySignVerify(t *testing.T) {
 		t.Fatalf("verify: %v", err)
 	}
 
-	// 篡改参数后验签必须失败
-	params["total_amount"] = "100.00"
+	// 绡℃敼鍙傛暟鍚庨獙绛惧繀椤诲け璐?	params["total_amount"] = "100.00"
 	if err := client.verify(params, sig); err == nil {
 		t.Fatal("verify should fail after tampering")
 	}
 }
 
-// TestVerifyCallback 验证回调验签（成功状态 + 篡改拒绝 + 非成功状态拒绝）。
-func TestVerifyCallback(t *testing.T) {
+// TestVerifyCallback 楠岃瘉鍥炶皟楠岀锛堟垚鍔熺姸鎬?+ 绡℃敼鎷掔粷 + 闈炴垚鍔熺姸鎬佹嫆缁濓級銆?func TestVerifyCallback(t *testing.T) {
 	client := newTestAlipayClient(t)
 
 	good := map[string]string{
@@ -59,7 +56,7 @@ func TestVerifyCallback(t *testing.T) {
 		t.Fatalf("VerifyCallback = %q, %q, %v", outTradeNo, tradeNo, ok)
 	}
 
-	// 篡改金额 → 拒绝
+	// 绡℃敼閲戦 鈫?鎷掔粷
 	tampered := map[string]string{}
 	for k, v := range good {
 		tampered[k] = v
@@ -69,7 +66,7 @@ func TestVerifyCallback(t *testing.T) {
 		t.Fatal("tampered callback should be rejected")
 	}
 
-	// 非成功状态 → 拒绝
+	// 闈炴垚鍔熺姸鎬?鈫?鎷掔粷
 	waiting := map[string]string{}
 	for k, v := range good {
 		waiting[k] = v
@@ -80,8 +77,7 @@ func TestVerifyCallback(t *testing.T) {
 	}
 }
 
-// TestConfirmPaymentIdempotent 验证订单幂等入账：重复确认只入账一次。
-func TestConfirmPaymentIdempotent(t *testing.T) {
+// TestConfirmPaymentIdempotent 楠岃瘉璁㈠崟骞傜瓑鍏ヨ处锛氶噸澶嶇‘璁ゅ彧鍏ヨ处涓€娆°€?func TestConfirmPaymentIdempotent(t *testing.T) {
 	store := &orderAwareStore{}
 	mgr := NewManager(store)
 	defer mgr.Close()
@@ -92,7 +88,7 @@ func TestConfirmPaymentIdempotent(t *testing.T) {
 		t.Fatalf("CreatePayment: %v", err)
 	}
 
-	// 第一次确认：入账
+	// 绗竴娆＄‘璁わ細鍏ヨ处
 	_, credited, err := mgr.ConfirmPayment(context.Background(), p.ID, "trade-1")
 	if err != nil || !credited {
 		t.Fatalf("first ConfirmPayment = credited=%v err=%v", credited, err)
@@ -102,8 +98,7 @@ func TestConfirmPaymentIdempotent(t *testing.T) {
 		t.Fatalf("balance = %d, want 1000", bal)
 	}
 
-	// 第二次确认（重复回调）：幂等，不再入账
-	_, credited2, err := mgr.ConfirmPayment(context.Background(), p.ID, "trade-1")
+	// 绗簩娆＄‘璁わ紙閲嶅鍥炶皟锛夛細骞傜瓑锛屼笉鍐嶅叆璐?	_, credited2, err := mgr.ConfirmPayment(context.Background(), p.ID, "trade-1")
 	if err != nil || credited2 {
 		t.Fatalf("second ConfirmPayment = credited=%v err=%v (want false, nil)", credited2, err)
 	}
@@ -113,8 +108,7 @@ func TestConfirmPaymentIdempotent(t *testing.T) {
 	}
 }
 
-// orderAwareStore：recordingStore + 内存订单表（幂等测试用）。
-type orderAwareStore struct {
+// orderAwareStore锛歳ecordingStore + 鍐呭瓨璁㈠崟琛紙骞傜瓑娴嬭瘯鐢級銆?type orderAwareStore struct {
 	recordingStore
 	mu   sync.Mutex
 	ords map[string]*Payment
@@ -141,8 +135,7 @@ func (s *orderAwareStore) GetPayment(ctx context.Context, id string) (*Payment, 
 	return nil, nil
 }
 
-// MarkPaymentPaid 幂等推进 pending→paid。
-func (s *orderAwareStore) MarkPaymentPaid(ctx context.Context, id, tradeNo string) (*Payment, error) {
+// MarkPaymentPaid 骞傜瓑鎺ㄨ繘 pending鈫抪aid銆?func (s *orderAwareStore) MarkPaymentPaid(ctx context.Context, id, tradeNo string) (*Payment, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p, ok := s.ords[id]
@@ -167,7 +160,7 @@ func (s *orderAwareStore) UpdatePaymentProvider(ctx context.Context, id, qrCode,
 	return nil
 }
 
-// ── 测试密钥对 ──
+// 鈹€鈹€ 娴嬭瘯瀵嗛挜瀵?鈹€鈹€
 
 var cachedKeyPair []string
 

@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -11,20 +11,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/db"
-	"github.com/athenavi/minicc/internal/engine"
-	"github.com/athenavi/minicc/internal/id"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/db"
+	"github.com/athenavi/chiron/internal/engine"
+	"github.com/athenavi/chiron/internal/id"
 )
 
-// AgentHandler 管理自定义 Agent（DB agents 表）+ 运行会话（agent_sessions）。
-// 执行链路：Run 落 session(pending) → 异步调 Python /v1/agents/dispatch
-// （Python 用 SubAgent 真执行）→ 结果回写 session(completed/failed)。
-type AgentHandler struct {
+// AgentHandler 绠＄悊鑷畾涔?Agent锛圖B agents 琛級+ 杩愯浼氳瘽锛坅gent_sessions锛夈€?// 鎵ц閾捐矾锛歊un 钀?session(pending) 鈫?寮傛璋?Python /v1/agents/dispatch
+// 锛圥ython 鐢?SubAgent 鐪熸墽琛岋級鈫?缁撴灉鍥炲啓 session(completed/failed)銆?type AgentHandler struct {
 	authenticator *auth.Authenticator
 	pythonClient  *engine.PythonClient
-	sem           chan struct{} // 并发执行上限（与 /submit 的 agentSem 同源）
-}
+	sem           chan struct{} // 骞跺彂鎵ц涓婇檺锛堜笌 /submit 鐨?agentSem 鍚屾簮锛?}
 
 func NewAgentHandler(a *auth.Authenticator, pc *engine.PythonClient, sem chan struct{}) *AgentHandler {
 	h := &AgentHandler{authenticator: a, pythonClient: pc, sem: sem}
@@ -39,8 +36,7 @@ func NewAgentHandler(a *auth.Authenticator, pc *engine.PythonClient, sem chan st
 	return h
 }
 
-// Agent 是自定义 Agent 的 DB 表示。
-type Agent struct {
+// Agent 鏄嚜瀹氫箟 Agent 鐨?DB 琛ㄧず銆?type Agent struct {
 	ID             string          `json:"id"`
 	Name           string          `json:"name"`
 	Description    string          `json:"description,omitempty"`
@@ -54,8 +50,7 @@ type Agent struct {
 	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
-// AgentSession 是一次 Agent 运行的持久化记录。
-type AgentSession struct {
+// AgentSession 鏄竴娆?Agent 杩愯鐨勬寔涔呭寲璁板綍銆?type AgentSession struct {
 	ID        string    `json:"id"`
 	AgentID   string    `json:"agent_id,omitempty"`
 	AgentName string    `json:"agent_name,omitempty"`
@@ -66,7 +61,7 @@ type AgentSession struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// ── 预置 Agent 播种（DB agents 表为空时插入内置 3 类） ──
+// 鈹€鈹€ 棰勭疆 Agent 鎾锛圖B agents 琛ㄤ负绌烘椂鎻掑叆鍐呯疆 3 绫伙級 鈹€鈹€
 
 type presetAgent struct {
 	Name        string         `json:"name"`
@@ -77,12 +72,10 @@ type presetAgent struct {
 	Turns       int            `json:"turns"`
 }
 
-// loadPresetAgents 从 configs/preset_agents.json 加载预置 Agent 定义。
-// 文件不存在时返回空列表（不播种任何预置 Agent）。
-func loadPresetAgents() []presetAgent {
+// loadPresetAgents 浠?configs/preset_agents.json 鍔犺浇棰勭疆 Agent 瀹氫箟銆?// 鏂囦欢涓嶅瓨鍦ㄦ椂杩斿洖绌哄垪琛紙涓嶆挱绉嶄换浣曢缃?Agent锛夈€?func loadPresetAgents() []presetAgent {
 	candidates := []string{
 		"configs/preset_agents.json",
-		"/etc/minicc/preset_agents.json",
+		"/etc/chiron/preset_agents.json",
 	}
 	for _, path := range candidates {
 		data, err := os.ReadFile(path)
@@ -97,7 +90,7 @@ func loadPresetAgents() []presetAgent {
 		slog.Info("loaded preset agents from config", "path", path, "count", len(presets))
 		return presets
 	}
-	slog.Warn("preset agents config not found — no preset agents will be seeded")
+	slog.Warn("preset agents config not found 鈥?no preset agents will be seeded")
 	return nil
 }
 
@@ -144,10 +137,9 @@ func (h *AgentHandler) seedPresetAgents() {
 	}
 }
 
-// ── CRUD ──────────────────────────────────────────────────────
+// 鈹€鈹€ CRUD 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// List 返回当前租户的全部 Agent（按创建时间倒序）。
-func (h *AgentHandler) List(w http.ResponseWriter, r *http.Request) {
+// List 杩斿洖褰撳墠绉熸埛鐨勫叏閮?Agent锛堟寜鍒涘缓鏃堕棿鍊掑簭锛夈€?func (h *AgentHandler) List(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	rows, err := db.Pool.Query(r.Context(),
 		`SELECT id::text, name, COALESCE(description,''), COALESCE(system_prompt,''), COALESCE(tools,'[]'::jsonb), COALESCE(llm_config,'{}'::jsonb), max_turns, timeout_seconds, enabled, created_at, updated_at
@@ -171,8 +163,7 @@ func (h *AgentHandler) List(w http.ResponseWriter, r *http.Request) {
 	OK(w, agents)
 }
 
-// Create 新建一个 Agent（绑定当前租户）。
-func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
+// Create 鏂板缓涓€涓?Agent锛堢粦瀹氬綋鍓嶇鎴凤級銆?func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	var body Agent
 	if err := DecodeJSON(w, r, &body); err != nil {
@@ -220,8 +211,7 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 	OK(w, body)
 }
 
-// Get 返回单个 Agent（必须归属当前租户）。
-func (h *AgentHandler) Get(w http.ResponseWriter, r *http.Request) {
+// Get 杩斿洖鍗曚釜 Agent锛堝繀椤诲綊灞炲綋鍓嶇鎴凤級銆?func (h *AgentHandler) Get(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	agentID := r.PathValue("id")
 	if agentID == "" {
@@ -236,17 +226,15 @@ func (h *AgentHandler) Get(w http.ResponseWriter, r *http.Request) {
 	OK(w, a)
 }
 
-// Update 更新 Agent 字段（name/description/system_prompt/tools/llm_config/max_turns/timeout_seconds/enabled）。
-func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
+// Update 鏇存柊 Agent 瀛楁锛坣ame/description/system_prompt/tools/llm_config/max_turns/timeout_seconds/enabled锛夈€?func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	agentID := r.PathValue("id")
 	if agentID == "" {
 		BadRequest(w, "id is required")
 		return
 	}
-	// P1 修复：改用指针字段按需更新——原实现 description/system_prompt 成对覆盖
-	// （只传其一清空另一个），且 enabled 无条件写入（不传即被重置为 false）。
-	var body struct {
+	// P1 淇锛氭敼鐢ㄦ寚閽堝瓧娈垫寜闇€鏇存柊鈥斺€斿師瀹炵幇 description/system_prompt 鎴愬瑕嗙洊
+	// 锛堝彧浼犲叾涓€娓呯┖鍙︿竴涓級锛屼笖 enabled 鏃犳潯浠跺啓鍏ワ紙涓嶄紶鍗宠閲嶇疆涓?false锛夈€?	var body struct {
 		Name           *string         `json:"name"`
 		Description    *string         `json:"description"`
 		SystemPrompt   *string         `json:"system_prompt"`
@@ -261,7 +249,7 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 动态 SET：非零字段才更新（避免把空值当“清除”）
+	// 鍔ㄦ€?SET锛氶潪闆跺瓧娈垫墠鏇存柊锛堥伩鍏嶆妸绌哄€煎綋鈥滄竻闄も€濓級
 	sets := []string{}
 	args := []any{}
 	push := func(expr string, v any) {
@@ -292,7 +280,7 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if body.Enabled != nil {
 		push("enabled = $"+itoa(len(args)+1), *body.Enabled)
 	}
-	// WHERE tenant_id = $N+1 AND id = $N+2 —— 双重校验防跨租户
+	// WHERE tenant_id = $N+1 AND id = $N+2 鈥斺€?鍙岄噸鏍￠獙闃茶法绉熸埛
 	args = append(args, claims.TenantID, agentID)
 
 	if len(sets) == 0 {
@@ -312,8 +300,7 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 	OK(w, a)
 }
 
-// Delete 删除 Agent 及其运行记录（仅当归属当前租户）。
-func (h *AgentHandler) Delete(w http.ResponseWriter, r *http.Request) {
+// Delete 鍒犻櫎 Agent 鍙婂叾杩愯璁板綍锛堜粎褰撳綊灞炲綋鍓嶇鎴凤級銆?func (h *AgentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	agentID := r.PathValue("id")
 	if agentID == "" {
@@ -327,10 +314,9 @@ func (h *AgentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	OK(w, map[string]string{"status": "deleted"})
 }
 
-// ── 运行与会话 ────────────────────────────────────────────────
+// 鈹€鈹€ 杩愯涓庝細璇?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// Run 派发任务给 Agent：落 session(pending) 后异步执行，结果回写。
-func (h *AgentHandler) Run(w http.ResponseWriter, r *http.Request) {
+// Run 娲惧彂浠诲姟缁?Agent锛氳惤 session(pending) 鍚庡紓姝ユ墽琛岋紝缁撴灉鍥炲啓銆?func (h *AgentHandler) Run(w http.ResponseWriter, r *http.Request) {
 	agentID := r.PathValue("id")
 	if agentID == "" {
 		BadRequest(w, "id is required")
@@ -378,8 +364,7 @@ func (h *AgentHandler) Run(w http.ResponseWriter, r *http.Request) {
 	if timeout <= 0 {
 		timeout = 120 * time.Second
 	}
-	// P1 修复：执行前获取并发信号量，防止无上限并发打爆引擎
-	if h.sem != nil {
+	// P1 淇锛氭墽琛屽墠鑾峰彇骞跺彂淇″彿閲忥紝闃叉鏃犱笂闄愬苟鍙戞墦鐖嗗紩鎿?	if h.sem != nil {
 		h.sem <- struct{}{}
 	}
 	go func() {
@@ -417,8 +402,7 @@ func (h *AgentHandler) executeAgent(agent *Agent, task, sessionID, userID, tenan
 
 	_, _ = db.Pool.Exec(ctx, `UPDATE agent_sessions SET status = 'running', updated_at = NOW() WHERE id = $1`, sessionID)
 
-	// tools/llm_config 转 map 传给 Python（tools 保持 []map 结构）
-	var tools []map[string]any
+	// tools/llm_config 杞?map 浼犵粰 Python锛坱ools 淇濇寔 []map 缁撴瀯锛?	var tools []map[string]any
 	if len(agent.Tools) > 0 && string(agent.Tools) != "[]" {
 		_ = json.Unmarshal(agent.Tools, &tools)
 	}
@@ -437,7 +421,7 @@ func (h *AgentHandler) executeAgent(agent *Agent, task, sessionID, userID, tenan
 		"max_turns":     agent.MaxTurns,
 		"max_tokens":    llmInt(llm, "max_tokens", 4096),
 		"temperature":   llmFloat(llm, "temperature", 0.6),
-		"tenant_id":     tenantID, // S 多租户隔离:用 JWT claims 的 TenantID,不能用 userID
+		"tenant_id":     tenantID, // S 澶氱鎴烽殧绂?鐢?JWT claims 鐨?TenantID,涓嶈兘鐢?userID
 		"user_id":       userID,
 		"session_id":    sessionID,
 	}
@@ -459,8 +443,7 @@ func (h *AgentHandler) executeAgent(agent *Agent, task, sessionID, userID, tenan
 		status, string(resultJSON), sessionID)
 }
 
-// ListSessions 返回当前用户在当前租户下的运行记录（倒序）。
-// SetVisibility 设置 Agent 共享可见性（仅 owner）：PUT /v1/agents/{id}/visibility
+// ListSessions 杩斿洖褰撳墠鐢ㄦ埛鍦ㄥ綋鍓嶇鎴蜂笅鐨勮繍琛岃褰曪紙鍊掑簭锛夈€?// SetVisibility 璁剧疆 Agent 鍏变韩鍙鎬э紙浠?owner锛夛細PUT /v1/agents/{id}/visibility
 func (h *AgentHandler) SetVisibility(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	if claims == nil || claims.TenantID == "" {
@@ -478,7 +461,7 @@ func (h *AgentHandler) SetVisibility(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "visibility must be private or tenant")
 		return
 	}
-	// owner-only：更新必须命中 user_id
+	// owner-only锛氭洿鏂板繀椤诲懡涓?user_id
 	tag, err := db.Pool.Exec(r.Context(),
 		`UPDATE agents SET visibility = $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3 AND user_id = $4`,
 		body.Visibility, r.PathValue("id"), claims.TenantID, claims.UserID)
@@ -517,8 +500,7 @@ func (h *AgentHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
 	OK(w, sessions)
 }
 
-// GetSession 返回单个运行记录（归属校验）。
-func (h *AgentHandler) GetSession(w http.ResponseWriter, r *http.Request) {
+// GetSession 杩斿洖鍗曚釜杩愯璁板綍锛堝綊灞炴牎楠岋級銆?func (h *AgentHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
 	if sessionID == "" {
 		BadRequest(w, "id is required")
@@ -538,7 +520,7 @@ func (h *AgentHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 	OK(w, s)
 }
 
-// ── helpers ───────────────────────────────────────────────────
+// 鈹€鈹€ helpers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func (h *AgentHandler) queryAgent(ctx context.Context, tenantID, userID, agentID string) (*Agent, error) {
 	var a Agent
@@ -553,9 +535,7 @@ func (h *AgentHandler) queryAgent(ctx context.Context, tenantID, userID, agentID
 	return &a, nil
 }
 
-// resolveOwnerTenantID 查询系统首个 owner 角色用户的 tenant_id，用作预置 Agent 的归属租户。
-// 多租户场景下预置 Agent 仅在 owner 租户播种一次（其它租户需自行通过 API 创建）。
-func (h *AgentHandler) resolveOwnerTenantID(ctx context.Context) (string, error) {
+// resolveOwnerTenantID 鏌ヨ绯荤粺棣栦釜 owner 瑙掕壊鐢ㄦ埛鐨?tenant_id锛岀敤浣滈缃?Agent 鐨勫綊灞炵鎴枫€?// 澶氱鎴峰満鏅笅棰勭疆 Agent 浠呭湪 owner 绉熸埛鎾涓€娆★紙鍏跺畠绉熸埛闇€鑷閫氳繃 API 鍒涘缓锛夈€?func (h *AgentHandler) resolveOwnerTenantID(ctx context.Context) (string, error) {
 	var tenantID string
 	err := db.Pool.QueryRow(ctx,
 		`SELECT tenant_id FROM users WHERE role = 'owner' ORDER BY created_at LIMIT 1`).Scan(&tenantID)
@@ -565,7 +545,7 @@ func (h *AgentHandler) resolveOwnerTenantID(ctx context.Context) (string, error)
 	return tenantID, nil
 }
 
-// ── 通用小工具（字符串/数值拼接与 llm_config 取值） ──
+// 鈹€鈹€ 閫氱敤灏忓伐鍏凤紙瀛楃涓?鏁板€兼嫾鎺ヤ笌 llm_config 鍙栧€硷級 鈹€鈹€
 
 func trimSpace(s string) string { return strings.TrimSpace(s) }
 

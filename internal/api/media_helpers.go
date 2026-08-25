@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"fmt"
@@ -12,8 +12,7 @@ func wouldCreateCycle(getParent func(id string) (string, error), id, newParent s
 	if id == newParent {
 		return true, nil
 	}
-	// 根目录（空串）没有父节点，直接判定无环
-	if newParent == "" {
+	// 鏍圭洰褰曪紙绌轰覆锛夋病鏈夌埗鑺傜偣锛岀洿鎺ュ垽瀹氭棤鐜?	if newParent == "" {
 		return false, nil
 	}
 	cur := newParent

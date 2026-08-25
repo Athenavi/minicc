@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"net/http"
@@ -7,18 +7,18 @@ import (
 	"testing"
 )
 
-// newTestAgentHandler 直接构造 AgentHandler（不经 NewAgentHandler，
-// 避免触发预置 Agent 播种 goroutine —— 那需要真实 DB）。
-// agents handler 的认证由路由层 authMW 负责，handler 级测试聚焦
-// authMW 之后的参数校验与纯逻辑。
+// newTestAgentHandler 鐩存帴鏋勯€?AgentHandler锛堜笉缁?NewAgentHandler锛?
+// 閬垮厤瑙﹀彂棰勭疆 Agent 鎾 goroutine 鈥斺€?閭ｉ渶瑕佺湡瀹?DB锛夈€?
+// agents handler 鐨勮璇佺敱璺敱灞?authMW 璐熻矗锛宧andler 绾ф祴璇曡仛鐒?
+// authMW 涔嬪悗鐨勫弬鏁版牎楠屼笌绾€昏緫銆?
 func newTestAgentHandler() *AgentHandler {
 	return &AgentHandler{}
 }
 
-// ── Create：名称校验 ──
+// 鈹€鈹€ Create锛氬悕绉版牎楠?鈹€鈹€
 
-// TestAgentCreate_InvalidJSON 意图：非法 JSON 必须被拒绝在业务逻辑之前，
-// 不得触达 DB（无 DB 环境下断言 400 即证明未触达）。
+// TestAgentCreate_InvalidJSON 鎰忓浘锛氶潪娉?JSON 蹇呴』琚嫆缁濆湪涓氬姟閫昏緫涔嬪墠锛?
+// 涓嶅緱瑙﹁揪 DB锛堟棤 DB 鐜涓嬫柇瑷€ 400 鍗宠瘉鏄庢湭瑙﹁揪锛夈€?
 func TestAgentCreate_InvalidJSON(t *testing.T) {
 	h := newTestAgentHandler()
 	req := httptest.NewRequest("POST", "/v1/agents", strings.NewReader("{not-json"))
@@ -30,8 +30,8 @@ func TestAgentCreate_InvalidJSON(t *testing.T) {
 	}
 }
 
-// TestAgentCreate_EmptyName 意图：Agent 必须有可辨识名称——空白名称
-// trim 后为空同样拒绝，防止产生无名 Agent。
+// TestAgentCreate_EmptyName 鎰忓浘锛欰gent 蹇呴』鏈夊彲杈ㄨ瘑鍚嶇О鈥斺€旂┖鐧藉悕绉?
+// trim 鍚庝负绌哄悓鏍锋嫆缁濓紝闃叉浜х敓鏃犲悕 Agent銆?
 func TestAgentCreate_EmptyName(t *testing.T) {
 	h := newTestAgentHandler()
 	for _, body := range []string{`{}`, `{"name":""}`, `{"name":"   "}`} {
@@ -45,9 +45,9 @@ func TestAgentCreate_EmptyName(t *testing.T) {
 	}
 }
 
-// ── Get/Update/Delete/Run：路径参数与请求体校验 ──
+// 鈹€鈹€ Get/Update/Delete/Run锛氳矾寰勫弬鏁颁笌璇锋眰浣撴牎楠?鈹€鈹€
 
-// TestAgentGet_MissingID 意图：缺路径参数必须 400，不得拿空 id 查库。
+// TestAgentGet_MissingID 鎰忓浘锛氱己璺緞鍙傛暟蹇呴』 400锛屼笉寰楁嬁绌?id 鏌ュ簱銆?
 func TestAgentGet_MissingID(t *testing.T) {
 	h := newTestAgentHandler()
 	req := httptest.NewRequest("GET", "/v1/agents/", nil)
@@ -68,7 +68,7 @@ func TestAgentUpdate_MissingID(t *testing.T) {
 	}
 }
 
-// TestAgentUpdate_InvalidJSON 意图：带合法 id 但请求体非法时，同样拒绝在校验层。
+// TestAgentUpdate_InvalidJSON 鎰忓浘锛氬甫鍚堟硶 id 浣嗚姹備綋闈炴硶鏃讹紝鍚屾牱鎷掔粷鍦ㄦ牎楠屽眰銆?
 func TestAgentUpdate_InvalidJSON(t *testing.T) {
 	h := newTestAgentHandler()
 	req := httptest.NewRequest("PUT", "/v1/agents/agent-1", strings.NewReader("{bad"))
@@ -101,8 +101,8 @@ func TestAgentRun_MissingID(t *testing.T) {
 	}
 }
 
-// TestAgentRun_EmptyTask 意图：派发空任务无意义，必须在查询 Agent /
-// 创建 session（触达 DB）之前拒绝。
+// TestAgentRun_EmptyTask 鎰忓浘锛氭淳鍙戠┖浠诲姟鏃犳剰涔夛紝蹇呴』鍦ㄦ煡璇?Agent /
+// 鍒涘缓 session锛堣Е杈?DB锛変箣鍓嶆嫆缁濄€?
 func TestAgentRun_EmptyTask(t *testing.T) {
 	h := newTestAgentHandler()
 	for _, body := range []string{`{}`, `{"task":""}`, `{"task":"  "}`} {
@@ -127,10 +127,10 @@ func TestAgentGetSession_MissingID(t *testing.T) {
 	}
 }
 
-// ── llm_config 取值纯逻辑 ──
-// 这些 helper 决定派发给 Python 引擎的模型参数；
-// 意图：任何缺失/非法/类型不符的配置项都必须落到安全默认值，
-// 绝不能把空值或错误类型传给执行引擎。
+// 鈹€鈹€ llm_config 鍙栧€肩函閫昏緫 鈹€鈹€
+// 杩欎簺 helper 鍐冲畾娲惧彂缁?Python 寮曟搸鐨勬ā鍨嬪弬鏁帮紱
+// 鎰忓浘锛氫换浣曠己澶?闈炴硶/绫诲瀷涓嶇鐨勯厤缃」閮藉繀椤昏惤鍒板畨鍏ㄩ粯璁ゅ€硷紝
+// 缁濅笉鑳芥妸绌哄€兼垨閿欒绫诲瀷浼犵粰鎵ц寮曟搸銆?
 
 func TestAgentLLMConfigDefaults(t *testing.T) {
 	full := map[string]any{"model": "gpt-x", "max_tokens": float64(2048), "temperature": 0.2}
@@ -144,7 +144,7 @@ func TestAgentLLMConfigDefaults(t *testing.T) {
 		t.Fatalf("llmFloat present = %v, want 0.2", got)
 	}
 
-	// 缺失键 → fallback
+	// 缂哄け閿?鈫?fallback
 	empty := map[string]any{}
 	if got := llmString(empty, "model", "deepseek-chat"); got != "deepseek-chat" {
 		t.Fatalf("llmString missing = %q, want fallback", got)
@@ -156,7 +156,7 @@ func TestAgentLLMConfigDefaults(t *testing.T) {
 		t.Fatalf("llmFloat missing = %v, want fallback", got)
 	}
 
-	// 空字符串 / 非正数 / 类型不符 → 一律 fallback（不得透传非法值）
+	// 绌哄瓧绗︿覆 / 闈炴鏁?/ 绫诲瀷涓嶇 鈫?涓€寰?fallback锛堜笉寰楅€忎紶闈炴硶鍊硷級
 	bad := map[string]any{"model": "", "max_tokens": float64(-1), "temperature": "0.5"}
 	if got := llmString(bad, "model", "fb"); got != "fb" {
 		t.Fatalf("llmString empty string = %q, want fallback", got)
@@ -168,7 +168,7 @@ func TestAgentLLMConfigDefaults(t *testing.T) {
 		t.Fatalf("llmFloat wrong type = %v, want fallback", got)
 	}
 
-	// nil map（llm_config 为空时）也不得 panic
+	// nil map锛坙lm_config 涓虹┖鏃讹級涔熶笉寰?panic
 	if got := llmString(nil, "model", "fb"); got != "fb" {
 		t.Fatalf("llmString nil map = %q, want fallback", got)
 	}
@@ -177,8 +177,8 @@ func TestAgentLLMConfigDefaults(t *testing.T) {
 	}
 }
 
-// TestAgentBoolOf 意图：Python 返回结果中 success 缺失或非布尔时，
-// 必须按失败处理（boolOf=false → session 状态置 failed），宁可误报失败不可误报成功。
+// TestAgentBoolOf 鎰忓浘锛歅ython 杩斿洖缁撴灉涓?success 缂哄け鎴栭潪甯冨皵鏃讹紝
+// 蹇呴』鎸夊け璐ュ鐞嗭紙boolOf=false 鈫?session 鐘舵€佺疆 failed锛夛紝瀹佸彲璇姤澶辫触涓嶅彲璇姤鎴愬姛銆?
 func TestAgentBoolOf(t *testing.T) {
 	if !boolOf(true) {
 		t.Fatal("boolOf(true) = false, want true")

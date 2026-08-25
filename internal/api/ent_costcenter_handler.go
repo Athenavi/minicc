@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -8,27 +8,27 @@ import (
 	"sort"
 	"time"
 
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/db"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/db"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// ── 企业成本中心：类型与错误 ──────────────────────────────────────────────
+// 鈹€鈹€ 浼佷笟鎴愭湰涓績锛氱被鍨嬩笌閿欒 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// EntQuotaPool 对应 ent_quota_pools 表。
+// EntQuotaPool 瀵瑰簲 ent_quota_pools 琛ㄣ€?
 type EntQuotaPool struct {
 	ID           string    `json:"id"`
 	TenantID     string    `json:"tenant_id"`
 	ResourceType string    `json:"resource_type"` // token/storage_mb/concurrency/credits
-	TotalAmount  int64     `json:"total_amount"`  // 0 = 无限制
+	TotalAmount  int64     `json:"total_amount"`  // 0 = 鏃犻檺鍒?
 	Period       string    `json:"period"`        // daily/monthly
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
-// EntQuotaAllocation 对应 ent_quota_allocations 表。
+// EntQuotaAllocation 瀵瑰簲 ent_quota_allocations 琛ㄣ€?
 type EntQuotaAllocation struct {
 	ID         string    `json:"id"`
 	PoolID     string    `json:"pool_id"`
@@ -39,20 +39,20 @@ type EntQuotaAllocation struct {
 }
 
 var (
-	// errQuotaConflict 唯一约束冲突（配额池 tenant+resource+period 或分配 pool+target）
+	// errQuotaConflict 鍞竴绾︽潫鍐茬獊锛堥厤棰濇睜 tenant+resource+period 鎴栧垎閰?pool+target锛?
 	errQuotaConflict = errors.New("ent quota: unique constraint conflict")
-	// errQuotaNotFound 配额池/分配不存在
+	// errQuotaNotFound 閰嶉姹?鍒嗛厤涓嶅瓨鍦?
 	errQuotaNotFound = errors.New("ent quota: not found")
 )
 
-// 合法枚举（与迁移 CHECK 约束一致）
+// 鍚堟硶鏋氫妇锛堜笌杩佺Щ CHECK 绾︽潫涓€鑷达級
 var (
 	validResourceTypes = map[string]bool{"token": true, "storage_mb": true, "concurrency": true, "credits": true}
 	validPeriods       = map[string]bool{"daily": true, "monthly": true}
 	validTargetTypes   = map[string]bool{"group": true, "user": true}
 )
 
-// ── 汇总结果类型 ──────────────────────────────────────────────────────────
+// 鈹€鈹€ 姹囨€荤粨鏋滅被鍨?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 type entCostSummaryRow struct {
 	Key          string `json:"key"`
@@ -90,9 +90,9 @@ type entGroupCost struct {
 	Records []entGroupCostRow `json:"records"`
 }
 
-// ── 数据访问接口（PG 实现 + 测试 fake 可替换） ────────────────────────────
+// 鈹€鈹€ 鏁版嵁璁块棶鎺ュ彛锛圥G 瀹炵幇 + 娴嬭瘯 fake 鍙浛鎹級 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// EntCostStore 是企业成本中心的数据访问接口。
+// EntCostStore 鏄紒涓氭垚鏈腑蹇冪殑鏁版嵁璁块棶鎺ュ彛銆?
 type EntCostStore interface {
 	CostSummary(ctx context.Context, from, to time.Time, groupBy string) (*entCostSummary, error)
 	GroupCost(ctx context.Context, groupID string, from, to time.Time) (*entGroupCost, error)
@@ -108,20 +108,20 @@ type EntCostStore interface {
 	CreateAllocation(ctx context.Context, a *EntQuotaAllocation) error
 	DeleteAllocation(ctx context.Context, poolID, id string) (bool, error)
 
-	// TenantTokenPools 返回租户的 resource_type='token' 配额池（quota 强制用）
+	// TenantTokenPools 杩斿洖绉熸埛鐨?resource_type='token' 閰嶉姹狅紙quota 寮哄埗鐢級
 	TenantTokenPools(ctx context.Context, tenantID string) ([]EntQuotaPool, error)
-	// TokenUsageSQL 从 billing_records SQL 聚合 token 用量（Redis 计数器回填用）
+	// TokenUsageSQL 浠?billing_records SQL 鑱氬悎 token 鐢ㄩ噺锛圧edis 璁℃暟鍣ㄥ洖濉敤锛?
 	TokenUsageSQL(ctx context.Context, tenantID string, since time.Time) (int64, error)
-	// ResolveTenantID 经 users 表解析用户所属租户
+	// ResolveTenantID 缁?users 琛ㄨВ鏋愮敤鎴锋墍灞炵鎴?
 	ResolveTenantID(ctx context.Context, userID string) (string, error)
 }
 
-// pgEntCostStore 是基于全局 db.Pool / db.ReadPool 的 EntCostStore 实现。
+// pgEntCostStore 鏄熀浜庡叏灞€ db.Pool / db.ReadPool 鐨?EntCostStore 瀹炵幇銆?
 type pgEntCostStore struct{}
 
 func newPGEntCostStore() *pgEntCostStore { return &pgEntCostStore{} }
 
-// isUniqueViolation 判断是否为 PostgreSQL 唯一约束冲突（SQLSTATE 23505）。
+// isUniqueViolation 鍒ゆ柇鏄惁涓?PostgreSQL 鍞竴绾︽潫鍐茬獊锛圫QLSTATE 23505锛夈€?
 func isUniqueViolation(err error) bool {
 	var pe *pgconn.PgError
 	if errors.As(err, &pe) {
@@ -130,7 +130,7 @@ func isUniqueViolation(err error) bool {
 	return false
 }
 
-// ── CostSummary：billing_records + credit_transactions + payments 跨租户汇总 ──
+// 鈹€鈹€ CostSummary锛歜illing_records + credit_transactions + payments 璺ㄧ鎴锋眹鎬?鈹€鈹€
 
 func (s *pgEntCostStore) CostSummary(ctx context.Context, from, to time.Time, groupBy string) (*entCostSummary, error) {
 	var keyExpr, groupExpr string
@@ -160,7 +160,7 @@ func (s *pgEntCostStore) CostSummary(ctx context.Context, from, to time.Time, gr
 		return r
 	}
 
-	// 1) billing_records：成本与 token 明细（SQL 聚合）
+	// 1) billing_records锛氭垚鏈笌 token 鏄庣粏锛圫QL 鑱氬悎锛?
 	qBilling := fmt.Sprintf(
 		`SELECT %s AS k, COALESCE(SUM(cost_cents),0), COALESCE(SUM(input_tokens),0),
 		        COALESCE(SUM(output_tokens),0), COUNT(*)
@@ -186,7 +186,7 @@ func (s *pgEntCostStore) CostSummary(ctx context.Context, from, to time.Time, gr
 		return nil, fmt.Errorf("summary billing iterate: %w", err)
 	}
 
-	// 2) credit_transactions：credits 消耗（负向流水求和；经 users 关联租户）
+	// 2) credit_transactions锛歝redits 娑堣€楋紙璐熷悜娴佹按姹傚拰锛涚粡 users 鍏宠仈绉熸埛锛?
 	ctKey := "u.tenant_id::text"
 	ctGroup := "u.tenant_id"
 	if groupBy == "day" {
@@ -215,7 +215,7 @@ func (s *pgEntCostStore) CostSummary(ctx context.Context, from, to time.Time, gr
 		return nil, fmt.Errorf("summary credits iterate: %w", err)
 	}
 
-	// 3) payments：充值收入（已支付订单；经 users 关联租户）
+	// 3) payments锛氬厖鍊兼敹鍏ワ紙宸叉敮浠樿鍗曪紱缁?users 鍏宠仈绉熸埛锛?
 	pKey := "u.tenant_id::text"
 	pGroup := "u.tenant_id"
 	if groupBy == "day" {
@@ -259,7 +259,7 @@ func (s *pgEntCostStore) CostSummary(ctx context.Context, from, to time.Time, gr
 	return summary, nil
 }
 
-// ── GroupCost：群组计费归集明细 + 合计 ──
+// 鈹€鈹€ GroupCost锛氱兢缁勮璐瑰綊闆嗘槑缁?+ 鍚堣 鈹€鈹€
 
 func (s *pgEntCostStore) GroupCost(ctx context.Context, groupID string, from, to time.Time) (*entGroupCost, error) {
 	out := &entGroupCost{GroupID: groupID, Records: []entGroupCostRow{}}
@@ -296,7 +296,7 @@ func (s *pgEntCostStore) GroupCost(ctx context.Context, groupID string, from, to
 	return out, nil
 }
 
-// ── 配额池 CRUD ──
+// 鈹€鈹€ 閰嶉姹?CRUD 鈹€鈹€
 
 const quotaPoolColumns = `id, tenant_id, resource_type, total_amount, period, created_at, updated_at`
 
@@ -392,7 +392,7 @@ func (s *pgEntCostStore) DeleteQuotaPool(ctx context.Context, id string) error {
 	return nil
 }
 
-// ── 配额分配 ──
+// 鈹€鈹€ 閰嶉鍒嗛厤 鈹€鈹€
 
 func (s *pgEntCostStore) ListAllocations(ctx context.Context, poolID string) ([]EntQuotaAllocation, error) {
 	rows, err := db.ReadPool().Query(ctx,
@@ -445,7 +445,7 @@ func (s *pgEntCostStore) DeleteAllocation(ctx context.Context, poolID, id string
 	return tag.RowsAffected() > 0, nil
 }
 
-// ── quota 强制 / 用量支撑查询 ──
+// 鈹€鈹€ quota 寮哄埗 / 鐢ㄩ噺鏀拺鏌ヨ 鈹€鈹€
 
 func (s *pgEntCostStore) TenantTokenPools(ctx context.Context, tenantID string) ([]EntQuotaPool, error) {
 	rows, err := db.ReadPool().Query(ctx,
@@ -485,10 +485,10 @@ func (s *pgEntCostStore) ResolveTenantID(ctx context.Context, userID string) (st
 	return tenantID, nil
 }
 
-// ── Handler ───────────────────────────────────────────────────────────────
+// 鈹€鈹€ Handler 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// EntCostCenterHandler 提供企业成本中心 API（成本汇总 / 群组归集 / 配额池 CRUD / 分配 / 用量）。
-// 路由注册由集成任务统一接入（本任务不注册）：
+// EntCostCenterHandler 鎻愪緵浼佷笟鎴愭湰涓績 API锛堟垚鏈眹鎬?/ 缇ょ粍褰掗泦 / 閰嶉姹?CRUD / 鍒嗛厤 / 鐢ㄩ噺锛夈€?
+// 璺敱娉ㄥ唽鐢遍泦鎴愪换鍔＄粺涓€鎺ュ叆锛堟湰浠诲姟涓嶆敞鍐岋級锛?
 //
 //	costHandler := api.NewEntCostCenterHandler(nil, nil)
 //	costHandler.RegisterRoutes(mux, authMW, rlMW)
@@ -497,8 +497,8 @@ type EntCostCenterHandler struct {
 	redis db.RedisClient
 }
 
-// NewEntCostCenterHandler 创建 handler。store/redis 为 nil 时分别回退到
-// pgEntCostStore（全局 db.Pool）与全局 db.Redis。
+// NewEntCostCenterHandler 鍒涘缓 handler銆俿tore/redis 涓?nil 鏃跺垎鍒洖閫€鍒?
+// pgEntCostStore锛堝叏灞€ db.Pool锛変笌鍏ㄥ眬 db.Redis銆?
 func NewEntCostCenterHandler(store EntCostStore, redis db.RedisClient) *EntCostCenterHandler {
 	if store == nil {
 		store = newPGEntCostStore()
@@ -509,8 +509,8 @@ func NewEntCostCenterHandler(store EntCostStore, redis db.RedisClient) *EntCostC
 	return &EntCostCenterHandler{store: store, redis: redis}
 }
 
-// RegisterRoutes 挂载成本中心路由（仅定义，不在本任务注册）。
-// mws 建议传入 authMW、rlMW（与 UploadHandler.RegisterRoutes 惯例一致）。
+// RegisterRoutes 鎸傝浇鎴愭湰涓績璺敱锛堜粎瀹氫箟锛屼笉鍦ㄦ湰浠诲姟娉ㄥ唽锛夈€?
+// mws 寤鸿浼犲叆 authMW銆乺lMW锛堜笌 UploadHandler.RegisterRoutes 鎯緥涓€鑷达級銆?
 func (h *EntCostCenterHandler) RegisterRoutes(mux *http.ServeMux, mws ...func(http.Handler) http.Handler) {
 	handle := func(pattern string, hf http.HandlerFunc) {
 		mux.Handle(pattern, middlewareChain(http.HandlerFunc(hf), mws...))
@@ -527,7 +527,7 @@ func (h *EntCostCenterHandler) RegisterRoutes(mux *http.ServeMux, mws ...func(ht
 	handle("DELETE /v1/ent/quotas/{id}/allocations/{allocID}", h.DeleteAllocation)
 }
 
-// requirePerm 校验权限并返回 claims；不满足时已写响应，返回 nil。
+// requirePerm 鏍￠獙鏉冮檺骞惰繑鍥?claims锛涗笉婊¤冻鏃跺凡鍐欏搷搴旓紝杩斿洖 nil銆?
 func requirePerm(w http.ResponseWriter, r *http.Request, perm string) *auth.Claims {
 	claims := auth.GetClaims(r.Context())
 	if !auth.HasPermission(claims, perm) {
@@ -537,7 +537,7 @@ func requirePerm(w http.ResponseWriter, r *http.Request, perm string) *auth.Clai
 	return claims
 }
 
-// scopedTenantID：非 owner 且 claims 携带租户时，强制锚定自身租户。
+// scopedTenantID锛氶潪 owner 涓?claims 鎼哄甫绉熸埛鏃讹紝寮哄埗閿氬畾鑷韩绉熸埛銆?
 func scopedTenantID(claims *auth.Claims, requested string) string {
 	if claims != nil && claims.TenantID != "" && claims.Role != "owner" {
 		return claims.TenantID
@@ -545,8 +545,8 @@ func scopedTenantID(claims *auth.Claims, requested string) string {
 	return requested
 }
 
-// parseTimeRange 解析 from/to（支持 YYYY-MM-DD 与 RFC3339）。
-// 缺省：to = 现在，from = to - 30 天。
+// parseTimeRange 瑙ｆ瀽 from/to锛堟敮鎸?YYYY-MM-DD 涓?RFC3339锛夈€?
+// 缂虹渷锛歵o = 鐜板湪锛宖rom = to - 30 澶┿€?
 func parseTimeRange(fromStr, toStr string) (time.Time, time.Time, error) {
 	parse := func(s string) (time.Time, error) {
 		if t, err := time.Parse("2006-01-02", s); err == nil {
@@ -806,7 +806,7 @@ func (h *EntCostCenterHandler) UpdateQuota(w http.ResponseWriter, r *http.Reques
 	OK(w, pool)
 }
 
-// DeleteQuota DELETE /v1/ent/quotas/{id}（级联删除分配）
+// DeleteQuota DELETE /v1/ent/quotas/{id}锛堢骇鑱斿垹闄ゅ垎閰嶏級
 func (h *EntCostCenterHandler) DeleteQuota(w http.ResponseWriter, r *http.Request) {
 	if requirePerm(w, r, auth.PermAdminWrite) == nil {
 		return
@@ -828,7 +828,7 @@ func (h *EntCostCenterHandler) DeleteQuota(w http.ResponseWriter, r *http.Reques
 }
 
 // CreateAllocation POST /v1/ent/quotas/{id}/allocations
-// 校验分配总额不超过池总量（total_amount > 0 时），超出返回 422。
+// 鏍￠獙鍒嗛厤鎬婚涓嶈秴杩囨睜鎬婚噺锛坱otal_amount > 0 鏃讹級锛岃秴鍑鸿繑鍥?422銆?
 func (h *EntCostCenterHandler) CreateAllocation(w http.ResponseWriter, r *http.Request) {
 	if requirePerm(w, r, auth.PermAdminWrite) == nil {
 		return
@@ -870,7 +870,7 @@ func (h *EntCostCenterHandler) CreateAllocation(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// 分配总额校验：existing + new <= total_amount（0 = 无限制不校验）
+	// 鍒嗛厤鎬婚鏍￠獙锛歟xisting + new <= total_amount锛? = 鏃犻檺鍒朵笉鏍￠獙锛?
 	if pool.TotalAmount > 0 {
 		existing, sErr := h.store.SumAllocated(r.Context(), poolID)
 		if sErr != nil {
@@ -934,7 +934,7 @@ func (h *EntCostCenterHandler) DeleteAllocation(w http.ResponseWriter, r *http.R
 func uuidValidate(s string) error { _, err := uuid.Parse(s); return err }
 
 // QuotaUsage GET /v1/ent/quotas/usage?tenant_id=
-// token 用量优先读 Redis 计数器，缺失时从 billing_records SQL 聚合。
+// token 鐢ㄩ噺浼樺厛璇?Redis 璁℃暟鍣紝缂哄け鏃朵粠 billing_records SQL 鑱氬悎銆?
 func (h *EntCostCenterHandler) QuotaUsage(w http.ResponseWriter, r *http.Request) {
 	claims := requirePerm(w, r, auth.PermAdminRead)
 	if claims == nil {

@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -13,18 +13,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/athenavi/minicc/internal/db"
-	"github.com/athenavi/minicc/internal/id"
+	"github.com/athenavi/chiron/internal/db"
+	"github.com/athenavi/chiron/internal/id"
 )
 
-// ─────────────────────────────────────────────────────────────
-// /admin 全栈实装：租户 / 域名 / 数据库 / Redis / 模型 / 定时任务
-// 所有数据均来自真实存储（无 mock），读写经 admin 权限路由（adminReadMW/adminWriteMW）。
-// ─────────────────────────────────────────────────────────────
+// 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// /admin 鍏ㄦ爤瀹炶锛氱鎴?/ 鍩熷悕 / 鏁版嵁搴?/ Redis / 妯″瀷 / 瀹氭椂浠诲姟
+// 鎵€鏈夋暟鎹潎鏉ヨ嚜鐪熷疄瀛樺偍锛堟棤 mock锛夛紝璇诲啓缁?admin 鏉冮檺璺敱锛坅dminReadMW/adminWriteMW锛夈€?// 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// registerOpsRoutes 挂载运维类管理端点（在 adminMux 内，经 StripPrefix /v1/admin）。
-func (h *AdminHandler) registerOpsRoutes(r *http.ServeMux) {
-	// 租户管理
+// registerOpsRoutes 鎸傝浇杩愮淮绫荤鐞嗙鐐癸紙鍦?adminMux 鍐咃紝缁?StripPrefix /v1/admin锛夈€?func (h *AdminHandler) registerOpsRoutes(r *http.ServeMux) {
+	// 绉熸埛绠＄悊
 	r.HandleFunc("GET /tenants", h.ListTenants)
 	r.HandleFunc("POST /tenants", h.CreateTenant)
 	r.HandleFunc("PUT /tenants/{id}", h.UpdateTenant)
@@ -32,7 +30,7 @@ func (h *AdminHandler) registerOpsRoutes(r *http.ServeMux) {
 	r.HandleFunc("POST /tenants/{id}/suspend", h.SuspendTenant)
 	r.HandleFunc("GET /tenants/{id}/usage", h.TenantUsage)
 
-	// 域名管理
+	// 鍩熷悕绠＄悊
 	r.HandleFunc("GET /domains", h.ListDomains)
 	r.HandleFunc("POST /domains", h.CreateDomain)
 	r.HandleFunc("PUT /domains/{id}", h.UpdateDomain)
@@ -40,8 +38,7 @@ func (h *AdminHandler) registerOpsRoutes(r *http.ServeMux) {
 	r.HandleFunc("POST /domains/{id}/verify", h.VerifyDomain)
 	r.HandleFunc("POST /domains/{id}/renew-ssl", h.RenewDomainSSL)
 
-	// 数据库管理
-	r.HandleFunc("GET /database/configs", h.DatabaseConfigs)
+	// 鏁版嵁搴撶鐞?	r.HandleFunc("GET /database/configs", h.DatabaseConfigs)
 	r.HandleFunc("GET /database/backups", h.DatabaseBackups)
 	r.HandleFunc("POST /database/backups", h.CreateDatabaseBackup)
 	r.HandleFunc("POST /database/backups/{backupId}/restore", h.RestoreDatabaseBackup)
@@ -49,25 +46,22 @@ func (h *AdminHandler) registerOpsRoutes(r *http.ServeMux) {
 	r.HandleFunc("POST /database/query", h.DatabaseQuery)
 	r.HandleFunc("POST /database/optimize/{action}", h.DatabaseOptimize)
 
-	// Redis 管理（单实例真实操作）
-	r.HandleFunc("GET /redis/slow-log", h.RedisSlowLog)
+	// Redis 绠＄悊锛堝崟瀹炰緥鐪熷疄鎿嶄綔锛?	r.HandleFunc("GET /redis/slow-log", h.RedisSlowLog)
 	r.HandleFunc("POST /redis/flush-all", h.RedisFlushAll)
 
-	// 模型注册表
-	r.HandleFunc("GET /models", h.ListModels)
+	// 妯″瀷娉ㄥ唽琛?	r.HandleFunc("GET /models", h.ListModels)
 	r.HandleFunc("POST /models", h.CreateModel)
 	r.HandleFunc("PUT /models/{id}", h.UpdateModel)
 	r.HandleFunc("DELETE /models/{id}", h.DeleteModel)
 
-	// 定时任务（DB 持久化；执行由调度器接入）
-	r.HandleFunc("GET /cron-jobs", h.ListCronJobs)
+	// 瀹氭椂浠诲姟锛圖B 鎸佷箙鍖栵紱鎵ц鐢辫皟搴﹀櫒鎺ュ叆锛?	r.HandleFunc("GET /cron-jobs", h.ListCronJobs)
 	r.HandleFunc("POST /cron-jobs", h.CreateCronJob)
 	r.HandleFunc("PUT /cron-jobs/{id}", h.UpdateCronJob)
 	r.HandleFunc("DELETE /cron-jobs/{id}", h.DeleteCronJob)
 	r.HandleFunc("POST /cron-jobs/{id}/trigger", h.HandleCronTrigger)
 }
 
-// ── 租户管理 ──
+// 鈹€鈹€ 绉熸埛绠＄悊 鈹€鈹€
 
 type tenantRow struct {
 	ID        string    `json:"id"`
@@ -133,7 +127,7 @@ func (h *AdminHandler) UpdateTenant(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "status must be active or suspended")
 		return
 	}
-	// S 安全修复：列名白名单，防止 SQL 注入
+	// S 瀹夊叏淇锛氬垪鍚嶇櫧鍚嶅崟锛岄槻姝?SQL 娉ㄥ叆
 	tenantColumnMap := map[string]string{
 		"name":   "name",
 		"status": "status",
@@ -213,7 +207,7 @@ func (h *AdminHandler) TenantUsage(w http.ResponseWriter, r *http.Request) {
 	OK(w, u)
 }
 
-// ── 域名管理 ──
+// 鈹€鈹€ 鍩熷悕绠＄悊 鈹€鈹€
 
 type domainRow struct {
 	ID        string    `json:"id"`
@@ -293,8 +287,7 @@ func (h *AdminHandler) DeleteDomain(w http.ResponseWriter, r *http.Request) {
 	OK(w, map[string]string{"status": "deleted"})
 }
 
-// VerifyDomain 真实 DNS 校验：解析 A/AAAA 记录确认域名可达。
-func (h *AdminHandler) VerifyDomain(w http.ResponseWriter, r *http.Request) {
+// VerifyDomain 鐪熷疄 DNS 鏍￠獙锛氳В鏋?A/AAAA 璁板綍纭鍩熷悕鍙揪銆?func (h *AdminHandler) VerifyDomain(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var domain string
 	if err := db.ReadPool().QueryRow(r.Context(),
@@ -310,14 +303,13 @@ func (h *AdminHandler) VerifyDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !verified {
-		OK(w, map[string]interface{}{"verified": false, "reason": "DNS 解析失败或无记录", "addresses": []string{}})
+		OK(w, map[string]interface{}{"verified": false, "reason": "DNS 瑙ｆ瀽澶辫触鎴栨棤璁板綍", "addresses": []string{}})
 		return
 	}
 	OK(w, map[string]interface{}{"verified": true, "addresses": addrs})
 }
 
-// RenewDomainSSL 要求域名已通过验证后置 ssl_status=active（CA 签发由部署侧接入）。
-func (h *AdminHandler) RenewDomainSSL(w http.ResponseWriter, r *http.Request) {
+// RenewDomainSSL 瑕佹眰鍩熷悕宸查€氳繃楠岃瘉鍚庣疆 ssl_status=active锛圕A 绛惧彂鐢遍儴缃蹭晶鎺ュ叆锛夈€?func (h *AdminHandler) RenewDomainSSL(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var verified bool
 	if err := db.ReadPool().QueryRow(r.Context(),
@@ -334,10 +326,10 @@ func (h *AdminHandler) RenewDomainSSL(w http.ResponseWriter, r *http.Request) {
 		logAndRespond(w, err, http.StatusInternalServerError, "renew ssl failed")
 		return
 	}
-	OK(w, map[string]interface{}{"ssl_status": "active", "note": "证书签发由部署侧 CA 接入点处理"})
+	OK(w, map[string]interface{}{"ssl_status": "active", "note": "璇佷功绛惧彂鐢遍儴缃蹭晶 CA 鎺ュ叆鐐瑰鐞?})
 }
 
-// ── 数据库管理 ──
+// 鈹€鈹€ 鏁版嵁搴撶鐞?鈹€鈹€
 
 func (h *AdminHandler) DatabaseConfigs(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.ReadPool().Query(r.Context(),
@@ -396,12 +388,12 @@ func (h *AdminHandler) DatabaseBackups(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminHandler) CreateDatabaseBackup(w http.ResponseWriter, r *http.Request) {
-	// 复用 CreateBackup 的 pg_dump 能力，落盘到备份目录
+	// 澶嶇敤 CreateBackup 鐨?pg_dump 鑳藉姏锛岃惤鐩樺埌澶囦唤鐩綍
 	if err := os.MkdirAll(backupDir(), 0o755); err != nil {
 		InternalError(w, "backup dir create failed")
 		return
 	}
-	name := fmt.Sprintf("minicc_backup_%s.sql", time.Now().Format("20060102_150405"))
+	name := fmt.Sprintf("chiron_backup_%s.sql", time.Now().Format("20060102_150405"))
 	target := filepath.Join(backupDir(), name)
 	if err := runPGDump(r.Context(), target); err != nil {
 		logAndRespond(w, err, http.StatusInternalServerError, "backup failed")
@@ -506,7 +498,7 @@ func (h *AdminHandler) DatabaseOptimize(w http.ResponseWriter, r *http.Request) 
 		BadRequest(w, "table is required")
 		return
 	}
-	// 表名白名单校验：仅允许 public schema 的常规表
+	// 琛ㄥ悕鐧藉悕鍗曟牎楠岋細浠呭厑璁?public schema 鐨勫父瑙勮〃
 	var exists bool
 	if err := db.ReadPool().QueryRow(r.Context(),
 		`SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=$1 AND table_type='BASE TABLE')`,
@@ -529,7 +521,7 @@ func quoteIdent(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
-// ── Redis 管理（单实例真实操作）──
+// 鈹€鈹€ Redis 绠＄悊锛堝崟瀹炰緥鐪熷疄鎿嶄綔锛夆攢鈹€
 
 func (h *AdminHandler) redisDo(ctx context.Context, args ...interface{}) (interface{}, error) {
 	if db.Redis == nil {
@@ -567,7 +559,7 @@ func (h *AdminHandler) RedisFlushAll(w http.ResponseWriter, r *http.Request) {
 	OK(w, map[string]interface{}{"status": "flushed"})
 }
 
-// ── 模型注册表 ──
+// 鈹€鈹€ 妯″瀷娉ㄥ唽琛?鈹€鈹€
 
 type modelRow struct {
 	ID            string    `json:"id"`
@@ -635,7 +627,7 @@ func (h *AdminHandler) UpdateModel(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, ErrInvalidReq)
 		return
 	}
-	// S 安全修复：列名白名单，防止 SQL 注入
+	// S 瀹夊叏淇锛氬垪鍚嶇櫧鍚嶅崟锛岄槻姝?SQL 娉ㄥ叆
 	modelColumnMap := map[string]string{
 		"display_name":  "display_name",
 		"enabled":       "enabled",
@@ -685,7 +677,7 @@ func (h *AdminHandler) DeleteModel(w http.ResponseWriter, r *http.Request) {
 	OK(w, map[string]string{"status": "deleted"})
 }
 
-// ListUserModels 用户侧可用模型（仅 enabled）：GET /v1/models
+// ListUserModels 鐢ㄦ埛渚у彲鐢ㄦā鍨嬶紙浠?enabled锛夛細GET /v1/models
 func ListUserModels(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.ReadPool().Query(r.Context(),
 		`SELECT provider, name, display_name, context_window FROM llm_models
@@ -711,7 +703,7 @@ func ListUserModels(w http.ResponseWriter, r *http.Request) {
 	OK(w, map[string]interface{}{"models": out})
 }
 
-// ── 定时任务 ──
+// 鈹€鈹€ 瀹氭椂浠诲姟 鈹€鈹€
 
 type cronRow struct {
 	ID         string     `json:"id"`
@@ -777,7 +769,7 @@ func (h *AdminHandler) UpdateCronJob(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, ErrInvalidReq)
 		return
 	}
-	// S 安全修复：列名白名单，防止 SQL 注入
+	// S 瀹夊叏淇锛氬垪鍚嶇櫧鍚嶅崟锛岄槻姝?SQL 娉ㄥ叆
 	cronColumnMap := map[string]string{
 		"name":     "name",
 		"schedule": "schedule",
@@ -827,10 +819,9 @@ func (h *AdminHandler) DeleteCronJob(w http.ResponseWriter, r *http.Request) {
 	OK(w, map[string]string{"status": "deleted"})
 }
 
-// ── 工具 ──
+// 鈹€鈹€ 宸ュ叿 鈹€鈹€
 
-// runPGDump 落盘 pg_dump（复用 extractDSN）。
-func runPGDump(ctx context.Context, target string) error {
+// runPGDump 钀界洏 pg_dump锛堝鐢?extractDSN锛夈€?func runPGDump(ctx context.Context, target string) error {
 	cmd := exec.CommandContext(ctx, "pg_dump", "--dbname="+extractDSN())
 	out, err := cmd.Output()
 	if err != nil {

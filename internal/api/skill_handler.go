@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -6,9 +6,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/db"
-	"github.com/athenavi/minicc/internal/engine"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/db"
+	"github.com/athenavi/chiron/internal/engine"
 )
 
 // SkillHandler proxies skill requests to the Python AI engine.
@@ -22,27 +22,21 @@ func NewSkillHandler(python *engine.PythonClient) *SkillHandler {
 
 var validSkillName = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
 
-// RegisterRoutes 注册技能路由。安全修复（P0-S2）：所有路由必须经过 authMW
-// （技能即代码，未认证可 install/run = 未认证 RCE），并挂 rlMW 与 sanitizeMW。
-func (h *SkillHandler) RegisterRoutes(mux *http.ServeMux, authMW, rlMW, sanitizeMW routeMiddleware) {
-	// 同时注册精确和尾斜杠变体：Go ServeMux 中 "/v1/skills/" 只匹配子树（不匹配 "/v1/skills"），
-	// 而前端调用的是 GET /v1/skills，Python 端注册的也是 /v1/skills。
-	mux.Handle("GET /v1/skills", authMW(rlMW(http.HandlerFunc(h.proxy))))
+// RegisterRoutes 娉ㄥ唽鎶€鑳借矾鐢便€傚畨鍏ㄤ慨澶嶏紙P0-S2锛夛細鎵€鏈夎矾鐢卞繀椤荤粡杩?authMW
+// 锛堟妧鑳藉嵆浠ｇ爜锛屾湭璁よ瘉鍙?install/run = 鏈璇?RCE锛夛紝骞舵寕 rlMW 涓?sanitizeMW銆?func (h *SkillHandler) RegisterRoutes(mux *http.ServeMux, authMW, rlMW, sanitizeMW routeMiddleware) {
+	// 鍚屾椂娉ㄥ唽绮剧‘鍜屽熬鏂滄潬鍙樹綋锛欸o ServeMux 涓?"/v1/skills/" 鍙尮閰嶅瓙鏍戯紙涓嶅尮閰?"/v1/skills"锛夛紝
+	// 鑰屽墠绔皟鐢ㄧ殑鏄?GET /v1/skills锛孭ython 绔敞鍐岀殑涔熸槸 /v1/skills銆?	mux.Handle("GET /v1/skills", authMW(rlMW(http.HandlerFunc(h.proxy))))
 	mux.Handle("GET /v1/skills/", authMW(rlMW(http.HandlerFunc(h.proxy))))
 	mux.Handle("POST /v1/skills/install", authMW(rlMW(sanitizeMW(http.HandlerFunc(h.proxy)))))
 	mux.Handle("POST /v1/skills/generate", authMW(rlMW(sanitizeMW(http.HandlerFunc(h.proxy)))))
 	mux.Handle("DELETE /v1/skills/{name}", authMW(rlMW(http.HandlerFunc(h.proxyDelete))))
 	mux.Handle("GET /v1/skills/discover", authMW(rlMW(http.HandlerFunc(h.proxy))))
-	// 启停（PUT）与运行（POST run）——技能工作台主链路
-	mux.Handle("PUT /v1/skills/{name}", authMW(rlMW(sanitizeMW(http.HandlerFunc(h.proxy)))))
+	// 鍚仠锛圥UT锛変笌杩愯锛圥OST run锛夆€斺€旀妧鑳藉伐浣滃彴涓婚摼璺?	mux.Handle("PUT /v1/skills/{name}", authMW(rlMW(sanitizeMW(http.HandlerFunc(h.proxy)))))
 	mux.Handle("POST /v1/skills/{name}/run", authMW(rlMW(sanitizeMW(http.HandlerFunc(h.proxy)))))
-	// 市场技能注册（P1 修复：前端 SkillMarketCard 调用 /v1/skills/{id}/register，
-	// 此前两端均无此路由导致注册 404）
-	mux.Handle("POST /v1/skills/{name}/register", authMW(rlMW(http.HandlerFunc(h.register))))
+	// 甯傚満鎶€鑳芥敞鍐岋紙P1 淇锛氬墠绔?SkillMarketCard 璋冪敤 /v1/skills/{id}/register锛?	// 姝ゅ墠涓ょ鍧囨棤姝よ矾鐢卞鑷存敞鍐?404锛?	mux.Handle("POST /v1/skills/{name}/register", authMW(rlMW(http.HandlerFunc(h.register))))
 }
 
-// register 将能力注册中心的技能注册为本地技能（转发 Python /v1/skills/{name}/register）。
-func (h *SkillHandler) register(w http.ResponseWriter, r *http.Request) {
+// register 灏嗚兘鍔涙敞鍐屼腑蹇冪殑鎶€鑳芥敞鍐屼负鏈湴鎶€鑳斤紙杞彂 Python /v1/skills/{name}/register锛夈€?func (h *SkillHandler) register(w http.ResponseWriter, r *http.Request) {
 	if h.python == nil {
 		InternalError(w, "python engine not available")
 		return
@@ -90,7 +84,7 @@ func (h *SkillHandler) proxy(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case "GET":
-		// 规范化转发路径：Python 端注册的是 /v1/skills（无尾斜杠）
+		// 瑙勮寖鍖栬浆鍙戣矾寰勶細Python 绔敞鍐岀殑鏄?/v1/skills锛堟棤灏炬枩鏉狅級
 		path := strings.TrimSuffix(r.URL.Path, "/")
 		err = h.python.GetJSON(r.Context(), path, &result)
 		if err == nil && strings.HasSuffix(path, "/discover") {
@@ -102,8 +96,7 @@ func (h *SkillHandler) proxy(w http.ResponseWriter, r *http.Request) {
 			BadRequest(w, ErrInvalidReq)
 			return
 		}
-		// 身份注入（网关为唯一可信边界）：引擎无鉴权，必须由网关注入租户/用户身份。
-		if tid := skillTenantID(r); tid != "" {
+		// 韬唤娉ㄥ叆锛堢綉鍏充负鍞竴鍙俊杈圭晫锛夛細寮曟搸鏃犻壌鏉冿紝蹇呴』鐢辩綉鍏虫敞鍏ョ鎴?鐢ㄦ埛韬唤銆?		if tid := skillTenantID(r); tid != "" {
 			body["tenant_id"] = tid
 		}
 		if uid := auth.GetClaims(r.Context()); uid != nil && uid.UserID != "" {
@@ -151,23 +144,19 @@ func (h *SkillHandler) proxyDelete(w http.ResponseWriter, r *http.Request) {
 	OK(w, result)
 }
 
-// skillTenantID 取当前租户 ID：claims 优先，缺省回退默认租户。
-func skillTenantID(r *http.Request) string {
+// skillTenantID 鍙栧綋鍓嶇鎴?ID锛歝laims 浼樺厛锛岀己鐪佸洖閫€榛樿绉熸埛銆?func skillTenantID(r *http.Request) string {
 	if claims := auth.GetClaims(r.Context()); claims != nil && claims.TenantID != "" {
 		return claims.TenantID
 	}
 	return DefaultTenantID
 }
 
-// filterDiscoverByMarket 对 discover 代理响应做市场白名单过滤：
-// 仅当市场存在同名 published 条目时按租户授权过滤（IsItemEnabledForTenant
-// 内部保证未上架能力与查询故障均放行）。PG 不可用时整体跳过，避免逐条 warn。
-func filterDiscoverByMarket(ctx context.Context, result map[string]interface{}, tenantID string) {
+// filterDiscoverByMarket 瀵?discover 浠ｇ悊鍝嶅簲鍋氬競鍦虹櫧鍚嶅崟杩囨护锛?// 浠呭綋甯傚満瀛樺湪鍚屽悕 published 鏉＄洰鏃舵寜绉熸埛鎺堟潈杩囨护锛圛sItemEnabledForTenant
+// 鍐呴儴淇濊瘉鏈笂鏋惰兘鍔涗笌鏌ヨ鏁呴殰鍧囨斁琛岋級銆侾G 涓嶅彲鐢ㄦ椂鏁翠綋璺宠繃锛岄伩鍏嶉€愭潯 warn銆?func filterDiscoverByMarket(ctx context.Context, result map[string]interface{}, tenantID string) {
 	if db.ReadPool() == nil {
 		return
 	}
-	// 兼容多种响应结构：在常见列表键中定位技能数组
-	var list []interface{}
+	// 鍏煎澶氱鍝嶅簲缁撴瀯锛氬湪甯歌鍒楄〃閿腑瀹氫綅鎶€鑳芥暟缁?	var list []interface{}
 	var listKey string
 	for _, key := range []string{"skills", "items", "data", "list"} {
 		if arr, ok := result[key].([]interface{}); ok {
@@ -181,8 +170,7 @@ func filterDiscoverByMarket(ctx context.Context, result map[string]interface{}, 
 	result[listKey] = filterSkillsByMarket(ctx, list, tenantID)
 }
 
-// filterSkillsByMarket 对技能列表逐项做市场门控过滤（纯逻辑，独立可测）。
-func filterSkillsByMarket(ctx context.Context, list []interface{}, tenantID string) []interface{} {
+// filterSkillsByMarket 瀵规妧鑳藉垪琛ㄩ€愰」鍋氬競鍦洪棬鎺ц繃婊わ紙绾€昏緫锛岀嫭绔嬪彲娴嬶級銆?func filterSkillsByMarket(ctx context.Context, list []interface{}, tenantID string) []interface{} {
 	kept := make([]interface{}, 0, len(list))
 	for _, raw := range list {
 		entry, ok := raw.(map[string]interface{})

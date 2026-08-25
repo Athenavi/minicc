@@ -1,4 +1,4 @@
-package billing
+﻿package billing
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// ── Types ──
+// 鈹€鈹€ Types 鈹€鈹€
 
 // CreditChange records a credit transaction.
 type CreditChange struct {
@@ -64,7 +64,7 @@ type Manager struct {
 	eventCh   chan CreditEvent
 	done      chan struct{}
 	closeOnce sync.Once
-	balances  sync.Map // userID → *int64 (atomic balance)
+	balances  sync.Map // userID 鈫?*int64 (atomic balance)
 }
 
 // Store is the interface for persisting credit data.
@@ -174,9 +174,8 @@ func (m *Manager) GetBalance(userID string) (int, error) {
 
 // Deduct deducts credits from a user's balance. Returns the new balance.
 // Returns an error if insufficient credits.
-// P0-P1 修复：改为 PG 单语句原子扣费（UPDATE ... RETURNING），数据库为唯一
-// 事实源，多副本部署下不会超扣/重复扣费；内存仅作读缓存。
-func (m *Manager) Deduct(userID, reason string, amount int) (int, error) {
+// P0-P1 淇锛氭敼涓?PG 鍗曡鍙ュ師瀛愭墸璐癸紙UPDATE ... RETURNING锛夛紝鏁版嵁搴撲负鍞竴
+// 浜嬪疄婧愶紝澶氬壇鏈儴缃蹭笅涓嶄細瓒呮墸/閲嶅鎵ｈ垂锛涘唴瀛樹粎浣滆缂撳瓨銆?func (m *Manager) Deduct(userID, reason string, amount int) (int, error) {
 	if amount <= 0 {
 		return 0, fmt.Errorf("invalid deduction amount: %d", amount)
 	}
@@ -197,8 +196,7 @@ func (m *Manager) Deduct(userID, reason string, amount int) (int, error) {
 }
 
 // AddCredits adds credits to a user's balance (for recharge or admin grants).
-// P0-P1 修复：改为 PG 单语句原子充值，数据库为唯一事实源。
-func (m *Manager) AddCredits(userID, reason string, amount int) (int, error) {
+// P0-P1 淇锛氭敼涓?PG 鍗曡鍙ュ師瀛愬厖鍊硷紝鏁版嵁搴撲负鍞竴浜嬪疄婧愩€?func (m *Manager) AddCredits(userID, reason string, amount int) (int, error) {
 	if amount <= 0 {
 		return 0, fmt.Errorf("invalid credit amount: %d", amount)
 	}
@@ -218,8 +216,7 @@ func (m *Manager) AddCredits(userID, reason string, amount int) (int, error) {
 	return newBalance, nil
 }
 
-// setBalanceCache 更新内存读缓存（不改变 DB 事实源）。
-func (m *Manager) setBalanceCache(userID string, balance int) {
+// setBalanceCache 鏇存柊鍐呭瓨璇荤紦瀛橈紙涓嶆敼鍙?DB 浜嬪疄婧愶級銆?func (m *Manager) setBalanceCache(userID string, balance int) {
 	ptr := new(int64)
 	*ptr = int64(balance)
 	m.balances.Store(userID, ptr)
@@ -230,25 +227,21 @@ func (m *Manager) GetHistory(ctx context.Context, userID string, limit int) ([]C
 	return m.store.GetHistory(ctx, userID, limit)
 }
 
-// ── 支付订单（delegate 到 PaymentStore） ──
+// 鈹€鈹€ 鏀粯璁㈠崟锛坉elegate 鍒?PaymentStore锛?鈹€鈹€
 
-// CreatePayment 创建一笔 pending 支付订单。
-func (m *Manager) CreatePayment(ctx context.Context, p *Payment) error {
+// CreatePayment 鍒涘缓涓€绗?pending 鏀粯璁㈠崟銆?func (m *Manager) CreatePayment(ctx context.Context, p *Payment) error {
 	return m.store.CreatePayment(ctx, p)
 }
 
-// GetPayment 按内部订单号查询订单。
-func (m *Manager) GetPayment(ctx context.Context, id string) (*Payment, error) {
+// GetPayment 鎸夊唴閮ㄨ鍗曞彿鏌ヨ璁㈠崟銆?func (m *Manager) GetPayment(ctx context.Context, id string) (*Payment, error) {
 	return m.store.GetPayment(ctx, id)
 }
 
-// UpdatePaymentProvider 预下单成功后回填二维码与渠道订单号。
-func (m *Manager) UpdatePaymentProvider(ctx context.Context, id, qrCode, providerOrderID string) error {
+// UpdatePaymentProvider 棰勪笅鍗曟垚鍔熷悗鍥炲～浜岀淮鐮佷笌娓犻亾璁㈠崟鍙枫€?func (m *Manager) UpdatePaymentProvider(ctx context.Context, id, qrCode, providerOrderID string) error {
 	return m.store.UpdatePaymentProvider(ctx, id, qrCode, providerOrderID)
 }
 
-// MarkPaymentFailed 标记订单支付失败。
-func (m *Manager) MarkPaymentFailed(ctx context.Context, id string) error {
+// MarkPaymentFailed 鏍囪璁㈠崟鏀粯澶辫触銆?func (m *Manager) MarkPaymentFailed(ctx context.Context, id string) error {
 	return m.store.MarkPaymentFailed(ctx, id)
 }
 

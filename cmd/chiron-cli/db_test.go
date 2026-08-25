@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"os"
@@ -31,7 +31,7 @@ func TestSanitizeDSN(t *testing.T) {
 func TestHasInternalMigrationFiles(t *testing.T) {
 	dir := t.TempDir()
 
-	// 空目录 / 不存在 → false
+	// 绌虹洰褰?/ 涓嶅瓨鍦?鈫?false
 	if hasInternalMigrationFiles(dir) {
 		t.Error("empty dir should return false")
 	}
@@ -39,7 +39,7 @@ func TestHasInternalMigrationFiles(t *testing.T) {
 		t.Error("missing dir should return false")
 	}
 
-	// 只有 atlas 格式 .sql → false
+	// 鍙湁 atlas 鏍煎紡 .sql 鈫?false
 	if err := os.WriteFile(filepath.Join(dir, "20260101000001_init.sql"), []byte("-- x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestHasInternalMigrationFiles(t *testing.T) {
 		t.Error("only .sql files should return false")
 	}
 
-	// 出现 .up.sql → true
+	// 鍑虹幇 .up.sql 鈫?true
 	if err := os.WriteFile(filepath.Join(dir, "20260101000002_x.up.sql"), []byte("-- x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestHasInternalMigrationFiles(t *testing.T) {
 		t.Error(".up.sql should return true")
 	}
 
-	// 仅 .down.sql 也 true
+	// 浠?.down.sql 涔?true
 	dir2 := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir2, "20260101000003_y.down.sql"), []byte("-- y"), 0o644); err != nil {
 		t.Fatal(err)

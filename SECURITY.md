@@ -1,67 +1,41 @@
-# Security Policy
+﻿# Security Policy
 
-## 报告漏洞(Reporting a Vulnerability)
+## 鎶ュ憡婕忔礊(Reporting a Vulnerability)
 
-我们非常重视安全性。如果你发现 MiniCC 存在安全漏洞,请**不要**公开提交 Issue 或 PR——请通过以下任一私有渠道报告:
+鎴戜滑闈炲父閲嶈瀹夊叏鎬с€傚鏋滀綘鍙戠幇 chiron 瀛樺湪瀹夊叏婕忔礊,璇?*涓嶈**鍏紑鎻愪氦 Issue 鎴?PR鈥斺€旇閫氳繃浠ヤ笅浠讳竴绉佹湁娓犻亾鎶ュ憡:
 
-1. **GitHub Private Vulnerability Reporting(推荐)**:访问 <https://github.com/athenavi/minicc/security/advisories> 提交私有安全公告。
-2. **邮件**:发送至 `security@athenavi.com`(占位邮箱,正式开源后请替换为维护者真实邮箱)。
+1. **GitHub Private Vulnerability Reporting(鎺ㄨ崘)**:璁块棶 <https://github.com/athenavi/chiron/security/advisories> 鎻愪氦绉佹湁瀹夊叏鍏憡銆?2. **閭欢**:鍙戦€佽嚦 `security@athenavi.com`(鍗犱綅閭,姝ｅ紡寮€婧愬悗璇锋浛鎹负缁存姢鑰呯湡瀹為偖绠?銆?
+璇峰湪鎶ュ憡涓寘鍚?
 
-请在报告中包含:
+- 婕忔礊绫诲瀷涓庡奖鍝嶈寖鍥?缁勪欢銆佹帴鍙ｃ€佺増鏈?;
+- 澶嶇幇姝ラ鎴栨渶灏?PoC(涓嶅寘鍚晱鎰熸暟鎹?;
+- 浣犺瀵熷埌鐨勫疄闄呭奖鍝?鏁版嵁娉勯湶 / 鏉冮檺缁曡繃 / DoS 绛?;
+- 寤鸿鐨勪慨澶嶆柟鍚?濡傛湁)銆?
+**鍝嶅簲鎵胯**:
 
-- 漏洞类型与影响范围(组件、接口、版本);
-- 复现步骤或最小 PoC(不包含敏感数据);
-- 你观察到的实际影响(数据泄露 / 权限绕过 / DoS 等);
-- 建议的修复方向(如有)。
+- 鏀跺埌鎶ュ憡鍚?48 灏忔椂鍐呯‘璁ゆ敹鎮?
+- 纭鏈夋晥鍚庡敖蹇慨澶?涓ラ噸婕忔礊閫氬父 90 澶╁唴鍙戝竷淇鐗堟湰;
+- 鍦ㄤ慨澶嶅彂甯冨墠,鎴戜滑浼氫笌鎶ュ憡鑰呭崗璋冩姭闇叉椂闂?骞?濡備綘鍚屾剰)鍦ㄨ嚧璋腑缃插悕銆?
+## 瀹夊叏鐗规€?
+### 澶氱鎴蜂笌璁块棶鎺у埗
 
-**响应承诺**:
+- **绉熸埛 / 鐢ㄦ埛涓ょ骇闅旂**:鎵€鏈変笟鍔℃煡璇㈠己鍒舵惡甯?`tenant_id` / `user_id` 鏉′欢(琛岀骇);Redis key銆丮ilvus 鍚戦噺妫€绱€佸獟浣撹祫婧愩€佹彃浠堕厤缃潎鎸夌鎴?鐢ㄦ埛鍛藉悕绌洪棿闅旂銆?- **璁よ瘉閾捐矾**:JWT(HS256,cookie + bearer)+ API Key + OAuth/OIDC/SMS 澶氬洜瀛愬叆鍙?`COOKIE_SECURE=true`(鐢熶骇)涓?cookie 杩藉姞 `Secure` 鏍囧織銆?- **缃戝叧 鈫?寮曟搸韬唤閫忎紶 fail-close**:缃戝叧杞彂鍐呴儴璇锋眰鏃舵敞鍏?`X-Internal-Token`;Python 寮曟搸浠呭湪浠ょ墝鍖归厤鏃舵墠鎺ュ彈 `tenant_id`/`user_id` query 閫忎紶,鍚﹀垯**鎷掔粷**(闃叉鐩磋繛寮曟搸缁曡繃缃戝叧閴存潈)銆?- **RBAC**:绠＄悊鎺ュ彛鎸夋潈闄愪綅(`RequirePermission`)鏍￠獙,浼佷笟鐗堟敮鎸佽鑹?/ 缇ょ粍 / 鎿嶄綔瀹¤銆?
+### 娉ㄥ叆涓庡懡浠ゆ墽琛岄槻鎶?
+- **Prompt 娉ㄥ叆妫€娴?*:缃戝叧 `InputSanitizer` 瀵瑰父瑙佹敞鍏ユā寮?蹇界暐鍘嗗彶鎸囦护銆佽秺鏉冩彁绀恒€佺郴缁熸彁绀鸿鐩栫瓑)姝ｅ垯妫€娴嬪苟鎷掔粷;鍚堟硶杈撳叆浠?`<user_input>` 鏍囩鍖呰９闅旂銆?- **SSRF 闃叉姢**:寮曟搸宸ュ叿灞傚鐩爣鍦板潃鍋氱鍙ｇ櫧鍚嶅崟鏍￠獙,鎷︽埅鍐呯綉/鍏冩暟鎹湴鍧€涓庢湭鍏佽绔彛銆?- **鎻掍欢鍛戒护鐧藉悕鍗?*:`PLUGIN_COMMAND_ALLOWLIST`(閫楀彿鍒嗛殧鐨?basename)鎺у埗 MCP 鎻掍欢鍙媺璧风殑鍙墽琛屾枃浠?**鐣欑┖鍗崇姝㈡墍鏈夎嚜瀹氫箟鎻掍欢鍛戒护**(瀹夊叏榛樿)銆?- **杈撳嚭璺緞鑴辨晱**:宸ュ叿杈撳嚭涓庢枃浠惰鍐欒矾寰勭粡杩囨牎楠?闃叉璺緞绌胯秺銆?
+### 濯掍綋涓庢暟鎹繚鎶?
+- **濯掍綋绛惧悕 URL**:璧勬簮涓嶅叕寮€鐩村嚭;`POST /v1/media/{id}/sign` 鏍￠獙褰掑睘(璧勪骇蹇呴』灞炰簬褰撳墠绉熸埛涓庣敤鎴?鍚庣鍙?`HMAC-SHA256(JWT_SECRET, assetID|exp)` 绛惧悕,15 鍒嗛挓鏈夋晥鏈?`GET /media/s/{id}?exp=&sig=` 楠岀鍚庢祦寮忚繑鍥炪€?- **瀛樺偍鍨?XSS 闃叉姢**:濯掍綋涓婁紶鏀寔鍒嗙墖涓庡唴瀹规牎楠?`/media/` 闈欐€佹湇鍔＄粡鍑€鍖栧鐞嗐€?
+### 鍙敤鎬ч槻鎶?
+- **鍒嗗竷寮忛檺娴?*:姣忕敤鎴?RPM + 姣忕鎴?RPS + 鍏ㄥ眬闄愰涓夊眰;`TRUSTED_PROXY_CIDRS` 闃叉浼€?`X-Forwarded-For` 缁曡繃闄愭祦/楠岃瘉鐮併€?- **Redis 蹇呴渶鍖?fail-fast**:Redis 浣滀负闃熷垪銆佽涔夌紦瀛樹笌鍒嗗竷寮忛檺娴佺殑鏍稿績渚濊禆,涓嶅彲鐢ㄦ椂蹇€熷け璐ヨ€岄潪闈欓粯闄嶇骇(閬垮厤"鐪嬩技鍙敤瀹炲垯澶辨晥"鐨勯檷绾ф敾鍑婚潰)銆?- **鎸囨爣閴存潈**:`/metrics` 闇€瑕?`METRICS_TOKEN`(Bearer)鎴?JWT 绠＄悊鍛樻潈闄愩€?- **Fail-fast 渚濊禆**:鍏抽敭閰嶇疆缂哄け(濡?`JWT_SECRET`)鏃剁綉鍏虫嫆缁濆惎鍔?涓嶆彁渚涘急榛樿鍊笺€?
+## 宸茬煡杈圭晫(Known Limitations)
 
-- 收到报告后 48 小时内确认收悉;
-- 确认有效后尽快修复,严重漏洞通常 90 天内发布修复版本;
-- 在修复发布前,我们会与报告者协调披露时间,并(如你同意)在致谢中署名。
+- **鎶€鑳芥矙绠变负杩涚▼绾ч殧绂?*:Python 寮曟搸瀵规妧鑳?宸ュ叿鐨勬墽琛岄噰鐢ㄨ繘绋嬬骇娌欑涓庢枃浠剁郴缁熼檺鍒?鑰岄潪 VM / 瀹瑰櫒绾ч殧绂汇€?*涓嶈**鍦ㄤ笉鍙俊鐜涓嬪涓嶅彲淇′唬鐮佹巿浜堣嚜瀹氫箟鍛戒护鎵ц鏉冮檺;`PLUGIN_COMMAND_ALLOWLIST` 璇锋寜鏈€灏忔潈闄愬師鍒欓厤缃€?- **SSRF 闃叉姢鍩轰簬鐧藉悕鍗?*:绔彛鐧藉悕鍗曞彲鑳借浼ゅ悎娉曞唴缃戝伐鍏?涔熷彲鑳借楂樼骇缁曡繃鎶€鏈閬?鍐呯綉閮ㄧ讲璇风粨鍚堢綉缁滃眰闃茬伀澧欍€?- **闄愭祦涓哄簲鐢ㄥ眰鏈哄埗**:涓嶆槸 WAF/缃戝叧绾ч槻鎶?寤鸿鍦ㄧ敓浜у叆鍙ｅ彔鍔?CDN / WAF銆?- **AI 杈撳嚭鏈韩涓嶅彲淇?*:LLM 鐢熸垚鐨勬枃鏈彲鑳藉寘鍚敞鍏ユ垨璇鎬у唴瀹?娓叉煋绔簲缁х画浣跨敤 DOMPurify 绛夊噣鍖?鍓嶇宸插唴缃?,骞朵繚鐣欎汉绫荤‘璁ょ幆鑺傘€?
+## 鐢熶骇閮ㄧ讲瀹夊叏娓呭崟
 
-## 安全特性
-
-### 多租户与访问控制
-
-- **租户 / 用户两级隔离**:所有业务查询强制携带 `tenant_id` / `user_id` 条件(行级);Redis key、Milvus 向量检索、媒体资源、插件配置均按租户/用户命名空间隔离。
-- **认证链路**:JWT(HS256,cookie + bearer)+ API Key + OAuth/OIDC/SMS 多因子入口;`COOKIE_SECURE=true`(生产)为 cookie 追加 `Secure` 标志。
-- **网关 → 引擎身份透传 fail-close**:网关转发内部请求时注入 `X-Internal-Token`;Python 引擎仅在令牌匹配时才接受 `tenant_id`/`user_id` query 透传,否则**拒绝**(防止直连引擎绕过网关鉴权)。
-- **RBAC**:管理接口按权限位(`RequirePermission`)校验,企业版支持角色 / 群组 / 操作审计。
-
-### 注入与命令执行防护
-
-- **Prompt 注入检测**:网关 `InputSanitizer` 对常见注入模式(忽略历史指令、越权提示、系统提示覆盖等)正则检测并拒绝;合法输入以 `<user_input>` 标签包裹隔离。
-- **SSRF 防护**:引擎工具层对目标地址做端口白名单校验,拦截内网/元数据地址与未允许端口。
-- **插件命令白名单**:`PLUGIN_COMMAND_ALLOWLIST`(逗号分隔的 basename)控制 MCP 插件可拉起的可执行文件;**留空即禁止所有自定义插件命令**(安全默认)。
-- **输出路径脱敏**:工具输出与文件读写路径经过校验,防止路径穿越。
-
-### 媒体与数据保护
-
-- **媒体签名 URL**:资源不公开直出;`POST /v1/media/{id}/sign` 校验归属(资产必须属于当前租户与用户)后签发 `HMAC-SHA256(JWT_SECRET, assetID|exp)` 签名,15 分钟有效期,`GET /media/s/{id}?exp=&sig=` 验签后流式返回。
-- **存储型 XSS 防护**:媒体上传支持分片与内容校验,`/media/` 静态服务经净化处理。
-
-### 可用性防护
-
-- **分布式限流**:每用户 RPM + 每租户 RPS + 全局限额三层;`TRUSTED_PROXY_CIDRS` 防止伪造 `X-Forwarded-For` 绕过限流/验证码。
-- **Redis 必需化 fail-fast**:Redis 作为队列、语义缓存与分布式限流的核心依赖,不可用时快速失败而非静默降级(避免"看似可用实则失效"的降级攻击面)。
-- **指标鉴权**:`/metrics` 需要 `METRICS_TOKEN`(Bearer)或 JWT 管理员权限。
-- **Fail-fast 依赖**:关键配置缺失(如 `JWT_SECRET`)时网关拒绝启动,不提供弱默认值。
-
-## 已知边界(Known Limitations)
-
-- **技能沙箱为进程级隔离**:Python 引擎对技能/工具的执行采用进程级沙箱与文件系统限制,而非 VM / 容器级隔离。**不要**在不可信环境下对不可信代码授予自定义命令执行权限;`PLUGIN_COMMAND_ALLOWLIST` 请按最小权限原则配置。
-- **SSRF 防护基于白名单**:端口白名单可能误伤合法内网工具,也可能被高级绕过技术规避;内网部署请结合网络层防火墙。
-- **限流为应用层机制**:不是 WAF/网关级防护,建议在生产入口叠加 CDN / WAF。
-- **AI 输出本身不可信**:LLM 生成的文本可能包含注入或误导性内容,渲染端应继续使用 DOMPurify 等净化(前端已内置),并保留人类确认环节。
-
-## 生产部署安全清单
-
-1. `JWT_SECRET` 使用 `openssl rand -base64 48` 生成且唯一;
-2. 多租户生产环境务必配置 `INTERNAL_TOKEN`;
-3. `COOKIE_SECURE=true`,`DISABLE_REGISTRATION=true`(如需封闭注册);
-4. 设置 `TRUSTED_PROXY_CIDRS` 与 `METRICS_TOKEN`;
-5. 按最小权限配置 `PLUGIN_COMMAND_ALLOWLIST`;
-6. PostgreSQL / Redis / MinIO 使用强口令,Redis 开启 `requirepass`;
-7. 前端 `CORS_ORIGINS` 与 `CSP_CONNECT_SRC` 收敛到实际域名,禁止 `*`;
-8. 定期更新依赖并关注 GitHub Security Advisories。
+1. `JWT_SECRET` 浣跨敤 `openssl rand -base64 48` 鐢熸垚涓斿敮涓€;
+2. 澶氱鎴风敓浜х幆澧冨姟蹇呴厤缃?`INTERNAL_TOKEN`;
+3. `COOKIE_SECURE=true`,`DISABLE_REGISTRATION=true`(濡傞渶灏侀棴娉ㄥ唽);
+4. 璁剧疆 `TRUSTED_PROXY_CIDRS` 涓?`METRICS_TOKEN`;
+5. 鎸夋渶灏忔潈闄愰厤缃?`PLUGIN_COMMAND_ALLOWLIST`;
+6. PostgreSQL / Redis / MinIO 浣跨敤寮哄彛浠?Redis 寮€鍚?`requirepass`;
+7. 鍓嶇 `CORS_ORIGINS` 涓?`CSP_CONNECT_SRC` 鏀舵暃鍒板疄闄呭煙鍚?绂佹 `*`;
+8. 瀹氭湡鏇存柊渚濊禆骞跺叧娉?GitHub Security Advisories銆?

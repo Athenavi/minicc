@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -10,15 +10,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/athenavi/minicc/config"
-	"github.com/athenavi/minicc/internal/auth"
+	"github.com/athenavi/chiron/config"
+	"github.com/athenavi/chiron/internal/auth"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// ── fake 基础设施 ───────────────────────────────────────
+// 鈹€鈹€ fake 鍩虹璁炬柦 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// fakeSmsSender 是 auth.SmsSender 的测试替身。
+// fakeSmsSender 鏄?auth.SmsSender 鐨勬祴璇曟浛韬€?
 type fakeSmsSender struct {
 	err       error
 	calls     int
@@ -32,7 +32,7 @@ func (f *fakeSmsSender) Send(ctx context.Context, cfg *auth.SmsConfig, phone, co
 	return f.err
 }
 
-// memSmsStore 是 smsCodeStore 的内存实现。
+// memSmsStore 鏄?smsCodeStore 鐨勫唴瀛樺疄鐜般€?
 type memSmsStore struct {
 	codes   map[string]string
 	tries   map[string]int
@@ -86,7 +86,7 @@ func (m *memSmsStore) IncrDaily(ctx context.Context, phone string) (int, error) 
 	return m.daily[phone], nil
 }
 
-// smsScan 构造 ent_sms_config 行扫描（列序与 loadConfig 一致，12 列）。
+// smsScan 鏋勯€?ent_sms_config 琛屾壂鎻忥紙鍒楀簭涓?loadConfig 涓€鑷达紝12 鍒楋級銆?
 func smsScan(provider, signName, templateID, keyID, secretEnc string, endpoint string,
 	ttl, interval, daily int, loginEnabled, autoRegister, enabled bool) func(dest ...any) error {
 	return func(dest ...any) error {
@@ -125,7 +125,7 @@ func newTestSmsHandler(rowScan func(dest ...any) error, sender auth.SmsSender, s
 	withCaptcha bool) *SmsHandler {
 	var captcha *CaptchaHandler
 	if withCaptcha {
-		// 人机验证未配置（不强制）但失败计数可用 → RecordFailure 生效
+		// 浜烘満楠岃瘉鏈厤缃紙涓嶅己鍒讹級浣嗗け璐ヨ鏁板彲鐢?鈫?RecordFailure 鐢熸晥
 		captcha = newTestCaptchaHandler(nil, &fakeCaptchaVerifier{}, newMemCounter())
 	}
 	if queryRow == nil {
@@ -159,11 +159,11 @@ func testSmsReq(method, target, body string) *http.Request {
 
 func enabledSmsScan() func(dest ...any) error {
 	secretEnc, _ := auth.EncryptAESGCM(testEncKey, "sms-secret")
-	return smsScan(auth.SmsAliyun, "MiniCC", "SMS_1", "key-1", secretEnc, "",
+	return smsScan(auth.SmsAliyun, "Chiron", "SMS_1", "key-1", secretEnc, "",
 		300, 60, 10, true, false, true)
 }
 
-// ── PublicStatus ───────────────────────────────────────
+// 鈹€鈹€ PublicStatus 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestSmsPublicStatus_Disabled(t *testing.T) {
 	h := newTestSmsHandler(nil, &fakeSmsSender{}, newMemSmsStore(), nil, nil, false)
@@ -183,7 +183,7 @@ func TestSmsPublicStatus_Enabled(t *testing.T) {
 	}
 }
 
-// ── SendCode ───────────────────────────────────────────
+// 鈹€鈹€ SendCode 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestSmsSendCode_Success(t *testing.T) {
 	sender := &fakeSmsSender{}
@@ -276,7 +276,7 @@ func TestSmsSendCode_InvalidPhone(t *testing.T) {
 	}
 }
 
-// ── Login ──────────────────────────────────────────────
+// 鈹€鈹€ Login 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestSmsLogin_Success(t *testing.T) {
 	store := newMemSmsStore()
@@ -297,7 +297,7 @@ func TestSmsLogin_Success(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
-	// 一次性作废
+	// 涓€娆℃€т綔搴?
 	if _, exists := store.codes["13800138000"]; exists {
 		t.Fatal("code should be deleted after use")
 	}
@@ -307,7 +307,7 @@ func TestSmsLogin_Success(t *testing.T) {
 	if data["token"] == nil || data["user"] == nil {
 		t.Fatalf("expected token+user, got %v", data)
 	}
-	// SetTokenCookie 生效
+	// SetTokenCookie 鐢熸晥
 	found := false
 	for _, c := range w.Result().Cookies() {
 		if c.Name == tokenCookieName {
@@ -331,7 +331,7 @@ func TestSmsLogin_WrongCodeIncrementsTries(t *testing.T) {
 	if store.tries["13800138000"] != 1 {
 		t.Fatalf("expected tries=1, got %d", store.tries["13800138000"])
 	}
-	// 验证码仍在（未达 5 次）
+	// 楠岃瘉鐮佷粛鍦紙鏈揪 5 娆★級
 	if store.codes["13800138000"] != "123456" {
 		t.Fatal("code should survive until max tries")
 	}
@@ -340,7 +340,7 @@ func TestSmsLogin_WrongCodeIncrementsTries(t *testing.T) {
 func TestSmsLogin_MaxTriesInvalidatesCode(t *testing.T) {
 	store := newMemSmsStore()
 	store.codes["13800138000"] = "123456"
-	store.tries["13800138000"] = 4 // 再错一次即作废
+	store.tries["13800138000"] = 4 // 鍐嶉敊涓€娆″嵆浣滃簾
 	h := newTestSmsHandler(enabledSmsScan(), &fakeSmsSender{}, store, nil, nil, true)
 	w := httptest.NewRecorder()
 	h.Login(w, testSmsReq("POST", "/v1/auth/sms/login", `{"phone":"13800138000","code":"000000"}`))
@@ -356,7 +356,7 @@ func TestSmsLogin_ExpiredCode(t *testing.T) {
 	h := newTestSmsHandler(enabledSmsScan(), &fakeSmsSender{}, newMemSmsStore(), nil, nil, false)
 	w := httptest.NewRecorder()
 	h.Login(w, testSmsReq("POST", "/v1/auth/sms/login", `{"phone":"13800138000","code":"123456"}`))
-	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "过期") {
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "杩囨湡") {
 		t.Fatalf("expected expired-code 400, got %d %s", w.Code, w.Body.String())
 	}
 }
@@ -364,12 +364,12 @@ func TestSmsLogin_ExpiredCode(t *testing.T) {
 func TestSmsLogin_Unregistered(t *testing.T) {
 	store := newMemSmsStore()
 	store.codes["13800138000"] = "123456"
-	// users 查询与 sms_config 均返回相应行；users 无记录（fakeRow{} → ErrNoRows）
+	// users 鏌ヨ涓?sms_config 鍧囪繑鍥炵浉搴旇锛泆sers 鏃犺褰曪紙fakeRow{} 鈫?ErrNoRows锛?
 	queryRow := func(sql string, args ...any) pgx.Row {
 		if strings.Contains(sql, "ent_sms_config") {
 			return &fakeRow{scan: enabledSmsScan()}
 		}
-		return &fakeRow{} // users → ErrNoRows
+		return &fakeRow{} // users 鈫?ErrNoRows
 	}
 	h := newTestSmsHandler(nil, &fakeSmsSender{}, store, queryRow, nil, false)
 	w := httptest.NewRecorder()
@@ -391,9 +391,9 @@ func TestSmsLogin_AutoRegister(t *testing.T) {
 		}
 		if strings.Contains(sql, "INSERT INTO users") {
 			inserted = true
-			return &fakeRow{scan: userScan("u-2", "13800138000@sms.local", "用户8000", "user")}
+			return &fakeRow{scan: userScan("u-2", "13800138000@sms.local", "鐢ㄦ埛8000", "user")}
 		}
-		return &fakeRow{} // users SELECT → ErrNoRows → 触发自动建号
+		return &fakeRow{} // users SELECT 鈫?ErrNoRows 鈫?瑙﹀彂鑷姩寤哄彿
 	}
 	h := newTestSmsHandler(nil, &fakeSmsSender{}, store, queryRow, nil, false)
 	w := httptest.NewRecorder()
@@ -409,7 +409,7 @@ func TestSmsLogin_AutoRegister(t *testing.T) {
 	}
 }
 
-// ── Bind / Unbind / GetBind ────────────────────────────
+// 鈹€鈹€ Bind / Unbind / GetBind 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func testSmsAuthReq(method, target, body string) *http.Request {
 	req := testSmsReq(method, target, body)
@@ -459,8 +459,8 @@ func TestSmsUnbind_GuardNoOtherLogin(t *testing.T) {
 		if strings.Contains(sql, "password_set") {
 			return &fakeRow{scan: func(dest ...any) error {
 				*dest[0].(**string) = &phone
-				*dest[1].(*bool) = false   // 无口令密码
-				*dest[2].(*int) = 0        // 无三方身份
+				*dest[1].(*bool) = false   // 鏃犲彛浠ゅ瘑鐮?
+				*dest[2].(*int) = 0        // 鏃犱笁鏂硅韩浠?
 				return nil
 			}}
 		}
@@ -517,7 +517,7 @@ func TestSmsGetBind(t *testing.T) {
 	}
 }
 
-// ── 管理端配置 ─────────────────────────────────────────
+// 鈹€鈹€ 绠＄悊绔厤缃?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestSmsGetConfig_Defaults(t *testing.T) {
 	h := newTestSmsHandler(nil, &fakeSmsSender{}, newMemSmsStore(), nil, nil, false)
@@ -575,9 +575,9 @@ func TestSmsUpdateConfig_Success(t *testing.T) {
 	queryRow := func(sql string, args ...any) pgx.Row {
 		if strings.Contains(sql, "ent_sms_config") {
 			if upserted {
-				return &fakeRow{scan: scan} // upsert 后回读
+				return &fakeRow{scan: scan} // upsert 鍚庡洖璇?
 			}
-			return &fakeRow{} // 初次 loadConfig → 无配置
+			return &fakeRow{} // 鍒濇 loadConfig 鈫?鏃犻厤缃?
 		}
 		return &fakeRow{}
 	}
@@ -597,3 +597,4 @@ func TestSmsUpdateConfig_Success(t *testing.T) {
 		t.Fatalf("secret must be masked in response, got %s", body)
 	}
 }
+

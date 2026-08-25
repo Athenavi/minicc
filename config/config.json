@@ -1,4 +1,4 @@
-{
+﻿{
   "port": "8080",
   "llm_provider": "openai",
   "llm_model": "gpt-4o",
@@ -10,3 +10,4 @@
   "redis_pool_size": 50,
   "rate_limit_rpm": 100
 }
+

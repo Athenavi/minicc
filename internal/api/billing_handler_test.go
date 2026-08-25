@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -10,20 +10,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/athenavi/minicc/config"
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/billing"
+	"github.com/athenavi/chiron/config"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/billing"
 )
 
-// ── 内存版 billing.Store ──
-// 让计费 handler 的订单/余额逻辑可以脱离 PostgreSQL 测试
-// （真实 PGStore 依赖全局 db.Pool）。
+// 鈹€鈹€ 鍐呭瓨鐗?billing.Store 鈹€鈹€
+// 璁╄璐?handler 鐨勮鍗?浣欓閫昏緫鍙互鑴辩 PostgreSQL 娴嬭瘯
+// 锛堢湡瀹?PGStore 渚濊禆鍏ㄥ眬 db.Pool锛夈€?
 
 type fakeBillingStore struct {
 	mu        sync.Mutex
 	balances  map[string]int
-	balErr    error // 注入 GetBalance 错误
-	histErr   error // 注入 GetHistory 错误
+	balErr    error // 娉ㄥ叆 GetBalance 閿欒
+	histErr   error // 娉ㄥ叆 GetHistory 閿欒
 	freeCount int
 	payments  map[string]*billing.Payment
 }
@@ -112,7 +112,7 @@ func (s *fakeBillingStore) GetPaymentByProviderOrderID(ctx context.Context, prov
 	return nil, nil
 }
 
-// MarkPaymentPaid 幂等推进 pending→paid（与 PG 实现的语义一致）。
+// MarkPaymentPaid 骞傜瓑鎺ㄨ繘 pending鈫抪aid锛堜笌 PG 瀹炵幇鐨勮涔変竴鑷达級銆?
 func (s *fakeBillingStore) MarkPaymentPaid(ctx context.Context, id, tradeNo string) (*billing.Payment, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -147,10 +147,10 @@ func (s *fakeBillingStore) UpdatePaymentProvider(ctx context.Context, id, qrCode
 	return nil
 }
 
-// ── 测试构造 ──
+// 鈹€鈹€ 娴嬭瘯鏋勯€?鈹€鈹€
 
-// newTestBillingHandler 构造无任何支付渠道配置（alipay/wechat/paypal 均未启用）
-// 的 BillingHandler，配合内存 store。
+// newTestBillingHandler 鏋勯€犳棤浠讳綍鏀粯娓犻亾閰嶇疆锛坅lipay/wechat/paypal 鍧囨湭鍚敤锛?
+// 鐨?BillingHandler锛岄厤鍚堝唴瀛?store銆?
 func newTestBillingHandler(t *testing.T) (*BillingHandler, *fakeBillingStore) {
 	t.Helper()
 	store := newFakeBillingStore()
@@ -164,10 +164,10 @@ func adminClaims(userID string) *auth.Claims {
 	return &auth.Claims{UserID: userID, Role: "admin"}
 }
 
-// ── resolveUserID ──
+// 鈹€鈹€ resolveUserID 鈹€鈹€
 
-// TestBillingResolveUserID 意图：计费接口必须以 JWT claims 作为唯一用户身份来源；
-// 无 claims 时返回空串，驱动 401 —— 绝不允许匿名身份落到计费逻辑。
+// TestBillingResolveUserID 鎰忓浘锛氳璐规帴鍙ｅ繀椤讳互 JWT claims 浣滀负鍞竴鐢ㄦ埛韬唤鏉ユ簮锛?
+// 鏃?claims 鏃惰繑鍥炵┖涓诧紝椹卞姩 401 鈥斺€?缁濅笉鍏佽鍖垮悕韬唤钀藉埌璁¤垂閫昏緫銆?
 func TestBillingResolveUserID(t *testing.T) {
 	h, _ := newTestBillingHandler(t)
 
@@ -182,7 +182,7 @@ func TestBillingResolveUserID(t *testing.T) {
 	}
 }
 
-// ── GetBalance ──
+// 鈹€鈹€ GetBalance 鈹€鈹€
 
 func TestBillingGetBalance_NoClaims(t *testing.T) {
 	h, _ := newTestBillingHandler(t)
@@ -194,8 +194,8 @@ func TestBillingGetBalance_NoClaims(t *testing.T) {
 	}
 }
 
-// TestBillingGetBalance_NewUser 意图：余额查询失败（新用户无记录）必须降级为
-// 200 + 零余额，而不是报错 —— 新用户首次打开计费页不能看到错误。
+// TestBillingGetBalance_NewUser 鎰忓浘锛氫綑棰濇煡璇㈠け璐ワ紙鏂扮敤鎴锋棤璁板綍锛夊繀椤婚檷绾т负
+// 200 + 闆朵綑棰濓紝鑰屼笉鏄姤閿?鈥斺€?鏂扮敤鎴烽娆℃墦寮€璁¤垂椤典笉鑳界湅鍒伴敊璇€?
 func TestBillingGetBalance_NewUser(t *testing.T) {
 	h, _ := newTestBillingHandler(t)
 	req := requestWithClaims("GET", "/v1/billing/balance", "", userClaims("ghost-user"))
@@ -215,8 +215,8 @@ func TestBillingGetBalance_NewUser(t *testing.T) {
 	}
 }
 
-// TestBillingGetBalance_WithFreeQuotaDiag 意图：余额响应需同时给出免费额度
-// 诊断（每日免费次数），前端据此判断是否还能免费对话。
+// TestBillingGetBalance_WithFreeQuotaDiag 鎰忓浘锛氫綑棰濆搷搴旈渶鍚屾椂缁欏嚭鍏嶈垂棰濆害
+// 璇婃柇锛堟瘡鏃ュ厤璐规鏁帮級锛屽墠绔嵁姝ゅ垽鏂槸鍚﹁繕鑳藉厤璐瑰璇濄€?
 func TestBillingGetBalance_WithFreeQuotaDiag(t *testing.T) {
 	h, store := newTestBillingHandler(t)
 	store.balances["user-1"] = 250
@@ -241,7 +241,7 @@ func TestBillingGetBalance_WithFreeQuotaDiag(t *testing.T) {
 	}
 }
 
-// ── GetHistory ──
+// 鈹€鈹€ GetHistory 鈹€鈹€
 
 func TestBillingGetHistory_NoClaims(t *testing.T) {
 	h, _ := newTestBillingHandler(t)
@@ -253,8 +253,8 @@ func TestBillingGetHistory_NoClaims(t *testing.T) {
 	}
 }
 
-// TestBillingGetHistory_StoreErrorDegrades 意图：历史查询失败降级为空历史（200），
-// 与余额接口一致的"计费页永远可打开"约定。
+// TestBillingGetHistory_StoreErrorDegrades 鎰忓浘锛氬巻鍙叉煡璇㈠け璐ラ檷绾т负绌哄巻鍙诧紙200锛夛紝
+// 涓庝綑棰濇帴鍙ｄ竴鑷寸殑"璁¤垂椤垫案杩滃彲鎵撳紑"绾﹀畾銆?
 func TestBillingGetHistory_StoreErrorDegrades(t *testing.T) {
 	h, store := newTestBillingHandler(t)
 	store.histErr = fmt.Errorf("pg down")
@@ -273,7 +273,7 @@ func TestBillingGetHistory_StoreErrorDegrades(t *testing.T) {
 	}
 }
 
-// ── GetUsage ──
+// 鈹€鈹€ GetUsage 鈹€鈹€
 
 func TestBillingGetUsage_NoClaims(t *testing.T) {
 	h, _ := newTestBillingHandler(t)
@@ -285,10 +285,10 @@ func TestBillingGetUsage_NoClaims(t *testing.T) {
 	}
 }
 
-// ── Recharge ──
+// 鈹€鈹€ Recharge 鈹€鈹€
 
-// TestBillingRecharge_RequiresAdmin 意图：人工加币是管理员特权操作——
-// 普通用户（含无 claims）必须被 403 拒绝，绝不能进入加币逻辑。
+// TestBillingRecharge_RequiresAdmin 鎰忓浘锛氫汉宸ュ姞甯佹槸绠＄悊鍛樼壒鏉冩搷浣溾€斺€?
+// 鏅€氱敤鎴凤紙鍚棤 claims锛夊繀椤昏 403 鎷掔粷锛岀粷涓嶈兘杩涘叆鍔犲竵閫昏緫銆?
 func TestBillingRecharge_RequiresAdmin(t *testing.T) {
 	h, _ := newTestBillingHandler(t)
 
@@ -299,7 +299,7 @@ func TestBillingRecharge_RequiresAdmin(t *testing.T) {
 		t.Fatalf("expected 403 for regular user, got %d", w.Code)
 	}
 
-	// 无 claims 同样拒绝（handler 被绕过 authMW 直调时的防御）
+	// 鏃?claims 鍚屾牱鎷掔粷锛坔andler 琚粫杩?authMW 鐩磋皟鏃剁殑闃插尽锛?
 	req = httptest.NewRequest("POST", "/v1/billing/recharge", strings.NewReader(`{"amount":100}`))
 	w = httptest.NewRecorder()
 	h.Recharge(w, req)
@@ -308,7 +308,7 @@ func TestBillingRecharge_RequiresAdmin(t *testing.T) {
 	}
 }
 
-// TestBillingRecharge_InvalidAmount 意图：非正数金额必须拒绝在入账之前。
+// TestBillingRecharge_InvalidAmount 鎰忓浘锛氶潪姝ｆ暟閲戦蹇呴』鎷掔粷鍦ㄥ叆璐︿箣鍓嶃€?
 func TestBillingRecharge_InvalidAmount(t *testing.T) {
 	h, _ := newTestBillingHandler(t)
 	for _, body := range []string{`{}`, `{"amount":0}`, `{"amount":-5}`} {
@@ -321,7 +321,7 @@ func TestBillingRecharge_InvalidAmount(t *testing.T) {
 	}
 }
 
-// TestBillingRecharge_AddsCredits 意图：管理员充值必须实际增加用户余额并回报新余额。
+// TestBillingRecharge_AddsCredits 鎰忓浘锛氱鐞嗗憳鍏呭€煎繀椤诲疄闄呭鍔犵敤鎴蜂綑棰濆苟鍥炴姤鏂颁綑棰濄€?
 func TestBillingRecharge_AddsCredits(t *testing.T) {
 	h, store := newTestBillingHandler(t)
 	store.balances["admin-1"] = 0
@@ -339,10 +339,10 @@ func TestBillingRecharge_AddsCredits(t *testing.T) {
 	}
 }
 
-// ── CreatePayment ──
+// 鈹€鈹€ CreatePayment 鈹€鈹€
 
-// TestBillingCreatePayment_Validation 意图：非法金额/未知支付渠道必须 400，
-// 在创建订单与调用任何渠道之前拒绝。
+// TestBillingCreatePayment_Validation 鎰忓浘锛氶潪娉曢噾棰?鏈煡鏀粯娓犻亾蹇呴』 400锛?
+// 鍦ㄥ垱寤鸿鍗曚笌璋冪敤浠讳綍娓犻亾涔嬪墠鎷掔粷銆?
 func TestBillingCreatePayment_Validation(t *testing.T) {
 	h, _ := newTestBillingHandler(t)
 
@@ -361,9 +361,9 @@ func TestBillingCreatePayment_Validation(t *testing.T) {
 	}
 }
 
-// TestBillingCreatePayment_ChannelNotConfigured 意图：渠道未配置时必须显式
-// 返回 501 Not Implemented —— 用户需要明确知道"该支付方式不可用"，
-// 不允许静默成功或 500。
+// TestBillingCreatePayment_ChannelNotConfigured 鎰忓浘锛氭笭閬撴湭閰嶇疆鏃跺繀椤绘樉寮?
+// 杩斿洖 501 Not Implemented 鈥斺€?鐢ㄦ埛闇€瑕佹槑纭煡閬?璇ユ敮浠樻柟寮忎笉鍙敤"锛?
+// 涓嶅厑璁搁潤榛樻垚鍔熸垨 500銆?
 func TestBillingCreatePayment_ChannelNotConfigured(t *testing.T) {
 	for _, channel := range []string{billing.ChannelAlipay, billing.ChannelWechat, billing.ChannelPayPal} {
 		t.Run(channel, func(t *testing.T) {
@@ -379,7 +379,7 @@ func TestBillingCreatePayment_ChannelNotConfigured(t *testing.T) {
 	}
 }
 
-// ── GetOrder ──
+// 鈹€鈹€ GetOrder 鈹€鈹€
 
 func seedOrder(t *testing.T, store *fakeBillingStore, userID, channel, status string) *billing.Payment {
 	t.Helper()
@@ -412,8 +412,8 @@ func TestBillingGetOrder_Unknown(t *testing.T) {
 	}
 }
 
-// TestBillingGetOrder_OwnerIsolation 意图：订单属于下单用户私有——
-// 其他用户查询必须 403，防止泄露他人充值记录。
+// TestBillingGetOrder_OwnerIsolation 鎰忓浘锛氳鍗曞睘浜庝笅鍗曠敤鎴风鏈夆€斺€?
+// 鍏朵粬鐢ㄦ埛鏌ヨ蹇呴』 403锛岄槻姝㈡硠闇蹭粬浜哄厖鍊艰褰曘€?
 func TestBillingGetOrder_OwnerIsolation(t *testing.T) {
 	h, store := newTestBillingHandler(t)
 	p := seedOrder(t, store, "user-a", billing.ChannelAlipay, billing.PayStatusPending)
@@ -427,7 +427,7 @@ func TestBillingGetOrder_OwnerIsolation(t *testing.T) {
 	}
 }
 
-// TestBillingGetOrder_PaidStatus 意图：已支付订单轮询返回 paid 状态（前端据此放行）。
+// TestBillingGetOrder_PaidStatus 鎰忓浘锛氬凡鏀粯璁㈠崟杞杩斿洖 paid 鐘舵€侊紙鍓嶇鎹鏀捐锛夈€?
 func TestBillingGetOrder_PaidStatus(t *testing.T) {
 	h, store := newTestBillingHandler(t)
 	p := seedOrder(t, store, "user-a", billing.ChannelAlipay, billing.PayStatusPaid)
@@ -449,8 +449,8 @@ func TestBillingGetOrder_PaidStatus(t *testing.T) {
 	}
 }
 
-// TestBillingGetOrder_PendingNoChannel 意图：pending 订单轮询在渠道客户端
-// 未配置时必须安全降级——仍返回 pending，而不是 panic 或 500。
+// TestBillingGetOrder_PendingNoChannel 鎰忓浘锛歱ending 璁㈠崟杞鍦ㄦ笭閬撳鎴风
+// 鏈厤缃椂蹇呴』瀹夊叏闄嶇骇鈥斺€斾粛杩斿洖 pending锛岃€屼笉鏄?panic 鎴?500銆?
 func TestBillingGetOrder_PendingNoChannel(t *testing.T) {
 	h, store := newTestBillingHandler(t)
 	p := seedOrder(t, store, "user-a", billing.ChannelAlipay, billing.PayStatusPending)
@@ -469,10 +469,10 @@ func TestBillingGetOrder_PendingNoChannel(t *testing.T) {
 	}
 }
 
-// ── 支付回调：渠道未配置 ──
+// 鈹€鈹€ 鏀粯鍥炶皟锛氭笭閬撴湭閰嶇疆 鈹€鈹€
 
-// TestBillingCallbacks_NotConfigured 意图：未配置渠道的回调端点必须 501 拒绝，
-// 防止伪造回调探测入账逻辑。
+// TestBillingCallbacks_NotConfigured 鎰忓浘锛氭湭閰嶇疆娓犻亾鐨勫洖璋冪鐐瑰繀椤?501 鎷掔粷锛?
+// 闃叉浼€犲洖璋冩帰娴嬪叆璐﹂€昏緫銆?
 func TestBillingCallbacks_NotConfigured(t *testing.T) {
 	h, _ := newTestBillingHandler(t)
 
@@ -492,7 +492,7 @@ func TestBillingCallbacks_NotConfigured(t *testing.T) {
 	}
 }
 
-// ── PayPalCapture ──
+// 鈹€鈹€ PayPalCapture 鈹€鈹€
 
 func TestBillingPayPalCapture_NoClaims(t *testing.T) {
 	h, _ := newTestBillingHandler(t)
@@ -504,8 +504,8 @@ func TestBillingPayPalCapture_NoClaims(t *testing.T) {
 	}
 }
 
-// TestBillingPayPalCapture_MissingOrderID 意图：缺 order_id 必须 400，
-// 且必须在调用 PayPal API（外部网络）之前拒绝。
+// TestBillingPayPalCapture_MissingOrderID 鎰忓浘锛氱己 order_id 蹇呴』 400锛?
+// 涓斿繀椤诲湪璋冪敤 PayPal API锛堝閮ㄧ綉缁滐級涔嬪墠鎷掔粷銆?
 func TestBillingPayPalCapture_MissingOrderID(t *testing.T) {
 	h, _ := newTestBillingHandler(t)
 	for _, body := range []string{`{}`, `{"order_id":""}`} {
@@ -518,10 +518,10 @@ func TestBillingPayPalCapture_MissingOrderID(t *testing.T) {
 	}
 }
 
-// ── 纯辅助逻辑 ──
+// 鈹€鈹€ 绾緟鍔╅€昏緫 鈹€鈹€
 
-// TestBillingNotifyURLs 意图：回调地址必须由 PUBLIC_BASE_URL 推导且去尾部斜杠；
-// 未配置时返回空串（微信链路据此显式 501，而不是把回调发到错误地址）。
+// TestBillingNotifyURLs 鎰忓浘锛氬洖璋冨湴鍧€蹇呴』鐢?PUBLIC_BASE_URL 鎺ㄥ涓斿幓灏鹃儴鏂滄潬锛?
+// 鏈厤缃椂杩斿洖绌轰覆锛堝井淇￠摼璺嵁姝ゆ樉寮?501锛岃€屼笉鏄妸鍥炶皟鍙戝埌閿欒鍦板潃锛夈€?
 func TestBillingNotifyURLs(t *testing.T) {
 	h := &BillingHandler{cfg: &config.Config{}}
 	if got := h.alipayNotifyURL(); got != "" {
@@ -540,8 +540,8 @@ func TestBillingNotifyURLs(t *testing.T) {
 	}
 }
 
-// TestBillingFirstOrigin 意图：PayPal 回跳地址只取 CORS 白名单第一个源，
-// 并清理尾部空格/斜杠（防止拼出非法 redirect URL）。
+// TestBillingFirstOrigin 鎰忓浘锛歅ayPal 鍥炶烦鍦板潃鍙彇 CORS 鐧藉悕鍗曠涓€涓簮锛?
+// 骞舵竻鐞嗗熬閮ㄧ┖鏍?鏂滄潬锛堥槻姝㈡嫾鍑洪潪娉?redirect URL锛夈€?
 func TestBillingFirstOrigin(t *testing.T) {
 	h := &BillingHandler{cfg: &config.Config{CORSOrigins: "http://a.com/ , http://b.com"}}
 	if got := h.firstOrigin(); got != "http://a.com" {
@@ -549,8 +549,8 @@ func TestBillingFirstOrigin(t *testing.T) {
 	}
 }
 
-// TestBillingPayPalBaseURL 意图：沙箱开关必须切换 PayPal API 域名，
-// 防止测试流量打到生产网关。
+// TestBillingPayPalBaseURL 鎰忓浘锛氭矙绠卞紑鍏冲繀椤诲垏鎹?PayPal API 鍩熷悕锛?
+// 闃叉娴嬭瘯娴侀噺鎵撳埌鐢熶骇缃戝叧銆?
 func TestBillingPayPalBaseURL(t *testing.T) {
 	h := &BillingHandler{cfg: &config.Config{PayPalSandbox: true}}
 	if got := h.payPalBaseURL(); got != "https://api-m.sandbox.paypal.com" {
@@ -562,8 +562,8 @@ func TestBillingPayPalBaseURL(t *testing.T) {
 	}
 }
 
-// TestBillingPaymentResponse 意图：订单序列化只暴露契约字段；
-// qr_code 仅在存在时出现（避免前端拿到空二维码串）。
+// TestBillingPaymentResponse 鎰忓浘锛氳鍗曞簭鍒楀寲鍙毚闇插绾﹀瓧娈碉紱
+// qr_code 浠呭湪瀛樺湪鏃跺嚭鐜帮紙閬垮厤鍓嶇鎷垮埌绌轰簩缁寸爜涓诧級銆?
 func TestBillingPaymentResponse(t *testing.T) {
 	h := &BillingHandler{cfg: &config.Config{}}
 	p := billing.NewPayment("user-1", billing.ChannelAlipay, 100, 100, "CNY")

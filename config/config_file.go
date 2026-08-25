@@ -1,4 +1,4 @@
-package config
+﻿package config
 
 import (
 	"encoding/json"
@@ -25,8 +25,7 @@ type ConfigFile struct {
 	JWTExpiration string `json:"jwt_expiration,omitempty"`
 	CORSOrigins   string `json:"cors_origins,omitempty"`
 
-	// LLM 配置为遗留死配置（AI 已迁 Python 引擎），已移除
-
+	// LLM 閰嶇疆涓洪仐鐣欐閰嶇疆锛圓I 宸茶縼 Python 寮曟搸锛夛紝宸茬Щ闄?
 	StorageBackend string `json:"storage_backend,omitempty"`
 	StorageRoot    string `json:"storage_root,omitempty"`
 	S3Endpoint     string `json:"s3_endpoint,omitempty"`

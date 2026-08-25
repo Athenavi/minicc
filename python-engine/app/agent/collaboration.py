@@ -1,15 +1,15 @@
-"""Agent 协同工作台: 多 Agent 并行执行 + 共享上下文
+﻿"""Agent 鍗忓悓宸ヤ綔鍙? 澶?Agent 骞惰鎵ц + 鍏变韩涓婁笅鏂?
 
-架构设计:
-- AgentHub 作为中枢,管理多个 Agent 实例
-- 每个 Agent 独立运行 ReAct 循环
-- 通过共享 context store (Redis/PG) 交换状态
-- Go 网关统一鉴权 + 限流 + trace 追踪
+鏋舵瀯璁捐:
+- AgentHub 浣滀负涓灑,绠＄悊澶氫釜 Agent 瀹炰緥
+- 姣忎釜 Agent 鐙珛杩愯 ReAct 寰幆
+- 閫氳繃鍏变韩 context store (Redis/PG) 浜ゆ崲鐘舵€?
+- Go 缃戝叧缁熶竴閴存潈 + 闄愭祦 + trace 杩借釜
 
-SaaS 安全:
-- 租户隔离: 所有 context 携带 tenant_id
-- 资源配额: 每租户最多启动 N 个并发 Agent
-- 链路追踪: 跨 Agent 请求传递 trace_id
+SaaS 瀹夊叏:
+- 绉熸埛闅旂: 鎵€鏈?context 鎼哄甫 tenant_id
+- 璧勬簮閰嶉: 姣忕鎴锋渶澶氬惎鍔?N 涓苟鍙?Agent
+- 閾捐矾杩借釜: 璺?Agent 璇锋眰浼犻€?trace_id
 """
 from __future__ import annotations
 
@@ -30,44 +30,44 @@ logger = logging.getLogger(__name__)
 
 
 class AgentRole(str, Enum):
-    """Agent 角色定义"""
-    RESEARCHER = "researcher"      # 信息收集与研究
-    CODER = "coder"                # 代码生成与实现
-    REVIEWER = "reviewer"          # 代码审查与测试
-    PLANNER = "planner"            # 任务规划与拆解
-    ORCHESTRATOR = "orchestrator"  # 编排协调(主 Agent)
+    """Agent 瑙掕壊瀹氫箟"""
+    RESEARCHER = "researcher"      # 淇℃伅鏀堕泦涓庣爺绌?
+    CODER = "coder"                # 浠ｇ爜鐢熸垚涓庡疄鐜?
+    REVIEWER = "reviewer"          # 浠ｇ爜瀹℃煡涓庢祴璇?
+    PLANNER = "planner"            # 浠诲姟瑙勫垝涓庢媶瑙?
+    ORCHESTRATOR = "orchestrator"  # 缂栨帓鍗忚皟(涓?Agent)
 
 
 @dataclass
 class AgentSpec:
-    """Agent 角色规格定义"""
+    """Agent 瑙掕壊瑙勬牸瀹氫箟"""
     role: AgentRole
     description: str
     system_prompt: str
     max_turns: int = 10
     model: str = "gpt-4o-mini"
-    mode: str = "normal"  # 运行模式（normal/minimal/ptc/creative），见 app.agent.modes
-    compaction_config: Optional[CompactionConfig] = None  # 逐 agent 截断策略覆盖
+    mode: str = "normal"  # 杩愯妯″紡锛坣ormal/minimal/ptc/creative锛夛紝瑙?app.agent.modes
+    compaction_config: Optional[CompactionConfig] = None  # 閫?agent 鎴柇绛栫暐瑕嗙洊
 
 
 @dataclass
 class CollaborativeTask:
-    """协同任务定义"""
+    """鍗忓悓浠诲姟瀹氫箟"""
     task_id: str
     original_query: str
-    tenant_id: str  # SaaS 安全: 租户隔离
-    trace_id: str  # 链路追踪
+    tenant_id: str  # SaaS 瀹夊叏: 绉熸埛闅旂
+    trace_id: str  # 閾捐矾杩借釜
     subtasks: list[dict]  # [{agent_role, description, dependencies}]
-    shared_context: dict = field(default_factory=dict)  # 共享上下文
+    shared_context: dict = field(default_factory=dict)  # 鍏变韩涓婁笅鏂?
     status: str = "pending"  # pending/running/completed/failed
 
 
 class AgentContextStore:
-    """共享上下文存储 (SaaS 租户隔离)
+    """鍏变韩涓婁笅鏂囧瓨鍌?(SaaS 绉熸埛闅旂)
     
-    实现方式:
-    - Redis (分布式场景): key = "minicc:context:{tenant_id}:{context_id}"
-    - 内存 (单实例降级): dict[tenant_id][context_id] = data
+    瀹炵幇鏂瑰紡:
+    - Redis (鍒嗗竷寮忓満鏅?: key = "chiron:context:{tenant_id}:{context_id}"
+    - 鍐呭瓨 (鍗曞疄渚嬮檷绾?: dict[tenant_id][context_id] = data
     """
     
     def __init__(self, tenant_id: str):
@@ -76,14 +76,14 @@ class AgentContextStore:
         self._redis_client = None  # Lazy load
     
     async def set(self, context_id: str, data: dict, ttl: int = 3600) -> None:
-        """设置上下文 (带 TTL 自动过期)"""
+        """璁剧疆涓婁笅鏂?(甯?TTL 鑷姩杩囨湡)"""
         data["_ttl"] = time.time() + ttl
-        data["_tenant_id"] = self.tenant_id  # SaaS 安全: 元数据标记
+        data["_tenant_id"] = self.tenant_id  # SaaS 瀹夊叏: 鍏冩暟鎹爣璁?
         
         if self._redis_client:
             import redis.asyncio as aioredis
             await self._redis_client.setex(
-                f"minicc:context:{self.tenant_id}:{context_id}",
+                f"chiron:context:{self.tenant_id}:{context_id}",
                 ttl,
                 json.dumps(data, ensure_ascii=False)
             )
@@ -91,32 +91,32 @@ class AgentContextStore:
             self._local_store[context_id] = data
     
     async def get(self, context_id: str) -> Optional[dict]:
-        """获取上下文"""
+        """鑾峰彇涓婁笅鏂?""
         if self._redis_client:
             import redis.asyncio as aioredis
             data = await self._redis_client.get(
-                f"minicc:context:{self.tenant_id}:{context_id}"
+                f"chiron:context:{self.tenant_id}:{context_id}"
             )
             return json.loads(data) if data else None
         else:
             return self._local_store.get(context_id)
     
     async def delete(self, context_id: str) -> None:
-        """删除上下文"""
+        """鍒犻櫎涓婁笅鏂?""
         if self._redis_client:
             import redis.asyncio as aioredis
             await self._redis_client.delete(
-                f"minicc:context:{self.tenant_id}:{context_id}"
+                f"chiron:context:{self.tenant_id}:{context_id}"
             )
         else:
             self._local_store.pop(context_id, None)
     
     async def list_keys(self) -> list[str]:
-        """列出该租户下的所有 context_id"""
+        """鍒楀嚭璇ョ鎴蜂笅鐨勬墍鏈?context_id"""
         if self._redis_client:
             import redis.asyncio as aioredis
             keys = await self._redis_client.keys(
-                f"minicc:context:{self.tenant_id}:*"
+                f"chiron:context:{self.tenant_id}:*"
             )
             return [k.split(":")[-1] for k in keys]
         else:
@@ -124,71 +124,71 @@ class AgentContextStore:
 
 
 class AgentHub:
-    """Agent 协同中枢
+    """Agent 鍗忓悓涓灑
     
-    功能:
-    1. 接收复杂任务,拆解为子任务分配给专业 Agent
-    2. 管理 Agent 生命周期与并发度
-    3. 聚合各 Agent 输出到共享上下文
-    4. 统一 trace 记录
+    鍔熻兘:
+    1. 鎺ユ敹澶嶆潅浠诲姟,鎷嗚В涓哄瓙浠诲姟鍒嗛厤缁欎笓涓?Agent
+    2. 绠＄悊 Agent 鐢熷懡鍛ㄦ湡涓庡苟鍙戝害
+    3. 鑱氬悎鍚?Agent 杈撳嚭鍒板叡浜笂涓嬫枃
+    4. 缁熶竴 trace 璁板綍
     
-    SaaS 安全:
-    - 每租户并发 Agent 数限制 (默认 3)
-    - 所有 Agent 共享同一 trace_id
-    - Context Store 按租户隔离
+    SaaS 瀹夊叏:
+    - 姣忕鎴峰苟鍙?Agent 鏁伴檺鍒?(榛樿 3)
+    - 鎵€鏈?Agent 鍏变韩鍚屼竴 trace_id
+    - Context Store 鎸夌鎴烽殧绂?
     """
     
-    # 预定义 Agent 角色配置
+    # 棰勫畾涔?Agent 瑙掕壊閰嶇疆
     AGENT_ROLES: dict[AgentRole, AgentSpec] = {
         AgentRole.RESEARCHER: AgentSpec(
             role=AgentRole.RESEARCHER,
-            description="负责信息搜索、文档分析、知识库检索",
-            system_prompt="""你是一个专业的研究助手。请：
-1. 仔细分析用户问题,提取关键实体和概念
-2. 使用搜索工具获取相关信息
-3. 整理并总结发现,注明来源
-4. 保留未解决的不确定性""",
+            description="璐熻矗淇℃伅鎼滅储銆佹枃妗ｅ垎鏋愩€佺煡璇嗗簱妫€绱?,
+            system_prompt="""浣犳槸涓€涓笓涓氱殑鐮旂┒鍔╂墜銆傝锛?
+1. 浠旂粏鍒嗘瀽鐢ㄦ埛闂,鎻愬彇鍏抽敭瀹炰綋鍜屾蹇?
+2. 浣跨敤鎼滅储宸ュ叿鑾峰彇鐩稿叧淇℃伅
+3. 鏁寸悊骞舵€荤粨鍙戠幇,娉ㄦ槑鏉ユ簮
+4. 淇濈暀鏈В鍐崇殑涓嶇‘瀹氭€?"",
             max_turns=15,
         ),
         AgentRole.CODER: AgentSpec(
             role=AgentRole.CODER,
-            description="负责代码生成、脚本编写、沙箱执行",
-            system_prompt="""你是一个资深程序员。请：
-1. 根据需求设计清晰的代码结构
-2. 编写可执行、有注释的代码
-3. 在沙箱中测试验证
-4. 报告执行结果和潜在问题""",
+            description="璐熻矗浠ｇ爜鐢熸垚銆佽剼鏈紪鍐欍€佹矙绠辨墽琛?,
+            system_prompt="""浣犳槸涓€涓祫娣辩▼搴忓憳銆傝锛?
+1. 鏍规嵁闇€姹傝璁℃竻鏅扮殑浠ｇ爜缁撴瀯
+2. 缂栧啓鍙墽琛屻€佹湁娉ㄩ噴鐨勪唬鐮?
+3. 鍦ㄦ矙绠变腑娴嬭瘯楠岃瘉
+4. 鎶ュ憡鎵ц缁撴灉鍜屾綔鍦ㄩ棶棰?"",
             max_turns=20,
         ),
         AgentRole.REVIEWER: AgentSpec(
             role=AgentRole.REVIEWER,
-            description="负责代码审查、测试用例、质量保障",
-            system_prompt="""你是一个严格的代码审查员。请：
-1. 检查代码的逻辑正确性
-2. 识别边界情况和异常处理
-3. 建议性能优化
-4. 生成测试用例并执行""",
+            description="璐熻矗浠ｇ爜瀹℃煡銆佹祴璇曠敤渚嬨€佽川閲忎繚闅?,
+            system_prompt="""浣犳槸涓€涓弗鏍肩殑浠ｇ爜瀹℃煡鍛樸€傝锛?
+1. 妫€鏌ヤ唬鐮佺殑閫昏緫姝ｇ‘鎬?
+2. 璇嗗埆杈圭晫鎯呭喌鍜屽紓甯稿鐞?
+3. 寤鸿鎬ц兘浼樺寲
+4. 鐢熸垚娴嬭瘯鐢ㄤ緥骞舵墽琛?"",
             max_turns=10,
         ),
         AgentRole.PLANNER: AgentSpec(
             role=AgentRole.PLANNER,
-            description="负责任务拆解、依赖分析、进度跟踪",
-            system_prompt="""你是一个项目规划专家。请：
-1. 将复杂任务拆解为可并行的子任务
-2. 识别子任务间的依赖关系
-3. 制定执行顺序和资源分配
-4. 监控进度并动态调整计划""",
+            description="璐熻矗浠诲姟鎷嗚В銆佷緷璧栧垎鏋愩€佽繘搴﹁窡韪?,
+            system_prompt="""浣犳槸涓€涓」鐩鍒掍笓瀹躲€傝锛?
+1. 灏嗗鏉備换鍔℃媶瑙ｄ负鍙苟琛岀殑瀛愪换鍔?
+2. 璇嗗埆瀛愪换鍔￠棿鐨勪緷璧栧叧绯?
+3. 鍒跺畾鎵ц椤哄簭鍜岃祫婧愬垎閰?
+4. 鐩戞帶杩涘害骞跺姩鎬佽皟鏁磋鍒?"",
             max_turns=5,
         ),
         AgentRole.ORCHESTRATOR: AgentSpec(
             role=AgentRole.ORCHESTRATOR,
-            description="负责整体协调、冲突解决、最终汇总",
-            system_prompt="""你是协同系统的总编排者。请：
-1. 理解用户原始需求,制定高层策略
-2. 协调各专业 Agent 的工作
-3. 解决子任务间的冲突
-4. 聚合输出,生成最终回答
-5. 确保质量与一致性""",
+            description="璐熻矗鏁翠綋鍗忚皟銆佸啿绐佽В鍐炽€佹渶缁堟眹鎬?,
+            system_prompt="""浣犳槸鍗忓悓绯荤粺鐨勬€荤紪鎺掕€呫€傝锛?
+1. 鐞嗚В鐢ㄦ埛鍘熷闇€姹?鍒跺畾楂樺眰绛栫暐
+2. 鍗忚皟鍚勪笓涓?Agent 鐨勫伐浣?
+3. 瑙ｅ喅瀛愪换鍔￠棿鐨勫啿绐?
+4. 鑱氬悎杈撳嚭,鐢熸垚鏈€缁堝洖绛?
+5. 纭繚璐ㄩ噺涓庝竴鑷存€?"",
             max_turns=10,
         ),
     }
@@ -196,33 +196,33 @@ class AgentHub:
     def __init__(self, gateway: GatewayRouter):
         self.gateway = gateway
         self._runtime_pool: dict[AgentRole, AgentRuntime] = {}
-        self._max_concurrent_per_tenant = 3  # SaaS 配额
+        self._max_concurrent_per_tenant = 3  # SaaS 閰嶉
         self._tenant_running_agents: dict[str, int] = {}  # tenant_id -> count
     
     async def run_collaborative_task(
         self,
         task: CollaborativeTask,
     ) -> AsyncIterator[AgentEvent]:
-        """执行协同任务
+        """鎵ц鍗忓悓浠诲姟
         
-        流程:
-        1. Planner 拆解任务 (如果尚未拆解)
-        2. 并行执行无依赖的子任务
-        3. 等待依赖完成
-        4. Orchestrator 聚合输出
+        娴佺▼:
+        1. Planner 鎷嗚В浠诲姟 (濡傛灉灏氭湭鎷嗚В)
+        2. 骞惰鎵ц鏃犱緷璧栫殑瀛愪换鍔?
+        3. 绛夊緟渚濊禆瀹屾垚
+        4. Orchestrator 鑱氬悎杈撳嚭
         """
         import uuid as uuid_mod
         
-        # ── 生成 trace_id (如果不存在) ───────────────────────────────
+        # 鈹€鈹€ 鐢熸垚 trace_id (濡傛灉涓嶅瓨鍦? 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
         trace_id = task.trace_id or uuid_mod.uuid4().hex[:12]
         
-        # ── SaaS 安全: 检查租户并发配额 ─────────────────────────────
+        # 鈹€鈹€ SaaS 瀹夊叏: 妫€鏌ョ鎴峰苟鍙戦厤棰?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
         tenant_id = task.tenant_id
         current_count = self._tenant_running_agents.get(tenant_id, 0)
         if current_count >= self._max_concurrent_per_tenant:
             yield AgentEvent(
                 type="error",
-                content=f"租户并发 Agent 数已达上限 ({self._max_concurrent_per_tenant})",
+                content=f"绉熸埛骞跺彂 Agent 鏁板凡杈句笂闄?({self._max_concurrent_per_tenant})",
                 trace_id=trace_id,
             )
             return
@@ -230,20 +230,20 @@ class AgentHub:
         self._tenant_running_agents[tenant_id] = current_count + 1
         
         try:
-            # ── 阶段 1: 任务规划 (如果需要) ─────────────────────────────
+            # 鈹€鈹€ 闃舵 1: 浠诲姟瑙勫垝 (濡傛灉闇€瑕? 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
             if not task.subtasks:
                 planner_spec = self.AGENT_ROLES[AgentRole.PLANNER]
                 planner_runtime = self._get_or_create_runtime(planner_spec)
                 
-                planning_query = f"""请为以下需求拆解任务:
+                planning_query = f"""璇蜂负浠ヤ笅闇€姹傛媶瑙ｄ换鍔?
 {task.original_query}
 
-请以 JSON 格式返回子任务列表:
+璇蜂互 JSON 鏍煎紡杩斿洖瀛愪换鍔″垪琛?
 [
   {{
     "role": "<role>",
-    "description": "<描述>",
-    "dependencies": ["<依赖的子任务id>"]
+    "description": "<鎻忚堪>",
+    "dependencies": ["<渚濊禆鐨勫瓙浠诲姟id>"]
   }}
 ]"""
                 
@@ -258,34 +258,34 @@ class AgentHub:
                     event.trace_id = trace_id
                     yield event
                     
-                    # 解析 Planner 输出,提取 subtasks
+                    # 瑙ｆ瀽 Planner 杈撳嚭,鎻愬彇 subtasks
                     if event.type == "text":
                         task.subtasks = self._parse_planner_output(event.content)
             
-            # ── 阶段 2: DAG 调度执行子任务 ───────────────────────────
+            # 鈹€鈹€ 闃舵 2: DAG 璋冨害鎵ц瀛愪换鍔?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
             task.status = "running"
 
             async for event in self._execute_subtask_dag(task, trace_id, tenant_id):
                 event.trace_id = trace_id
                 yield event
             
-            # ── 阶段 3: Orchestrator 聚合 ──────────────────────────────
+            # 鈹€鈹€ 闃舵 3: Orchestrator 鑱氬悎 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
             orchestrator_spec = self.AGENT_ROLES[AgentRole.ORCHESTRATOR]
             orchestrator_runtime = self._get_or_create_runtime(orchestrator_spec)
             
-            aggregation_query = f"""请根据以下各专业 Agent 的输出,生成最终回答:
+            aggregation_query = f"""璇锋牴鎹互涓嬪悇涓撲笟 Agent 鐨勮緭鍑?鐢熸垚鏈€缁堝洖绛?
 
-【原始需求】
+銆愬師濮嬮渶姹傘€?
 {task.original_query}
 
-【各 Agent 输出】
+銆愬悇 Agent 杈撳嚭銆?
 {json.dumps(task.shared_context, ensure_ascii=False, indent=2)}
 
-请综合整理,提供清晰、准确、完整的回答。"""
+璇风患鍚堟暣鐞?鎻愪緵娓呮櫚銆佸噯纭€佸畬鏁寸殑鍥炵瓟銆?""
             
             final_event = AgentEvent(
                 type="done",
-                content="协同任务完成",
+                content="鍗忓悓浠诲姟瀹屾垚",
                 trace_id=trace_id,
             )
             
@@ -310,29 +310,29 @@ class AgentHub:
             )
             
         finally:
-            # 释放配额
+            # 閲婃斁閰嶉
             self._tenant_running_agents[tenant_id] = max(
                 0, self._tenant_running_agents.get(tenant_id, 1) - 1
             )
     
-    # ── DAG 调度器 ──────────────────────────────────────────────────
+    # 鈹€鈹€ DAG 璋冨害鍣?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     def _topological_waves(self, subtasks: list[dict]) -> list[list[int]]:
-        """将子任务按依赖关系拓扑排序为执行波次。
+        """灏嗗瓙浠诲姟鎸変緷璧栧叧绯绘嫇鎵戞帓搴忎负鎵ц娉㈡銆?
 
-        每一波次内的子任务无互相依赖，可并发执行。
-        依赖项引用格式: "subtask_N" (N 为索引)。
+        姣忎竴娉㈡鍐呯殑瀛愪换鍔℃棤浜掔浉渚濊禆锛屽彲骞跺彂鎵ц銆?
+        渚濊禆椤瑰紩鐢ㄦ牸寮? "subtask_N" (N 涓虹储寮?銆?
 
-        返回 [[idx, ...], [idx, ...], ...]
+        杩斿洖 [[idx, ...], [idx, ...], ...]
         """
         n = len(subtasks)
-        # 构建 dependency map: idx → set of dependency idx
+        # 鏋勫缓 dependency map: idx 鈫?set of dependency idx
         deps: dict[int, set[int]] = {}
         for i, st in enumerate(subtasks):
             raw_deps = st.get("dependencies", [])
             dep_indices: set[int] = set()
             for d in raw_deps:
-                # 解析 "subtask_N" 格式
+                # 瑙ｆ瀽 "subtask_N" 鏍煎紡
                 if isinstance(d, str) and d.startswith("subtask_"):
                     try:
                         dep_indices.add(int(d.split("_", 1)[1]))
@@ -342,18 +342,18 @@ class AgentHub:
                     dep_indices.add(d)
             deps[i] = dep_indices
 
-        # Kahn 算法分层
+        # Kahn 绠楁硶鍒嗗眰
         completed: set[int] = set()
         waves: list[list[int]] = []
 
         while len(completed) < n:
-            # 找出所有依赖已满足的未执行节点
+            # 鎵惧嚭鎵€鏈変緷璧栧凡婊¤冻鐨勬湭鎵ц鑺傜偣
             ready = [
                 i for i in range(n)
                 if i not in completed and deps[i].issubset(completed)
             ]
             if not ready:
-                # 依赖环：打破环，按原始顺序执行剩余任务
+                # 渚濊禆鐜細鎵撶牬鐜紝鎸夊師濮嬮『搴忔墽琛屽墿浣欎换鍔?
                 remaining = [i for i in range(n) if i not in completed]
                 logger.warning(
                     "DAG cycle detected, executing remaining subtasks linearly: %s",
@@ -372,16 +372,16 @@ class AgentHub:
         trace_id: str,
         tenant_id: str,
     ) -> AsyncIterator[AgentEvent]:
-        """基于 DAG 依赖关系调度子任务执行。
+        """鍩轰簬 DAG 渚濊禆鍏崇郴璋冨害瀛愪换鍔℃墽琛屻€?
 
-        拓扑排序为波次，每波内的子任务并发执行（受 Semaphore 限制）。
-        每个子任务的实际耗时被记录到 span 中。
+        鎷撴墤鎺掑簭涓烘尝娆★紝姣忔尝鍐呯殑瀛愪换鍔″苟鍙戞墽琛岋紙鍙?Semaphore 闄愬埗锛夈€?
+        姣忎釜瀛愪换鍔＄殑瀹為檯鑰楁椂琚褰曞埌 span 涓€?
         """
         waves = self._topological_waves(task.subtasks)
         sem = asyncio.Semaphore(self._max_concurrent_per_tenant)
 
         for wave_idx, wave in enumerate(waves):
-            # 并发执行当前波次
+            # 骞跺彂鎵ц褰撳墠娉㈡
             event_queue: asyncio.Queue = asyncio.Queue()
             running_tasks: list[asyncio.Task] = []
 
@@ -394,14 +394,14 @@ class AgentHub:
                 )
                 running_tasks.append(t)
 
-            # 边执行边 yield 事件
+            # 杈规墽琛岃竟 yield 浜嬩欢
             done_count = 0
             total = len(running_tasks)
             while done_count < total:
                 try:
                     event = await event_queue.get()
                     if event is None:
-                        # 某个子任务结束信号
+                        # 鏌愪釜瀛愪换鍔＄粨鏉熶俊鍙?
                         done_count += 1
                         continue
                     yield event
@@ -410,7 +410,7 @@ class AgentHub:
                         t.cancel()
                     raise
 
-            # 等待所有任务完成（应该已完成）
+            # 绛夊緟鎵€鏈変换鍔″畬鎴愶紙搴旇宸插畬鎴愶級
             await asyncio.gather(*running_tasks, return_exceptions=True)
 
             logger.debug(
@@ -427,7 +427,7 @@ class AgentHub:
         sem: asyncio.Semaphore,
         event_queue: asyncio.Queue,
     ) -> None:
-        """执行单个子任务，将事件推入队列供调度器 yield。"""
+        """鎵ц鍗曚釜瀛愪换鍔★紝灏嗕簨浠舵帹鍏ラ槦鍒椾緵璋冨害鍣?yield銆?""
         subtask = task.subtasks[subtask_idx]
         role_str = subtask.get("role", "researcher")
         try:
@@ -438,19 +438,19 @@ class AgentHub:
         spec = self.AGENT_ROLES[role]
         runtime = self._get_or_create_runtime(spec)
 
-        # 注入共享上下文
+        # 娉ㄥ叆鍏变韩涓婁笅鏂?
         context_injection = f"""
-【共享上下文】
+銆愬叡浜笂涓嬫枃銆?
 {json.dumps(task.shared_context.get(role_str, {}), ensure_ascii=False)}
 
-请直接回答问题,不要重复已确认的事实。"""
+璇风洿鎺ュ洖绛旈棶棰?涓嶈閲嶅宸茬‘璁ょ殑浜嬪疄銆?""
 
-        sub_query = f"""【子任务 {subtask_idx + 1}/{len(task.subtasks)}】
+        sub_query = f"""銆愬瓙浠诲姟 {subtask_idx + 1}/{len(task.subtasks)}銆?
 {subtask['description']}
 
 {context_injection}
 
-原始用户需求: {task.original_query}"""
+鍘熷鐢ㄦ埛闇€姹? {task.original_query}"""
 
         start_time = time.time()
 
@@ -463,14 +463,14 @@ class AgentHub:
                     tenant_id=tenant_id,
                 ),
             ):
-                # 将输出写入共享上下文
+                # 灏嗚緭鍑哄啓鍏ュ叡浜笂涓嬫枃
                 if event.type == "text" and event.content:
                     task.shared_context.setdefault(role_str, {})[f"subtask_{subtask_idx}"] = event.content
 
-                # 推入事件队列
+                # 鎺ㄥ叆浜嬩欢闃熷垪
                 await event_queue.put(event)
 
-        # 记录 span（含实际耗时）
+        # 璁板綍 span锛堝惈瀹為檯鑰楁椂锛?
         duration_ms = int((time.time() - start_time) * 1000)
         await record_span(
             trace_id=trace_id,
@@ -484,15 +484,15 @@ class AgentHub:
             tenant_id=tenant_id,
         )
 
-        # 发送结束信号
+        # 鍙戦€佺粨鏉熶俊鍙?
         await event_queue.put(None)
 
     def _get_or_create_runtime(self, spec: AgentSpec) -> AgentRuntime:
-        """获取或创建指定角色的 Agent Runtime
+        """鑾峰彇鎴栧垱寤烘寚瀹氳鑹茬殑 Agent Runtime
 
-        mode/compaction 不在构造期注入——AgentRuntime.run() 按任务
-        从 task.llm_config 解析（见 runtime.py: get_mode_config），
-        由 _make_agent_task 负责把 spec 的 mode/model/compaction 装进任务。
+        mode/compaction 涓嶅湪鏋勯€犳湡娉ㄥ叆鈥斺€擜gentRuntime.run() 鎸変换鍔?
+        浠?task.llm_config 瑙ｆ瀽锛堣 runtime.py: get_mode_config锛夛紝
+        鐢?_make_agent_task 璐熻矗鎶?spec 鐨?mode/model/compaction 瑁呰繘浠诲姟銆?
         """
         if spec.role not in self._runtime_pool:
             from app.agent.runtime import AgentRuntime
@@ -506,18 +506,18 @@ class AgentHub:
         content: str,
         tenant_id: str,
     ):
-        """按 spec 构造完整的 AgentTask（含 mode/model/compaction 配置注入）。
+        """鎸?spec 鏋勯€犲畬鏁寸殑 AgentTask锛堝惈 mode/model/compaction 閰嶇疆娉ㄥ叆锛夈€?
 
-        历史缺陷修复：此前用 type('obj', ...) 伪造任务对象，缺
-        llm_config/user_id/session_id 等属性，runtime.run() 一进入就
-        AttributeError；且调用过不存在的 run_single_turn。
+        鍘嗗彶缂洪櫡淇锛氭鍓嶇敤 type('obj', ...) 浼€犱换鍔″璞★紝缂?
+        llm_config/user_id/session_id 绛夊睘鎬э紝runtime.run() 涓€杩涘叆灏?
+        AttributeError锛涗笖璋冪敤杩囦笉瀛樺湪鐨?run_single_turn銆?
         """
         from dataclasses import asdict
         from app.agent.runtime import AgentTask
 
         llm_config: dict = {"mode": spec.mode, "model": spec.model}
         if spec.compaction_config is not None:
-            # 逐 agent 截断策略覆盖（runtime 侧按 llm_config["compaction"] 读取）
+            # 閫?agent 鎴柇绛栫暐瑕嗙洊锛坮untime 渚ф寜 llm_config["compaction"] 璇诲彇锛?
             llm_config["compaction"] = asdict(spec.compaction_config)
 
         return AgentTask(
@@ -532,10 +532,10 @@ class AgentHub:
         )
     
     def _parse_planner_output(self, output: str) -> list[dict]:
-        """解析 Planner 的 JSON 输出"""
+        """瑙ｆ瀽 Planner 鐨?JSON 杈撳嚭"""
         import re
         
-        # 尝试提取 JSON 数组
+        # 灏濊瘯鎻愬彇 JSON 鏁扮粍
         match = re.search(r'\[.*\]', output, re.DOTALL)
         if match:
             try:
@@ -544,5 +544,7 @@ class AgentHub:
             except json.JSONDecodeError:
                 logger.warning("Failed to parse planner output as JSON")
         
-        # 降级: 返回单任务
+        # 闄嶇骇: 杩斿洖鍗曚换鍔?
         return [{"role": "researcher", "description": output, "dependencies": []}]
+
+

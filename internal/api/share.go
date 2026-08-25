@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"crypto/rand"
@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/db"
-	"github.com/athenavi/minicc/internal/model"
-	"github.com/athenavi/minicc/internal/session"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/db"
+	"github.com/athenavi/chiron/internal/model"
+	"github.com/athenavi/chiron/internal/session"
 )
 
 // ShareHandler manages public conversation shares (rendered at /share/{id}
@@ -26,7 +26,7 @@ func NewShareHandler(a *auth.Authenticator, sm *session.Manager) *ShareHandler {
 }
 
 // shareToken generates a random unguessable share id (80 bits entropy, base32
-// lowercase, no padding — 16 chars). Shares must not be enumerable, unlike
+// lowercase, no padding 鈥?16 chars). Shares must not be enumerable, unlike
 // snowflake ids, because the id is the whole access control.
 func shareToken() (string, error) {
 	var b [10]byte
@@ -71,7 +71,7 @@ func (h *ShareHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 消息归属校验：只允许分享本会话的消息
+	// 娑堟伅褰掑睘鏍￠獙锛氬彧鍏佽鍒嗕韩鏈細璇濈殑娑堟伅
 	rows, err := db.Pool.Query(r.Context(),
 		`SELECT id FROM messages WHERE session_id = $1 AND id = ANY($2::text[])`, id, messageIDs)
 	if err != nil {
@@ -101,7 +101,7 @@ func (h *ShareHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 幂等：已有活跃分享直接返回
+	// 骞傜瓑锛氬凡鏈夋椿璺冨垎浜洿鎺ヨ繑鍥?
 	existing, err := h.activeShare(r, id)
 	if err != nil {
 		logAndRespond(w, err, http.StatusInternalServerError, "query share failed")
@@ -216,7 +216,7 @@ func (h *ShareHandler) PublicGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 只暴露用户选中的文本消息（user/assistant），按时间正序
+	// 鍙毚闇茬敤鎴烽€変腑鐨勬枃鏈秷鎭紙user/assistant锛夛紝鎸夋椂闂存搴?
 	rows, err := db.Pool.Query(r.Context(),
 		`SELECT role, content, created_at FROM messages
 		 WHERE session_id = $1 AND id = ANY($2::text[]) AND role IN ('user', 'assistant')

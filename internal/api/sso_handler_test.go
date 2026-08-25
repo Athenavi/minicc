@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -10,14 +10,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/athenavi/minicc/config"
-	"github.com/athenavi/minicc/internal/auth"
+	"github.com/athenavi/chiron/config"
+	"github.com/athenavi/chiron/internal/auth"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/crypto/bcrypt"
 )
 
-// ── fake 基础设施 ───────────────────────────────────────
+// 鈹€鈹€ fake 鍩虹璁炬柦 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 type fakeRow struct {
 	scan func(dest ...any) error
@@ -30,7 +30,7 @@ func (f *fakeRow) Scan(dest ...any) error {
 	return f.scan(dest...)
 }
 
-// fakeQuerier 按 SQL 关键字分发预设行为，供 SSO/身份管理 handler 测试复用。
+// fakeQuerier 鎸?SQL 鍏抽敭瀛楀垎鍙戦璁捐涓猴紝渚?SSO/韬唤绠＄悊 handler 娴嬭瘯澶嶇敤銆?
 type fakeQuerier struct {
 	queryRow func(sql string, args ...any) pgx.Row
 	exec     func(sql string, args ...any) (pgconn.CommandTag, error)
@@ -54,7 +54,7 @@ func (f *fakeQuerier) Exec(ctx context.Context, sql string, args ...any) (pgconn
 	return f.exec(sql, args...)
 }
 
-// fakeExchanger 是 auth.OIDCExchanger 的测试替身（不触网）。
+// fakeExchanger 鏄?auth.OIDCExchanger 鐨勬祴璇曟浛韬紙涓嶈Е缃戯級銆?
 type fakeExchanger struct {
 	authURL string
 	authErr error
@@ -78,7 +78,7 @@ func newTestSSOHandler(store entQuerier, idp auth.OIDCExchanger) *SSOHandler {
 		cfg:        &config.Config{JWTExpiration: time.Hour},
 		db:         store,
 		exchanger:  idp,
-		oauth2:     idp, // 测试同样注入 fake
+		oauth2:     idp, // 娴嬭瘯鍚屾牱娉ㄥ叆 fake
 		codec:      auth.NewStateCodec(testEncKey, time.Minute),
 		encKey:     testEncKey,
 		successURL: "/",
@@ -86,7 +86,7 @@ func newTestSSOHandler(store entQuerier, idp auth.OIDCExchanger) *SSOHandler {
 	}
 }
 
-// providerScan 模拟 ent_oidc_providers 行扫描（列顺序与 ssoProviderColumns 一致，21 列）。
+// providerScan 妯℃嫙 ent_oidc_providers 琛屾壂鎻忥紙鍒楅『搴忎笌 ssoProviderColumns 涓€鑷达紝21 鍒楋級銆?
 func providerScan(enabled, autoProvision bool) func(dest ...any) error {
 	secretEnc, _ := auth.EncryptAESGCM(testEncKey, "idp-secret")
 	return func(dest ...any) error {
@@ -115,7 +115,7 @@ func providerScan(enabled, autoProvision bool) func(dest ...any) error {
 	}
 }
 
-// ── 脱敏逻辑 ────────────────────────────────────────────
+// 鈹€鈹€ 鑴辨晱閫昏緫 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestSanitizeProvider_MasksSecret(t *testing.T) {
 	p := &ssoProvider{
@@ -130,13 +130,13 @@ func TestSanitizeProvider_MasksSecret(t *testing.T) {
 	if got := resp["client_secret"]; got != maskedSecret {
 		t.Fatalf("client_secret must be masked, got %v", got)
 	}
-	// 任何字段都不得携带密文
+	// 浠讳綍瀛楁閮戒笉寰楁惡甯﹀瘑鏂?
 	if raw, _ := json.Marshal(resp); strings.Contains(string(raw), "encrypted-blob") {
 		t.Fatal("response must not contain the encrypted secret either")
 	}
 }
 
-// ── callback state 校验分支 ─────────────────────────────
+// 鈹€鈹€ callback state 鏍￠獙鍒嗘敮 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestSSOCallback_MissingParams(t *testing.T) {
 	h := newTestSSOHandler(&fakeQuerier{}, &fakeExchanger{})
@@ -175,7 +175,7 @@ func TestSSOCallback_TamperedState(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.Callback(w, req)
 
-	// state 校验失败必须在触碰 DB 之前以 400 拒绝
+	// state 鏍￠獙澶辫触蹇呴』鍦ㄨЕ纰?DB 涔嬪墠浠?400 鎷掔粷
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for tampered state, got %d", w.Code)
 	}
@@ -184,7 +184,7 @@ func TestSSOCallback_TamperedState(t *testing.T) {
 func TestSSOCallback_ExpiredState(t *testing.T) {
 	h := newTestSSOHandler(&fakeQuerier{}, &fakeExchanger{})
 
-	// 用拨快 2 分钟的时钟签发 → 相对真实时钟已过期
+	// 鐢ㄦ嫧蹇?2 鍒嗛挓鐨勬椂閽熺鍙?鈫?鐩稿鐪熷疄鏃堕挓宸茶繃鏈?
 	pastCodec := auth.NewStateCodecWithClock(testEncKey, time.Minute,
 		func() time.Time { return time.Now().Add(2 * time.Minute) })
 	state, err := pastCodec.Issue("11111111-1111-1111-1111-111111111111", "nonce-1")
@@ -231,7 +231,7 @@ func TestSSOCallback_NoBinding_NoAutoProvision_Forbidden(t *testing.T) {
 	}
 }
 
-// ── 管理端：密钥缺失 503 ────────────────────────────────
+// 鈹€鈹€ 绠＄悊绔細瀵嗛挜缂哄け 503 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestCreateProvider_MissingKey_503(t *testing.T) {
 	h := newTestSSOHandler(&fakeQuerier{}, &fakeExchanger{})
@@ -247,7 +247,7 @@ func TestCreateProvider_MissingKey_503(t *testing.T) {
 	}
 }
 
-// ── role_mapping 解析 ───────────────────────────────────
+// 鈹€鈹€ role_mapping 瑙ｆ瀽 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestResolveRole(t *testing.T) {
 	mapping := map[string]string{"idp-admin": "admin", "idp-user": "user"}
@@ -262,18 +262,18 @@ func TestResolveRole(t *testing.T) {
 	}
 }
 
-// ── normalizeProviderInput 协议校验与模板填充 ───────────
+// 鈹€鈹€ normalizeProviderInput 鍗忚鏍￠獙涓庢ā鏉垮～鍏?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestNormalizeProviderInput(t *testing.T) {
-	// 非法协议
+	// 闈炴硶鍗忚
 	if _, _, _, _, _, _, _, err := normalizeProviderInput("saml", "", "", "", "", "", nil); err == nil {
 		t.Fatal("expected error for unknown protocol")
 	}
-	// 未知 provider_type
+	// 鏈煡 provider_type
 	if _, _, _, _, _, _, _, err := normalizeProviderInput("oidc", "myspace", "", "", "", "", nil); err == nil {
 		t.Fatal("expected error for unknown provider_type")
 	}
-	// github oauth2 模板端点自动填充 + 缺省 scopes
+	// github oauth2 妯℃澘绔偣鑷姩濉厖 + 缂虹渷 scopes
 	issuer, protocol, ptype, authURL, tokenURL, userinfoURL, scopes, err :=
 		normalizeProviderInput("", "github", "", "", "", "", nil)
 	if err != nil {
@@ -290,9 +290,9 @@ func TestNormalizeProviderInput(t *testing.T) {
 	}
 }
 
-// ── Login bind 模式登录态校验 ──────────────────────────
+// 鈹€鈹€ Login bind 妯″紡鐧诲綍鎬佹牎楠?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// bind 模式无登录态（无 claims / 无 cookie）→ 401，不得签发 state。
+// bind 妯″紡鏃犵櫥褰曟€侊紙鏃?claims / 鏃?cookie锛夆啋 401锛屼笉寰楃鍙?state銆?
 func TestSSOLogin_BindModeWithoutLogin_401(t *testing.T) {
 	store := &fakeQuerier{queryRow: func(sql string, args ...any) pgx.Row {
 		return &fakeRow{scan: providerScan(true, true)}
@@ -309,7 +309,7 @@ func TestSSOLogin_BindModeWithoutLogin_401(t *testing.T) {
 	}
 }
 
-// bind 模式携带登录态 → 302 到 IdP，state 携带 bind+uid。
+// bind 妯″紡鎼哄甫鐧诲綍鎬?鈫?302 鍒?IdP锛宻tate 鎼哄甫 bind+uid銆?
 func TestSSOLogin_BindMode_Redirects(t *testing.T) {
 	store := &fakeQuerier{queryRow: func(sql string, args ...any) pgx.Row {
 		return &fakeRow{scan: providerScan(true, true)}
@@ -329,9 +329,9 @@ func TestSSOLogin_BindMode_Redirects(t *testing.T) {
 	}
 }
 
-// ── bind 回调分支 ──────────────────────────────────────
+// 鈹€鈹€ bind 鍥炶皟鍒嗘敮 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// bindStore 按 SQL 分发 bind 回调各阶段行为。
+// bindStore 鎸?SQL 鍒嗗彂 bind 鍥炶皟鍚勯樁娈佃涓恒€?
 func bindStore(identityScan func(dest ...any) error, insertErr error) *fakeQuerier {
 	return &fakeQuerier{
 		queryRow: func(sql string, args ...any) pgx.Row {
@@ -375,7 +375,7 @@ func identityScanRow(userID string) func(dest ...any) error {
 	}
 }
 
-// 已绑定他人 → 409 中文提示。
+// 宸茬粦瀹氫粬浜?鈫?409 涓枃鎻愮ず銆?
 func TestSSOCallback_BindConflict_409(t *testing.T) {
 	store := bindStore(identityScanRow("user-2"), nil)
 	h := newTestSSOHandler(store, &fakeExchanger{result: &auth.IDTokenResult{Subject: "sub-1"}})
@@ -384,12 +384,12 @@ func TestSSOCallback_BindConflict_409(t *testing.T) {
 	if w.Code != http.StatusConflict {
 		t.Fatalf("expected 409, got %d (body=%s)", w.Code, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), "已绑定其他用户") {
+	if !strings.Contains(w.Body.String(), "宸茬粦瀹氬叾浠栫敤鎴?) {
 		t.Fatalf("expected conflict message, got %s", w.Body.String())
 	}
 }
 
-// 已绑定本人 → 幂等 302 到 bindURL。
+// 宸茬粦瀹氭湰浜?鈫?骞傜瓑 302 鍒?bindURL銆?
 func TestSSOCallback_BindSelf_Idempotent(t *testing.T) {
 	store := bindStore(identityScanRow("user-1"), nil)
 	h := newTestSSOHandler(store, &fakeExchanger{result: &auth.IDTokenResult{Subject: "sub-1"}})
@@ -403,7 +403,7 @@ func TestSSOCallback_BindSelf_Idempotent(t *testing.T) {
 	}
 }
 
-// 未绑定 → INSERT 成功 → 302 到 bindURL。
+// 鏈粦瀹?鈫?INSERT 鎴愬姛 鈫?302 鍒?bindURL銆?
 func TestSSOCallback_BindSuccess(t *testing.T) {
 	inserted := false
 	store := bindStore(func(dest ...any) error { return pgx.ErrNoRows }, nil)
@@ -427,7 +427,7 @@ func TestSSOCallback_BindSuccess(t *testing.T) {
 	}
 }
 
-// INSERT 唯一冲突（并发绑定）→ 409。
+// INSERT 鍞竴鍐茬獊锛堝苟鍙戠粦瀹氾級鈫?409銆?
 func TestSSOCallback_BindUniqueViolation_409(t *testing.T) {
 	store := bindStore(func(dest ...any) error { return pgx.ErrNoRows },
 		&pgconn.PgError{Code: "23505"})
@@ -439,7 +439,7 @@ func TestSSOCallback_BindUniqueViolation_409(t *testing.T) {
 	}
 }
 
-// ── DeleteIdentity 解绑守卫 ────────────────────────────
+// 鈹€鈹€ DeleteIdentity 瑙ｇ粦瀹堝崼 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func deleteIdentityRequest(h *SSOHandler, passwordSet bool, count int) *httptest.ResponseRecorder {
 	store := &fakeQuerier{
@@ -472,7 +472,7 @@ func deleteIdentityRequest(h *SSOHandler, passwordSet bool, count int) *httptest
 	return w
 }
 
-// 无密码且最后一个三方身份 → 403（保底至少一种登录方式）。
+// 鏃犲瘑鐮佷笖鏈€鍚庝竴涓笁鏂硅韩浠?鈫?403锛堜繚搴曡嚦灏戜竴绉嶇櫥褰曟柟寮忥級銆?
 func TestDeleteIdentity_LastIdentityNoPassword_403(t *testing.T) {
 	h := newTestSSOHandler(&fakeQuerier{}, &fakeExchanger{})
 	w := deleteIdentityRequest(h, false, 1)
@@ -481,7 +481,7 @@ func TestDeleteIdentity_LastIdentityNoPassword_403(t *testing.T) {
 	}
 }
 
-// 已设密码 → 允许解绑。
+// 宸茶瀵嗙爜 鈫?鍏佽瑙ｇ粦銆?
 func TestDeleteIdentity_WithPassword_OK(t *testing.T) {
 	h := newTestSSOHandler(&fakeQuerier{}, &fakeExchanger{})
 	w := deleteIdentityRequest(h, true, 1)
@@ -490,7 +490,7 @@ func TestDeleteIdentity_WithPassword_OK(t *testing.T) {
 	}
 }
 
-// 多个三方身份 → 允许解绑。
+// 澶氫釜涓夋柟韬唤 鈫?鍏佽瑙ｇ粦銆?
 func TestDeleteIdentity_MultipleIdentities_OK(t *testing.T) {
 	h := newTestSSOHandler(&fakeQuerier{}, &fakeExchanger{})
 	w := deleteIdentityRequest(h, false, 2)
@@ -499,7 +499,7 @@ func TestDeleteIdentity_MultipleIdentities_OK(t *testing.T) {
 	}
 }
 
-// ── SetPassword ────────────────────────────────────────
+// 鈹€鈹€ SetPassword 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func passwordStore(t *testing.T, passwordHash string, passwordSet bool) *fakeQuerier {
 	t.Helper()
@@ -520,7 +520,7 @@ func passwordStore(t *testing.T, passwordHash string, passwordSet bool) *fakeQue
 	}
 }
 
-// SSO 建号用户首设密码：无需 current_password。
+// SSO 寤哄彿鐢ㄦ埛棣栬瀵嗙爜锛氭棤闇€ current_password銆?
 func TestSetPassword_FirstSetNoCurrentRequired(t *testing.T) {
 	h := newTestSSOHandler(passwordStore(t, "", false), &fakeExchanger{})
 
@@ -534,7 +534,7 @@ func TestSetPassword_FirstSetNoCurrentRequired(t *testing.T) {
 	}
 }
 
-// 已设密码但旧密码错误 → 401。
+// 宸茶瀵嗙爜浣嗘棫瀵嗙爜閿欒 鈫?401銆?
 func TestSetPassword_WrongCurrent_401(t *testing.T) {
 	hash, err := bcrypt.GenerateFromPassword([]byte("correct-horse"), bcrypt.MinCost)
 	if err != nil {
@@ -552,7 +552,7 @@ func TestSetPassword_WrongCurrent_401(t *testing.T) {
 	}
 }
 
-// 已设密码但缺 current_password → 400。
+// 宸茶瀵嗙爜浣嗙己 current_password 鈫?400銆?
 func TestSetPassword_MissingCurrent_400(t *testing.T) {
 	hash, _ := bcrypt.GenerateFromPassword([]byte("correct-horse"), bcrypt.MinCost)
 	h := newTestSSOHandler(passwordStore(t, string(hash), true), &fakeExchanger{})
@@ -567,7 +567,7 @@ func TestSetPassword_MissingCurrent_400(t *testing.T) {
 	}
 }
 
-// 新密码长度不足 → 400。
+// 鏂板瘑鐮侀暱搴︿笉瓒?鈫?400銆?
 func TestSetPassword_TooShort_400(t *testing.T) {
 	h := newTestSSOHandler(passwordStore(t, "", false), &fakeExchanger{})
 

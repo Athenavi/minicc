@@ -1,9 +1,8 @@
-//go:build !windows
+﻿//go:build !windows
 
 package main
 
-// POSIX 平台实现：进程存活检查与信号发送
-
+// POSIX 骞冲彴瀹炵幇锛氳繘绋嬪瓨娲绘鏌ヤ笌淇″彿鍙戦€?
 import (
 	"syscall"
 )
@@ -13,7 +12,7 @@ const (
 	SIGKILL = syscall.SIGKILL
 )
 
-// processAlive 通过 signal 0 判断进程存活
+// processAlive 閫氳繃 signal 0 鍒ゆ柇杩涚▼瀛樻椿
 func processAlive(pid int) bool {
 	if pid <= 0 {
 		return false
@@ -22,7 +21,6 @@ func processAlive(pid int) bool {
 	return err == nil || err == syscall.EPERM
 }
 
-// sendSignal 发送信号
-func sendSignal(pid int, sig syscall.Signal) error {
+// sendSignal 鍙戦€佷俊鍙?func sendSignal(pid int, sig syscall.Signal) error {
 	return syscall.Kill(pid, sig)
 }

@@ -1,4 +1,4 @@
-package db
+﻿package db
 
 import (
 	"context"
@@ -12,23 +12,23 @@ import (
 	"time"
 )
 
-// ── AuditSink：Redis Stream → PG audit_logs 批量落库 ─────────────────────
+// 鈹€鈹€ AuditSink锛歊edis Stream 鈫?PG audit_logs 鎵归噺钀藉簱 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 //
-// 作为 AuditConsumer 的 handler 回调使用：
+// 浣滀负 AuditConsumer 鐨?handler 鍥炶皟浣跨敤锛?
 //
 //	sink := db.NewDefaultAuditSink()
 //	consumer := db.NewAuditConsumer(redis, sink.Handle)
 //	go consumer.Start(ctx)
 //
-// 批量策略：≥100 条或 1s 窗口先到先发。
-// 失败策略：批量 INSERT 失败仅 slog.Error 并丢弃该批（Handle 恒返回 nil，
-// 消费者照常 ACK）——宁可丢不可堵，避免毒消息在消费组内无限重投；
-// 关键事件（如登录审计）已有 handler 显式记录兜底。
+// 鎵归噺绛栫暐锛氣墺100 鏉℃垨 1s 绐楀彛鍏堝埌鍏堝彂銆?
+// 澶辫触绛栫暐锛氭壒閲?INSERT 澶辫触浠?slog.Error 骞朵涪寮冭鎵癸紙Handle 鎭掕繑鍥?nil锛?
+// 娑堣垂鑰呯収甯?ACK锛夆€斺€斿畞鍙涪涓嶅彲鍫碉紝閬垮厤姣掓秷鎭湪娑堣垂缁勫唴鏃犻檺閲嶆姇锛?
+// 鍏抽敭浜嬩欢锛堝鐧诲綍瀹¤锛夊凡鏈?handler 鏄惧紡璁板綍鍏滃簳銆?
 
 var auditSinkUUIDRe = regexp.MustCompile(
 	`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
-// AuditSink 审计日志批量落库 sink。
+// AuditSink 瀹¤鏃ュ織鎵归噺钀藉簱 sink銆?
 type AuditSink struct {
 	mu        sync.Mutex
 	buf       []AuditEntry
@@ -39,8 +39,8 @@ type AuditSink struct {
 	doneCh    chan struct{}
 }
 
-// NewAuditSink 创建 sink 并启动窗口定时 flush 协程。
-// batchSize<=0 → 100；window<=0 → 1s。
+// NewAuditSink 鍒涘缓 sink 骞跺惎鍔ㄧ獥鍙ｅ畾鏃?flush 鍗忕▼銆?
+// batchSize<=0 鈫?100锛泈indow<=0 鈫?1s銆?
 func NewAuditSink(writer func(ctx context.Context, entries []AuditEntry) error,
 	batchSize int, window time.Duration) *AuditSink {
 	if batchSize <= 0 {
@@ -60,13 +60,13 @@ func NewAuditSink(writer func(ctx context.Context, entries []AuditEntry) error,
 	return s
 }
 
-// NewDefaultAuditSink 创建默认 sink（PG 批量写入，100 条 / 1s 窗口）。
+// NewDefaultAuditSink 鍒涘缓榛樿 sink锛圥G 鎵归噺鍐欏叆锛?00 鏉?/ 1s 绐楀彛锛夈€?
 func NewDefaultAuditSink() *AuditSink {
 	return NewAuditSink(WriteAuditLogs, 100, time.Second)
 }
 
-// Handle 实现 AuditConsumer 的 handler 回调签名。
-// 恒返回 nil：写入失败在 Flush 内记日志丢弃，保证消费者 ACK，不堵塞消费组。
+// Handle 瀹炵幇 AuditConsumer 鐨?handler 鍥炶皟绛惧悕銆?
+// 鎭掕繑鍥?nil锛氬啓鍏ュけ璐ュ湪 Flush 鍐呰鏃ュ織涓㈠純锛屼繚璇佹秷璐硅€?ACK锛屼笉鍫靛娑堣垂缁勩€?
 func (s *AuditSink) Handle(ctx context.Context, entry AuditEntry) error {
 	s.mu.Lock()
 	s.buf = append(s.buf, entry)
@@ -78,7 +78,7 @@ func (s *AuditSink) Handle(ctx context.Context, entry AuditEntry) error {
 	return nil
 }
 
-// loop 按窗口周期触发 flush，Close 时收尾。
+// loop 鎸夌獥鍙ｅ懆鏈熻Е鍙?flush锛孋lose 鏃舵敹灏俱€?
 func (s *AuditSink) loop() {
 	defer close(s.doneCh)
 	ticker := time.NewTicker(s.window)
@@ -94,7 +94,7 @@ func (s *AuditSink) loop() {
 	}
 }
 
-// Flush 取出当前缓冲并调用 writer 落库；失败 slog.Error 并丢弃该批。
+// Flush 鍙栧嚭褰撳墠缂撳啿骞惰皟鐢?writer 钀藉簱锛涘け璐?slog.Error 骞朵涪寮冭鎵广€?
 func (s *AuditSink) Flush(ctx context.Context) {
 	s.mu.Lock()
 	if len(s.buf) == 0 {
@@ -114,17 +114,17 @@ func (s *AuditSink) Flush(ctx context.Context) {
 	}
 }
 
-// Close 停止窗口协程并 flush 残留缓冲（阻塞至完成）。
+// Close 鍋滄绐楀彛鍗忕▼骞?flush 娈嬬暀缂撳啿锛堥樆濉炶嚦瀹屾垚锛夈€?
 func (s *AuditSink) Close() {
 	close(s.stopCh)
 	<-s.doneCh
 }
 
-// ── 默认 PG 批量写入 ─────────────────────────────────────────────────────
+// 鈹€鈹€ 榛樿 PG 鎵归噺鍐欏叆 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// WriteAuditLogs 将审计条目批量 INSERT 到 audit_logs。
-// 字段映射：tenant_id 非法/空 → 默认租户；user_id 非法/空 → NULL；
-// resource_type 按 resource 路径前缀归类（ent/admin/api/general）。
+// WriteAuditLogs 灏嗗璁℃潯鐩壒閲?INSERT 鍒?audit_logs銆?
+// 瀛楁鏄犲皠锛歵enant_id 闈炴硶/绌?鈫?榛樿绉熸埛锛泆ser_id 闈炴硶/绌?鈫?NULL锛?
+// resource_type 鎸?resource 璺緞鍓嶇紑褰掔被锛坋nt/admin/api/general锛夈€?
 func WriteAuditLogs(ctx context.Context, entries []AuditEntry) error {
 	pool := Pool
 	if pool == nil {
@@ -173,7 +173,7 @@ func WriteAuditLogs(ctx context.Context, entries []AuditEntry) error {
 	return err
 }
 
-// auditResourceType 按资源路径前缀归类 resource_type（varchar(64)）。
+// auditResourceType 鎸夎祫婧愯矾寰勫墠缂€褰掔被 resource_type锛坴archar(64)锛夈€?
 func auditResourceType(resource string) string {
 	switch {
 	case resource == "":
@@ -189,7 +189,7 @@ func auditResourceType(resource string) string {
 	}
 }
 
-// clipVarchar 截断到 varchar(n) 上限，避免落库超长报错。
+// clipVarchar 鎴柇鍒?varchar(n) 涓婇檺锛岄伩鍏嶈惤搴撹秴闀挎姤閿欍€?
 func clipVarchar(s string, n int) string {
 	if len(s) > n {
 		return s[:n]
@@ -197,7 +197,7 @@ func clipVarchar(s string, n int) string {
 	return s
 }
 
-// nilableIP 空 IP 落 NULL（ip_address 列可空）。
+// nilableIP 绌?IP 钀?NULL锛坕p_address 鍒楀彲绌猴級銆?
 func nilableIP(ip string) any {
 	if ip == "" {
 		return nil

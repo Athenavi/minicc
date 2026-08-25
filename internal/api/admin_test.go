@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"encoding/json"
@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/storage"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/storage"
 )
 
 func TestNewAdminHandler(t *testing.T) {

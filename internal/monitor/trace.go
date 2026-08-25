@@ -1,4 +1,4 @@
-package monitor
+﻿package monitor
 
 import (
 	"context"
@@ -13,9 +13,9 @@ import (
 
 type contextKey string
 
-const traceContextKey contextKey = "minicc_trace"
+const traceContextKey contextKey = "chiron_trace"
 
-// ── Trace ID / Span ID ────────────────────────────────────────────────────
+// 鈹€鈹€ Trace ID / Span ID 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 // TraceID is a 16-byte unique identifier for a trace.
 type TraceID [16]byte
@@ -34,7 +34,7 @@ func (s SpanID) String() string {
 func newTraceID() TraceID {
 	var id TraceID
 	if _, err := rand.Read(id[:]); err != nil {
-		// 失败时退化为时间戳+原子计数，避免全零 ID 引发 trace 冲突
+		// 澶辫触鏃堕€€鍖栦负鏃堕棿鎴?鍘熷瓙璁℃暟锛岄伩鍏嶅叏闆?ID 寮曞彂 trace 鍐茬獊
 		binary.BigEndian.PutUint64(id[8:], uint64(time.Now().UnixNano()))
 		binary.BigEndian.PutUint64(id[0:], traceCounter.Add(1))
 	}
@@ -49,10 +49,9 @@ func newSpanID() SpanID {
 	return id
 }
 
-// traceCounter 提供 rand 失败时的回退自增计数，保证 ID 唯一性。
-var traceCounter atomic.Uint64
+// traceCounter 鎻愪緵 rand 澶辫触鏃剁殑鍥為€€鑷璁℃暟锛屼繚璇?ID 鍞竴鎬с€?var traceCounter atomic.Uint64
 
-// ── Span ──────────────────────────────────────────────────────────────────
+// 鈹€鈹€ Span 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 // Span represents a single operation within a trace.
 type Span struct {
@@ -108,8 +107,7 @@ func defaultExport(s *Span) {
 	if len(s.Tags) > 0 {
 		attrs = append(attrs, slog.Any("tags", s.Tags))
 	}
-	// slog.Debug 参数为 ...any：显式展开 []slog.Attr（Go 1.26 不再接受切片直接展开）
-	args := make([]any, 0, len(attrs))
+	// slog.Debug 鍙傛暟涓?...any锛氭樉寮忓睍寮€ []slog.Attr锛圙o 1.26 涓嶅啀鎺ュ彈鍒囩墖鐩存帴灞曞紑锛?	args := make([]any, 0, len(attrs))
 	for _, a := range attrs {
 		args = append(args, a)
 	}
@@ -152,7 +150,7 @@ func GetSpan(ctx context.Context) *Span {
 	return s
 }
 
-// ── Span methods ──────────────────────────────────────────────────────────
+// 鈹€鈹€ Span methods 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func (s *Span) SetTag(key string, value interface{}) {
 	s.mu.Lock()
@@ -177,7 +175,7 @@ func (s *Span) SetStatus(code, msg string) {
 	s.StatusMsg = msg
 }
 
-// ── Exported span store (in-memory, for debugging) ──
+// 鈹€鈹€ Exported span store (in-memory, for debugging) 鈹€鈹€
 
 var completedSpansMu sync.Mutex
 var completedSpans []*Span
@@ -220,11 +218,10 @@ func (s *Span) End() {
 	}
 	s.mu.Unlock()
 
-	// 在锁外调用 exportFn，避免回调中获取其他锁导致死锁
-	GlobalTracer.exportFn(s)
+	// 鍦ㄩ攣澶栬皟鐢?exportFn锛岄伩鍏嶅洖璋冧腑鑾峰彇鍏朵粬閿佸鑷存閿?	GlobalTracer.exportFn(s)
 }
 
-// ── Convenience: context-based tracing ────────────────────────────────────
+// 鈹€鈹€ Convenience: context-based tracing 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 // Trace wraps a function call with a span. Usage:
 //

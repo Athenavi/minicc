@@ -1,49 +1,48 @@
-# MiniCC 架构文档
+﻿# chiron 鏋舵瀯鏂囨。
 
-> 本文基于仓库真实代码编写。模块路径:`github.com/athenavi/minicc`(Go 网关)、`python-engine/`(Python AI 引擎)、`frontend-vue/`(Vue 3 前端)。
-
-## 1. 总体架构
+> 鏈枃鍩轰簬浠撳簱鐪熷疄浠ｇ爜缂栧啓銆傛ā鍧楄矾寰?`github.com/athenavi/chiron`(Go 缃戝叧)銆乣python-engine/`(Python AI 寮曟搸)銆乣frontend-vue/`(Vue 3 鍓嶇)銆?
+## 1. 鎬讳綋鏋舵瀯
 
 ```mermaid
 flowchart TB
-    subgraph Client["客户端"]
+    subgraph Client["瀹㈡埛绔?]
         FE["frontend-vue<br/>(Vue 3 + Vite, :5173 dev / :3000 docker)"]
-        API["外部 API 调用方<br/>(API Key)"]
+        API["澶栭儴 API 璋冪敤鏂?br/>(API Key)"]
     end
 
-    subgraph GW["Go 网关 (internal/, :8080)"]
-        RT["路由与中间件链<br/>requestID → realIP(可信代理) → authMW(JWT/API Key)<br/>→ rlMW(限流) → sanitizeMW(注入检测) → 业务 Handler"]
+    subgraph GW["Go 缃戝叧 (internal/, :8080)"]
+        RT["璺敱涓庝腑闂翠欢閾?br/>requestID 鈫?realIP(鍙俊浠ｇ悊) 鈫?authMW(JWT/API Key)<br/>鈫?rlMW(闄愭祦) 鈫?sanitizeMW(娉ㄥ叆妫€娴? 鈫?涓氬姟 Handler"]
         AUTH["auth: JWT / API Key / OAuth / OIDC / SMS"]
-        SESS["session: 会话与消息落库"]
-        BILL["billing: 计费 / 支付(支付宝 / 微信 / PayPal / Stripe)"]
-        MEDIA["storage: 媒体上传 / 签名 URL"]
-        ENT["enterprise: RBAC / 配额 / 审计 / 成本中心"]
+        SESS["session: 浼氳瘽涓庢秷鎭惤搴?]
+        BILL["billing: 璁¤垂 / 鏀粯(鏀粯瀹?/ 寰俊 / PayPal / Stripe)"]
+        MEDIA["storage: 濯掍綋涓婁紶 / 绛惧悕 URL"]
+        ENT["enterprise: RBAC / 閰嶉 / 瀹¤ / 鎴愭湰涓績"]
     end
 
-    subgraph PY["Python AI 引擎 (python-engine/, :8000, 仅回环)"]
+    subgraph PY["Python AI 寮曟搸 (python-engine/, :8000, 浠呭洖鐜?"]
         UEXEC["unified_executor<br/>POST /v1/chat/submit"]
         TR["core/task_router.py<br/>TaskRouter"]
         CAP["core/capabilities.py<br/>Capability Registry"]
-        AGENT["agent: 多智能体 / 4 模式 / 上下文"]
-        WF["workflow: DAG 引擎"]
-        SKILL["skill + tools: 技能 / 工具沙箱 / SSRF 防护"]
-        KB["knowledge + rag: 入库 / 分块 / 检索"]
-        MCP["mcp + plugins: 插件 / 命令白名单"]
-        MEM["memory: 短期 / 长期(L2) / 对话摘要(L3)"]
-        GATE["gateway: LLM Gateway / 语义缓存 / Provider 适配"]
+        AGENT["agent: 澶氭櫤鑳戒綋 / 4 妯″紡 / 涓婁笅鏂?]
+        WF["workflow: DAG 寮曟搸"]
+        SKILL["skill + tools: 鎶€鑳?/ 宸ュ叿娌欑 / SSRF 闃叉姢"]
+        KB["knowledge + rag: 鍏ュ簱 / 鍒嗗潡 / 妫€绱?]
+        MCP["mcp + plugins: 鎻掍欢 / 鍛戒护鐧藉悕鍗?]
+        MEM["memory: 鐭湡 / 闀挎湡(L2) / 瀵硅瘽鎽樿(L3)"]
+        GATE["gateway: LLM Gateway / 璇箟缂撳瓨 / Provider 閫傞厤"]
     end
 
-    subgraph Store["存储层"]
-        PG[("PostgreSQL 16 + pgvector<br/>会话 / 媒体元数据 / 市场 / 向量")]
-        RDS[("Redis 7 (必需)<br/>分布式限流 / 队列 / 语义缓存 / 会话")]
-        S3[("MinIO / S3<br/>媒体对象存储")]
-        MILVUS[("Milvus 2.5<br/>向量检索(或 pgvector)")]
-        TMP[("Temporal<br/>工作流")]
+    subgraph Store["瀛樺偍灞?]
+        PG[("PostgreSQL 16 + pgvector<br/>浼氳瘽 / 濯掍綋鍏冩暟鎹?/ 甯傚満 / 鍚戦噺")]
+        RDS[("Redis 7 (蹇呴渶)<br/>鍒嗗竷寮忛檺娴?/ 闃熷垪 / 璇箟缂撳瓨 / 浼氳瘽")]
+        S3[("MinIO / S3<br/>濯掍綋瀵硅薄瀛樺偍")]
+        MILVUS[("Milvus 2.5<br/>鍚戦噺妫€绱?鎴?pgvector)")]
+        TMP[("Temporal<br/>宸ヤ綔娴?)]
     end
 
     FE -->|"HTTP / SSE / WS"| GW
     API --> GW
-    GW -->|"X-Internal-Token 身份透传<br/>SSE / streaming"| PY
+    GW -->|"X-Internal-Token 韬唤閫忎紶<br/>SSE / streaming"| PY
     PY -->|"LLM API"| LLM["OpenAI / Anthropic / DeepSeek"]
     GW --> PG
     GW --> RDS
@@ -54,162 +53,136 @@ flowchart TB
     PY --> MILVUS
 ```
 
-**分层职责**:
+**鍒嗗眰鑱岃矗**:
 
-- **前端**(`frontend-vue/`):六大工作台入口、聊天界面(虚拟滚动 / 流式思维链 / 工具链还原)、工作流 DAG 画布(@vue-flow)、管理后台。只与网关通信。
-- **Go 网关**(`internal/`):唯一对外入口。负责认证(HTTP cookie JWT / Bearer / API Key)、限流(每用户 RPM / 每租户 RPS / 全局)、CORS/CSP、请求注入检测、计费扣减、SSE 事件转发(`GET /events`)、WebSocket(`/ws/{sessionId}`、`/ws/rpa`)、媒体与市场等管理面 API;业务推理统一代理到 Python 引擎。
-- **Python AI 引擎**(`python-engine/`,FastAPI):Agent 推理循环、TaskRouter 统一编排、工具沙箱、RAG、记忆、LLM Gateway。默认仅绑定 `127.0.0.1:8000`,生产经反向代理/网关访问。
-- **存储层**:PostgreSQL(pgvector)为主库与向量库,Redis 为必需中间件,MinIO/S3 存媒体对象,Milvus 存独立向量集,Temporal 托管工作流。
-
-## 2. 认证与身份透传链路
+- **鍓嶇**(`frontend-vue/`):鍏ぇ宸ヤ綔鍙板叆鍙ｃ€佽亰澶╃晫闈?铏氭嫙婊氬姩 / 娴佸紡鎬濈淮閾?/ 宸ュ叿閾捐繕鍘?銆佸伐浣滄祦 DAG 鐢诲竷(@vue-flow)銆佺鐞嗗悗鍙般€傚彧涓庣綉鍏抽€氫俊銆?- **Go 缃戝叧**(`internal/`):鍞竴瀵瑰鍏ュ彛銆傝礋璐ｈ璇?HTTP cookie JWT / Bearer / API Key)銆侀檺娴?姣忕敤鎴?RPM / 姣忕鎴?RPS / 鍏ㄥ眬)銆丆ORS/CSP銆佽姹傛敞鍏ユ娴嬨€佽璐规墸鍑忋€丼SE 浜嬩欢杞彂(`GET /events`)銆乄ebSocket(`/ws/{sessionId}`銆乣/ws/rpa`)銆佸獟浣撲笌甯傚満绛夌鐞嗛潰 API;涓氬姟鎺ㄧ悊缁熶竴浠ｇ悊鍒?Python 寮曟搸銆?- **Python AI 寮曟搸**(`python-engine/`,FastAPI):Agent 鎺ㄧ悊寰幆銆乀askRouter 缁熶竴缂栨帓銆佸伐鍏锋矙绠便€丷AG銆佽蹇嗐€丩LM Gateway銆傞粯璁や粎缁戝畾 `127.0.0.1:8000`,鐢熶骇缁忓弽鍚戜唬鐞?缃戝叧璁块棶銆?- **瀛樺偍灞?*:PostgreSQL(pgvector)涓轰富搴撲笌鍚戦噺搴?Redis 涓哄繀闇€涓棿浠?MinIO/S3 瀛樺獟浣撳璞?Milvus 瀛樼嫭绔嬪悜閲忛泦,Temporal 鎵樼宸ヤ綔娴併€?
+## 2. 璁よ瘉涓庤韩浠介€忎紶閾捐矾
 
 ```mermaid
 sequenceDiagram
-    participant U as 用户 / 调用方
-    participant G as Go 网关 :8080
-    participant P as Python 引擎 :8000
+    participant U as 鐢ㄦ埛 / 璋冪敤鏂?    participant G as Go 缃戝叧 :8080
+    participant P as Python 寮曟搸 :8000
 
-    alt 交互登录
-        U->>G: POST /v1/auth/login (密码 / 验证码 / SMS / SSO)
-        G->>G: 校验凭据,签发 JWT (HS256, cookie + bearer)
+    alt 浜や簰鐧诲綍
+        U->>G: POST /v1/auth/login (瀵嗙爜 / 楠岃瘉鐮?/ SMS / SSO)
+        G->>G: 鏍￠獙鍑嵁,绛惧彂 JWT (HS256, cookie + bearer)
         G-->>U: Set-Cookie + token
     else API Key
         U->>G: Authorization: Bearer <API Key>
-        G->>G: apikey 校验 → 解析 tenant_id / user_id
+        G->>G: apikey 鏍￠獙 鈫?瑙ｆ瀽 tenant_id / user_id
     end
 
-    U->>G: 业务请求 (JWT cookie / Bearer)
-    G->>G: authMW 解析 claims(tenant_id, user_id, 权限)
-    G->>G: rlMW 限流 / sanitizeMW 注入检测 / RequirePermission(RBAC)
+    U->>G: 涓氬姟璇锋眰 (JWT cookie / Bearer)
+    G->>G: authMW 瑙ｆ瀽 claims(tenant_id, user_id, 鏉冮檺)
+    G->>G: rlMW 闄愭祦 / sanitizeMW 娉ㄥ叆妫€娴?/ RequirePermission(RBAC)
     G->>P: POST /v1/chat/submit<br/>Header: X-Internal-Token + X-Tenant-ID + X-User-ID
-    alt INTERNAL_TOKEN 匹配
-        P->>P: 接受 query 身份透传,建立 tenant/user 上下文
-        P-->>G: SSE 流式响应 (token / tool_call / done)
-        G-->>U: SSE 转发 / 消息落库
-    else 不匹配或未配置
-        P-->>G: 403 fail-close(拒绝身份透传,强制走 JWT/API Key)
+    alt INTERNAL_TOKEN 鍖归厤
+        P->>P: 鎺ュ彈 query 韬唤閫忎紶,寤虹珛 tenant/user 涓婁笅鏂?        P-->>G: SSE 娴佸紡鍝嶅簲 (token / tool_call / done)
+        G-->>U: SSE 杞彂 / 娑堟伅钀藉簱
+    else 涓嶅尮閰嶆垨鏈厤缃?        P-->>G: 403 fail-close(鎷掔粷韬唤閫忎紶,寮哄埗璧?JWT/API Key)
     end
 ```
 
-要点:
+瑕佺偣:
 
-1. 网关是唯一身份来源;Python 引擎**不直接对公网**。
-2. `INTERNAL_TOKEN` 为网关 → 引擎共享密钥(`X-Internal-Token`)。未配置时 Python 对网关的 query 身份透传采取 **fail-close** 拒绝,避免绕过网关直接伪造租户身份(见 `python-engine/app/config.py` 与 `internal/config` 注释)。
-3. 会话与消息由网关写入 PostgreSQL(`messages` / `tool_calls`),刷新后不丢历史。
+1. 缃戝叧鏄敮涓€韬唤鏉ユ簮;Python 寮曟搸**涓嶇洿鎺ュ鍏綉**銆?2. `INTERNAL_TOKEN` 涓虹綉鍏?鈫?寮曟搸鍏变韩瀵嗛挜(`X-Internal-Token`)銆傛湭閰嶇疆鏃?Python 瀵圭綉鍏崇殑 query 韬唤閫忎紶閲囧彇 **fail-close** 鎷掔粷,閬垮厤缁曡繃缃戝叧鐩存帴浼€犵鎴疯韩浠?瑙?`python-engine/app/config.py` 涓?`internal/config` 娉ㄩ噴)銆?3. 浼氳瘽涓庢秷鎭敱缃戝叧鍐欏叆 PostgreSQL(`messages` / `tool_calls`),鍒锋柊鍚庝笉涓㈠巻鍙层€?
+## 3. 缁熶竴鍏ュ彛涓?TaskRouter
 
-## 3. 统一入口与 TaskRouter
-
-对话、Agent、工作流、技能、知识库、插件六大工作台不是孤岛:引擎以 `POST /v1/chat/submit` 为统一入口(`python-engine/app/api/unified_executor.py`),经 TaskRouter 自动编排;网关侧 `POST /submit`(SSE 代理)与 `POST /v1/agents/dispatch` 均汇聚到此链路。
-
+瀵硅瘽銆丄gent銆佸伐浣滄祦銆佹妧鑳姐€佺煡璇嗗簱銆佹彃浠跺叚澶у伐浣滃彴涓嶆槸瀛ゅ矝:寮曟搸浠?`POST /v1/chat/submit` 涓虹粺涓€鍏ュ彛(`python-engine/app/api/unified_executor.py`),缁?TaskRouter 鑷姩缂栨帓;缃戝叧渚?`POST /submit`(SSE 浠ｇ悊)涓?`POST /v1/agents/dispatch` 鍧囨眹鑱氬埌姝ら摼璺€?
 ```mermaid
 flowchart LR
-    A["POST /v1/chat/submit<br/>(自然语言任务)"] --> B["意图理解<br/>Intent Understanding"]
-    B --> C["任务分解<br/>Task Decomposition"]
-    C --> D["能力匹配<br/>Capability Registry"]
-    D --> E["DAG 构建<br/>子任务依赖图"]
-    E --> F["执行编排<br/>并行优化 + 队列"]
-    F --> G["结果聚合<br/>Result Aggregation"]
-    G --> H["SSE 流式返回"]
+    A["POST /v1/chat/submit<br/>(鑷劧璇█浠诲姟)"] --> B["鎰忓浘鐞嗚В<br/>Intent Understanding"]
+    B --> C["浠诲姟鍒嗚В<br/>Task Decomposition"]
+    C --> D["鑳藉姏鍖归厤<br/>Capability Registry"]
+    D --> E["DAG 鏋勫缓<br/>瀛愪换鍔′緷璧栧浘"]
+    E --> F["鎵ц缂栨帓<br/>骞惰浼樺寲 + 闃熷垪"]
+    F --> G["缁撴灉鑱氬悎<br/>Result Aggregation"]
+    G --> H["SSE 娴佸紡杩斿洖"]
 ```
 
-- `core/capabilities.py`:能力注册表,`WorkstationType` 枚举对话 `dialogue` / Agent `agent` / 工作流 `workflow` / 技能 `skill` / 知识库 `knowledge` / 插件 `plugin` 六类工作台,外加工具型 / 服务型 / 模板型 / 组合型能力。
-- `core/task_router.py`:将任务拆解为带依赖的子任务,按能力匹配执行路径,支持并行调度与统一异常恢复。
-- 工作流引擎(`app/workflow/`)支持 DAG 运行时编辑;Agent 协同(`app/agent/collaboration.py`)支持多智能体并发与上下文共享。
-
-## 4. 六大工作台互联互通
-
-| 工作台 | 核心能力 | 互联方式 |
+- `core/capabilities.py`:鑳藉姏娉ㄥ唽琛?`WorkstationType` 鏋氫妇瀵硅瘽 `dialogue` / Agent `agent` / 宸ヤ綔娴?`workflow` / 鎶€鑳?`skill` / 鐭ヨ瘑搴?`knowledge` / 鎻掍欢 `plugin` 鍏被宸ヤ綔鍙?澶栧姞宸ュ叿鍨?/ 鏈嶅姟鍨?/ 妯℃澘鍨?/ 缁勫悎鍨嬭兘鍔涖€?- `core/task_router.py`:灏嗕换鍔℃媶瑙ｄ负甯︿緷璧栫殑瀛愪换鍔?鎸夎兘鍔涘尮閰嶆墽琛岃矾寰?鏀寔骞惰璋冨害涓庣粺涓€寮傚父鎭㈠銆?- 宸ヤ綔娴佸紩鎿?`app/workflow/`)鏀寔 DAG 杩愯鏃剁紪杈?Agent 鍗忓悓(`app/agent/collaboration.py`)鏀寔澶氭櫤鑳戒綋骞跺彂涓庝笂涓嬫枃鍏变韩銆?
+## 4. 鍏ぇ宸ヤ綔鍙颁簰鑱斾簰閫?
+| 宸ヤ綔鍙?| 鏍稿績鑳藉姏 | 浜掕仈鏂瑰紡 |
 |---|---|---|
-| 对话 `dialogue` | 4 模式(常规 / 极简 / PTC / 创造)、流式输出、工具三态裁决 | 入口本身即 TaskRouter 统一编排(`quick_execute`) |
-| Agent `agent` | 多智能体协同、任务分发 `/v1/agents/dispatch`、结果追踪 | Agent 任务可调起工作流 / 技能 / 知识库检索 |
-| 工作流 `workflow` | DAG 编排、节点自由连线、运行时编辑 | 节点可执行技能与知识库查询(`dynamic_nodes.py` 调 `/v1/chat/submit`) |
-| 技能 `skill` | 技能市场安装 / 卸载、技能执行沙箱 | 技能即工具,供对话 / Agent / 工作流节点调用 |
-| 知识库 `knowledge` | 文档入库、向量化、RAG 检索 | 供各工作台检索上下文(`kb_search` 服务型能力) |
-| 插件 `plugin` | MCP 服务配置、每用户插件目录 `data/plugins/{user}/plugins.json` | MCP 工具注册为能力,受 `PLUGIN_COMMAND_ALLOWLIST` 约束 |
+| 瀵硅瘽 `dialogue` | 4 妯″紡(甯歌 / 鏋佺畝 / PTC / 鍒涢€?銆佹祦寮忚緭鍑恒€佸伐鍏蜂笁鎬佽鍐?| 鍏ュ彛鏈韩鍗?TaskRouter 缁熶竴缂栨帓(`quick_execute`) |
+| Agent `agent` | 澶氭櫤鑳戒綋鍗忓悓銆佷换鍔″垎鍙?`/v1/agents/dispatch`銆佺粨鏋滆拷韪?| Agent 浠诲姟鍙皟璧峰伐浣滄祦 / 鎶€鑳?/ 鐭ヨ瘑搴撴绱?|
+| 宸ヤ綔娴?`workflow` | DAG 缂栨帓銆佽妭鐐硅嚜鐢辫繛绾裤€佽繍琛屾椂缂栬緫 | 鑺傜偣鍙墽琛屾妧鑳戒笌鐭ヨ瘑搴撴煡璇?`dynamic_nodes.py` 璋?`/v1/chat/submit`) |
+| 鎶€鑳?`skill` | 鎶€鑳藉競鍦哄畨瑁?/ 鍗歌浇銆佹妧鑳芥墽琛屾矙绠?| 鎶€鑳藉嵆宸ュ叿,渚涘璇?/ Agent / 宸ヤ綔娴佽妭鐐硅皟鐢?|
+| 鐭ヨ瘑搴?`knowledge` | 鏂囨。鍏ュ簱銆佸悜閲忓寲銆丷AG 妫€绱?| 渚涘悇宸ヤ綔鍙版绱笂涓嬫枃(`kb_search` 鏈嶅姟鍨嬭兘鍔? |
+| 鎻掍欢 `plugin` | MCP 鏈嶅姟閰嶇疆銆佹瘡鐢ㄦ埛鎻掍欢鐩綍 `data/plugins/{user}/plugins.json` | MCP 宸ュ叿娉ㄥ唽涓鸿兘鍔?鍙?`PLUGIN_COMMAND_ALLOWLIST` 绾︽潫 |
 
-跨工作台隔离与协同由 `tests/test_cross_workstation_interop.py`、`test_e2e_cross_workstation_isolation.py` 等测试覆盖。
-
-## 5. 多租户与用户级隔离矩阵
-
-| 层 | 隔离机制 |
+璺ㄥ伐浣滃彴闅旂涓庡崗鍚岀敱 `tests/test_cross_workstation_interop.py`銆乣test_e2e_cross_workstation_isolation.py` 绛夋祴璇曡鐩栥€?
+## 5. 澶氱鎴蜂笌鐢ㄦ埛绾ч殧绂荤煩闃?
+| 灞?| 闅旂鏈哄埗 |
 |---|---|
-| PostgreSQL | 所有业务表查询强制 `tenant_id`(+ `user_id` 私有资源)条件;迁移 `migrations/20260822000001_tenant_isolation.up.sql` 落地约束与索引 |
-| Redis | key 按租户 / 用户命名空间隔离;Redis Stream trace 按租户分 key;分布式限流按租户独立计数 |
-| Milvus / pgvector | 向量检索携带 `tenant_id` filter,集合内按租户过滤 |
-| 媒体 | `media_assets` 归属校验:`SELECT ... WHERE id=$1 AND tenant_id=$2 AND user_id=$3` 通过后才签发签名 URL |
-| 插件 | 每用户插件配置独立目录,市场安装记录 `ent_catalog_installs` 按租户(`tenant_id`)启停 |
-| 沙箱 | 每用户沙箱工作区 `sandbox/{tenant}/{user}/workspace`,文件系统权限隔离 |
-| 企业管控 | 配额 / 成本中心 / 审计 / 模型策略均按租户维度;RBAC 角色 / 群组在租户内生效 |
+| PostgreSQL | 鎵€鏈変笟鍔¤〃鏌ヨ寮哄埗 `tenant_id`(+ `user_id` 绉佹湁璧勬簮)鏉′欢;杩佺Щ `migrations/20260822000001_tenant_isolation.up.sql` 钀藉湴绾︽潫涓庣储寮?|
+| Redis | key 鎸夌鎴?/ 鐢ㄦ埛鍛藉悕绌洪棿闅旂;Redis Stream trace 鎸夌鎴峰垎 key;鍒嗗竷寮忛檺娴佹寜绉熸埛鐙珛璁℃暟 |
+| Milvus / pgvector | 鍚戦噺妫€绱㈡惡甯?`tenant_id` filter,闆嗗悎鍐呮寜绉熸埛杩囨护 |
+| 濯掍綋 | `media_assets` 褰掑睘鏍￠獙:`SELECT ... WHERE id=$1 AND tenant_id=$2 AND user_id=$3` 閫氳繃鍚庢墠绛惧彂绛惧悕 URL |
+| 鎻掍欢 | 姣忕敤鎴锋彃浠堕厤缃嫭绔嬬洰褰?甯傚満瀹夎璁板綍 `ent_catalog_installs` 鎸夌鎴?`tenant_id`)鍚仠 |
+| 娌欑 | 姣忕敤鎴锋矙绠卞伐浣滃尯 `sandbox/{tenant}/{user}/workspace`,鏂囦欢绯荤粺鏉冮檺闅旂 |
+| 浼佷笟绠℃帶 | 閰嶉 / 鎴愭湰涓績 / 瀹¤ / 妯″瀷绛栫暐鍧囨寜绉熸埛缁村害;RBAC 瑙掕壊 / 缇ょ粍鍦ㄧ鎴峰唴鐢熸晥 |
 
-## 6. 媒体签名 URL 流程
+## 6. 濯掍綋绛惧悕 URL 娴佺▼
 
-媒体资源不公开可猜测路径,统一走"归属校验 + HMAC 签名 + 短期有效"链路(见 `internal/api/media_sign.go`):
+濯掍綋璧勬簮涓嶅叕寮€鍙寽娴嬭矾寰?缁熶竴璧?褰掑睘鏍￠獙 + HMAC 绛惧悕 + 鐭湡鏈夋晥"閾捐矾(瑙?`internal/api/media_sign.go`):
 
 ```mermaid
 sequenceDiagram
-    participant FE as 前端
-    participant G as Go 网关
-    participant S as 存储(本地 / S3)
+    participant FE as 鍓嶇
+    participant G as Go 缃戝叧
+    participant S as 瀛樺偍(鏈湴 / S3)
 
     FE->>G: POST /v1/media/{id}/sign (JWT)
-    G->>G: 校验归属(tenant_id + user_id 命中 media_assets)
+    G->>G: 鏍￠獙褰掑睘(tenant_id + user_id 鍛戒腑 media_assets)
     G->>G: exp = now + 15min<br/>sig = HMAC-SHA256(JWT_SECRET, assetID|exp)
     G-->>FE: { url: "/media/s/{id}?exp=..&sig=.." }
     FE->>G: GET /media/s/{id}?exp=..&sig=..
-    G->>G: 校验参数齐全 → exp 未过期 → hmac.Equal 验签 → 取 file_path
-    G-->>FE: 流式返回文件(本地) / 302 至 S3 预签名地址
+    G->>G: 鏍￠獙鍙傛暟榻愬叏 鈫?exp 鏈繃鏈?鈫?hmac.Equal 楠岀 鈫?鍙?file_path
+    G-->>FE: 娴佸紡杩斿洖鏂囦欢(鏈湴) / 302 鑷?S3 棰勭鍚嶅湴鍧€
 ```
 
-- 上传侧:`POST /v1/media/upload`(直传)、`POST /v1/media/presign`(S3 预签名)+ `POST /v1/media/complete`(分片合并),规避存储型 XSS 与超限文件。
-- 签名密钥为 `JWT_SECRET`(认证器 `SigningSecret()`),与 JWT 同源,泄露任一方均视为凭证泄露。
+- 涓婁紶渚?`POST /v1/media/upload`(鐩翠紶)銆乣POST /v1/media/presign`(S3 棰勭鍚?+ `POST /v1/media/complete`(鍒嗙墖鍚堝苟),瑙勯伩瀛樺偍鍨?XSS 涓庤秴闄愭枃浠躲€?- 绛惧悕瀵嗛挜涓?`JWT_SECRET`(璁よ瘉鍣?`SigningSecret()`),涓?JWT 鍚屾簮,娉勯湶浠讳竴鏂瑰潎瑙嗕负鍑瘉娉勯湶銆?
+## 7. Redis 蹇呴渶鍖栧喅绛?
+Redis 浠?鍙€夌紦瀛?鍗囩骇涓?*鏍稿績渚濊禆**(鎻愪氦 `6df638d feat(redis): Redis 蹇呴渶鍖?fail-fast,鏃犻檷绾фā寮?`),鐞嗙敱:
 
-## 7. Redis 必需化决策
+1. **鍒嗗竷寮忛檺娴?*:`internal/api/distributed_ratelimit.go` + `tenant_rate_limiter.go` 浠?Redis 鍘熷瓙鎿嶄綔涓哄噯,淇濊瘉澶氬壇鏈竴鑷?
+2. **浠诲姟闃熷垪**:寮曟搸 `queue` 妯″潡涓?`queue_worker_concurrency` 娑堣垂鑰呬緷璧?Redis 闃熷垪;
+3. **璇箟缂撳瓨**:LLM Gateway L1/L2 缂撳瓨涓庤涔夊幓閲?`semantic_cache_threshold`)钀藉湴 Redis;
+4. **浼氳瘽涓庝笂涓嬫枃**:Context Store銆佺煭鏈熻蹇嗐€丼SE 浜嬩欢缂撳啿鍧囦娇鐢?Redis;
+5. **鍙娴?*:Redis Stream 鎵胯浇 trace 浜嬩欢,鎸夌鎴峰垎 key銆?
+**鍐崇瓥鍚箟**:Redis 涓嶅彲鐢ㄦ椂鏈嶅姟**蹇€熷け璐?*鑰岄潪闈欓粯闄嶇骇鈥斺€旈伩鍏?闄愭祦澶辨晥 / 缂撳瓨杩囨湡浣嗘帴鍙ｇ湅浼兼甯?鐨勯殣钄介闄?`RATE_LIMIT_FAIL_CLOSE` 绛夊紑鍏宠繘涓€姝ヤ繚璇佸啓鍏ヨ矾寰勫湪 Redis 寮傚父鏃舵嫆缁濊€岄潪鏀捐銆傞儴缃蹭笂蹇呴』淇濊瘉 Redis 楂樺彲鐢?鍝ㄥ叺 / 闆嗙兢,`REDIS_MODE` 鏀寔 `single|cluster|sentinel`)銆?
+## 8. 瀹夊叏璁捐瑕佺偣
 
-Redis 从"可选缓存"升级为**核心依赖**(提交 `6df638d feat(redis): Redis 必需化(fail-fast,无降级模式)`),理由:
-
-1. **分布式限流**:`internal/api/distributed_ratelimit.go` + `tenant_rate_limiter.go` 以 Redis 原子操作为准,保证多副本一致;
-2. **任务队列**:引擎 `queue` 模块与 `queue_worker_concurrency` 消费者依赖 Redis 队列;
-3. **语义缓存**:LLM Gateway L1/L2 缓存与语义去重(`semantic_cache_threshold`)落地 Redis;
-4. **会话与上下文**:Context Store、短期记忆、SSE 事件缓冲均使用 Redis;
-5. **可观测**:Redis Stream 承载 trace 事件,按租户分 key。
-
-**决策含义**:Redis 不可用时服务**快速失败**而非静默降级——避免"限流失效 / 缓存过期但接口看似正常"的隐蔽风险;`RATE_LIMIT_FAIL_CLOSE` 等开关进一步保证写入路径在 Redis 异常时拒绝而非放行。部署上必须保证 Redis 高可用(哨兵 / 集群,`REDIS_MODE` 支持 `single|cluster|sentinel`)。
-
-## 8. 安全设计要点
-
-- 输入净化中间件(`internal/api/security.go`):Prompt 注入正则检测 + `<user_input>` 包裹;
-- 工具沙箱:`python-engine/app/tools/ssrf.py` 端口白名单 + `PLUGIN_COMMAND_ALLOWLIST` 命令白名单(空 = 全禁);
-- 身份透传 fail-close(见 §2);可信代理 CIDR 防 XFF 伪造;`/metrics` Bearer token 鉴权;
-- 详细说明见 [SECURITY.md](../SECURITY.md)。
-
-## 9. 代码目录映射
+- 杈撳叆鍑€鍖栦腑闂翠欢(`internal/api/security.go`):Prompt 娉ㄥ叆姝ｅ垯妫€娴?+ `<user_input>` 鍖呰９;
+- 宸ュ叿娌欑:`python-engine/app/tools/ssrf.py` 绔彛鐧藉悕鍗?+ `PLUGIN_COMMAND_ALLOWLIST` 鍛戒护鐧藉悕鍗?绌?= 鍏ㄧ);
+- 韬唤閫忎紶 fail-close(瑙?搂2);鍙俊浠ｇ悊 CIDR 闃?XFF 浼€?`/metrics` Bearer token 閴存潈;
+- 璇︾粏璇存槑瑙?[SECURITY.md](../SECURITY.md)銆?
+## 9. 浠ｇ爜鐩綍鏄犲皠
 
 ```
-cmd/                  Go 入口:minicc 网关 / migrate / minicc-cli / stress
+cmd/                  Go 鍏ュ彛:chiron 缃戝叧 / migrate / chiron-cli / stress
 internal/
-  ├── api/            路由注册(gateway_router.go)、Handler、中间件、媒体 / 市场 / 企业 API
-  ├── auth/           JWT、API Key、OAuth/OIDC、SMS、验证码
-  ├── billing/        计费与支付(支付宝 / 微信 / PayPal / Stripe)
-  ├── broadcast/      SSE 事件总线
-  ├── db/             pgx 连接池、Redis 客户端、审计落库、atlas 迁移辅助
-  ├── engine/         PythonClient(网关 → 引擎 HTTP 代理)
-  ├── enterprise/     企业能力(标识 / 策略 / 配额)
-  ├── monitor/        Prometheus 指标与 trace
-  ├── session/        会话与消息落库
-  └── storage/        本地 / S3 媒体存储抽象
+  鈹溾攢鈹€ api/            璺敱娉ㄥ唽(gateway_router.go)銆丠andler銆佷腑闂翠欢銆佸獟浣?/ 甯傚満 / 浼佷笟 API
+  鈹溾攢鈹€ auth/           JWT銆丄PI Key銆丱Auth/OIDC銆丼MS銆侀獙璇佺爜
+  鈹溾攢鈹€ billing/        璁¤垂涓庢敮浠?鏀粯瀹?/ 寰俊 / PayPal / Stripe)
+  鈹溾攢鈹€ broadcast/      SSE 浜嬩欢鎬荤嚎
+  鈹溾攢鈹€ db/             pgx 杩炴帴姹犮€丷edis 瀹㈡埛绔€佸璁¤惤搴撱€乤tlas 杩佺Щ杈呭姪
+  鈹溾攢鈹€ engine/         PythonClient(缃戝叧 鈫?寮曟搸 HTTP 浠ｇ悊)
+  鈹溾攢鈹€ enterprise/     浼佷笟鑳藉姏(鏍囪瘑 / 绛栫暐 / 閰嶉)
+  鈹溾攢鈹€ monitor/        Prometheus 鎸囨爣涓?trace
+  鈹溾攢鈹€ session/        浼氳瘽涓庢秷鎭惤搴?  鈹斺攢鈹€ storage/        鏈湴 / S3 濯掍綋瀛樺偍鎶借薄
 python-engine/app/
-  ├── agent/          Agent 运行时、协同、模式(4 模式)、任务消费
-  ├── core/           capabilities 注册表、task_router 统一编排
-  ├── workflow/       DAG 工作流引擎
-  ├── skill/ tools/   技能与工具执行、沙箱、SSRF 防护
-  ├── knowledge/ rag/ 知识库与检索
-  ├── mcp/ plugins/   MCP 插件与命令白名单
-  ├── memory/         记忆(L1/L2/L3)
-  ├── gateway/ llm/ providers/  LLM Gateway、语义缓存、Provider 适配
-  └── api/            FastAPI 路由(unified_executor.py 等)
+  鈹溾攢鈹€ agent/          Agent 杩愯鏃躲€佸崗鍚屻€佹ā寮?4 妯″紡)銆佷换鍔℃秷璐?  鈹溾攢鈹€ core/           capabilities 娉ㄥ唽琛ㄣ€乼ask_router 缁熶竴缂栨帓
+  鈹溾攢鈹€ workflow/       DAG 宸ヤ綔娴佸紩鎿?  鈹溾攢鈹€ skill/ tools/   鎶€鑳戒笌宸ュ叿鎵ц銆佹矙绠便€丼SRF 闃叉姢
+  鈹溾攢鈹€ knowledge/ rag/ 鐭ヨ瘑搴撲笌妫€绱?  鈹溾攢鈹€ mcp/ plugins/   MCP 鎻掍欢涓庡懡浠ょ櫧鍚嶅崟
+  鈹溾攢鈹€ memory/         璁板繂(L1/L2/L3)
+  鈹溾攢鈹€ gateway/ llm/ providers/  LLM Gateway銆佽涔夌紦瀛樸€丳rovider 閫傞厤
+  鈹斺攢鈹€ api/            FastAPI 璺敱(unified_executor.py 绛?
 frontend-vue/src/
-  ├── views/          六大工作台 + 管理后台
-  ├── components/     chat / home / common 组件
-  ├── router/         路由与守卫(guard.ts)
-  └── stores/ api/    Pinia 状态与网关 API 封装
+  鈹溾攢鈹€ views/          鍏ぇ宸ヤ綔鍙?+ 绠＄悊鍚庡彴
+  鈹溾攢鈹€ components/     chat / home / common 缁勪欢
+  鈹溾攢鈹€ router/         璺敱涓庡畧鍗?guard.ts)
+  鈹斺攢鈹€ stores/ api/    Pinia 鐘舵€佷笌缃戝叧 API 灏佽
 ```
+

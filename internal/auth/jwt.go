@@ -1,4 +1,4 @@
-package auth
+﻿package auth
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/athenavi/minicc/internal/id"
+	"github.com/athenavi/chiron/internal/id"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -25,7 +25,7 @@ type Authenticator struct {
 	expiration time.Duration
 }
 
-// SigningSecret 返回签名密钥（供媒体签名 URL 等复用同一密钥）。
+// SigningSecret 杩斿洖绛惧悕瀵嗛挜锛堜緵濯掍綋绛惧悕 URL 绛夊鐢ㄥ悓涓€瀵嗛挜锛夈€?
 func (a *Authenticator) SigningSecret() []byte {
 	return a.secret
 }
@@ -37,7 +37,7 @@ func NewAuthenticator(secret string, expiration time.Duration) *Authenticator {
 	}
 }
 
-// GenerateToken 签发 JWT。tenantID 必须由调用方从用户记录中传入（多租户隔离键）。
+// GenerateToken 绛惧彂 JWT銆倀enantID 蹇呴』鐢辫皟鐢ㄦ柟浠庣敤鎴疯褰曚腑浼犲叆锛堝绉熸埛闅旂閿級銆?
 func (a *Authenticator) GenerateToken(userID, email, role, tenantID string, perms []string) (string, error) {
 	now := time.Now()
 	claims := &Claims{
@@ -50,7 +50,7 @@ func (a *Authenticator) GenerateToken(userID, email, role, tenantID string, perm
 			ExpiresAt: jwt.NewNumericDate(now.Add(a.expiration)),
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
-			Issuer:    "minicc",
+			Issuer:    "chiron",
 			ID:        generateID(),
 		},
 	}
@@ -145,7 +145,7 @@ var (
 	PermAdminWrite  = "admin:write"
 	PermToolsExec   = "tools:execute"
 	PermUsersManage = "users:manage"
-	// 企业功能权限点（owner/admin 默认拥有）
+	// 浼佷笟鍔熻兘鏉冮檺鐐癸紙owner/admin 榛樿鎷ユ湁锛?
 	PermAuditRead   = "audit:read"
 	PermEntManage   = "ent:manage"
 	PermPolicyManage = "policy:manage"
@@ -164,7 +164,7 @@ func HasPermission(claims *Claims, perm string) bool {
 	if claims == nil {
 		return false
 	}
-	// 如果 claims.Perms 被显式设置（非空），以它为唯一权限白名单
+	// 濡傛灉 claims.Perms 琚樉寮忚缃紙闈炵┖锛夛紝浠ュ畠涓哄敮涓€鏉冮檺鐧藉悕鍗?
 	if len(claims.Perms) > 0 {
 		for _, p := range claims.Perms {
 			if p == perm {
@@ -173,7 +173,7 @@ func HasPermission(claims *Claims, perm string) bool {
 		}
 		return false
 	}
-	// Fallback 到 RolePermissions（仅当 Perms 为空时）
+	// Fallback 鍒?RolePermissions锛堜粎褰?Perms 涓虹┖鏃讹級
 	perms, ok := RolePermissions[claims.Role]
 	if !ok {
 		return false

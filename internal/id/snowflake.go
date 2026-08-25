@@ -1,4 +1,4 @@
-// Package id provides a Snowflake-style unique ID generator.
+﻿// Package id provides a Snowflake-style unique ID generator.
 //
 // Format (64-bit):
 //   1 bit  : unused (sign bit, always 0)
@@ -61,15 +61,14 @@ func (g *Generator) nextInt64() int64 {
 
 	now := time.Now().UnixMilli() - epochMillis
 	if now < 0 {
-		// 时钟早于 epoch：只使用 sequence 保证唯一性，避免忙等死循环
-		g.seq = (g.seq + 1) & seqMax
+		// 鏃堕挓鏃╀簬 epoch锛氬彧浣跨敤 sequence 淇濊瘉鍞竴鎬э紝閬垮厤蹇欑瓑姝诲惊鐜?		g.seq = (g.seq + 1) & seqMax
 		return (0 << timeShift) | (g.workerID << workerShift) | g.seq
 	}
 	if now <= g.lastTime {
-		// Same millisecond or clock regression — reuse lastTime to guarantee uniqueness.
+		// Same millisecond or clock regression 鈥?reuse lastTime to guarantee uniqueness.
 		g.seq = (g.seq + 1) & seqMax
 		if g.seq == 0 {
-			// Sequence exhausted — wait for real clock to advance past lastTime.
+			// Sequence exhausted 鈥?wait for real clock to advance past lastTime.
 			for now <= g.lastTime {
 				now = time.Now().UnixMilli() - epochMillis
 			}
@@ -78,7 +77,7 @@ func (g *Generator) nextInt64() int64 {
 		return (g.lastTime << timeShift) | (g.workerID << workerShift) | g.seq
 	}
 
-	// New millisecond — reset sequence.
+	// New millisecond 鈥?reset sequence.
 	g.seq = 0
 	g.lastTime = now
 	return (now << timeShift) | (g.workerID << workerShift) | g.seq

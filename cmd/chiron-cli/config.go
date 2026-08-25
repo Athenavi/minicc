@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"encoding/json"
@@ -12,7 +12,7 @@ import (
 var configCmd = &cobra.Command{
 	Use:   "config",
 	Short: "Manage configuration",
-	Long:  `Manage MiniCC configuration.`,
+	Long:  `Manage Chiron configuration.`,
 }
 
 var configShowCmd = &cobra.Command{
@@ -165,3 +165,4 @@ func loadConfig() map[string]interface{} {
 		"LOG_LEVEL":       os.Getenv("LOG_LEVEL"),
 	}
 }
+

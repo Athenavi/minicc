@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -7,15 +7,15 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/athenavi/minicc/internal/auth"
+	"github.com/athenavi/chiron/internal/auth"
 )
 
-// newTestPolicyHandler 构造注入 fake 白名单解析的策略 handler。
+// newTestPolicyHandler 鏋勯€犳敞鍏?fake 鐧藉悕鍗曡В鏋愮殑绛栫暐 handler銆?
 func newTestPolicyHandler(fn func(ctx context.Context, tenantID, userID string) ([]string, bool, error)) *EntPolicyHandler {
 	return &EntPolicyHandler{resolveAllowed: fn}
 }
 
-// TestEnforceEnterprisePolicy_Denied 白名单外模型 → 403 语义错误。
+// TestEnforceEnterprisePolicy_Denied 鐧藉悕鍗曞妯″瀷 鈫?403 璇箟閿欒銆?
 func TestEnforceEnterprisePolicy_Denied(t *testing.T) {
 	h := newTestPolicyHandler(func(ctx context.Context, tenantID, userID string) ([]string, bool, error) {
 		return []string{"gpt-4", "claude-3"}, true, nil
@@ -31,7 +31,7 @@ func TestEnforceEnterprisePolicy_Denied(t *testing.T) {
 	}
 }
 
-// TestEnforceEnterprisePolicy_NoPolicy 无任何策略 → 放行。
+// TestEnforceEnterprisePolicy_NoPolicy 鏃犱换浣曠瓥鐣?鈫?鏀捐銆?
 func TestEnforceEnterprisePolicy_NoPolicy(t *testing.T) {
 	h := newTestPolicyHandler(func(ctx context.Context, tenantID, userID string) ([]string, bool, error) {
 		return nil, false, nil
@@ -43,7 +43,7 @@ func TestEnforceEnterprisePolicy_NoPolicy(t *testing.T) {
 	}
 }
 
-// TestEnforceEnterprisePolicy_FailOpen 查询失败 → fail-open 放行。
+// TestEnforceEnterprisePolicy_FailOpen 鏌ヨ澶辫触 鈫?fail-open 鏀捐銆?
 func TestEnforceEnterprisePolicy_FailOpen(t *testing.T) {
 	h := newTestPolicyHandler(func(ctx context.Context, tenantID, userID string) ([]string, bool, error) {
 		return nil, false, errors.New("pg down")
@@ -55,7 +55,7 @@ func TestEnforceEnterprisePolicy_FailOpen(t *testing.T) {
 	}
 }
 
-// TestEnforceEnterprisePolicy_EdgeCases nil claims / 空模型名均放行（防御性）。
+// TestEnforceEnterprisePolicy_EdgeCases nil claims / 绌烘ā鍨嬪悕鍧囨斁琛岋紙闃插尽鎬э級銆?
 func TestEnforceEnterprisePolicy_EdgeCases(t *testing.T) {
 	called := false
 	h := newTestPolicyHandler(func(ctx context.Context, tenantID, userID string) ([]string, bool, error) {
@@ -74,8 +74,8 @@ func TestEnforceEnterprisePolicy_EdgeCases(t *testing.T) {
 	}
 }
 
-// TestEnforceEnterprisePolicy_FailOpenWithoutDB 包级入口在无 PG 环境下
-// （ReadPool 为 nil）必须 fail-open，不得阻断请求。
+// TestEnforceEnterprisePolicy_FailOpenWithoutDB 鍖呯骇鍏ュ彛鍦ㄦ棤 PG 鐜涓?
+// 锛圧eadPool 涓?nil锛夊繀椤?fail-open锛屼笉寰楅樆鏂姹傘€?
 func TestEnforceEnterprisePolicy_FailOpenWithoutDB(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, "/submit", nil)
 	claims := &auth.Claims{UserID: "u1", TenantID: "t1"}

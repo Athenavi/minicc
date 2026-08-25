@@ -1,33 +1,33 @@
-package auth
+﻿package auth
 
 import (
 	"net/url"
 	"strings"
 )
 
-// ── OAuth2 / OIDC Provider 模板注册表 ─────────────────────
+// 鈹€鈹€ OAuth2 / OIDC Provider 妯℃澘娉ㄥ唽琛?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 //
-// 管理端选择 provider_type 后端点自动填充，仍可在数据库中覆盖
-//（auth_url/token_url/userinfo_url 列非空即覆盖模板值）。
+// 绠＄悊绔€夋嫨 provider_type 鍚庣鐐硅嚜鍔ㄥ～鍏咃紝浠嶅彲鍦ㄦ暟鎹簱涓鐩?
+//锛坅uth_url/token_url/userinfo_url 鍒楅潪绌哄嵆瑕嗙洊妯℃澘鍊硷級銆?
 
-// ProviderProfile 是预设 provider 模板。
+// ProviderProfile 鏄璁?provider 妯℃澘銆?
 type ProviderProfile struct {
 	Type        string   // google/github/wechat/dingtalk/feishu/qq/custom
 	Protocol    string   // oidc | oauth2
-	Issuer      string   // oidc 用
-	AuthURL     string   // oauth2 用
-	TokenURL    string   // oauth2 用
-	UserinfoURL string   // oauth2 用
-	Scopes      []string // 默认 scopes
+	Issuer      string   // oidc 鐢?
+	AuthURL     string   // oauth2 鐢?
+	TokenURL    string   // oauth2 鐢?
+	UserinfoURL string   // oauth2 鐢?
+	Scopes      []string // 榛樿 scopes
 }
 
-// 协议常量。
+// 鍗忚甯搁噺銆?
 const (
 	ProtocolOIDC   = "oidc"
 	ProtocolOAuth2 = "oauth2"
 )
 
-// Provider 类型常量。
+// Provider 绫诲瀷甯搁噺銆?
 const (
 	ProviderGoogle  = "google"
 	ProviderGitHub  = "github"
@@ -38,7 +38,7 @@ const (
 	ProviderCustom  = "custom"
 )
 
-// providerProfiles 内置模板（端点以各平台公开文档为准）。
+// providerProfiles 鍐呯疆妯℃澘锛堢鐐逛互鍚勫钩鍙板叕寮€鏂囨。涓哄噯锛夈€?
 var providerProfiles = map[string]ProviderProfile{
 	ProviderGoogle: {
 		Type:     ProviderGoogle,
@@ -55,7 +55,7 @@ var providerProfiles = map[string]ProviderProfile{
 		Scopes:      []string{"read:user", "user:email"},
 	},
 	ProviderWeChat: {
-		// 开放平台扫码登录；extra.mode=mp 时切换为公众号网页授权端点
+		// 寮€鏀惧钩鍙版壂鐮佺櫥褰曪紱extra.mode=mp 鏃跺垏鎹负鍏紬鍙风綉椤垫巿鏉冪鐐?
 		Type:        ProviderWeChat,
 		Protocol:    ProtocolOAuth2,
 		AuthURL:     "https://open.weixin.qq.com/connect/qrconnect",
@@ -94,30 +94,30 @@ var providerProfiles = map[string]ProviderProfile{
 	},
 }
 
-// GetProviderProfile 返回 provider 模板；未知类型返回 ok=false。
+// GetProviderProfile 杩斿洖 provider 妯℃澘锛涙湭鐭ョ被鍨嬭繑鍥?ok=false銆?
 func GetProviderProfile(providerType string) (ProviderProfile, bool) {
 	p, ok := providerProfiles[providerType]
 	return p, ok
 }
 
-// KnownProviderTypes 返回全部内置 provider 类型。
+// KnownProviderTypes 杩斿洖鍏ㄩ儴鍐呯疆 provider 绫诲瀷銆?
 func KnownProviderTypes() []string {
 	return []string{ProviderGoogle, ProviderGitHub, ProviderWeChat, ProviderDingTalk, ProviderFeishu, ProviderQQ, ProviderCustom}
 }
 
-// IsKnownProviderType 判断 provider 类型是否受支持。
+// IsKnownProviderType 鍒ゆ柇 provider 绫诲瀷鏄惁鍙楁敮鎸併€?
 func IsKnownProviderType(t string) bool {
 	_, ok := providerProfiles[t]
 	return ok
 }
 
-// ValidProtocol 判断协议取值合法。
+// ValidProtocol 鍒ゆ柇鍗忚鍙栧€煎悎娉曘€?
 func ValidProtocol(p string) bool {
 	return p == ProtocolOIDC || p == ProtocolOAuth2
 }
 
-// ResolveEndpoints 用模板缺省值补齐 provider 端点：
-// 显式覆盖（override 非空）优先于模板。issuer 同理。
+// ResolveEndpoints 鐢ㄦā鏉跨己鐪佸€艰ˉ榻?provider 绔偣锛?
+// 鏄惧紡瑕嗙洊锛坥verride 闈炵┖锛変紭鍏堜簬妯℃澘銆俰ssuer 鍚岀悊銆?
 func ResolveEndpoints(providerType string, issuer, authURL, tokenURL, userinfoURL string) (string, string, string, string) {
 	profile, ok := providerProfiles[providerType]
 	if !ok {
@@ -138,7 +138,7 @@ func ResolveEndpoints(providerType string, issuer, authURL, tokenURL, userinfoUR
 	return issuer, authURL, tokenURL, userinfoURL
 }
 
-// DefaultScopes 返回 provider 模板默认 scopes（无模板时用 OIDC 缺省）。
+// DefaultScopes 杩斿洖 provider 妯℃澘榛樿 scopes锛堟棤妯℃澘鏃剁敤 OIDC 缂虹渷锛夈€?
 func DefaultScopes(providerType string) []string {
 	if profile, ok := providerProfiles[providerType]; ok && len(profile.Scopes) > 0 {
 		return profile.Scopes
@@ -146,10 +146,10 @@ func DefaultScopes(providerType string) []string {
 	return []string{"openid", "email", "profile"}
 }
 
-// wechatMPAuthURL 公众号网页授权端点（extra.mode=mp）。
+// wechatMPAuthURL 鍏紬鍙风綉椤垫巿鏉冪鐐癸紙extra.mode=mp锛夈€?
 const wechatMPAuthURL = "https://open.weixin.qq.com/connect/oauth2/authorize"
 
-// wechatEffectiveAuthURL 微信授权端点：extra.mode=mp 切换为公众号网页授权。
+// wechatEffectiveAuthURL 寰俊鎺堟潈绔偣锛歟xtra.mode=mp 鍒囨崲涓哄叕浼楀彿缃戦〉鎺堟潈銆?
 func wechatEffectiveAuthURL(authURL string, extra map[string]string) string {
 	if extra["mode"] == "mp" {
 		return wechatMPAuthURL
@@ -157,7 +157,7 @@ func wechatEffectiveAuthURL(authURL string, extra map[string]string) string {
 	return authURL
 }
 
-// buildAuthURL 按通用 OAuth2 参数构造授权 URL（client_id/redirect_uri/response_type/scope/state）。
+// buildAuthURL 鎸夐€氱敤 OAuth2 鍙傛暟鏋勯€犳巿鏉?URL锛坈lient_id/redirect_uri/response_type/scope/state锛夈€?
 func buildAuthURL(base, clientID, redirectURL string, scopes []string, state string, extraParams url.Values) string {
 	q := url.Values{}
 	q.Set("client_id", clientID)

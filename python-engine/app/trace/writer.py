@@ -1,14 +1,12 @@
-"""Trace Writer — 将 Agent/Workflow 执行链路写入 Redis Stream (无状态扩展).
+﻿"""Trace Writer 鈥?灏?Agent/Workflow 鎵ц閾捐矾鍐欏叆 Redis Stream (鏃犵姸鎬佹墿灞?.
 
-职责:
-1. 接收 AgentEvent(type="trace_span"),提取 trace_id/span/duration
-2. 写入 Redis Stream `minicc:traces`
-3. Go 侧可订阅该 stream,聚合完整调用链
-
-多实例部署:
-- 所有 Python 实例共享同一 Redis Stream
-- Go Gateway 统一读取 stream,不依赖进程内存
-"""
+鑱岃矗:
+1. 鎺ユ敹 AgentEvent(type="trace_span"),鎻愬彇 trace_id/span/duration
+2. 鍐欏叆 Redis Stream `chiron:traces`
+3. Go 渚у彲璁㈤槄璇?stream,鑱氬悎瀹屾暣璋冪敤閾?
+澶氬疄渚嬮儴缃?
+- 鎵€鏈?Python 瀹炰緥鍏变韩鍚屼竴 Redis Stream
+- Go Gateway 缁熶竴璇诲彇 stream,涓嶄緷璧栬繘绋嬪唴瀛?"""
 from __future__ import annotations
 
 import asyncio
@@ -21,29 +19,29 @@ from app.middleware.privacy_middleware import is_no_retention
 
 logger = logging.getLogger(__name__)
 
-# Redis Stream 键名 (SaaS: 按 tenant_id 隔离)
-TRACES_STREAM_TPL = "minicc:traces:{}"  # {} 将被 tenant_id 替换
+# Redis Stream 閿悕 (SaaS: 鎸?tenant_id 闅旂)
+TRACES_STREAM_TPL = "chiron:traces:{}"  # {} 灏嗚 tenant_id 鏇挎崲
 
 
 def get_tenant_stream(tenant_id: str) -> str:
-    """根据 tenant_id 生成隔离的 Redis Stream 键名."""
+    """鏍规嵁 tenant_id 鐢熸垚闅旂鐨?Redis Stream 閿悕."""
     if not tenant_id:
-        return TRACES_STREAM_TPL.format("anonymous")  # 匿名租户默认 key
+        return TRACES_STREAM_TPL.format("anonymous")  # 鍖垮悕绉熸埛榛樿 key
     return TRACES_STREAM_TPL.format(tenant_id)
 
 
 class TraceWriter:
-    """异步 trace writer (单例模式,避免重复连接 Redis)."""
+    """寮傛 trace writer (鍗曚緥妯″紡,閬垮厤閲嶅杩炴帴 Redis)."""
     
     _instance: Optional["TraceWriter"] = None
     _redis: Optional[Any] = None
     
     @classmethod
     async def get_instance(cls, redis_url: Optional[str] = None) -> "TraceWriter":
-        """获取全局唯一 TraceWriter 实例."""
+        """鑾峰彇鍏ㄥ眬鍞竴 TraceWriter 瀹炰緥."""
         if cls._instance is None:
             cls._instance = cls()
-            # 延迟初始化 Redis 连接 (避免启动期阻塞)
+            # 寤惰繜鍒濆鍖?Redis 杩炴帴 (閬垮厤鍚姩鏈熼樆濉?
             if redis_url:
                 import redis.asyncio as aioredis
                 cls._redis = aioredis.from_url(redis_url, decode_responses=True)
@@ -57,7 +55,7 @@ class TraceWriter:
     
     @classmethod
     async def close(cls) -> None:
-        """关闭 Redis 连接."""
+        """鍏抽棴 Redis 杩炴帴."""
         if cls._redis:
             await cls._redis.close()
             cls._redis = None
@@ -69,18 +67,18 @@ class TraceWriter:
         span_name: str,
         duration_ms: int,
         metadata: Optional[dict] = None,
-        tenant_id: Optional[str] = None,  # SaaS: 租户隔离
+        tenant_id: Optional[str] = None,  # SaaS: 绉熸埛闅旂
     ) -> None:
-        """写入单个 span 事件到 Redis Stream (按租户隔离).
+        """鍐欏叆鍗曚釜 span 浜嬩欢鍒?Redis Stream (鎸夌鎴烽殧绂?.
         
         Args:
-            trace_id: 用户请求的唯一标识
-            span_name: span 名称 (llm_call / tool_execution / workflow_node)
-            duration_ms: span 耗时 (毫秒)
-            metadata: 额外上下文 (model, input_tokens, tool_name 等)
-            tenant_id: 租户 ID (用于流隔离,可选)
+            trace_id: 鐢ㄦ埛璇锋眰鐨勫敮涓€鏍囪瘑
+            span_name: span 鍚嶇О (llm_call / tool_execution / workflow_node)
+            duration_ms: span 鑰楁椂 (姣)
+            metadata: 棰濆涓婁笅鏂?(model, input_tokens, tool_name 绛?
+            tenant_id: 绉熸埛 ID (鐢ㄤ簬娴侀殧绂?鍙€?
         """
-        # 隐私模式: no_retention 时跳过 trace 写入 (不落盘)
+        # 闅愮妯″紡: no_retention 鏃惰烦杩?trace 鍐欏叆 (涓嶈惤鐩?
         if is_no_retention():
             logger.debug("Privacy no_retention: skip trace span write: %s", span_name)
             return
@@ -90,7 +88,7 @@ class TraceWriter:
             return
         
         try:
-            # SaaS 安全: 按 tenant_id 分 stream
+            # SaaS 瀹夊叏: 鎸?tenant_id 鍒?stream
             stream = get_tenant_stream(tenant_id or "anonymous")
             entry = {
                 "trace_id": trace_id,
@@ -105,15 +103,15 @@ class TraceWriter:
             logger.warning("TraceWriter failed to write span (tenant=%s): %s", tenant_id, e)
     
     async def write_batch(self, spans: list[dict]) -> None:
-        """批量写入多个 span (减少 Redis 往返).
+        """鎵归噺鍐欏叆澶氫釜 span (鍑忓皯 Redis 寰€杩?.
         
         Args:
-            spans: 每个 dict 包含 trace_id, span_name, duration_ms, metadata
+            spans: 姣忎釜 dict 鍖呭惈 trace_id, span_name, duration_ms, metadata
         """
         if not spans:
             return
 
-        # 隐私模式: no_retention 时跳过 trace 写入 (不落盘)
+        # 闅愮妯″紡: no_retention 鏃惰烦杩?trace 鍐欏叆 (涓嶈惤鐩?
         if is_no_retention():
             logger.debug("Privacy no_retention: skip trace batch write (%d spans)", len(spans))
             return
@@ -135,7 +133,7 @@ class TraceWriter:
             
             pipeline = self._redis.pipeline(transaction=False)
             for span, entry in zip(spans, entries):
-                # SaaS 安全: 按 tenant_id 分 stream（与 write_span 一致）
+                # SaaS 瀹夊叏: 鎸?tenant_id 鍒?stream锛堜笌 write_span 涓€鑷达級
                 stream = get_tenant_stream(span.get("tenant_id") or "anonymous")
                 pipeline.xadd(stream, entry, maxlen=10000, approximate=True)
             await pipeline.execute()
@@ -145,7 +143,7 @@ class TraceWriter:
             logger.warning("TraceWriter batch write failed: %s", e)
 
 
-# ── 便捷函数 (供 AgentRuntime 直接调用) ─────────────────────────────────────
+# 鈹€鈹€ 渚挎嵎鍑芥暟 (渚?AgentRuntime 鐩存帴璋冪敤) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 _trace_writer: Optional[TraceWriter] = None
 _write_lock = asyncio.Lock()
@@ -156,12 +154,12 @@ async def record_span(
     span_name: str,
     duration_ms: int,
     metadata: Optional[dict] = None,
-    tenant_id: Optional[str] = None,  # SaaS: 租户隔离
+    tenant_id: Optional[str] = None,  # SaaS: 绉熸埛闅旂
     redis_url: Optional[str] = None,
 ) -> None:
-    """便捷函数: 记录单个 span 到 Redis Stream (带租户隔离).
+    """渚挎嵎鍑芥暟: 璁板綍鍗曚釜 span 鍒?Redis Stream (甯︾鎴烽殧绂?.
     
-    自动初始化 TraceWriter (单例),确保首次调用时建立 Redis 连接.
+    鑷姩鍒濆鍖?TraceWriter (鍗曚緥),纭繚棣栨璋冪敤鏃跺缓绔?Redis 杩炴帴.
     
     Example:
         await record_span(
@@ -180,3 +178,4 @@ async def record_span(
                 _trace_writer = await TraceWriter.get_instance(redis_url)
     
     await _trace_writer.write_span(trace_id, span_name, duration_ms, metadata, tenant_id)
+

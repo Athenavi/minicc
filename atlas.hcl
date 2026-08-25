@@ -1,8 +1,8 @@
-// MiniCC V2.0 — Atlas HCL schema (enterprise architecture)
-// Based on docs/enterprise/data-layer.md + minicc0710 database
+﻿// chiron V2.0 鈥?Atlas HCL schema (enterprise architecture)
+// Based on docs/enterprise/data-layer.md + chiron0710 database
 
 env "local" {
-  url = "postgres://postgres:postgres@localhost:5432/minicc0710?sslmode=disable"
+  url = "postgres://postgres:postgres@localhost:5432/chiron0710?sslmode=disable"
   migration {
     dir = "file://migrations"
     format = atlas
@@ -17,13 +17,13 @@ env "prod" {
   }
 }
 
-// ── Schema ──
+// 鈹€鈹€ Schema 鈹€鈹€
 
 schema "public" {
-  comment = "MiniCC V2 enterprise schema"
+  comment = "chiron V2 enterprise schema"
 }
 
-// ── Tenants ──
+// 鈹€鈹€ Tenants 鈹€鈹€
 
 table "tenants" {
   schema = schema.public
@@ -34,7 +34,7 @@ table "tenants" {
   index "idx_tenants_name" { columns = [column.name] }
 }
 
-// ── Users ──
+// 鈹€鈹€ Users 鈹€鈹€
 
 table "users" {
   schema = schema.public
@@ -60,7 +60,7 @@ table "users" {
   index "idx_users_email"   { columns = [column.email] }
 }
 
-// ── API Keys ──
+// 鈹€鈹€ API Keys 鈹€鈹€
 
 table "api_keys" {
   schema = schema.public
@@ -81,7 +81,7 @@ table "api_keys" {
   index "idx_api_keys_user"   { columns = [column.user_id] }
 }
 
-// ── Guest Storage ──
+// 鈹€鈹€ Guest Storage 鈹€鈹€
 
 table "guest_storage" {
   schema = schema.public
@@ -92,7 +92,7 @@ table "guest_storage" {
   unique "uniq_guest_storage_id" { columns = [column.storage_id] }
 }
 
-// ── Agents ──
+// 鈹€鈹€ Agents 鈹€鈹€
 
 table "agents" {
   schema = schema.public
@@ -117,7 +117,7 @@ table "agents" {
   index "idx_agents_tenant" { columns = [column.tenant_id] }
 }
 
-// ── Agent Registry ──
+// 鈹€鈹€ Agent Registry 鈹€鈹€
 
 table "agent_registry" {
   schema = schema.public
@@ -130,7 +130,7 @@ table "agent_registry" {
   primary_key { columns = [column.agent_type] }
 }
 
-// ── Agent Sessions ──
+// 鈹€鈹€ Agent Sessions 鈹€鈹€
 
 table "agent_sessions" {
   schema = schema.public
@@ -158,7 +158,7 @@ table "agent_sessions" {
   index "idx_agent_sessions_status" { columns = [column.status] }
 }
 
-// ── Episodes ──
+// 鈹€鈹€ Episodes 鈹€鈹€
 
 table "episodes" {
   schema = schema.public
@@ -172,7 +172,7 @@ table "episodes" {
   primary_key { columns = [column.id] }
 }
 
-// ── Sessions ──
+// 鈹€鈹€ Sessions 鈹€鈹€
 
 table "sessions" {
   schema = schema.public
@@ -206,7 +206,7 @@ table "sessions" {
   index "idx_sessions_updated" { columns = [column.updated_at] }
 }
 
-// ── Messages ──
+// 鈹€鈹€ Messages 鈹€鈹€
 
 table "messages" {
   schema = schema.public
@@ -216,9 +216,7 @@ table "messages" {
   column "content"    { type = text }
   column "tool_calls" { type = jsonb, null = true }
   column "created_at" { type = timestamptz }
-  // 安全：多租户隔离必须通过 JOIN sessions ON sessions.id = messages.session_id 实现，
-  // 不要直接查询 messages 表而不验证 tenant_id。
-  primary_key { columns = [column.id] }
+  // 瀹夊叏锛氬绉熸埛闅旂蹇呴』閫氳繃 JOIN sessions ON sessions.id = messages.session_id 瀹炵幇锛?  // 涓嶈鐩存帴鏌ヨ messages 琛ㄨ€屼笉楠岃瘉 tenant_id銆?  primary_key { columns = [column.id] }
   foreign_key "fk_messages_session" {
     columns     = [column.session_id]
     ref_columns = [table.sessions.column.id]
@@ -227,7 +225,7 @@ table "messages" {
   index "idx_messages_session" { columns = [column.session_id, column.created_at] }
 }
 
-// ── Tool Calls ──
+// 鈹€鈹€ Tool Calls 鈹€鈹€
 
 table "tool_calls" {
   schema = schema.public
@@ -240,9 +238,7 @@ table "tool_calls" {
   column "is_error"   { type = boolean, default = false }
   column "duration_ms" { type = bigint }
   column "created_at" { type = timestamptz }
-  // 安全：多租户隔离必须通过 JOIN sessions ON sessions.id = tool_calls.session_id 实现，
-  // 不要直接查询 tool_calls 表而不验证 tenant_id。
-  primary_key { columns = [column.id] }
+  // 瀹夊叏锛氬绉熸埛闅旂蹇呴』閫氳繃 JOIN sessions ON sessions.id = tool_calls.session_id 瀹炵幇锛?  // 涓嶈鐩存帴鏌ヨ tool_calls 琛ㄨ€屼笉楠岃瘉 tenant_id銆?  primary_key { columns = [column.id] }
   foreign_key "fk_tool_calls_session" {
     columns     = [column.session_id]
     ref_columns = [table.sessions.column.id]
@@ -251,7 +247,7 @@ table "tool_calls" {
   index "idx_tool_calls_session" { columns = [column.session_id] }
 }
 
-// ── Workflow Graphs ──
+// 鈹€鈹€ Workflow Graphs 鈹€鈹€
 
 table "workflow_graphs" {
   schema = schema.public
@@ -271,7 +267,7 @@ table "workflow_graphs" {
   index "idx_workflow_graphs_updated" { columns = [column.updated_at] }
 }
 
-// ── Tasks ──
+// 鈹€鈹€ Tasks 鈹€鈹€
 
 table "tasks" {
   schema = schema.public
@@ -298,7 +294,7 @@ table "tasks" {
   index "idx_tasks_type"   { columns = [column.type] }
 }
 
-// ── Billing Records ──
+// 鈹€鈹€ Billing Records 鈹€鈹€
 
 table "billing_records" {
   schema = schema.public
@@ -326,7 +322,7 @@ table "billing_records" {
   index "idx_billing_created" { columns = [column.created_at] }
 }
 
-// ── Stripe Payments ──
+// 鈹€鈹€ Stripe Payments 鈹€鈹€
 
 table "stripe_payments" {
   schema = schema.public
@@ -341,7 +337,7 @@ table "stripe_payments" {
   index "idx_stripe_payments_user" { columns = [column.user_id] }
 }
 
-// ── Credit Transactions ──
+// 鈹€鈹€ Credit Transactions 鈹€鈹€
 
 table "credit_transactions" {
   schema = schema.public
@@ -360,7 +356,7 @@ table "credit_transactions" {
   index "idx_credit_tx_user" { columns = [column.user_id, column.created_at] }
 }
 
-// ── Media Assets ──
+// 鈹€鈹€ Media Assets 鈹€鈹€
 
 table "media_assets" {
   schema = schema.public
@@ -392,7 +388,7 @@ table "media_assets" {
   index "idx_media_created" { columns = [column.created_at] }
 }
 
-// ── Enterprise Tables ──
+// 鈹€鈹€ Enterprise Tables 鈹€鈹€
 
 table "enterprise_tasks" {
   schema = schema.public
@@ -537,7 +533,7 @@ table "marketing_campaigns" {
   index "idx_marketing_campaigns_tenant" { columns = [column.tenant_id] }
 }
 
-// ── Audit Logs ──
+// 鈹€鈹€ Audit Logs 鈹€鈹€
 
 table "audit_logs" {
   schema = schema.public
@@ -566,3 +562,4 @@ table "audit_logs" {
   index "idx_audit_logs_action"  { columns = [column.action] }
   index "idx_audit_logs_created" { columns = [column.created_at] }
 }
+

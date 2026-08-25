@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"bytes"
@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/athenavi/minicc/config"
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/broadcast"
-	"github.com/athenavi/minicc/internal/db"
-	"github.com/athenavi/minicc/internal/session"
+	"github.com/athenavi/chiron/config"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/broadcast"
+	"github.com/athenavi/chiron/internal/db"
+	"github.com/athenavi/chiron/internal/session"
 )
 
 // testRouter builds a fully wired router for integration testing.
@@ -23,7 +23,7 @@ import (
 func testRouter(t *testing.T) http.Handler {
 	t.Helper()
 
-	// Config (minimal — no DB, no Redis)
+	// Config (minimal 鈥?no DB, no Redis)
 	os.Setenv("JWT_SECRET", "test-secret-that-is-at-least-32-bytes-long!")
 	os.Setenv("APP_SECRET", "test-app-secret-that-is-at-least-32-bytes-long!")
 	cfg := config.Load()
@@ -51,8 +51,7 @@ func testToken(t *testing.T) string {
 	return token
 }
 
-// adminToken 返回 admin 角色的 JWT，用于验证需要管理端权限的路由。
-func adminToken(t *testing.T) string {
+// adminToken 杩斿洖 admin 瑙掕壊鐨?JWT锛岀敤浜庨獙璇侀渶瑕佺鐞嗙鏉冮檺鐨勮矾鐢便€?func adminToken(t *testing.T) string {
 	t.Helper()
 	os.Setenv("JWT_SECRET", "test-secret-that-is-at-least-32-bytes-long!")
 	os.Setenv("APP_SECRET", "test-app-secret-that-is-at-least-32-bytes-long!")
@@ -65,7 +64,7 @@ func adminToken(t *testing.T) string {
 	return token
 }
 
-// ── Health & Readiness ──
+// 鈹€鈹€ Health & Readiness 鈹€鈹€
 
 func TestIntegration_Health(t *testing.T) {
 	router := testRouter(t)
@@ -86,7 +85,7 @@ func TestIntegration_Ready(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	resp := w.Result()
-	// 新契约(2026-08-22)：/ready 反映真实依赖状态；测试环境无 DB/Redis → 503 + deps down
+	// 鏂板绾?2026-08-22)锛?ready 鍙嶆槧鐪熷疄渚濊禆鐘舵€侊紱娴嬭瘯鐜鏃?DB/Redis 鈫?503 + deps down
 	if resp.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503 (deps missing), got %d", resp.StatusCode)
 	}
@@ -96,13 +95,12 @@ func TestIntegration_Ready(t *testing.T) {
 	}
 }
 
-// ── Auth Endpoints ──
+// 鈹€鈹€ Auth Endpoints 鈹€鈹€
 
-// ── SSE & Events ──
+// 鈹€鈹€ SSE & Events 鈹€鈹€
 
 func TestIntegration_SSE(t *testing.T) {
-	// 该测试无数据库：sessionMgr 传 nil 跳过归属校验，聚焦流式行为本身。
-	os.Setenv("JWT_SECRET", "test-secret-that-is-at-least-32-bytes-long!")
+	// 璇ユ祴璇曟棤鏁版嵁搴擄細sessionMgr 浼?nil 璺宠繃褰掑睘鏍￠獙锛岃仛鐒︽祦寮忚涓烘湰韬€?	os.Setenv("JWT_SECRET", "test-secret-that-is-at-least-32-bytes-long!")
 	os.Setenv("APP_SECRET", "test-app-secret-that-is-at-least-32-bytes-long!")
 	cfg := config.Load()
 	eventHub := broadcast.NewHub(nil)
@@ -112,8 +110,7 @@ func TestIntegration_SSE(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// S1: /events now requires auth — Authorization header（S 安全修复：不再支持 ?token= 查询参数）
-	req := httptest.NewRequest("GET", "/events?client_id=test-client&session_id=test-session", nil)
+	// S1: /events now requires auth 鈥?Authorization header锛圫 瀹夊叏淇锛氫笉鍐嶆敮鎸??token= 鏌ヨ鍙傛暟锛?	req := httptest.NewRequest("GET", "/events?client_id=test-client&session_id=test-session", nil)
 	req.Header.Set("Authorization", "Bearer "+testToken(t))
 	req = req.WithContext(ctx)
 	w := httptest.NewRecorder()
@@ -155,7 +152,7 @@ func TestIntegration_SSE_NoAuth(t *testing.T) {
 	}
 }
 
-// ── Conversations ──
+// 鈹€鈹€ Conversations 鈹€鈹€
 
 func TestIntegration_Conversations_NoAuth(t *testing.T) {
 	router := testRouter(t)
@@ -187,9 +184,9 @@ func TestIntegration_CreateConversation(t *testing.T) {
 	}
 }
 
-// ── Tools ──
+// 鈹€鈹€ Tools 鈹€鈹€
 
-// ── System Endpoints ──
+// 鈹€鈹€ System Endpoints 鈹€鈹€
 
 func TestIntegration_SystemHealth(t *testing.T) {
 	router := testRouter(t)
@@ -207,16 +204,14 @@ func TestIntegration_SystemHealth(t *testing.T) {
 func TestIntegration_SystemTraces(t *testing.T) {
 	router := testRouter(t)
 
-	// S 安全修复：traces/spans 仅管理员可见，匿名访问应被拒绝
-	req := httptest.NewRequest("GET", "/v1/system/traces", nil)
+	// S 瀹夊叏淇锛歵races/spans 浠呯鐞嗗憳鍙锛屽尶鍚嶈闂簲琚嫆缁?	req := httptest.NewRequest("GET", "/v1/system/traces", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	if resp := w.Result(); resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected 401 without auth, got %d", resp.StatusCode)
 	}
 
-	// admin 可访问
-	os.Setenv("JWT_SECRET", "test-secret-that-is-at-least-32-bytes-long!")
+	// admin 鍙闂?	os.Setenv("JWT_SECRET", "test-secret-that-is-at-least-32-bytes-long!")
 	os.Setenv("APP_SECRET", "test-app-secret-that-is-at-least-32-bytes-long!")
 	adminAuth := auth.NewAuthenticator(config.Load().JWTSecret, time.Hour)
 	adminToken, err := adminAuth.GenerateToken("admin-id", "admin@example.com", "admin", db.DefaultTenantID, auth.RolePermissions["admin"])
@@ -227,13 +222,11 @@ func TestIntegration_SystemTraces(t *testing.T) {
 	req2.Header.Set("Authorization", "Bearer "+adminToken)
 	w2 := httptest.NewRecorder()
 	router.ServeHTTP(w2, req2)
-	// 无 DB 环境下 traces 查询不可用；仅验证 authMW 不再拒绝管理员请求
-	if resp := w2.Result(); resp.StatusCode == http.StatusUnauthorized {
+	// 鏃?DB 鐜涓?traces 鏌ヨ涓嶅彲鐢紱浠呴獙璇?authMW 涓嶅啀鎷掔粷绠＄悊鍛樿姹?	if resp := w2.Result(); resp.StatusCode == http.StatusUnauthorized {
 		t.Fatalf("admin token should pass authMW, got 401")
 	}
 
-	// 普通 user 无权限
-	userReq := httptest.NewRequest("GET", "/v1/system/traces", nil)
+	// 鏅€?user 鏃犳潈闄?	userReq := httptest.NewRequest("GET", "/v1/system/traces", nil)
 	userReq.Header.Set("Authorization", "Bearer "+testToken(t))
 	w3 := httptest.NewRecorder()
 	router.ServeHTTP(w3, userReq)
@@ -242,7 +235,7 @@ func TestIntegration_SystemTraces(t *testing.T) {
 	}
 }
 
-// ── Submit (requires auth) ──
+// 鈹€鈹€ Submit (requires auth) 鈹€鈹€
 
 func TestIntegration_Submit_EmptyContent(t *testing.T) {
 	router := testRouter(t)
@@ -275,7 +268,7 @@ func TestIntegration_Submit_NoAuth(t *testing.T) {
 	}
 }
 
-// ── Protected Routes (no auth → should get 401) ──
+// 鈹€鈹€ Protected Routes (no auth 鈫?should get 401) 鈹€鈹€
 
 func TestIntegration_ProtectedRoutes_Unauthorized(t *testing.T) {
 	router := testRouter(t)
@@ -309,7 +302,7 @@ func TestIntegration_ProtectedRoutes_Unauthorized(t *testing.T) {
 	}
 }
 
-// ── Editor Endpoints ──
+// 鈹€鈹€ Editor Endpoints 鈹€鈹€
 
 func TestIntegration_EditorListFiles(t *testing.T) {
 	router := testRouter(t)
@@ -326,8 +319,7 @@ func TestIntegration_EditorListFiles(t *testing.T) {
 }
 
 func TestIntegration_Editor_UserForbidden(t *testing.T) {
-	// S 安全修复：编辑器读写共享工作区，普通 user 必须被拒绝（403）
-	router := testRouter(t)
+	// S 瀹夊叏淇锛氱紪杈戝櫒璇诲啓鍏变韩宸ヤ綔鍖猴紝鏅€?user 蹇呴』琚嫆缁濓紙403锛?	router := testRouter(t)
 
 	req := httptest.NewRequest("GET", "/api/editor/read?path=secret.txt", nil)
 	req.Header.Set("Authorization", "Bearer "+testToken(t))
@@ -372,7 +364,7 @@ func TestIntegration_EditorWriteRead(t *testing.T) {
 	}
 }
 
-// ── 404 for unknown routes ──
+// 鈹€鈹€ 404 for unknown routes 鈹€鈹€
 
 func TestIntegration_NotFound(t *testing.T) {
 	router := testRouter(t)

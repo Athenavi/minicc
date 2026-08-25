@@ -1,4 +1,4 @@
-package auth
+﻿package auth
 
 import (
 	"context"
@@ -13,7 +13,7 @@ func newCaptchaVerifier() *HTTPCaptchaVerifier {
 	return NewHTTPCaptchaVerifier()
 }
 
-// formCapture 捕获 form 请求体与查询参数。
+// formCapture 鎹曡幏 form 璇锋眰浣撲笌鏌ヨ鍙傛暟銆?
 func formCapture(resp string) (*httptest.Server, *map[string]string) {
 	captured := map[string]string{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -26,7 +26,7 @@ func formCapture(resp string) (*httptest.Server, *map[string]string) {
 	return srv, &captured
 }
 
-// TestCaptchaVerify_FormProviders turnstile/recaptcha/hcaptcha 共用 form + success 契约。
+// TestCaptchaVerify_FormProviders turnstile/recaptcha/hcaptcha 鍏辩敤 form + success 濂戠害銆?
 func TestCaptchaVerify_FormProviders(t *testing.T) {
 	for _, provider := range []string{CaptchaTurnstile, CaptchaRecaptcha, CaptchaHCaptcha} {
 		t.Run(provider, func(t *testing.T) {
@@ -68,7 +68,7 @@ func TestCaptchaVerify_Tencent(t *testing.T) {
 	v := newCaptchaVerifier()
 	cfg := &CaptchaConfig{Provider: CaptchaTencent, SiteKey: "aid-1", Secret: "appsecret", VerifyURL: srv.URL}
 
-	// Ticket + Randstr 齐备 → 通过
+	// Ticket + Randstr 榻愬 鈫?閫氳繃
 	if err := v.Verify(context.Background(), cfg, &CaptchaToken{Token: "ticket-1", Randstr: "rand-1"}, "9.9.9.9"); err != nil {
 		t.Fatalf("expected pass, got %v", err)
 	}
@@ -76,12 +76,12 @@ func TestCaptchaVerify_Tencent(t *testing.T) {
 		t.Fatalf("unexpected tencent payload: %v", *captured)
 	}
 
-	// 缺 Randstr → 直接失败（不触网）
+	// 缂?Randstr 鈫?鐩存帴澶辫触锛堜笉瑙︾綉锛?
 	if err := v.Verify(context.Background(), cfg, &CaptchaToken{Token: "ticket-1"}, ""); err == nil {
 		t.Fatal("expected failure without randstr")
 	}
 
-	// response != "1" → 失败
+	// response != "1" 鈫?澶辫触
 	srv2, _ := formCapture(`{"response": "7", "err_msg": "verify fail"}`)
 	defer srv2.Close()
 	cfg2 := &CaptchaConfig{Provider: CaptchaTencent, SiteKey: "aid-1", Secret: "s", VerifyURL: srv2.URL}
@@ -90,7 +90,7 @@ func TestCaptchaVerify_Tencent(t *testing.T) {
 	}
 }
 
-// TestCaptchaVerify_CustomContract 自定义端点契约：POST JSON → {"success": true}。
+// TestCaptchaVerify_CustomContract 鑷畾涔夌鐐瑰绾︼細POST JSON 鈫?{"success": true}銆?
 func TestCaptchaVerify_CustomContract(t *testing.T) {
 	var gotBody map[string]string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -115,13 +115,13 @@ func TestCaptchaVerify_CustomContract(t *testing.T) {
 		t.Fatalf("unexpected custom payload: %v", gotBody)
 	}
 
-	// custom 未配 verify_url → 配置错误
+	// custom 鏈厤 verify_url 鈫?閰嶇疆閿欒
 	if err := v.Verify(context.Background(), &CaptchaConfig{Provider: CaptchaCustom}, &CaptchaToken{Token: "t"}, ""); err == nil {
 		t.Fatal("expected error when verify_url missing")
 	}
 }
 
-// TestCaptchaVerify_CustomFailureStatus 自定义端点非 200 → 拒绝。
+// TestCaptchaVerify_CustomFailureStatus 鑷畾涔夌鐐归潪 200 鈫?鎷掔粷銆?
 func TestCaptchaVerify_CustomFailureStatus(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
@@ -136,10 +136,10 @@ func TestCaptchaVerify_CustomFailureStatus(t *testing.T) {
 	}
 }
 
-// TestCaptchaVerify_Unreachable 服务商不可达 → ErrCaptchaUnreachable（fail-loud）。
+// TestCaptchaVerify_Unreachable 鏈嶅姟鍟嗕笉鍙揪 鈫?ErrCaptchaUnreachable锛坒ail-loud锛夈€?
 func TestCaptchaVerify_Unreachable(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	srv.Close() // 立即关闭 → 连接拒绝
+	srv.Close() // 绔嬪嵆鍏抽棴 鈫?杩炴帴鎷掔粷
 
 	v := newCaptchaVerifier()
 	cfg := &CaptchaConfig{Provider: CaptchaHCaptcha, Secret: "s", VerifyURL: srv.URL}
@@ -159,7 +159,7 @@ func TestCaptchaVerify_Validation(t *testing.T) {
 	if err := v.Verify(ctx, &CaptchaConfig{Provider: "nope"}, &CaptchaToken{Token: "t"}, ""); err == nil {
 		t.Fatal("expected error for unknown provider")
 	}
-	// 空 token 直接失败
+	// 绌?token 鐩存帴澶辫触
 	if err := v.Verify(ctx, &CaptchaConfig{Provider: CaptchaTurnstile, Secret: "s"}, &CaptchaToken{}, ""); err != ErrCaptchaFailed {
 		t.Fatalf("expected ErrCaptchaFailed, got %v", err)
 	}

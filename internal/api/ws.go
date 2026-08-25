@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"encoding/json"
@@ -10,22 +10,19 @@ import (
 	"sync"
 	"time"
 
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/broadcast"
-	"github.com/athenavi/minicc/internal/session"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/broadcast"
+	"github.com/athenavi/chiron/internal/session"
 	"github.com/gorilla/websocket"
 )
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	// CheckOrigin 严格校验：CORS_ORIGINS 未配置则拒绝所有带 Origin 的浏览器请求，
-	// 仅放行无 Origin 的非浏览器（curl/python websockets）客户端。
-	// 生产部署必须显式配置 CORS_ORIGINS 为前端域名白名单。
-	CheckOrigin: func(r *http.Request) bool {
+	// CheckOrigin 涓ユ牸鏍￠獙锛欳ORS_ORIGINS 鏈厤缃垯鎷掔粷鎵€鏈夊甫 Origin 鐨勬祻瑙堝櫒璇锋眰锛?	// 浠呮斁琛屾棤 Origin 鐨勯潪娴忚鍣紙curl/python websockets锛夊鎴风銆?	// 鐢熶骇閮ㄧ讲蹇呴』鏄惧紡閰嶇疆 CORS_ORIGINS 涓哄墠绔煙鍚嶇櫧鍚嶅崟銆?	CheckOrigin: func(r *http.Request) bool {
 		origin := r.Header.Get("Origin")
 		if origin == "" {
-			return true // curl / 服务端 ws 客户端无 Origin
+			return true // curl / 鏈嶅姟绔?ws 瀹㈡埛绔棤 Origin
 		}
 		allowed := os.Getenv("CORS_ORIGINS")
 		if allowed == "" || allowed == "*" {
@@ -120,9 +117,7 @@ func (h *WebSocketHub) connCount(sessionID string) int {
 
 // WebSocketHandler handles WebSocket upgrade and message loop.
 // If eventHub is non-nil, messages are bridged through Redis Pub/Sub for cross-instance delivery.
-// 连接前校验 JWT（?token= / cookie / Authorization）并验证 session 归属（S 安全修复：
-// 原实现无认证，任意客户端可订阅任意 session 的事件流）。
-func WebSocketHandler(hub *WebSocketHub, eventHub *broadcast.Hub, authenticator *auth.Authenticator, sessionMgr *session.Manager) http.HandlerFunc {
+// 杩炴帴鍓嶆牎楠?JWT锛?token= / cookie / Authorization锛夊苟楠岃瘉 session 褰掑睘锛圫 瀹夊叏淇锛?// 鍘熷疄鐜版棤璁よ瘉锛屼换鎰忓鎴风鍙闃呬换鎰?session 鐨勪簨浠舵祦锛夈€?func WebSocketHandler(hub *WebSocketHub, eventHub *broadcast.Hub, authenticator *auth.Authenticator, sessionMgr *session.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sessionID := r.PathValue("sessionId")
 		if sessionID == "" {
@@ -133,10 +128,10 @@ func WebSocketHandler(hub *WebSocketHub, eventHub *broadcast.Hub, authenticator 
 			return
 		}
 
-		// 认证：与 SSE/AuthMiddleware 同源（?token= 供 ws 客户端使用）
+		// 璁よ瘉锛氫笌 SSE/AuthMiddleware 鍚屾簮锛?token= 渚?ws 瀹㈡埛绔娇鐢級
 		tokenStr := r.URL.Query().Get("token")
 		if tokenStr == "" {
-			if c, err := r.Cookie("minicc_token"); err == nil && c.Value != "" {
+			if c, err := r.Cookie("chiron_token"); err == nil && c.Value != "" {
 				tokenStr = c.Value
 			}
 		}
@@ -151,8 +146,7 @@ func WebSocketHandler(hub *WebSocketHub, eventHub *broadcast.Hub, authenticator 
 			return
 		}
 
-		// 会话归属校验：仅允许访问自己的会话
-		if sessionMgr != nil {
+		// 浼氳瘽褰掑睘鏍￠獙锛氫粎鍏佽璁块棶鑷繁鐨勪細璇?		if sessionMgr != nil {
 			sess, err := sessionMgr.GetSession(r.Context(), sessionID)
 			if err != nil || sess.UserID != claims.UserID {
 				http.Error(w, "forbidden", http.StatusForbidden)

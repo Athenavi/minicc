@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -10,17 +10,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/db"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/db"
 )
 
-// tenantBucketLua 原子地完成 token bucket 取令牌：
+// tenantBucketLua 鍘熷瓙鍦板畬鎴?token bucket 鍙栦护鐗岋細
 // KEYS[1] = bucket key
 // ARGV[1] = capacity (burst)
-// ARGV[2] = refill per second (tokens/sec, ×1000 → ms 精度由服务端计算简化为秒)
+// ARGV[2] = refill per second (tokens/sec, 脳1000 鈫?ms 绮惧害鐢辨湇鍔＄璁＄畻绠€鍖栦负绉?
 // ARGV[3] = now (unix seconds, float)
 // ARGV[4] = requested tokens (1.0)
-// 返回: 1 允许；0 拒绝
+// 杩斿洖: 1 鍏佽锛? 鎷掔粷
 const tenantBucketLua = `
 local key = KEYS[1]
 local capacity = tonumber(ARGV[1])
@@ -50,16 +50,12 @@ redis.call("EXPIRE", key, 300)
 return tostring(allowed)
 `
 
-// TenantRateLimiter 提供 per-tenant 资源级 QPS 限制。
-// Redis 可用时走 Lua 原子脚本（多实例状态一致）；
-// Redis 不可用时 fail-close（与 DistributedRateLimiter 策略一致）。
-type TenantRateLimiter struct {
+// TenantRateLimiter 鎻愪緵 per-tenant 璧勬簮绾?QPS 闄愬埗銆?// Redis 鍙敤鏃惰蛋 Lua 鍘熷瓙鑴氭湰锛堝瀹炰緥鐘舵€佷竴鑷达級锛?// Redis 涓嶅彲鐢ㄦ椂 fail-close锛堜笌 DistributedRateLimiter 绛栫暐涓€鑷达級銆?type TenantRateLimiter struct {
 	rdb       db.RedisClient
 	maxBurst  int
 	refillPerSec float64
 
-	// 本地降级缓存：仅在 Redis fail-close 时用于规避空指针；不作为限流真实状态
-	mu     sync.Mutex
+	// 鏈湴闄嶇骇缂撳瓨锛氫粎鍦?Redis fail-close 鏃剁敤浜庤閬跨┖鎸囬拡锛涗笉浣滀负闄愭祦鐪熷疄鐘舵€?	mu     sync.Mutex
 	tokens map[string]*tokenBucketLocal
 }
 
@@ -68,8 +64,7 @@ type tokenBucketLocal struct {
 	lastRefill time.Time
 }
 
-// NewTenantRateLimiter 创建基于 Redis 的 token bucket 限流器。
-func NewTenantRateLimiter(rdb db.RedisClient, maxQPS, burst int) *TenantRateLimiter {
+// NewTenantRateLimiter 鍒涘缓鍩轰簬 Redis 鐨?token bucket 闄愭祦鍣ㄣ€?func NewTenantRateLimiter(rdb db.RedisClient, maxQPS, burst int) *TenantRateLimiter {
 	return &TenantRateLimiter{
 		rdb:          rdb,
 		maxBurst:     burst,
@@ -78,9 +73,7 @@ func NewTenantRateLimiter(rdb db.RedisClient, maxQPS, burst int) *TenantRateLimi
 	}
 }
 
-// Allow 检查请求是否被允许。返回 (allowed, retryAfterSeconds)。
-// fail-close：Redis 不可用或出错时拒绝请求。
-func (rl *TenantRateLimiter) Allow(ctx context.Context, resource, tenantID string) (bool, float64) {
+// Allow 妫€鏌ヨ姹傛槸鍚﹁鍏佽銆傝繑鍥?(allowed, retryAfterSeconds)銆?// fail-close锛歊edis 涓嶅彲鐢ㄦ垨鍑洪敊鏃舵嫆缁濊姹傘€?func (rl *TenantRateLimiter) Allow(ctx context.Context, resource, tenantID string) (bool, float64) {
 	if rl.rdb == nil {
 		return false, 1 // fail-close
 	}
@@ -105,8 +98,7 @@ func (rl *TenantRateLimiter) Allow(ctx context.Context, resource, tenantID strin
 	return false, 1
 }
 
-// Middleware 返回 HTTP 中间件，按 tenant_id + 资源类型限流。
-func (rl *TenantRateLimiter) Middleware(next http.Handler) http.Handler {
+// Middleware 杩斿洖 HTTP 涓棿浠讹紝鎸?tenant_id + 璧勬簮绫诲瀷闄愭祦銆?func (rl *TenantRateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		claims := auth.GetClaims(r.Context())
 		if claims == nil || claims.TenantID == "" {
@@ -128,8 +120,7 @@ func (rl *TenantRateLimiter) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// extractResource 从 URL 路径提取资源名。
-func extractResource(path string) string {
+// extractResource 浠?URL 璺緞鎻愬彇璧勬簮鍚嶃€?func extractResource(path string) string {
 	trimmed := strings.Trim(path, "/")
 	if trimmed == "" {
 		return "unknown"

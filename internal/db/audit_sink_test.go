@@ -1,4 +1,4 @@
-package db
+﻿package db
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// sinkRecorder 捕获 sink 每次 flush 的批量内容。
+// sinkRecorder 鎹曡幏 sink 姣忔 flush 鐨勬壒閲忓唴瀹广€?
 type sinkRecorder struct {
 	mu      sync.Mutex
 	batches [][]AuditEntry
@@ -41,10 +41,10 @@ func testEntry(i int) AuditEntry {
 	return AuditEntry{ID: "e", Action: "test", UserID: "u", Timestamp: time.Now()}
 }
 
-// TestAuditSink_BatchTrigger 达到 batchSize（100 条）立即触发 flush。
+// TestAuditSink_BatchTrigger 杈惧埌 batchSize锛?00 鏉★級绔嬪嵆瑙﹀彂 flush銆?
 func TestAuditSink_BatchTrigger(t *testing.T) {
 	rec := &sinkRecorder{}
-	// 窗口设长（10s），确保触发只来自批量阈值
+	// 绐楀彛璁鹃暱锛?0s锛夛紝纭繚瑙﹀彂鍙潵鑷壒閲忛槇鍊?
 	sink := NewAuditSink(rec.write, 100, 10*time.Second)
 	defer sink.Close()
 
@@ -67,7 +67,7 @@ func TestAuditSink_BatchTrigger(t *testing.T) {
 	}
 }
 
-// TestAuditSink_WindowTrigger 未达批量阈值时，1s 窗口到期触发 flush。
+// TestAuditSink_WindowTrigger 鏈揪鎵归噺闃堝€兼椂锛?s 绐楀彛鍒版湡瑙﹀彂 flush銆?
 func TestAuditSink_WindowTrigger(t *testing.T) {
 	rec := &sinkRecorder{}
 	sink := NewAuditSink(rec.write, 100, 50*time.Millisecond)
@@ -89,8 +89,8 @@ func TestAuditSink_WindowTrigger(t *testing.T) {
 	}
 }
 
-// TestAuditSink_WriteFailureDropsBatch 写入失败 → Handle 仍返回 nil（消费者 ACK），
-// 该批被丢弃不重试：宁可丢不可堵。
+// TestAuditSink_WriteFailureDropsBatch 鍐欏叆澶辫触 鈫?Handle 浠嶈繑鍥?nil锛堟秷璐硅€?ACK锛夛紝
+// 璇ユ壒琚涪寮冧笉閲嶈瘯锛氬畞鍙涪涓嶅彲鍫点€?
 func TestAuditSink_WriteFailureDropsBatch(t *testing.T) {
 	rec := &sinkRecorder{fail: true}
 	sink := NewAuditSink(rec.write, 2, time.Hour)
@@ -101,7 +101,7 @@ func TestAuditSink_WriteFailureDropsBatch(t *testing.T) {
 			t.Fatalf("Handle must return nil even when writer fails, got %v", err)
 		}
 	}
-	// 缓冲应已清空（失败批被丢弃），后续 flush 不再携带旧数据
+	// 缂撳啿搴斿凡娓呯┖锛堝け璐ユ壒琚涪寮冿級锛屽悗缁?flush 涓嶅啀鎼哄甫鏃ф暟鎹?
 	sink.mu.Lock()
 	pending := len(sink.buf)
 	sink.mu.Unlock()
@@ -110,7 +110,7 @@ func TestAuditSink_WriteFailureDropsBatch(t *testing.T) {
 	}
 }
 
-// TestAuditSink_CloseFlushesRemainder Close 时 flush 残留缓冲。
+// TestAuditSink_CloseFlushesRemainder Close 鏃?flush 娈嬬暀缂撳啿銆?
 func TestAuditSink_CloseFlushesRemainder(t *testing.T) {
 	rec := &sinkRecorder{}
 	sink := NewAuditSink(rec.write, 100, time.Hour)
@@ -121,7 +121,7 @@ func TestAuditSink_CloseFlushesRemainder(t *testing.T) {
 	}
 }
 
-// TestWriteAuditLogs_NilPool PG 不可用时返回错误（由 sink 记日志丢弃）。
+// TestWriteAuditLogs_NilPool PG 涓嶅彲鐢ㄦ椂杩斿洖閿欒锛堢敱 sink 璁版棩蹇椾涪寮冿級銆?
 func TestWriteAuditLogs_NilPool(t *testing.T) {
 	if Pool != nil {
 		t.Skip("PG pool available; nil-pool path not testable")
@@ -132,7 +132,7 @@ func TestWriteAuditLogs_NilPool(t *testing.T) {
 	}
 }
 
-// TestAuditResourceType 路径前缀归类。
+// TestAuditResourceType 璺緞鍓嶇紑褰掔被銆?
 func TestAuditResourceType(t *testing.T) {
 	cases := map[string]string{
 		"/v1/ent/privacy":     "ent",

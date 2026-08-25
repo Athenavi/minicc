@@ -1,4 +1,4 @@
-package db
+﻿package db
 
 import (
 	"context"
@@ -21,7 +21,7 @@ type RedisClient interface {
 	Subscribe(ctx context.Context, channels ...string) *redis.PubSub
 	Close() error
 	Stats() *redis.PoolStats
-	// Do 执行任意 Redis 命令（慢日志/FLUSH 等管理操作）
+	// Do 鎵ц浠绘剰 Redis 鍛戒护锛堟參鏃ュ織/FLUSH 绛夌鐞嗘搷浣滐級
 	Do(ctx context.Context, args ...interface{}) *redis.Cmd
 	Scan(ctx context.Context, cursor uint64, match string, count int64) *redis.ScanCmd
 	Eval(ctx context.Context, script string, keys []string, args ...interface{}) *redis.Cmd

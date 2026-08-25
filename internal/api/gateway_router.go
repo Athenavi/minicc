@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -14,19 +14,19 @@ import (
 	"sync"
 	"time"
 
-	"github.com/athenavi/minicc/config"
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/billing"
-	"github.com/athenavi/minicc/internal/broadcast"
-	"github.com/athenavi/minicc/internal/db"
-	"github.com/athenavi/minicc/internal/engine"
-	"github.com/athenavi/minicc/internal/session"
-	"github.com/athenavi/minicc/internal/storage"
+	"github.com/athenavi/chiron/config"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/billing"
+	"github.com/athenavi/chiron/internal/broadcast"
+	"github.com/athenavi/chiron/internal/db"
+	"github.com/athenavi/chiron/internal/engine"
+	"github.com/athenavi/chiron/internal/session"
+	"github.com/athenavi/chiron/internal/storage"
 )
 
-// metricsAuthMW 允许两种鉴权方式抓取 /metrics：
-// 1. METRICS_TOKEN 配置的 Bearer token（Prometheus 抓取，常量时间比较）；
-// 2. JWT admin 权限（PermAdminRead）。
+// metricsAuthMW 鍏佽涓ょ閴存潈鏂瑰紡鎶撳彇 /metrics锛?
+// 1. METRICS_TOKEN 閰嶇疆鐨?Bearer token锛圥rometheus 鎶撳彇锛屽父閲忔椂闂存瘮杈冿級锛?
+// 2. JWT admin 鏉冮檺锛圥ermAdminRead锛夈€?
 func metricsAuthMW(cfg *config.Config, authMW routeMiddleware, h http.HandlerFunc) http.Handler {
 	if cfg == nil || cfg.MetricsToken == "" {
 		return authMW(RequirePermission(auth.PermAdminRead)(h))
@@ -67,7 +67,7 @@ func requestIDHeader(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var buf [8]byte
 		if _, err := rand.Read(buf[:]); err != nil {
-			// 极端回退：rand 失败用时间纳秒填充
+			// 鏋佺鍥為€€锛歳and 澶辫触鐢ㄦ椂闂寸撼绉掑～鍏?
 			nano := time.Now().UnixNano()
 			for i := range buf {
 				buf[i] = byte(nano >> (i * 8))
@@ -81,8 +81,8 @@ func requestIDHeader(next http.Handler) http.Handler {
 }
 
 // realIPHeader extracts the real IP from X-Forwarded-For / X-Real-IP,
-// but ONLY when the direct peer is a trusted reverse proxy (P1 修复)：
-// 无条件信任客户端可伪造的 XFF 会绕过按 IP 的限流与验证码失败升级。
+// but ONLY when the direct peer is a trusted reverse proxy (P1 淇)锛?
+// 鏃犳潯浠朵俊浠诲鎴风鍙吉閫犵殑 XFF 浼氱粫杩囨寜 IP 鐨勯檺娴佷笌楠岃瘉鐮佸け璐ュ崌绾с€?
 func realIPHeader(trustedCIDRs []string) func(http.Handler) http.Handler {
 	var trusted []*net.IPNet
 	for _, c := range trustedCIDRs {
@@ -127,10 +127,10 @@ func realIPHeader(trustedCIDRs []string) func(http.Handler) http.Handler {
 	}
 }
 
-// NewSetupRouter 安装模式路由：系统尚未配置 APP_SECRET / 数据库时，
-// 仅提供安装向导端点（/v1/install/*，需安装令牌）与健康检查；
-// 其余一切业务路由返回 503（未安装，请完成安装后重启）。
-// 前端静态页面由 nginx 等反向代理提供，Go 网关不负责托管。
+// NewSetupRouter 瀹夎妯″紡璺敱锛氱郴缁熷皻鏈厤缃?APP_SECRET / 鏁版嵁搴撴椂锛?
+// 浠呮彁渚涘畨瑁呭悜瀵肩鐐癸紙/v1/install/*锛岄渶瀹夎浠ょ墝锛変笌鍋ュ悍妫€鏌ワ紱
+// 鍏朵綑涓€鍒囦笟鍔¤矾鐢辫繑鍥?503锛堟湭瀹夎锛岃瀹屾垚瀹夎鍚庨噸鍚級銆?
+// 鍓嶇闈欐€侀〉闈㈢敱 nginx 绛夊弽鍚戜唬鐞嗘彁渚涳紝Go 缃戝叧涓嶈礋璐ｆ墭绠°€?
 func NewSetupRouter(cfg *config.Config) http.Handler {
 	mux := http.NewServeMux()
 
@@ -149,18 +149,18 @@ func NewSetupRouter(cfg *config.Config) http.Handler {
 
 	installHandler := NewInstallHandler(cfg)
 
-	// 安装端点：必须携带安装令牌（X-Install-Token header 或 ?token= 查询参数）
+	// 瀹夎绔偣锛氬繀椤绘惡甯﹀畨瑁呬护鐗岋紙X-Install-Token header 鎴??token= 鏌ヨ鍙傛暟锛?
 	mux.Handle("GET /v1/install/step1", publicMW(installMW(http.HandlerFunc(installHandler.Step1))))
 	mux.Handle("POST /v1/install/step2", publicMW(installMW(http.HandlerFunc(installHandler.Step2))))
 	mux.Handle("POST /v1/install/step3", publicMW(installMW(http.HandlerFunc(installHandler.Step3))))
 	mux.Handle("POST /v1/install/setup", publicMW(installMW(http.HandlerFunc(installHandler.Setup))))
 	mux.Handle("GET /v1/install/status", publicMW(http.HandlerFunc(installHandler.Status)))
 
-	// 健康检查（编排器探活；就绪检查如实反映依赖状态）
+	// 鍋ュ悍妫€鏌ワ紙缂栨帓鍣ㄦ帰娲伙紱灏辩华妫€鏌ュ瀹炲弽鏄犱緷璧栫姸鎬侊級
 	mux.Handle("GET /health", publicMW(http.HandlerFunc(handleHealth)))
 	mux.Handle("GET /ready", publicMW(http.HandlerFunc(handleReadiness)))
 
-	// 其余所有未注册路由：业务不可用（未安装）
+	// 鍏朵綑鎵€鏈夋湭娉ㄥ唽璺敱锛氫笟鍔′笉鍙敤锛堟湭瀹夎锛?
 	mux.Handle("/", publicMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ServiceUnavailable(w, "system not installed: configure database and create admin via /install")
 	})))
@@ -180,12 +180,12 @@ func NewGatewayRouter(
 ) http.Handler {
 	mux := http.NewServeMux()
 
-	// Rate limiter — 当 Redis 可用时使用分布式限流器。
-	// P1-2: 单实例内存限流在多副本部署下计数独立，等于限流失效。
-	// 生产策略：
-	//   - Redis 可用：用分布式限流器（推荐）
-	//   - Redis 不可用 + 生产环境（cfg.RateLimitFailClose=true）：写操作拒绝
-	//   - Redis 不可用 + 开发/测试：降级内存限流（单实例有效，多副本失效）
+	// Rate limiter 鈥?褰?Redis 鍙敤鏃朵娇鐢ㄥ垎甯冨紡闄愭祦鍣ㄣ€?
+	// P1-2: 鍗曞疄渚嬪唴瀛橀檺娴佸湪澶氬壇鏈儴缃蹭笅璁℃暟鐙珛锛岀瓑浜庨檺娴佸け鏁堛€?
+	// 鐢熶骇绛栫暐锛?
+	//   - Redis 鍙敤锛氱敤鍒嗗竷寮忛檺娴佸櫒锛堟帹鑽愶級
+	//   - Redis 涓嶅彲鐢?+ 鐢熶骇鐜锛坈fg.RateLimitFailClose=true锛夛細鍐欐搷浣滄嫆缁?
+	//   - Redis 涓嶅彲鐢?+ 寮€鍙?娴嬭瘯锛氶檷绾у唴瀛橀檺娴侊紙鍗曞疄渚嬫湁鏁堬紝澶氬壇鏈け鏁堬級
 	var rlMW func(http.Handler) http.Handler
 	var distLimiter *DistributedRateLimiter
 	rateLimitRPM := cfg.RateLimitRPM
@@ -196,14 +196,14 @@ func NewGatewayRouter(
 	if atomicRedis != nil {
 		distLimiter = NewDistributedRateLimiter(
 			atomicRedis.LoadRaw(),
-			rateLimitRPM*10, // 全局：单实例限制 × 10
-			rateLimitRPM*5,  // 租户：单实例限制 × 5
-			rateLimitRPM,    // 用户：单实例限制
+			rateLimitRPM*10, // 鍏ㄥ眬锛氬崟瀹炰緥闄愬埗 脳 10
+			rateLimitRPM*5,  // 绉熸埛锛氬崟瀹炰緥闄愬埗 脳 5
+			rateLimitRPM,    // 鐢ㄦ埛锛氬崟瀹炰緥闄愬埗
 		)
 		rlMW = DistributedRateLimitMiddleware(distLimiter)
 		slog.Info("distributed rate limiter enabled", "global", rateLimitRPM*10)
 	} else if cfg.RateLimitFailClose {
-		// 生产 fail-close：只读放行，写操作拒绝
+		// 鐢熶骇 fail-close锛氬彧璇绘斁琛岋紝鍐欐搷浣滄嫆缁?
 		rlMW = func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -215,7 +215,7 @@ func NewGatewayRouter(
 		}
 		slog.Warn("Redis unavailable + fail-close enabled: write operations rejected")
 	} else {
-		// 开发/测试降级：内存限流（单实例有效，多副本部署下应改用 Redis）
+		// 寮€鍙?娴嬭瘯闄嶇骇锛氬唴瀛橀檺娴侊紙鍗曞疄渚嬫湁鏁堬紝澶氬壇鏈儴缃蹭笅搴旀敼鐢?Redis锛?
 		rateLimiter := NewRateLimiter(rateLimitRPM)
 		rateLimiter.CleanupVisitors(5 * time.Minute)
 		rlMW = rateLimiter.Middleware
@@ -244,7 +244,7 @@ func NewGatewayRouter(
 	authHandler := NewAuthHandler(cfg)
 	authMW := AuthMiddleware(authenticator)
 
-	// SSO 三方登录 + 人机验证（防接口滥用）+ 短信验证码登录
+	// SSO 涓夋柟鐧诲綍 + 浜烘満楠岃瘉锛堥槻鎺ュ彛婊ョ敤锛? 鐭俊楠岃瘉鐮佺櫥褰?
 	ssoHandler := NewSSOHandler(authenticator, cfg)
 	captchaHandler := NewCaptchaHandler(cfg)
 	authHandler.SetCaptchaHandler(captchaHandler)
@@ -255,8 +255,8 @@ func NewGatewayRouter(
 	billingStore.EnsureTables(context.Background())
 	billingMgr := billing.NewManager(billingStore)
 	billingMgr.Subscribe(billing.NewTransactionRecorder(billingStore))
-	// P0-P1 修复：余额已由 Deduct/AddCredits 同步写库（PG 原子 UPDATE），
-	// 移除 BalanceSyncer 异步落库订阅，避免多副本 split-brain 与重复扣费。
+	// P0-P1 淇锛氫綑棰濆凡鐢?Deduct/AddCredits 鍚屾鍐欏簱锛圥G 鍘熷瓙 UPDATE锛夛紝
+	// 绉婚櫎 BalanceSyncer 寮傛钀藉簱璁㈤槄锛岄伩鍏嶅鍓湰 split-brain 涓庨噸澶嶆墸璐广€?
 
 	// Agent execution semaphore
 	agentSem := make(chan struct{}, cfg.AgentMaxConcurrency)
@@ -290,21 +290,21 @@ func NewGatewayRouter(
 	mediaHandler := NewMediaHandler(fileStore, authenticator)
 	mediaHandler.SetMediaRoot(cfg.StorageRoot)
 
-	// 通用分片上传（断点续传）
+	// 閫氱敤鍒嗙墖涓婁紶锛堟柇鐐圭画浼狅級
 	uploadHandler := NewUploadHandler(authenticator, cfg.StorageRoot)
 	uploadHandler.RegisterRoutes(mux, authMW, rlMW)
 
-	// 用户侧市场（技能/Agent/MCP 浏览与一键安装）
+	// 鐢ㄦ埛渚у競鍦猴紙鎶€鑳?Agent/MCP 娴忚涓庝竴閿畨瑁咃級
 	userMarketHandler := NewUserMarketHandler(cfg, pythonClient)
 	registerUserMarketRoutes(mux, userMarketHandler, authMW, rlMW)
 
-	// 模型路由：对话可用模型列表
+	// 妯″瀷璺敱锛氬璇濆彲鐢ㄦā鍨嬪垪琛?
 	mux.Handle("GET /v1/models", authMW(rlMW(http.HandlerFunc(ListUserModels))))
-	// 模板市场：工作流/Agent/技能 一键使用
+	// 妯℃澘甯傚満锛氬伐浣滄祦/Agent/鎶€鑳?涓€閿娇鐢?
 	templateHandler := NewTemplateHandler(pythonClient)
 	templateHandler.RegisterRoutes(mux, authMW, rlMW)
 
-	// 定时自动化：Webhook 触发（token 即鉴权，公开但限流）
+	// 瀹氭椂鑷姩鍖栵細Webhook 瑙﹀彂锛坱oken 鍗抽壌鏉冿紝鍏紑浣嗛檺娴侊級
 	mux.Handle("POST /v1/hooks/{jobID}", rlMW(http.HandlerFunc(HandleCronWebhook)))
 
 	// Billing handler (uses the same billingMgr as /submit to avoid split-brain cache)
@@ -324,8 +324,8 @@ func NewGatewayRouter(
 		traceHandler = NewTraceHandler(atomicRedis.LoadRaw())
 	}
 
-	// Knowledge base — proxied to Python engine
-	// SaaS 安全: 知识库独立限流 (每租户 QPS=50, Burst=100)
+	// Knowledge base 鈥?proxied to Python engine
+	// SaaS 瀹夊叏: 鐭ヨ瘑搴撶嫭绔嬮檺娴?(姣忕鎴?QPS=50, Burst=100)
 	var kbRateRedis db.RedisClient
 	if atomicRedis != nil {
 		kbRateRedis = atomicRedis.LoadRaw()
@@ -338,27 +338,27 @@ func NewGatewayRouter(
 	adminHandler.rateLimiter = distLimiter
 	adminHandler.appSecret = cfg.AppSecret
 
-	// ── Route registration by functional domain ──
+	// 鈹€鈹€ Route registration by functional domain 鈹€鈹€
 
 	registerPublicEndpoints(mux, authMW, rlMW, publicMW, searchHandler, shareHandler, systemHandler, cfg)
 	registerAgentRoutes(mux, authMW, rlMW, publicMW, sanitizeMW, submitHandler, billingMgr, agentSem, eventHub, sessionMgr, authenticator, rpaHub, cfg.InternalToken)
 	registerAuthRoutes(mux, authHandler, authMW, rlMW)
 
-	// ── SSO 三方登录（公开流程 rlMW；用户自助 authMW；管理 authMW + sso:manage）──
+	// 鈹€鈹€ SSO 涓夋柟鐧诲綍锛堝叕寮€娴佺▼ rlMW锛涚敤鎴疯嚜鍔?authMW锛涚鐞?authMW + sso:manage锛夆攢鈹€
 	ssoHandler.RegisterPublicRoutes(mux, rlMW)
 	ssoHandler.RegisterUserRoutes(mux, authMW)
 	ssoHandler.RegisterAdminRoutes(mux, authMW)
 
-	// ── 人机验证：公开配置下发（登录页拉取）+ 管理配置 ──
+	// 鈹€鈹€ 浜烘満楠岃瘉锛氬叕寮€閰嶇疆涓嬪彂锛堢櫥褰曢〉鎷夊彇锛? 绠＄悊閰嶇疆 鈹€鈹€
 	captchaHandler.RegisterPublicRoutes(mux, rlMW)
 	captchaHandler.RegisterAdminRoutes(mux, authMW)
 
-	// ── 短信验证码登录（公开流程 rlMW；用户自助 authMW；管理 authMW + sso:manage）──
+	// 鈹€鈹€ 鐭俊楠岃瘉鐮佺櫥褰曪紙鍏紑娴佺▼ rlMW锛涚敤鎴疯嚜鍔?authMW锛涚鐞?authMW + sso:manage锛夆攢鈹€
 	smsHandler.RegisterPublicRoutes(mux, rlMW)
 	smsHandler.RegisterUserRoutes(mux, authMW)
 	smsHandler.RegisterAdminRoutes(mux, authMW)
 	registerSystemRoutes(mux, authMW, rlMW, sanitizeMW, installHandler, editorHandler, toolHandler, systemHandler, traceHandler)
-	// 六大工作台互联：跨台最近活动聚合（租户+用户隔离）
+	// 鍏ぇ宸ヤ綔鍙颁簰鑱旓細璺ㄥ彴鏈€杩戞椿鍔ㄨ仛鍚堬紙绉熸埛+鐢ㄦ埛闅旂锛?
 	mux.Handle("GET /v1/activities", authMW(rlMW(http.HandlerFunc(handleActivities))))
 	registerConversationRoutes(mux, conversationHandler, shareHandler, authMW, rlMW)
 	registerMediaRoutes(mux, mediaHandler, authMW, rlMW, cfg.StorageRoot)
@@ -366,7 +366,7 @@ func NewGatewayRouter(
 	registerBillingRoutes(mux, billingHandler, authMW, rlMW)
 	registerProxyRoutes(mux, authMW, rlMW, kbRateMW, pythonClient)
 
-	// Agents (auth + rate limited; DB 驱动 CRUD + 运行会话)
+	// Agents (auth + rate limited; DB 椹卞姩 CRUD + 杩愯浼氳瘽)
 	agentHandler := NewAgentHandler(authenticator, pythonClient, agentSem)
 	mux.Handle("GET /v1/agents", authMW(rlMW(http.HandlerFunc(agentHandler.List))))
 	mux.Handle("POST /v1/agents", authMW(rlMW(http.HandlerFunc(agentHandler.Create))))
@@ -377,8 +377,8 @@ func NewGatewayRouter(
 	mux.Handle("POST /v1/agents/{id}/run", authMW(rlMW(http.HandlerFunc(agentHandler.Run))))
 	mux.Handle("GET /v1/agents/sessions", authMW(rlMW(http.HandlerFunc(agentHandler.ListSessions))))
 	mux.Handle("GET /v1/agents/sessions/{id}", authMW(rlMW(http.HandlerFunc(agentHandler.GetSession))))
-	// dispatch 保留 Python 代理（agent 工具链内部调用，非页面主链路）
-	// 安全：必须经过 authMW，否则未认证可触发工具执行
+	// dispatch 淇濈暀 Python 浠ｇ悊锛坅gent 宸ュ叿閾惧唴閮ㄨ皟鐢紝闈為〉闈富閾捐矾锛?
+	// 瀹夊叏锛氬繀椤荤粡杩?authMW锛屽惁鍒欐湭璁よ瘉鍙Е鍙戝伐鍏锋墽琛?
 	mux.Handle("POST /v1/agents/dispatch", authMW(rlMW(sanitizeMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if pythonClient == nil {
 			InternalError(w, "python engine not available")
@@ -389,8 +389,8 @@ func NewGatewayRouter(
 			BadRequest(w, "invalid request")
 			return
 		}
-		// 身份注入（P1）：引擎无鉴权，必须用 JWT claims 覆盖透传的租户/用户身份，
-		// 防止客户端伪造 tenant_id/user_id 冒充他人。
+		// 韬唤娉ㄥ叆锛圥1锛夛細寮曟搸鏃犻壌鏉冿紝蹇呴』鐢?JWT claims 瑕嗙洊閫忎紶鐨勭鎴?鐢ㄦ埛韬唤锛?
+		// 闃叉瀹㈡埛绔吉閫?tenant_id/user_id 鍐掑厖浠栦汉銆?
 		if claims := auth.GetClaims(r.Context()); claims != nil {
 			body["tenant_id"] = claims.TenantID
 			body["user_id"] = claims.UserID
@@ -409,16 +409,16 @@ func NewGatewayRouter(
 	// Enterprise audit (auth + RequireEntPerm("audit:read"))
 	NewEntAuditHandler().RegisterRoutes(mux, authMW)
 
-	// Enterprise identity (auth + RequireEntPerm("ent:manage"))：用户/角色/群组/租户
+	// Enterprise identity (auth + RequireEntPerm("ent:manage"))锛氱敤鎴?瑙掕壊/缇ょ粍/绉熸埛
 	NewEntIdentityHandler().RegisterRoutes(mux, authMW)
 
-	// Enterprise cost center（authMW，内部按 PermAdminRead/Write 分级）
+	// Enterprise cost center锛坅uthMW锛屽唴閮ㄦ寜 PermAdminRead/Write 鍒嗙骇锛?
 	NewEntCostCenterHandler(nil, nil).RegisterRoutes(mux, authMW)
 
-	// Enterprise policy（authMW + RequireEntPerm("policy:manage")）：隐私模式 + 模型策略
+	// Enterprise policy锛坅uthMW + RequireEntPerm("policy:manage")锛夛細闅愮妯″紡 + 妯″瀷绛栫暐
 	NewEntPolicyHandler().RegisterRoutes(mux, authMW)
 
-	// Enterprise market（authMW + RequireEntPerm("market:manage")）：能力市场 + 租户授权
+	// Enterprise market锛坅uthMW + RequireEntPerm("market:manage")锛夛細鑳藉姏甯傚満 + 绉熸埛鎺堟潈
 	NewMarketHandler().RegisterRoutes(mux, authMW)
 
 	// Mode (auth + rate limited)
@@ -433,7 +433,7 @@ func NewGatewayRouter(
 	return publicMW(mux)
 }
 
-// ── Public endpoints ──
+// 鈹€鈹€ Public endpoints 鈹€鈹€
 
 func registerPublicEndpoints(
 	mux *http.ServeMux,
@@ -446,21 +446,21 @@ func registerPublicEndpoints(
 	mux.Handle("GET /search", authMW(rlMW(http.HandlerFunc(searchHandler.Search))))
 
 	// Public share view (no auth; revoked shares return 410 Gone)
-	// 修复 P1：移除内层 publicMW 重复包裹（外层 publicMW(mux) 已包含日志/审计/追踪），
-	// 避免审计 XAdd 双写、请求 ID 被内层重新生成。
+	// 淇 P1锛氱Щ闄ゅ唴灞?publicMW 閲嶅鍖呰９锛堝灞?publicMW(mux) 宸插寘鍚棩蹇?瀹¤/杩借釜锛夛紝
+	// 閬垮厤瀹¤ XAdd 鍙屽啓銆佽姹?ID 琚唴灞傞噸鏂扮敓鎴愩€?
 	mux.Handle("GET /v1/share/{id}", rlMW(http.HandlerFunc(shareHandler.PublicGet)))
 
 	mux.Handle("GET /health", rlMW(http.HandlerFunc(handleHealth)))
-	// Prometheus 指标端点：生产收敛为需要 PermAdminRead 权限，避免泄漏业务指标
+	// Prometheus 鎸囨爣绔偣锛氱敓浜ф敹鏁涗负闇€瑕?PermAdminRead 鏉冮檺锛岄伩鍏嶆硠婕忎笟鍔℃寚鏍?
 	mux.Handle("GET /metrics", rlMW(metricsAuthMW(cfg, authMW, systemHandler.PrometheusMetrics)))
-	// API 文档（OpenAPI spec，公开，供 Swagger/Redoc 展示）
+	// API 鏂囨。锛圤penAPI spec锛屽叕寮€锛屼緵 Swagger/Redoc 灞曠ず锛?
 	mux.Handle("GET /docs/", http.StripPrefix("/docs/", http.FileServer(http.Dir("docs"))))
 	mux.Handle("GET /ready", rlMW(http.HandlerFunc(handleReadiness)))
-	// 引擎配置下发（X-Internal-Token 保护，Python 引擎启动拉取）
+	// 寮曟搸閰嶇疆涓嬪彂锛圶-Internal-Token 淇濇姢锛孭ython 寮曟搸鍚姩鎷夊彇锛?
 	mux.Handle("GET /v1/internal/engine-config", rlMW(internalTokenMW(cfg, EngineConfig(cfg))))
 }
 
-// ── Agent submit/cancel/events ──
+// 鈹€鈹€ Agent submit/cancel/events 鈹€鈹€
 
 func registerAgentRoutes(
 	mux *http.ServeMux,
@@ -505,7 +505,7 @@ func registerAgentRoutes(
 				if balance, balErr := billingMgr.GetBalance(userID); balErr == nil && balance <= 0 {
 					JSON(w, http.StatusPaymentRequired, APIResponse{
 						Success: false,
-						Error:   "insufficient credits — please recharge in Billing",
+						Error:   "insufficient credits 鈥?please recharge in Billing",
 					})
 					return
 				}
@@ -549,12 +549,12 @@ func registerAgentRoutes(
 	mux.Handle("GET /events", authMW(rlMW(SSEHandler(eventHub, sessionMgr))))
 	mux.HandleFunc("GET /ws/{sessionId}", WebSocketHandler(NewWebSocketHub(), eventHub, authenticator, sessionMgr))
 	mux.HandleFunc("GET /ws/rpa", RPAWebSocketHandler(rpaHub, authenticator))
-	// 浏览器 RPA 桥（Python engine → 网关 → 插件；仅共享 internal token 可调）
+	// 娴忚鍣?RPA 妗ワ紙Python engine 鈫?缃戝叧 鈫?鎻掍欢锛涗粎鍏变韩 internal token 鍙皟锛?
 	mux.Handle("POST /v1/rpa/exec", rlMW(http.HandlerFunc(RPAExecHandler(rpaHub, internalToken))))
 	mux.Handle("GET /v1/rpa/clients", rlMW(http.HandlerFunc(RPAClientsHandler(rpaHub, internalToken))))
 }
 
-// ── Auth (login / register / logout) ──
+// 鈹€鈹€ Auth (login / register / logout) 鈹€鈹€
 
 func registerAuthRoutes(mux *http.ServeMux, authHandler *AuthHandler, authMW, rlMW routeMiddleware) {
 	// Auth (public, rate limited)
@@ -562,13 +562,13 @@ func registerAuthRoutes(mux *http.ServeMux, authHandler *AuthHandler, authMW, rl
 	mux.Handle("POST /v1/auth/register", rlMW(http.HandlerFunc(authHandler.Register)))
 	mux.Handle("POST /v1/auth/refresh", rlMW(http.HandlerFunc(authHandler.Refresh)))
 	mux.Handle("POST /v1/auth/logout", rlMW(http.HandlerFunc(authHandler.Logout)))
-	// SSO cookie → Bearer token 会话引导（公开：httpOnly cookie 自带凭据）
+	// SSO cookie 鈫?Bearer token 浼氳瘽寮曞锛堝叕寮€锛歨ttpOnly cookie 鑷甫鍑嵁锛?
 	mux.Handle("GET /v1/auth/session", rlMW(http.HandlerFunc(authHandler.Session)))
 	mux.Handle("GET /v1/auth/profile", authMW(rlMW(http.HandlerFunc(authHandler.Profile))))
 	mux.Handle("PUT /v1/auth/profile", authMW(rlMW(http.HandlerFunc(authHandler.UpdateProfile))))
 }
 
-// ── System (install / editor / tools / health / trace) ──
+// 鈹€鈹€ System (install / editor / tools / health / trace) 鈹€鈹€
 
 func registerSystemRoutes(
 	mux *http.ServeMux,
@@ -587,9 +587,9 @@ func registerSystemRoutes(
 	mux.Handle("POST /v1/install/step2", rlMW(http.HandlerFunc(installHandler.Step2)))
 	mux.Handle("POST /v1/install/step3", rlMW(http.HandlerFunc(installHandler.Step3)))
 
-	// Editor (admin 权限 + rate limited)
-	// S 安全修复：编辑器直接读写共享服务器工作区（含沙箱/分片/插件数据），
-	// 仅限管理员（列表/读=PermAdminRead，写=PermAdminWrite），普通 user 无权访问。
+	// Editor (admin 鏉冮檺 + rate limited)
+	// S 瀹夊叏淇锛氱紪杈戝櫒鐩存帴璇诲啓鍏变韩鏈嶅姟鍣ㄥ伐浣滃尯锛堝惈娌欑/鍒嗙墖/鎻掍欢鏁版嵁锛夛紝
+	// 浠呴檺绠＄悊鍛橈紙鍒楄〃/璇?PermAdminRead锛屽啓=PermAdminWrite锛夛紝鏅€?user 鏃犳潈璁块棶銆?
 	mux.Handle("GET /api/editor/files", authMW(rlMW(RequirePermission(auth.PermAdminRead)(http.HandlerFunc(editorHandler.ListFiles)))))
 	mux.Handle("GET /api/editor/read", authMW(rlMW(RequirePermission(auth.PermAdminRead)(http.HandlerFunc(editorHandler.ReadFile)))))
 	mux.Handle("POST /api/editor/write", authMW(rlMW(RequirePermission(auth.PermAdminWrite)(http.HandlerFunc(editorHandler.WriteFile)))))
@@ -598,7 +598,7 @@ func registerSystemRoutes(
 	mux.Handle("GET /v1/tools", rlMW(http.HandlerFunc(toolHandler.ListTools)))
 	mux.Handle("POST /v1/tools/execute", authMW(rlMW(sanitizeMW(http.HandlerFunc(toolHandler.ExecuteTool)))))
 
-	// System (rate limited; spans/traces 仅管理员可见，S 安全修复：原为公开信息泄露)
+	// System (rate limited; spans/traces 浠呯鐞嗗憳鍙锛孲 瀹夊叏淇锛氬師涓哄叕寮€淇℃伅娉勯湶)
 	mux.Handle("GET /v1/system/health", rlMW(http.HandlerFunc(systemHandler.HealthScores)))
 	mux.Handle("GET /v1/system/spans", authMW(rlMW(RequirePermission(auth.PermAdminRead)(http.HandlerFunc(systemHandler.Spans)))))
 	mux.Handle("GET /v1/system/traces", authMW(rlMW(RequirePermission(auth.PermAdminRead)(http.HandlerFunc(systemHandler.Traces)))))
@@ -611,7 +611,7 @@ func registerSystemRoutes(
 	}
 }
 
-// ── Conversations ──
+// 鈹€鈹€ Conversations 鈹€鈹€
 
 func registerConversationRoutes(
 	mux *http.ServeMux,
@@ -632,7 +632,7 @@ func registerConversationRoutes(
 	mux.Handle("DELETE /v1/conversations/{id}/share", authMW(rlMW(http.HandlerFunc(shareHandler.Revoke))))
 }
 
-// ── Media ──
+// 鈹€鈹€ Media 鈹€鈹€
 
 func registerMediaRoutes(
 	mux *http.ServeMux,
@@ -654,7 +654,7 @@ func registerMediaRoutes(
 	mux.Handle("POST /v1/media/{id}/share", authMW(rlMW(http.HandlerFunc(mediaHandler.Share))))
 	mux.Handle("DELETE /v1/media/{id}", authMW(rlMW(http.HandlerFunc(mediaHandler.Delete))))
 
-	// Media file serving（P0 存储型 XSS 防护：html/xml 直接拒服务；svg 以 CSP sandbox 输出；全量 nosniff）
+	// Media file serving锛圥0 瀛樺偍鍨?XSS 闃叉姢锛歨tml/xml 鐩存帴鎷掓湇鍔★紱svg 浠?CSP sandbox 杈撳嚭锛涘叏閲?nosniff锛?
 	mediaFileServer := http.StripPrefix("/media/", http.FileServer(http.Dir(storageRoot+"/media")))
 	mux.Handle("GET /media/", rlMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch strings.ToLower(filepath.Ext(r.URL.Path)) {
@@ -667,18 +667,18 @@ func registerMediaRoutes(
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		mediaFileServer.ServeHTTP(w, r)
 	})))
-	// 签名 URL（P0 修复）：签发 + 校验后服务
+	// 绛惧悕 URL锛圥0 淇锛夛細绛惧彂 + 鏍￠獙鍚庢湇鍔?
 	mux.Handle("POST /v1/media/{id}/sign", authMW(rlMW(http.HandlerFunc(mediaHandler.SignMedia))))
 	mux.Handle("GET /media/s/{assetID}", rlMW(http.HandlerFunc(mediaHandler.ServeSignedMedia)))
 }
 
-// registerUserMarketRoutes 用户侧市场路由（技能/Agent/MCP 浏览与一键安装）。
+// registerUserMarketRoutes 鐢ㄦ埛渚у競鍦鸿矾鐢憋紙鎶€鑳?Agent/MCP 娴忚涓庝竴閿畨瑁咃級銆?
 func registerUserMarketRoutes(mux *http.ServeMux, h *UserMarketHandler, authMW, rlMW routeMiddleware) {
 	mux.Handle("GET /v1/market", authMW(rlMW(http.HandlerFunc(h.List))))
 	mux.Handle("POST /v1/market/{type}/{itemID}/install", authMW(rlMW(http.HandlerFunc(h.Install))))
 }
 
-// ── Plugins ──
+// 鈹€鈹€ Plugins 鈹€鈹€
 
 func registerPluginRoutes(mux *http.ServeMux, pluginHandler *PluginHandler, authMW, rlMW routeMiddleware) {
 	// Plugins (auth + rate limited)
@@ -689,7 +689,7 @@ func registerPluginRoutes(mux *http.ServeMux, pluginHandler *PluginHandler, auth
 	mux.Handle("DELETE /v1/plugins/{name}", authMW(rlMW(http.HandlerFunc(pluginHandler.Uninstall))))
 }
 
-// ── Billing ──
+// 鈹€鈹€ Billing 鈹€鈹€
 
 func registerBillingRoutes(mux *http.ServeMux, billingHandler *BillingHandler, authMW, rlMW routeMiddleware) {
 	// Billing (auth + rate limited)
@@ -698,14 +698,14 @@ func registerBillingRoutes(mux *http.ServeMux, billingHandler *BillingHandler, a
 	mux.Handle("POST /v1/billing/recharge", authMW(rlMW(http.HandlerFunc(billingHandler.Recharge))))
 	mux.Handle("POST /v1/billing/pay", authMW(rlMW(http.HandlerFunc(billingHandler.CreatePayment))))
 	mux.Handle("GET /v1/billing/orders/{id}", authMW(rlMW(http.HandlerFunc(billingHandler.GetOrder))))
-	// 支付渠道异步回调（无 auth：支付宝验签 / 微信平台证书验签 + AES-GCM 解密）
+	// 鏀粯娓犻亾寮傛鍥炶皟锛堟棤 auth锛氭敮浠樺疂楠岀 / 寰俊骞冲彴璇佷功楠岀 + AES-GCM 瑙ｅ瘑锛?
 	mux.Handle("POST /v1/billing/callback/alipay", rlMW(http.HandlerFunc(billingHandler.AlipayCallback)))
 	mux.Handle("POST /v1/billing/callback/wechat", rlMW(http.HandlerFunc(billingHandler.WechatCallback)))
 	mux.Handle("POST /v1/billing/paypal-capture", authMW(rlMW(http.HandlerFunc(billingHandler.PayPalCapture))))
 	mux.Handle("GET /v1/billing/usage", authMW(rlMW(http.HandlerFunc(billingHandler.GetUsage))))
 }
 
-// ── Python engine proxy routes (graphs / workflows / knowledge base) ──
+// 鈹€鈹€ Python engine proxy routes (graphs / workflows / knowledge base) 鈹€鈹€
 
 func registerProxyRoutes(
 	mux *http.ServeMux,
@@ -731,7 +731,7 @@ func registerProxyRoutes(
 					Unauthorized(w, "missing tenant context")
 					return
 				}
-				// 多租户隔离：透传 tenant_id 给 Python 引擎（query 参数兼容，header 见 pythonClient.WithTenant）
+				// 澶氱鎴烽殧绂伙細閫忎紶 tenant_id 缁?Python 寮曟搸锛坬uery 鍙傛暟鍏煎锛宧eader 瑙?pythonClient.WithTenant锛?
 				proxiedPath := buildPath(r) + "?user_id=" + claims.UserID + "&tenant_id=" + claims.TenantID
 				var resp interface{}
 				var err error
@@ -777,7 +777,7 @@ func registerProxyRoutes(
 			return prefix + "/" + r.PathValue("id") + suffix
 		}
 	}
-	// pathParamNamed 支持自定义路径参数名（如 {conflict_id}），用于修复参数丢失的代理路由。
+	// pathParamNamed 鏀寔鑷畾涔夎矾寰勫弬鏁板悕锛堝 {conflict_id}锛夛紝鐢ㄤ簬淇鍙傛暟涓㈠け鐨勪唬鐞嗚矾鐢便€?
 	pathParamNamed := func(prefix, param, suffix string) func(*http.Request) string {
 		return func(r *http.Request) string {
 			return prefix + "/" + r.PathValue(param) + suffix
@@ -792,7 +792,7 @@ func registerProxyRoutes(
 	mux.Handle("DELETE /v1/graphs/{id}", authMW(rlMW(graphP(pathParam("/v1/graphs")))))
 	mux.Handle("POST /v1/graphs/{id}/execute", authMW(rlMW(graphP(pathParamSuffix("/v1/graphs", "/execute")))))
 
-	// Workflow 执行状态与历史（代理 Python；status 支持内存实例 + DB 回退）
+	// Workflow 鎵ц鐘舵€佷笌鍘嗗彶锛堜唬鐞?Python锛泂tatus 鏀寔鍐呭瓨瀹炰緥 + DB 鍥為€€锛?
 	mux.Handle("GET /v1/workflows/instances", authMW(rlMW(graphP(pathFn("/v1/workflows/instances")))))
 	mux.Handle("GET /v1/workflows/{id}/status", authMW(rlMW(graphP(pathParamSuffix("/v1/workflows", "/status")))))
 
@@ -814,8 +814,8 @@ func registerProxyRoutes(
 	mux.Handle("GET /v1/kb/{id}/documents", authMW(kbRateMW(kbP(pathParamSuffix("/v1/kb", "/documents")))))
 	mux.Handle("POST /v1/kb/{id}/build", authMW(kbRateMW(kbP(pathParamSuffix("/v1/kb", "/build")))))
 	mux.Handle("POST /v1/kb/{id}/query", authMW(kbRateMW(kbP(pathParamSuffix("/v1/kb", "/query")))))
-	// 知识库删除文档（P1 修复：Python 端已有 DELETE /{kb_id}/documents?doc_id=，
-	// 网关此前缺失该路由导致前端删除文档 404）
+	// 鐭ヨ瘑搴撳垹闄ゆ枃妗ｏ紙P1 淇锛歅ython 绔凡鏈?DELETE /{kb_id}/documents?doc_id=锛?
+	// 缃戝叧姝ゅ墠缂哄け璇ヨ矾鐢卞鑷村墠绔垹闄ゆ枃妗?404锛?
 	mux.Handle("PUT /v1/kb/{id}/visibility", authMW(kbRateMW(http.HandlerFunc(handleKBVisibility))))
 	mux.Handle("DELETE /v1/kb/{id}/documents", authMW(kbRateMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if pythonClient == nil {
@@ -827,7 +827,7 @@ func registerProxyRoutes(
 			Unauthorized(w, "missing tenant context")
 			return
 		}
-		// 保留原始 doc_id 查询参数（newProxy 的 buildPath 会丢弃原始 query）
+		// 淇濈暀鍘熷 doc_id 鏌ヨ鍙傛暟锛坣ewProxy 鐨?buildPath 浼氫涪寮冨師濮?query锛?
 		target := "/v1/kb/" + r.PathValue("id") + "/documents?doc_id=" + url.QueryEscape(r.URL.Query().Get("doc_id")) +
 			"&user_id=" + claims.UserID + "&tenant_id=" + claims.TenantID
 		var resp interface{}
@@ -838,19 +838,19 @@ func registerProxyRoutes(
 		OK(w, resp)
 	}))))
 
-	// Unified chat / quick-execute (六大工作台统一入口, proxies to Python TaskRouter)
+	// Unified chat / quick-execute (鍏ぇ宸ヤ綔鍙扮粺涓€鍏ュ彛, proxies to Python TaskRouter)
 	chatP := newProxy("", proxyOpt{logTag: "chat"})
 	mux.Handle("POST /v1/chat/submit", authMW(rlMW(chatP(pathFn("/v1/chat/submit")))))
 	mux.Handle("GET /v1/chat/sessions/{id}/messages", authMW(rlMW(chatP(pathParamSuffix("/v1/chat/sessions", "/messages")))))
-	// quick-execute 为 chat/submit 的语义别名（前端快捷执行入口）
+	// quick-execute 涓?chat/submit 鐨勮涔夊埆鍚嶏紙鍓嶇蹇嵎鎵ц鍏ュ彛锛?
 	mux.Handle("POST /v1/quick-execute", authMW(rlMW(chatP(pathFn("/v1/chat/submit")))))
 
-	// Capabilities discovery (能力注册中心: 六大工作台能力发现)
+	// Capabilities discovery (鑳藉姏娉ㄥ唽涓績: 鍏ぇ宸ヤ綔鍙拌兘鍔涘彂鐜?
 	capP := newProxy("", proxyOpt{logTag: "capabilities"})
 	mux.Handle("GET /v1/capabilities", authMW(rlMW(capP(pathFn("/v1/capabilities")))))
 	mux.Handle("POST /v1/capabilities/search", authMW(rlMW(capP(pathFn("/v1/capabilities/search")))))
 
-	// Memory (用户长期记忆 L2 档案卡: 列表/CRUD/语义检索/智能整理, 代理 Python)
+	// Memory (鐢ㄦ埛闀挎湡璁板繂 L2 妗ｆ鍗? 鍒楄〃/CRUD/璇箟妫€绱?鏅鸿兘鏁寸悊, 浠ｇ悊 Python)
 	memP := newProxy("", proxyOpt{logTag: "memory"})
 	mux.Handle("GET /v1/memory/profile", authMW(rlMW(memP(pathFn("/v1/memory/profile")))))
 	mux.Handle("POST /v1/memory/profile", authMW(rlMW(memP(pathFn("/v1/memory/profile")))))
@@ -866,7 +866,7 @@ func registerProxyRoutes(
 	mux.Handle("DELETE /v1/memory/conflicts/{conflict_id}", authMW(rlMW(memP(pathParamNamed("/v1/memory/conflicts", "conflict_id", "")))))
 }
 
-// ── Admin ──
+// 鈹€鈹€ Admin 鈹€鈹€
 
 func registerAdminRoutes(
 	mux *http.ServeMux,
@@ -876,11 +876,11 @@ func registerAdminRoutes(
 	pythonClient *engine.PythonClient,
 ) {
 	// Admin routes (auth + admin permission + rate limit)
-	// P1-3: 所有 admin 路由必须挂限流，防止被劫持的 admin token 无限调用
-	// 造成破坏（backup/restore/users DELETE 等敏感操作）。
-	// 读操作用 PermAdminRead，写操作（PUT/DELETE/POST）必须 PermAdminWrite。
-	// P1-4: 用户管理路由（PUT/DELETE /v1/admin/users）必须 PermUsersManage，
-	// 该权限仅 owner 角色持有，普通 admin 不应能删/改用户。
+	// P1-3: 鎵€鏈?admin 璺敱蹇呴』鎸傞檺娴侊紝闃叉琚姭鎸佺殑 admin token 鏃犻檺璋冪敤
+	// 閫犳垚鐮村潖锛坆ackup/restore/users DELETE 绛夋晱鎰熸搷浣滐級銆?
+	// 璇绘搷浣滅敤 PermAdminRead锛屽啓鎿嶄綔锛圥UT/DELETE/POST锛夊繀椤?PermAdminWrite銆?
+	// P1-4: 鐢ㄦ埛绠＄悊璺敱锛圥UT/DELETE /v1/admin/users锛夊繀椤?PermUsersManage锛?
+	// 璇ユ潈闄愪粎 owner 瑙掕壊鎸佹湁锛屾櫘閫?admin 涓嶅簲鑳藉垹/鏀圭敤鎴枫€?
 	adminReadMW := RequirePermission(auth.PermAdminRead)
 	adminWriteMW := RequirePermission(auth.PermAdminWrite)
 	usersManageMW := RequirePermission(auth.PermUsersManage)
@@ -891,7 +891,7 @@ func registerAdminRoutes(
 	mux.Handle("GET /v1/admin/metrics", authMW(rlMW(adminReadMW(adminStrip))))
 	mux.Handle("GET /v1/admin/users", authMW(rlMW(adminReadMW(adminStrip))))
 	mux.Handle("GET /v1/admin/users/{id}", authMW(rlMW(adminReadMW(adminStrip))))
-	// 用户写操作收紧为 PermUsersManage（仅 owner）
+	// 鐢ㄦ埛鍐欐搷浣滄敹绱т负 PermUsersManage锛堜粎 owner锛?
 	mux.Handle("PUT /v1/admin/users/{id}", authMW(rlMW(usersManageMW(adminStrip))))
 	mux.Handle("DELETE /v1/admin/users/{id}", authMW(rlMW(usersManageMW(adminStrip))))
 	mux.Handle("GET /v1/admin/system", authMW(rlMW(adminReadMW(adminStrip))))

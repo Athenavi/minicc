@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"net/http"
@@ -11,11 +11,11 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// builtinRoleScan 模拟 scanRole 的行扫描：内置角色 platform_admin。
+// builtinRoleScan 妯℃嫙 scanRole 鐨勮鎵弿锛氬唴缃鑹?platform_admin銆?
 func builtinRoleScan(dest ...any) error {
 	*dest[0].(*string) = "22222222-2222-2222-2222-222222222222"
 	*dest[1].(*string) = "platform_admin"
-	*dest[2].(**string) = strPtr("平台管理员")
+	*dest[2].(**string) = strPtr("骞冲彴绠＄悊鍛?)
 	*dest[3].(*bool) = true
 	*dest[4].(*[]string) = []string{"ent:manage", "sso:manage"}
 	*dest[5].(*int) = 3
@@ -26,7 +26,7 @@ func builtinRoleScan(dest ...any) error {
 
 func strPtr(s string) *string { return &s }
 
-// ── 内置角色保护（409）─────────────────────────────────
+// 鈹€鈹€ 鍐呯疆瑙掕壊淇濇姢锛?09锛夆攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestUpdateRole_BuiltinPermissionsChange_409(t *testing.T) {
 	store := &fakeQuerier{
@@ -114,7 +114,7 @@ func TestUpdateRole_NotFound_404(t *testing.T) {
 	}
 }
 
-// ── 请求校验（400，DB 无关）────────────────────────────
+// 鈹€鈹€ 璇锋眰鏍￠獙锛?00锛孌B 鏃犲叧锛夆攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestSetUserRoles_InvalidBody_400(t *testing.T) {
 	h := &EntIdentityHandler{db: &fakeQuerier{}}
@@ -157,18 +157,18 @@ func TestSetUserRoles_InvalidRoleID_400(t *testing.T) {
 	}
 }
 
-// ── 挂载辅助方法：中间件链生效 ──────────────────────────
+// 鈹€鈹€ 鎸傝浇杈呭姪鏂规硶锛氫腑闂翠欢閾剧敓鏁?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestRegisterRoutes_RequiresAuth(t *testing.T) {
 	h := NewEntIdentityHandler()
 	mux := http.NewServeMux()
-	// pass-through authMW；权限校验由 RequireEntPerm 链完成
+	// pass-through authMW锛涙潈闄愭牎楠岀敱 RequireEntPerm 閾惧畬鎴?
 	h.RegisterRoutes(mux, func(next http.Handler) http.Handler { return next })
 
 	ts := httptest.NewServer(mux)
 	defer ts.Close()
 
-	// 无认证 claims → RequireEntPerm 返回 401（不依赖 DB/Redis）
+	// 鏃犺璇?claims 鈫?RequireEntPerm 杩斿洖 401锛堜笉渚濊禆 DB/Redis锛?
 	resp, err := http.Get(ts.URL + "/v1/ent/users")
 	if err != nil {
 		t.Fatal(err)
@@ -179,7 +179,7 @@ func TestRegisterRoutes_RequiresAuth(t *testing.T) {
 	}
 }
 
-// ── 分页参数解析 ────────────────────────────────────────
+// 鈹€鈹€ 鍒嗛〉鍙傛暟瑙ｆ瀽 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestParsePageQuery(t *testing.T) {
 	req := httptest.NewRequest("GET", "/v1/ent/users", nil)

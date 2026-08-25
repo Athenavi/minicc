@@ -1,12 +1,12 @@
-"""persistent_shell 工具 — 持久终端会话（对应 deepseek-harness tool-bash-persistent）
+﻿"""persistent_shell 宸ュ叿 鈥?鎸佷箙缁堢浼氳瘽锛堝搴?deepseek-harness tool-bash-persistent锛?
 
-每个 session 一个长驻 shell 进程：cwd、导出变量、激活环境、函数、后台任务
-跨调用持久。
+姣忎釜 session 涓€涓暱椹?shell 杩涚▼锛歝wd銆佸鍑哄彉閲忋€佹縺娲荤幆澧冦€佸嚱鏁般€佸悗鍙颁换鍔?
+璺ㄨ皟鐢ㄦ寔涔呫€?
 
-实现要点：非交互 shell 经管道 stdout 是全缓冲（4KB，readline 收不到小输出，
-deepseek 用 PTY 解决），故命令输出重定向到临时文件、用哨兵文件标记完成，
-规避缓冲问题且保持 shell 状态持久。超时/崩溃时关闭 shell，下次调用重建
-（与 deepseek 的 reset 语义一致）。
+瀹炵幇瑕佺偣锛氶潪浜や簰 shell 缁忕閬?stdout 鏄叏缂撳啿锛?KB锛宺eadline 鏀朵笉鍒板皬杈撳嚭锛?
+deepseek 鐢?PTY 瑙ｅ喅锛夛紝鏁呭懡浠よ緭鍑洪噸瀹氬悜鍒颁复鏃舵枃浠躲€佺敤鍝ㄥ叺鏂囦欢鏍囪瀹屾垚锛?
+瑙勯伩缂撳啿闂涓斾繚鎸?shell 鐘舵€佹寔涔呫€傝秴鏃?宕╂簝鏃跺叧闂?shell锛屼笅娆¤皟鐢ㄩ噸寤?
+锛堜笌 deepseek 鐨?reset 璇箟涓€鑷达級銆?
 """
 from __future__ import annotations
 
@@ -35,13 +35,13 @@ def _shell_command() -> str:
 
 
 class PersistentTerminal:
-    """进程内持久 shell 管理器，按 session key 隔离。"""
+    """杩涚▼鍐呮寔涔?shell 绠＄悊鍣紝鎸?session key 闅旂銆?""
 
     def __init__(self) -> None:
         self._procs: dict[str, asyncio.subprocess.Process] = {}
 
     def _prune_procs(self) -> None:
-        """回收已退出的进程条目，防止 _procs 无限累积（S 资源修复）。"""
+        """鍥炴敹宸查€€鍑虹殑杩涚▼鏉＄洰锛岄槻姝?_procs 鏃犻檺绱Н锛圫 璧勬簮淇锛夈€?""
         dead = [k for k, p in self._procs.items() if p is not None and p.returncode is not None]
         for k in dead:
             self._procs.pop(k, None)
@@ -50,9 +50,9 @@ class PersistentTerminal:
         proc = self._procs.get(key)
         if proc is not None and proc.returncode is None:
             return proc
-        # 回收已退出进程，再创建新的（避免累积完成/崩溃的 shell）
+        # 鍥炴敹宸查€€鍑鸿繘绋嬶紝鍐嶅垱寤烘柊鐨勶紙閬垮厤绱Н瀹屾垚/宕╂簝鐨?shell锛?
         self._prune_procs()
-        # S 修复：ws 用局部变量，避免写成实例属性后被并发请求覆盖导致跨会话串 cwd/cd
+        # S 淇锛歸s 鐢ㄥ眬閮ㄥ彉閲忥紝閬垮厤鍐欐垚瀹炰緥灞炴€у悗琚苟鍙戣姹傝鐩栧鑷磋法浼氳瘽涓?cwd/cd
         ws = str(workspace_dir())
         shell_exe = _shell_command()
         proc = await asyncio.create_subprocess_exec(
@@ -61,11 +61,11 @@ class PersistentTerminal:
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
             cwd=ws,
-            # S 安全修复：清理宿主 env(API key/JWT_SECRET/internal token 等)，
-            # 仅保留 PATH/HOME 等基础变量并重定向到沙箱，防止模型 `env` 外带密钥。
+            # S 瀹夊叏淇锛氭竻鐞嗗涓?env(API key/JWT_SECRET/internal token 绛?锛?
+            # 浠呬繚鐣?PATH/HOME 绛夊熀纭€鍙橀噺骞堕噸瀹氬悜鍒版矙绠憋紝闃叉妯″瀷 `env` 澶栧甫瀵嗛挜銆?
             env=sandboxed_env(),
         )
-        # 首命令 cd 到沙箱 workspace，保证状态持久在隔离目录内（S 安全修复）
+        # 棣栧懡浠?cd 鍒版矙绠?workspace锛屼繚璇佺姸鎬佹寔涔呭湪闅旂鐩綍鍐咃紙S 瀹夊叏淇锛?
         try:
             if sys.platform == 'win32':
                 proc.stdin.write(f'cd /d \"{ws}\"\n'.encode('utf-8'))
@@ -80,15 +80,15 @@ class PersistentTerminal:
     async def execute(self, key: str, command: str, timeout: int = DEFAULT_TIMEOUT_SECONDS) -> dict[str, Any]:
         proc = await self._get_proc(key)
 
-        # 逃逸拦截：与 shell_exec 同一套规则（绝对路径/父目录/云元数据），
-        # 否则持久 shell 可直接 cat /etc/passwd 等（S 安全修复）
+        # 閫冮€告嫤鎴細涓?shell_exec 鍚屼竴濂楄鍒欙紙缁濆璺緞/鐖剁洰褰?浜戝厓鏁版嵁锛夛紝
+        # 鍚﹀垯鎸佷箙 shell 鍙洿鎺?cat /etc/passwd 绛夛紙S 瀹夊叏淇锛?
         from app.tools.sandbox import _has_escape
         esc = _has_escape(command)
         if esc:
             return {"output": f"[blocked: {esc}] command not allowed in sandbox", "exit_code": -1, "persistent": True}
 
-        # 每命令一个临时工作目录：out=输出 / code=退出码 / done=完成哨兵
-        workdir = Path(tempfile.mkdtemp(prefix="minicc_sh_"))
+        # 姣忓懡浠や竴涓复鏃跺伐浣滅洰褰曪細out=杈撳嚭 / code=閫€鍑虹爜 / done=瀹屾垚鍝ㄥ叺
+        workdir = Path(tempfile.mkdtemp(prefix="chiron_sh_"))
         out_file = workdir / "out.txt"
         code_file = workdir / "code.txt"
         done_file = workdir / "done.txt"
@@ -111,24 +111,24 @@ class PersistentTerminal:
             await proc.stdin.drain()
         except (BrokenPipeError, ConnectionResetError, ValueError):
             await self._discard(key)
-            return {"output": "[shell exited — reset]", "exit_code": -1, "persistent": False, "reset": True}
+            return {"output": "[shell exited 鈥?reset]", "exit_code": -1, "persistent": False, "reset": True}
 
-        # 轮询完成哨兵
+        # 杞瀹屾垚鍝ㄥ叺
         elapsed = 0.0
         while elapsed < timeout:
             if done_file.exists():
                 break
             if proc.returncode is not None:
                 await self._discard(key)
-                return {"output": f"[shell exited: code {proc.returncode} — reset]", "exit_code": proc.returncode or 0, "persistent": False, "reset": True}
+                return {"output": f"[shell exited: code {proc.returncode} 鈥?reset]", "exit_code": proc.returncode or 0, "persistent": False, "reset": True}
             await asyncio.sleep(0.05)
             elapsed += 0.05
         else:
-            # 超时：关闭不确定的 shell，下次重建
+            # 瓒呮椂锛氬叧闂笉纭畾鐨?shell锛屼笅娆￠噸寤?
             await self._discard(key)
             partial = out_file.read_text(encoding="utf-8", errors="replace") if out_file.exists() else ""
             return {
-                "output": (partial + "\n" if partial else "") + f"[timed out after {timeout}s — shell reset]",
+                "output": (partial + "\n" if partial else "") + f"[timed out after {timeout}s 鈥?shell reset]",
                 "exit_code": -1,
                 "persistent": False,
                 "reset": True,
@@ -156,7 +156,7 @@ class PersistentTerminal:
             await self._discard(key)
 
 
-# 进程内单例
+# 杩涚▼鍐呭崟渚?
 _terminal = PersistentTerminal()
 
 
@@ -178,11 +178,11 @@ registry.register(
     description=(
         "Run a command in a persistent shell shared across calls in this session. "
         "State (cwd, exports, activated venv, functions, background jobs) persists "
-        "between calls — use `cd` once and it stays. Prefer this over shell_exec "
+        "between calls 鈥?use `cd` once and it stays. Prefer this over shell_exec "
         "for multi-step work. "
         "The command's stdout/stderr are captured and returned as `output`; "
         "do NOT use `>`/`2>` redirection to files inside the command (it is "
-        "captured by the tool) — save files with the write_file tool instead. "
+        "captured by the tool) 鈥?save files with the write_file tool instead. "
         "A timeout or shell crash resets the shell and the next call starts fresh."
     ),
     parameters={
@@ -195,3 +195,4 @@ registry.register(
     },
     handler=persistent_shell,
 )
+

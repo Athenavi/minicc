@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"net/http"
@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/db"
-	"github.com/athenavi/minicc/internal/storage"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/db"
+	"github.com/athenavi/chiron/internal/storage"
 )
 
 func newTestMediaHandler(t *testing.T) (*MediaHandler, *auth.Authenticator) {
@@ -62,9 +62,9 @@ func TestMediaHandler_Delete_NoAuth(t *testing.T) {
 	}
 }
 
-// ── P1-6 MIME 校验逻辑单元测试 ──
-// 覆盖 truncateMIME 与 isExecutableMIME 的关键场景，确保 magic bytes 检测与
-// 可执行文件拒绝逻辑正确（前端 P1-2 上传依赖后端这道安全防线）。
+// 鈹€鈹€ P1-6 MIME 鏍￠獙閫昏緫鍗曞厓娴嬭瘯 鈹€鈹€
+// 瑕嗙洊 truncateMIME 涓?isExecutableMIME 鐨勫叧閿満鏅紝纭繚 magic bytes 妫€娴嬩笌
+// 鍙墽琛屾枃浠舵嫆缁濋€昏緫姝ｇ‘锛堝墠绔?P1-2 涓婁紶渚濊禆鍚庣杩欓亾瀹夊叏闃茬嚎锛夈€?
 func TestTruncateMIME(t *testing.T) {
 	tests := []struct {
 		name string
@@ -86,7 +86,7 @@ func TestTruncateMIME(t *testing.T) {
 }
 
 func TestIsExecutableMIME(t *testing.T) {
-	// 安全类型：不应被拒绝（文件名也是安全的）
+	// 瀹夊叏绫诲瀷锛氫笉搴旇鎷掔粷锛堟枃浠跺悕涔熸槸瀹夊叏鐨勶級
 	safe := []struct{ mime, name string }{
 		{"image/png", "photo.png"},
 		{"image/jpeg", "photo.jpg"},
@@ -103,7 +103,7 @@ func TestIsExecutableMIME(t *testing.T) {
 			t.Errorf("safe MIME %q (%s) should not be executable", tt.mime, tt.name)
 		}
 	}
-	// 危险 MIME：应被拒绝（文件名无关）
+	// 鍗遍櫓 MIME锛氬簲琚嫆缁濓紙鏂囦欢鍚嶆棤鍏筹級
 	dangerousMIMEs := []string{
 		"application/x-msdownload",
 		"application/x-msi",
@@ -120,11 +120,11 @@ func TestIsExecutableMIME(t *testing.T) {
 			t.Errorf("dangerous MIME %q should be detected as executable", m)
 		}
 	}
-	// 大小写不敏感
+	// 澶у皬鍐欎笉鏁忔劅
 	if !isExecutableMIME("APPLICATION/X-MSDOWNLOAD", "x.bin") {
 		t.Error("uppercase MIME should be detected as executable")
 	}
-	// octet-stream + 危险扩展名：应被拒绝（PE/ELF magic bytes 兜底）
+	// octet-stream + 鍗遍櫓鎵╁睍鍚嶏細搴旇鎷掔粷锛圥E/ELF magic bytes 鍏滃簳锛?
 	dangerousExts := []string{
 		"malware.exe", "lib.dll", "installer.msi", "script.sh",
 		"batch.bat", "command.cmd", "old.com", "screen.scr",
@@ -136,11 +136,11 @@ func TestIsExecutableMIME(t *testing.T) {
 			t.Errorf("octet-stream + ext %q should be detected as executable", name)
 		}
 	}
-	// octet-stream + 安全扩展名：不应被拒绝（如 .bin 数据文件）
+	// octet-stream + 瀹夊叏鎵╁睍鍚嶏細涓嶅簲琚嫆缁濓紙濡?.bin 鏁版嵁鏂囦欢锛?
 	if isExecutableMIME("application/octet-stream", "data.bin") {
 		t.Error("octet-stream + .bin should not be rejected")
 	}
-	// text/plain + 危险扩展名：应被拒绝（shell 脚本检测为 text/plain）
+	// text/plain + 鍗遍櫓鎵╁睍鍚嶏細搴旇鎷掔粷锛坰hell 鑴氭湰妫€娴嬩负 text/plain锛?
 	if !isExecutableMIME("text/plain", "script.sh") {
 		t.Error("text/plain + .sh should be rejected")
 	}
@@ -150,7 +150,7 @@ func TestIsExecutableMIME(t *testing.T) {
 	if !isExecutableMIME("text/html", "page.html") {
 		t.Error("text/html + .html should be rejected")
 	}
-	// text/plain + 安全扩展名：不应被拒绝
+	// text/plain + 瀹夊叏鎵╁睍鍚嶏細涓嶅簲琚嫆缁?
 	if isExecutableMIME("text/plain", "notes.txt") {
 		t.Error("text/plain + .txt should not be rejected")
 	}
@@ -204,7 +204,7 @@ func TestMediaHandler_Create_NoClaimsInContext(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.Create(w, req)
 	// Handler is invoked without authMW, so no claims exist in the request
-	// context — the defensive nil check must answer 401.
+	// context 鈥?the defensive nil check must answer 401.
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 without claims in context, got %d: %s", w.Code, w.Body.String())
 	}

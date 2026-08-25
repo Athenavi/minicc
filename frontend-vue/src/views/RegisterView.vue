@@ -20,21 +20,21 @@ const form = ref({
 })
 
 const rules: Record<string, Rule[]> = {
-  name: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
+  name: [{ required: true, message: '请输入姓�?, trigger: 'blur' }],
   email: [
-    { required: true, message: '请输入邮箱', trigger: 'blur' },
-    { type: 'email', message: '邮箱格式不正确', trigger: 'blur' },
+    { required: true, message: '请输入邮�?, trigger: 'blur' },
+    { type: 'email', message: '邮箱格式不正�?, trigger: 'blur' },
   ],
   password: [
-    { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 8, message: '密码至少 8 位', trigger: 'blur' },
+    { required: true, message: '请输入密�?, trigger: 'blur' },
+    { min: 8, message: '密码至少 8 �?, trigger: 'blur' },
   ],
   confirmPassword: [
-    { required: true, message: '请确认密码', trigger: 'blur' },
+    { required: true, message: '请确认密�?, trigger: 'blur' },
     {
       validator: (_rule: Rule, value: string) => {
         if (value !== form.value.password) {
-          return Promise.reject('两次密码输入不一致')
+          return Promise.reject('两次密码输入不一�?)
         }
         return Promise.resolve()
       },
@@ -67,7 +67,7 @@ onMounted(async () => {
       verify_url: cfg.verify_url || '',
     }
   } catch {
-    // 配置接口不可达时按无验证码处理（后端仍会兜底校验）
+    // 配置接口不可达时按无验证码处理（后端仍会兜底校验�?
   }
   captchaRequired.value = captchaConfig.value.enabled
 })
@@ -94,7 +94,7 @@ async function handleRegister() {
     const apiErr = e.response?.data?.error
     if (status === 428 || apiErr === 'captcha_required') {
       captchaRequired.value = true
-      error.value = '操作过于频繁，请完成人机验证后重试'
+      error.value = '操作过于频繁，请完成人机验证后重�?
       captchaRef.value?.reset()
       markCaptchaDirty()
       return
@@ -116,7 +116,7 @@ async function handleRegister() {
       <div class="register-header">
         <div class="register-logo">MC</div>
         <div class="register-title">创建账号</div>
-        <div class="register-subtitle">加入 MiniCC AI Agent 平台</div>
+        <div class="register-subtitle">加入 Chiron AI Agent 平台</div>
       </div>
       <Card :bordered="false" class="register-form-card">
         <Alert v-if="error" type="error" :message="error" show-icon style="margin-bottom: 16px" />
@@ -129,13 +129,13 @@ async function handleRegister() {
           layout="vertical"
         >
           <FormItem label="姓名" name="name">
-            <Input v-model:value="form.name" placeholder="请输入姓名" size="large" aria-label="姓名" autocomplete="name">
+            <Input v-model:value="form.name" placeholder="请输入姓�? size="large" aria-label="姓名" autocomplete="name">
               <template #prefix><UserOutlined /></template>
             </Input>
           </FormItem>
 
           <FormItem label="邮箱" name="email">
-            <Input v-model:value="form.email" placeholder="请输入邮箱" size="large" aria-label="邮箱" autocomplete="email">
+            <Input v-model:value="form.email" placeholder="请输入邮�? size="large" aria-label="邮箱" autocomplete="email">
               <template #prefix><MailOutlined /></template>
             </Input>
           </FormItem>
@@ -156,7 +156,7 @@ async function handleRegister() {
           <FormItem label="确认密码" name="confirmPassword">
             <Input
               v-model:value="form.confirmPassword"
-              placeholder="请再次输入密码"
+              placeholder="请再次输入密�?
               type="password"
               size="large"
               aria-label="确认密码"
@@ -183,7 +183,7 @@ async function handleRegister() {
                 注册
               </Button>
               <Button type="link" block @click="router.push('/login')">
-                已有账号？登录
+                已有账号？登�?
               </Button>
             </Space>
           </FormItem>
@@ -194,7 +194,7 @@ async function handleRegister() {
 </template>
 
 <style scoped>
-/* 中性底色 + 顶部微弱 accent 光晕（与登录页一致，去 AI 紫渐变） */
+/* 中性底�?+ 顶部微弱 accent 光晕（与登录页一致，�?AI 紫渐变） */
 .register-container {
   display: flex;
   justify-content: center;
@@ -269,7 +269,7 @@ async function handleRegister() {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* 移动端（≤576px，与 .u-hide-sm 断点一致）：小屏顶部对齐，便于长表单滚动 */
+/* 移动端（�?76px，与 .u-hide-sm 断点一致）：小屏顶部对齐，便于长表单滚�?*/
 @media (max-width: 576px) {
   .register-container { align-items: flex-start; padding: 16px 12px; }
   .register-card { width: 100%; max-width: 100%; }
@@ -279,13 +279,13 @@ async function handleRegister() {
   .register-header { margin-bottom: 18px; }
   /* 表单贴边：卡片内边距收窄，让输入框更接近屏幕边缘 */
   .register-form-card :deep(.ant-card-body) { padding: 20px 16px; }
-  /* iOS 聚焦防缩放：输入字号 ≥16px */
+  /* iOS 聚焦防缩放：输入字号 �?6px */
   .register-form-card :deep(.ant-input) { font-size: 16px; }
-  /* 触控目标 ≥ 40px */
+  /* 触控目标 �?40px */
   .register-form-card :deep(.ant-btn:not(.ant-btn-sm)) { min-height: 40px; }
 }
 
-/* 焦点可见性增强（键盘导航） */
+/* 焦点可见性增强（键盘导航�?*/
 .register-form-card :deep(.ant-input:focus),
 .register-form-card :deep(.ant-input:focus-within),
 .register-form-card :deep(.ant-btn:focus-visible) {

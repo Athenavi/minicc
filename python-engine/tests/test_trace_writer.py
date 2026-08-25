@@ -1,4 +1,4 @@
-"""Tests for app.trace.writer module.
+﻿"""Tests for app.trace.writer module.
 
 Verifies:
 1. TraceWriter writes to Redis Stream (mocked)
@@ -11,28 +11,27 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 
 class TestTraceWriter:
-    """TraceWriter 单元测试."""
+    """TraceWriter 鍗曞厓娴嬭瘯."""
     
     @pytest.mark.asyncio
     async def test_write_span_without_redis(self):
-        """Redis 不可用时,write_span 应静默跳过 (不崩溃)."""
+        """Redis 涓嶅彲鐢ㄦ椂,write_span 搴旈潤榛樿烦杩?(涓嶅穿婧?."""
         from app.trace.writer import TraceWriter
         
         writer = await TraceWriter.get_instance()
         
-        # Redis 未配置 → xadd 不会被调用
-        with patch.object(writer, '_redis', None):
+        # Redis 鏈厤缃?鈫?xadd 涓嶄細琚皟鐢?        with patch.object(writer, '_redis', None):
             await writer.write_span(
                 trace_id="test123",
                 span_name="llm_call",
                 duration_ms=1500,
                 metadata={"model": "gpt-4"},
             )
-            # No exception → success
+            # No exception 鈫?success
     
     @pytest.mark.asyncio
     async def test_write_span_to_redis(self):
-        """Redis 可用时,write_span 应写入 Stream."""
+        """Redis 鍙敤鏃?write_span 搴斿啓鍏?Stream."""
         from app.trace.writer import TraceWriter
         
         mock_redis = AsyncMock()
@@ -51,8 +50,8 @@ class TestTraceWriter:
             # Verify xadd was called with correct args
             mock_redis.xadd.assert_called_once()
             call_args = mock_redis.xadd.call_args
-            # 多租户设计：无 tenant_id 时写入 anonymous stream
-            assert call_args[0][0] == "minicc:traces:anonymous"  # stream name
+            # 澶氱鎴疯璁★細鏃?tenant_id 鏃跺啓鍏?anonymous stream
+            assert call_args[0][0] == "chiron:traces:anonymous"  # stream name
             entry = call_args[0][1]
             assert entry["trace_id"] == "abc123"
             assert entry["span_name"] == "tool:read_file"
@@ -61,7 +60,7 @@ class TestTraceWriter:
     
     @pytest.mark.asyncio
     async def test_write_batch(self):
-        """批量写入应使用 Redis pipeline."""
+        """鎵归噺鍐欏叆搴斾娇鐢?Redis pipeline."""
         from app.trace.writer import TraceWriter
         
         mock_redis = AsyncMock()
@@ -86,7 +85,7 @@ class TestTraceWriter:
     
     @pytest.mark.asyncio
     async def test_get_instance_singleton(self):
-        """TraceWriter 应为单例."""
+        """TraceWriter 搴斾负鍗曚緥."""
         from app.trace.writer import TraceWriter
         
         w1 = await TraceWriter.get_instance()
@@ -95,7 +94,7 @@ class TestTraceWriter:
     
     @pytest.mark.asyncio
     async def test_record_span_convenience(self):
-        """record_span 便捷函数应自动初始化 TraceWriter."""
+        """record_span 渚挎嵎鍑芥暟搴旇嚜鍔ㄥ垵濮嬪寲 TraceWriter."""
         from app.trace import record_span
         
         mock_redis = AsyncMock()
@@ -114,10 +113,10 @@ class TestTraceWriter:
 
 
 class TestTraceEventFields:
-    """AgentEvent 新增 trace 字段验证."""
+    """AgentEvent 鏂板 trace 瀛楁楠岃瘉."""
     
     def test_agent_event_has_trace_fields(self):
-        """AgentEvent dataclass 应包含 trace_id/span_name/duration_ms."""
+        """AgentEvent dataclass 搴斿寘鍚?trace_id/span_name/duration_ms."""
         from app.agent.runtime import AgentEvent
         
         event = AgentEvent(
@@ -132,10 +131,10 @@ class TestTraceEventFields:
         assert event.duration_ms == 1234
     
     def test_agent_event_backwards_compatible(self):
-        """旧代码创建 AgentEvent 不应因缺少 trace 字段而失败."""
+        """鏃т唬鐮佸垱寤?AgentEvent 涓嶅簲鍥犵己灏?trace 瀛楁鑰屽け璐?"""
         from app.agent.runtime import AgentEvent
         
-        # 旧写法 (不含 trace 字段)
+        # 鏃у啓娉?(涓嶅惈 trace 瀛楁)
         event = AgentEvent(type="text", content="hello")
         
         assert event.type == "text"
@@ -143,3 +142,4 @@ class TestTraceEventFields:
         assert event.trace_id == ""  # default
         assert event.span_name == ""  # default
         assert event.duration_ms == 0  # default
+

@@ -1,5 +1,5 @@
-/* MiniCC Service Worker —— 离线壳 + 资源缓存 */
-const CACHE = 'minicc-v1'
+/* Chiron Service Worker —�?离线�?+ 资源缓存 */
+const CACHE = 'chiron-v1'
 
 self.addEventListener('install', (event) => {
   self.skipWaiting()
@@ -23,8 +23,7 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.startsWith('/v1/') || url.pathname.startsWith('/events') ||
       url.pathname.startsWith('/ws') || url.pathname.startsWith('/media/s/')) return
 
-  // 导航请求：网络优先，离线回退缓存壳
-  if (request.mode === 'navigate') {
+  // 导航请求：网络优先，离线回退缓存�?  if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request).catch(() => caches.match('/index.html'))
     )

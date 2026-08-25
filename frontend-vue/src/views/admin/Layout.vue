@@ -49,10 +49,8 @@ const route = useRoute()
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
 
-// 折叠态：桌面端用 v-model，移动端用抽屉
-const collapsed = ref(false)
-// 移动端抽屉可见性（< 960px 触发抽屉模式）
-const isMobile = ref(false)
+// 折叠态：桌面端用 v-model，移动端用抽�?const collapsed = ref(false)
+// 移动端抽屉可见性（< 960px 触发抽屉模式�?const isMobile = ref(false)
 const drawerOpen = ref(false)
 
 function checkMobile() {
@@ -75,12 +73,11 @@ const breadcrumbs = computed(() => {
   }))
 })
 
-// 菜单分组：总览监控 / 访问安全 / 系统 / 平台 四组，归并 19 项后台功能
-const menuGroups = computed(() => [
+// 菜单分组：总览监控 / 访问安全 / 系统 / 平台 四组，归�?19 项后台功�?const menuGroups = computed(() => [
   {
     key: 'g-monitor', label: '总览监控',
     children: [
-      { key: '/admin/dashboard', label: '仪表盘', icon: () => h(DashboardOutlined) },
+      { key: '/admin/dashboard', label: '仪表�?, icon: () => h(DashboardOutlined) },
       { key: '/admin/performance', label: '性能监控', icon: () => h(ThunderboltOutlined) },
       { key: '/admin/queue', label: '队列监控', icon: () => h(OrderedListOutlined) },
       { key: '/admin/cache', label: '缓存监控', icon: () => h(DatabaseOutlined) },
@@ -92,7 +89,7 @@ const menuGroups = computed(() => [
       { key: '/admin/api-keys', label: 'API Key 管理', icon: () => h(KeyOutlined) },
       { key: '/admin/roles', label: '角色管理', icon: () => h(IdcardOutlined) },
       { key: '/admin/groups', label: '群组管理', icon: () => h(ClusterOutlined) },
-      { key: '/admin/oauth-providers', label: '三方登录与人机验证', icon: () => h(SafetyOutlined) },
+      { key: '/admin/oauth-providers', label: '三方登录与人机验�?, icon: () => h(SafetyOutlined) },
       { key: '/admin/privacy', label: '隐私模式管控', icon: () => h(SafetyOutlined) },
       { key: '/admin/model-policy', label: '模型策略管控', icon: () => h(ControlOutlined) },
     ],
@@ -103,7 +100,7 @@ const menuGroups = computed(() => [
       { key: '/admin/settings', label: '系统设置', icon: () => h(SettingOutlined) },
       { key: '/admin/tenants', label: '租户管理', icon: () => h(TeamOutlined) },
       { key: '/admin/redis', label: 'Redis 管理', icon: () => h(DatabaseOutlined) },
-      { key: '/admin/database', label: '数据库管理', icon: () => h(DatabaseOutlined) },
+      { key: '/admin/database', label: '数据库管�?, icon: () => h(DatabaseOutlined) },
       { key: '/admin/domains', label: '域名管理', icon: () => h(GlobalOutlined) },
       { key: '/admin/audit', label: '操作审计', icon: () => h(FileSearchOutlined) },
     ],
@@ -118,8 +115,7 @@ const menuGroups = computed(() => [
   },
 ])
 
-// 当前路由命中的菜单项（用于侧边栏 selectedKeys）
-const selectedKeys = computed(() => {
+// 当前路由命中的菜单项（用于侧边栏 selectedKeys�?const selectedKeys = computed(() => {
   const hit = menuGroups.value
     .flatMap(g => g.children)
     .find(m => route.path === m.key || route.path.startsWith(m.key + '/'))
@@ -130,7 +126,7 @@ const userMenuItems = computed<any[]>(() => [
   { key: 'profile', label: '个人资料', icon: () => h(UserOutlined) },
   { key: 'toggle-theme', label: themeStore.isDark ? '浅色模式' : '深色模式', icon: () => h(BulbOutlined) },
   { type: 'divider' as const },
-  { key: 'logout', label: '退出登录', icon: () => h(LogoutOutlined) },
+  { key: 'logout', label: '退出登�?, icon: () => h(LogoutOutlined) },
 ])
 
 function handleMenuClick(info: any) {
@@ -139,8 +135,7 @@ function handleMenuClick(info: any) {
 
 async function handleUserAction(info: any) {
   if (info.key === 'logout') {
-    // S 安全：调 authStore.logout 清后端 httpOnly cookie + 本地 user 态
-    await authStore.logout()
+    // S 安全：调 authStore.logout 清后�?httpOnly cookie + 本地 user �?    await authStore.logout()
     router.push('/login')
   } else if (info.key === 'profile') {
     router.push('/profile')
@@ -154,7 +149,7 @@ const userInitial = computed(() => authStore.user?.name?.charAt(0)?.toUpperCase(
 
 <template>
   <Layout class="admin-root">
-    <!-- 桌面端固定 Sider -->
+    <!-- 桌面端固�?Sider -->
     <LayoutSider
       v-if="!isMobile"
       v-model:collapsed="collapsed"
@@ -166,7 +161,7 @@ const userInitial = computed(() => authStore.user?.name?.charAt(0)?.toUpperCase(
     >
       <div class="sider-brand">
         <span class="sider-logo">MC</span>
-        <span v-if="!collapsed" class="sider-name">MiniCC Admin</span>
+        <span v-if="!collapsed" class="sider-name">Chiron Admin</span>
       </div>
       <div class="sider-menu">
         <Menu mode="inline" :selected-keys="selectedKeys" :inline-collapsed="collapsed" @click="handleMenuClick">
@@ -182,7 +177,7 @@ const userInitial = computed(() => authStore.user?.name?.charAt(0)?.toUpperCase(
       </div>
     </LayoutSider>
 
-    <!-- 移动端抽屉 Sider -->
+    <!-- 移动端抽�?Sider -->
     <LayoutSider
       v-else
       v-model:collapsed="drawerOpen"
@@ -193,7 +188,7 @@ const userInitial = computed(() => authStore.user?.name?.charAt(0)?.toUpperCase(
     >
       <div class="sider-brand">
         <span class="sider-logo">MC</span>
-        <span v-if="drawerOpen" class="sider-name">MiniCC Admin</span>
+        <span v-if="drawerOpen" class="sider-name">Chiron Admin</span>
       </div>
       <div class="sider-menu">
         <Menu mode="inline" :selected-keys="selectedKeys" @click="handleMenuClick">
@@ -216,8 +211,8 @@ const userInitial = computed(() => authStore.user?.name?.charAt(0)?.toUpperCase(
           <Button
             type="text"
             class="header-collapse-btn"
-            title="展开或收起导航"
-            :aria-label="collapsed ? '展开侧边栏' : '收起侧边栏'"
+            title="展开或收起导�?
+            :aria-label="collapsed ? '展开侧边�? : '收起侧边�?"
             @click="isMobile ? (drawerOpen = !drawerOpen) : (collapsed = !collapsed)"
           >
             <component :is="isMobile ? (drawerOpen ? MenuUnfoldOutlined : MenuFoldOutlined) : (collapsed ? MenuUnfoldOutlined : MenuFoldOutlined)" />
@@ -271,7 +266,7 @@ const userInitial = computed(() => authStore.user?.name?.charAt(0)?.toUpperCase(
 }
 .admin-sider :deep(.ant-layout-sider-children) { display: flex; flex-direction: column; }
 
-/* 移动端抽屉：脱离布局，固定定位 */
+/* 移动端抽屉：脱离布局，固定定�?*/
 .admin-sider--drawer {
   position: fixed !important;
   top: 0; left: 0; bottom: 0;
@@ -288,7 +283,7 @@ const userInitial = computed(() => authStore.user?.name?.charAt(0)?.toUpperCase(
   z-index: 40;
 }
 
-/* 品牌区 */
+/* 品牌�?*/
 .sider-brand {
   display: flex;
   align-items: center;
@@ -318,7 +313,7 @@ const userInitial = computed(() => authStore.user?.name?.charAt(0)?.toUpperCase(
   white-space: nowrap;
 }
 
-/* 菜单滚动区 */
+/* 菜单滚动�?*/
 .sider-menu { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 8px 8px 16px; }
 .sider-menu :deep(.ant-menu) {
   background: transparent !important;

@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"encoding/json"
@@ -6,7 +6,7 @@ import (
 	"net/http"
 )
 
-// Unified error message constants — single source of truth for all handlers.
+// Unified error message constants 鈥?single source of truth for all handlers.
 const (
 	ErrAuthRequired  = "authentication required"
 	ErrDBUnavailable = "service temporarily unavailable"

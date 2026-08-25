@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/db"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/db"
 )
 
 // TraceSpan represents a single execution span from Redis Stream.
@@ -56,15 +56,15 @@ func (h *TraceHandler) GetTrace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ── SaaS 安全: 严格的租户隔离校验 ───────────────────────────
-	// 从 JWT claims 提取 tenant_id (强制要求多租户模式)
+	// 鈹€鈹€ SaaS 瀹夊叏: 涓ユ牸鐨勭鎴烽殧绂绘牎楠?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+	// 浠?JWT claims 鎻愬彇 tenant_id (寮哄埗瑕佹眰澶氱鎴锋ā寮?
 	tenantID := claims.TenantID
 	if tenantID == "" {
-		// Fallback: 单租户模式下使用 user_id 作为 tenant_id
+		// Fallback: 鍗曠鎴锋ā寮忎笅浣跨敤 user_id 浣滀负 tenant_id
 		tenantID = claims.UserID
 	}
 
-	// ── 查询该租户下的 trace 数据 ────────────────────────────────
+	// 鈹€鈹€ 鏌ヨ璇ョ鎴蜂笅鐨?trace 鏁版嵁 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 	spans, err := h.queryTraces(traceID, tenantID)
 	if err != nil {
 		slog.Error("trace query failed", "trace_id", traceID, "tenant", tenantID, "error", err)
@@ -73,12 +73,12 @@ func (h *TraceHandler) GetTrace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(spans) == 0 {
-		// 不区分 "不存在" 还是 "无权限", 统一返回 404 (防止信息泄露)
+		// 涓嶅尯鍒?"涓嶅瓨鍦? 杩樻槸 "鏃犳潈闄?, 缁熶竴杩斿洖 404 (闃叉淇℃伅娉勯湶)
 		NotFound(w, "trace not found")
 		return
 	}
 
-	// ── 二次验证: 所有 span 的 tenant_id 必须与 claims 一致 ──────
+	// 鈹€鈹€ 浜屾楠岃瘉: 鎵€鏈?span 鐨?tenant_id 蹇呴』涓?claims 涓€鑷?鈹€鈹€鈹€鈹€鈹€鈹€
 	for _, span := range spans {
 		if span.TenantID != tenantID && span.TenantID != "" {
 			slog.Warn("trace span tenant mismatch (possible cross-tenant leak)",
@@ -129,7 +129,7 @@ func (h *TraceHandler) ListTraces(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Scan latest trace entries from Redis Stream (tenant isolated)
-	streamKey := "minicc:traces:" + tenantID
+	streamKey := "chiron:traces:" + tenantID
 	
 	// XRANGE with ~ operator for approximate scan (performance optimization)
 	rawEntries, err := h.rdb.XRange(r.Context(), streamKey, "+", "-", int64(limit*10)).Result()
@@ -164,7 +164,7 @@ func (h *TraceHandler) ListTraces(w http.ResponseWriter, r *http.Request) {
 	// Convert to list
 	traces := make([]any, 0, len(traceMap))
 	for _, span := range traceMap {
-		// ── 过滤掉 tenant_id 不匹配的 span (防御性校验) ──────────
+		// 鈹€鈹€ 杩囨护鎺?tenant_id 涓嶅尮閰嶇殑 span (闃插尽鎬ф牎楠? 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 		if span.TenantID != "" && span.TenantID != tenantID {
 			slog.Warn("skipping cross-tenant trace entry",
 				"trace_id", span.TraceID,
@@ -192,10 +192,10 @@ func (h *TraceHandler) ListTraces(w http.ResponseWriter, r *http.Request) {
 // queryTraces fetches all spans for a trace_id from Redis Stream.
 func (h *TraceHandler) queryTraces(traceID, tenantID string) ([]TraceSpan, error) {
 	if h.rdb == nil {
-		return nil, nil // Redis unavailable → return empty
+		return nil, nil // Redis unavailable 鈫?return empty
 	}
 
-	streamKey := "minicc:traces:" + tenantID
+	streamKey := "chiron:traces:" + tenantID
 	
 	// XRANGE: get all entries for this tenant's stream
 	queryCtx, queryCancel := context.WithTimeout(context.Background(), 5*time.Second)

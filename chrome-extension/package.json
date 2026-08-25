@@ -1,5 +1,5 @@
-{
-  "name": "minicc-rpa-bridge",
+﻿{
+  "name": "chiron-rpa-bridge",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -18,3 +18,4 @@
     "vitest": "^3.0.0"
   }
 }
+

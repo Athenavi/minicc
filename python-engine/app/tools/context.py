@@ -1,22 +1,17 @@
-"""工具执行上下文 — contextvars 传播当前运行的 agent 上下文。
-
-deepseek-harness 的工具经 exec context（ToolExecution）携带调用方信息；
-minicc 的 registry.execute 只有 (name, params)，工具无法感知 session/网关。
-此处用 contextvars 在 AgentRuntime.run() 内设置，工具通过 get_* 读取，
-在 async 环境中自动沿任务传播（无需改 registry 签名）。
-"""
+﻿"""宸ュ叿鎵ц涓婁笅鏂?鈥?contextvars 浼犳挱褰撳墠杩愯鐨?agent 涓婁笅鏂囥€?
+deepseek-harness 鐨勫伐鍏风粡 exec context锛圱oolExecution锛夋惡甯﹁皟鐢ㄦ柟淇℃伅锛?chiron 鐨?registry.execute 鍙湁 (name, params)锛屽伐鍏锋棤娉曟劅鐭?session/缃戝叧銆?姝ゅ鐢?contextvars 鍦?AgentRuntime.run() 鍐呰缃紝宸ュ叿閫氳繃 get_* 璇诲彇锛?鍦?async 鐜涓嚜鍔ㄦ部浠诲姟浼犳挱锛堟棤闇€鏀?registry 绛惧悕锛夈€?"""
 from __future__ import annotations
 
 import contextvars
 from typing import Any, Optional
 
 _current_context: contextvars.ContextVar[dict[str, Any]] = contextvars.ContextVar(
-    "minicc_tool_context", default={}
+    "chiron_tool_context", default={}
 )
 
 
 def set_tool_context(**kwargs: Any) -> None:
-    """在 agent 循环内设置当前上下文（session_id/user_id/tenant_id/gateway）。"""
+    """鍦?agent 寰幆鍐呰缃綋鍓嶄笂涓嬫枃锛坰ession_id/user_id/tenant_id/gateway锛夈€?""
     merged = dict(_current_context.get())
     merged.update(kwargs)
     _current_context.set(merged)
@@ -39,15 +34,17 @@ def get_tenant_id() -> str:
 
 
 def get_gateway():
-    """当前运行的 GatewayRouter 引用（子 agent 委派需要）。"""
+    """褰撳墠杩愯鐨?GatewayRouter 寮曠敤锛堝瓙 agent 濮旀淳闇€瑕侊級銆?""
     return get_tool_context("gateway", None)
 
 
 def get_all() -> dict[str, Any]:
-    """完整快照当前上下文（子 agent 委派前保存、完成后恢复）。"""
+    """瀹屾暣蹇収褰撳墠涓婁笅鏂囷紙瀛?agent 濮旀淳鍓嶄繚瀛樸€佸畬鎴愬悗鎭㈠锛夈€?""
     return dict(_current_context.get())
 
 
 def restore_context(snapshot: dict[str, Any]) -> None:
-    """恢复上下文快照（子 agent 执行会改写 context，父任务需要还原）。"""
+    """鎭㈠涓婁笅鏂囧揩鐓э紙瀛?agent 鎵ц浼氭敼鍐?context锛岀埗浠诲姟闇€瑕佽繕鍘燂級銆?""
     _current_context.set(snapshot)
+
+

@@ -1,10 +1,5 @@
-"""Agent 运行模式 — 声明式配置表（基于 deepseek-harness agent-presets 语义）
-
-四种模式对应官方 preset：standard(常规) / minimal(极简) / code(PTC) / cordis(创造)。
-模式 = ModeConfig（persona 策略 + 工具集 + 特殊能力 + 上下文/压缩开关），
-新增模式只需在 _MODE_CONFIGS 加一条条目。mode_overrides.json（可被创造
-模式的 mode_edit 工具写入）在加载时叠加覆盖。
-"""
+﻿"""Agent 杩愯妯″紡 鈥?澹版槑寮忛厤缃〃锛堝熀浜?deepseek-harness agent-presets 璇箟锛?
+鍥涚妯″紡瀵瑰簲瀹樻柟 preset锛歴tandard(甯歌) / minimal(鏋佺畝) / code(PTC) / cordis(鍒涢€?銆?妯″紡 = ModeConfig锛坧ersona 绛栫暐 + 宸ュ叿闆?+ 鐗规畩鑳藉姏 + 涓婁笅鏂?鍘嬬缉寮€鍏筹級锛?鏂板妯″紡鍙渶鍦?_MODE_CONFIGS 鍔犱竴鏉℃潯鐩€俶ode_overrides.json锛堝彲琚垱閫?妯″紡鐨?mode_edit 宸ュ叿鍐欏叆锛夊湪鍔犺浇鏃跺彔鍔犺鐩栥€?"""
 from __future__ import annotations
 
 import json
@@ -16,32 +11,25 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# ── 核心工具列表（Token Economy：只暴露这些给 LLM，其余按需激活） ──
+# 鈹€鈹€ 鏍稿績宸ュ叿鍒楄〃锛圱oken Economy锛氬彧鏆撮湶杩欎簺缁?LLM锛屽叾浣欐寜闇€婵€娲伙級 鈹€鈹€
 CORE_TOOL_NAMES = frozenset({
-    "recall",        # 检索记忆（用户偏好/事实）
-    "remember",      # 保存新事实
-    "skill_list",    # 列出可用技能
-    "skill_run",     # 执行技能
-    "web_fetch",     # 获取外部信息
-    "shell_exec",    # 执行命令
-    "execute_python",  # 执行 Python
-    "git_status",    # 查看项目状态
-    "read_file",     # 读取文件
-    "write_file",    # 写入/保存文件
-    "grep_files",    # 搜索文件
-    "subagent",      # 子 agent 委派（多 agent 协作核心）
-})
+    "recall",        # 妫€绱㈣蹇嗭紙鐢ㄦ埛鍋忓ソ/浜嬪疄锛?    "remember",      # 淇濆瓨鏂颁簨瀹?    "skill_list",    # 鍒楀嚭鍙敤鎶€鑳?    "skill_run",     # 鎵ц鎶€鑳?    "web_fetch",     # 鑾峰彇澶栭儴淇℃伅
+    "shell_exec",    # 鎵ц鍛戒护
+    "execute_python",  # 鎵ц Python
+    "git_status",    # 鏌ョ湅椤圭洰鐘舵€?    "read_file",     # 璇诲彇鏂囦欢
+    "write_file",    # 鍐欏叆/淇濆瓨鏂囦欢
+    "grep_files",    # 鎼滅储鏂囦欢
+    "subagent",      # 瀛?agent 濮旀淳锛堝 agent 鍗忎綔鏍稿績锛?})
 
-# 极简模式：仅信息读取 + 编辑 + shell（deepseek minimal 的 persistent-bash + str_replace_editor 语义）
-MINIMAL_TOOL_NAMES = frozenset({"read_file", "edit_file", "shell_exec"})
+# 鏋佺畝妯″紡锛氫粎淇℃伅璇诲彇 + 缂栬緫 + shell锛坉eepseek minimal 鐨?persistent-bash + str_replace_editor 璇箟锛?MINIMAL_TOOL_NAMES = frozenset({"read_file", "edit_file", "shell_exec"})
 
-# 模式额外工具
+# 妯″紡棰濆宸ュ叿
 PTC_EXTRA_TOOLS = frozenset({"run_code"})
 CREATIVE_EXTRA_TOOLS = frozenset({"mode_list", "mode_edit"})
 
-# 创造模式 persona（deepseek cordis：可读取并定制运行平台的模式与技能定义）
+# 鍒涢€犳ā寮?persona锛坉eepseek cordis锛氬彲璇诲彇骞跺畾鍒惰繍琛屽钩鍙扮殑妯″紡涓庢妧鑳藉畾涔夛級
 CREATIVE_PERSONA = (
-    "You are a coding agent on the MiniCC platform. "
+    "You are a coding agent on the Chiron platform. "
     "You can read and modify the agent mode definitions this platform runs on: "
     "each mode is a declared configuration (persona, tool set, context policy). "
     "Use mode_list to inspect the current modes and mode_edit to adjust them "
@@ -60,14 +48,11 @@ class AgentMode(str, Enum):
 @dataclass(frozen=True)
 class ModeConfig:
     mode: AgentMode
-    persona: Optional[str] = None       # None = 用现有默认 persona；str = 固定完整 persona
-    include_context: bool = True        # 是否注入记忆/skills/RAG/git 上下文段
-    include_tools: frozenset = frozenset(CORE_TOOL_NAMES)  # 模式可见工具
-    extra_tools: frozenset = frozenset()  # 模式额外注册的工具
-    enable_compaction: bool = True      # 是否启用上下文压缩
-    compaction: Optional[dict] = None   # SaaS：截断策略配置（strategy/max_messages/max_context_tokens/
-                                        #        threshold_ratio/snipe_ratio/tool_result_max_chars 等），
-                                        #        租户/模式可手动确认；None = 默认策略
+    persona: Optional[str] = None       # None = 鐢ㄧ幇鏈夐粯璁?persona锛泂tr = 鍥哄畾瀹屾暣 persona
+    include_context: bool = True        # 鏄惁娉ㄥ叆璁板繂/skills/RAG/git 涓婁笅鏂囨
+    include_tools: frozenset = frozenset(CORE_TOOL_NAMES)  # 妯″紡鍙宸ュ叿
+    extra_tools: frozenset = frozenset()  # 妯″紡棰濆娉ㄥ唽鐨勫伐鍏?    enable_compaction: bool = True      # 鏄惁鍚敤涓婁笅鏂囧帇缂?    compaction: Optional[dict] = None   # SaaS锛氭埅鏂瓥鐣ラ厤缃紙strategy/max_messages/max_context_tokens/
+                                        #        threshold_ratio/snipe_ratio/tool_result_max_chars 绛夛級锛?                                        #        绉熸埛/妯″紡鍙墜鍔ㄧ‘璁わ紱None = 榛樿绛栫暐
 
 
 _BASE_MODES: dict[AgentMode, ModeConfig] = {
@@ -105,7 +90,7 @@ def _load_overrides() -> dict:
 
 
 def _apply_overrides(cfg: ModeConfig, overrides: dict) -> ModeConfig:
-    """按 overrides 字段合并（persona/include_context/include_tools/extra_tools/enable_compaction/compaction）。"""
+    """鎸?overrides 瀛楁鍚堝苟锛坧ersona/include_context/include_tools/extra_tools/enable_compaction/compaction锛夈€?""
     o = overrides.get(cfg.mode.value)
     if not isinstance(o, dict) or not o:
         return cfg
@@ -121,7 +106,7 @@ def _apply_overrides(cfg: ModeConfig, overrides: dict) -> ModeConfig:
 
 
 def get_mode_config(mode: Optional[str]) -> ModeConfig:
-    """未知/空模式回退 NORMAL；叠加 mode_overrides.json。"""
+    """鏈煡/绌烘ā寮忓洖閫€ NORMAL锛涘彔鍔?mode_overrides.json銆?""
     try:
         base = _BASE_MODES[AgentMode(mode or "normal")]
     except (ValueError, KeyError):
@@ -131,3 +116,4 @@ def get_mode_config(mode: Optional[str]) -> ModeConfig:
     except Exception as e:
         logger.warning("mode overrides load failed: %s", e)
         return base
+

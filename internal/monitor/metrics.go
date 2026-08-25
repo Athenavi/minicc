@@ -1,4 +1,4 @@
-package monitor
+﻿package monitor
 
 import (
 	"log/slog"
@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// ── Duration Histogram ──
+// 鈹€鈹€ Duration Histogram 鈹€鈹€
 
 // Histogram tracks duration percentiles (p50/p95/p99) for operations.
 // Uses a fixed-size ring buffer to avoid slice reallocations on every Record call.
@@ -123,8 +123,7 @@ func IncToolError() {
 var extraStatsMu sync.RWMutex
 var extraStatsFuncs []func() map[string]interface{}
 
-// RegisterExtraStats 允许外部包注册额外的统计信息提供者（如 DB 连接池、缓存等）。
-func RegisterExtraStats(fn func() map[string]interface{}) {
+// RegisterExtraStats 鍏佽澶栭儴鍖呮敞鍐岄澶栫殑缁熻淇℃伅鎻愪緵鑰咃紙濡?DB 杩炴帴姹犮€佺紦瀛樼瓑锛夈€?func RegisterExtraStats(fn func() map[string]interface{}) {
 	extraStatsMu.Lock()
 	defer extraStatsMu.Unlock()
 	extraStatsFuncs = append(extraStatsFuncs, fn)
@@ -158,7 +157,7 @@ func Init() {
 	slog.Info("monitor initialized", "started_at", Global.StartTime.Format(time.RFC3339))
 }
 
-// ── Per-session cost tracking (in-memory) ──
+// 鈹€鈹€ Per-session cost tracking (in-memory) 鈹€鈹€
 
 var (
 	costMu          sync.Mutex

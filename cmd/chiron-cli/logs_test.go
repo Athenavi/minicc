@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"os"
@@ -7,8 +7,7 @@ import (
 	"testing"
 )
 
-// readLastLines 的回归测试：跨块断裂、长行、空行、行数边界
-
+// readLastLines 鐨勫洖褰掓祴璇曪細璺ㄥ潡鏂銆侀暱琛屻€佺┖琛屻€佽鏁拌竟鐣?
 func writeTempLog(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "test.log")
@@ -65,8 +64,7 @@ func TestReadLastLinesMoreThanNKeepsTailOrder(t *testing.T) {
 }
 
 func TestReadLastLinesLongLineOverChunkBoundary(t *testing.T) {
-	// 单行 > 4096B（跨块）+ 后续行：不得断行、不得错序
-	line := strings.Repeat("x", 5000)
+	// 鍗曡 > 4096B锛堣法鍧楋級+ 鍚庣画琛岋細涓嶅緱鏂銆佷笉寰楅敊搴?	line := strings.Repeat("x", 5000)
 	content := line + "\n" + "tail-line\n"
 	lines := readLastFromFile(t, content, 3)
 	if len(lines) != 2 {
@@ -81,7 +79,7 @@ func TestReadLastLinesLongLineOverChunkBoundary(t *testing.T) {
 }
 
 func TestReadLastLinesExactChunkBoundary(t *testing.T) {
-	// 行恰好跨 4096 边界：4095B 行 + 1B 填充后再换行
+	// 琛屾伆濂借法 4096 杈圭晫锛?095B 琛?+ 1B 濉厖鍚庡啀鎹㈣
 	line := strings.Repeat("y", 4095)
 	content := line + "z\nafter\n"
 	lines := readLastFromFile(t, content, 2)

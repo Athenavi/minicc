@@ -1,4 +1,4 @@
-package auth
+﻿package auth
 
 import (
 	"errors"
@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// ── AES-GCM 加解密 ──────────────────────────────────────
+// 鈹€鈹€ AES-GCM 鍔犺В瀵?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func testKey(t *testing.T) []byte {
 	t.Helper()
@@ -74,7 +74,7 @@ func TestDecryptAESGCM_Tampered(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 翻转末字符 → base64 解码后的密文/tag 被篡改
+	// 缈昏浆鏈瓧绗?鈫?base64 瑙ｇ爜鍚庣殑瀵嗘枃/tag 琚鏀?
 	tampered := encoded[:len(encoded)-2] + "AA"
 	if _, err := DecryptAESGCM(key, tampered); err == nil {
 		t.Fatal("expected tampered ciphertext to fail")
@@ -105,7 +105,7 @@ func TestLoadOIDCEncryptionKey(t *testing.T) {
 	}
 }
 
-// ── state 签发/校验 ─────────────────────────────────────
+// 鈹€鈹€ state 绛惧彂/鏍￠獙 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestStateCodec_IssueVerifyRoundTrip(t *testing.T) {
 	codec := NewStateCodec([]byte("test-key"), time.Minute)
@@ -133,7 +133,7 @@ func TestStateCodec_Expired(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 时间推进到 TTL 之后 → 过期拒绝
+	// 鏃堕棿鎺ㄨ繘鍒?TTL 涔嬪悗 鈫?杩囨湡鎷掔粷
 	codec.now = func() time.Time { return base.Add(2 * time.Minute) }
 	if _, err := codec.Verify(state); !errors.Is(err, ErrStateExpired) {
 		t.Fatalf("expected ErrStateExpired, got %v", err)
@@ -147,7 +147,7 @@ func TestStateCodec_TamperedRejected(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 篡改 payload 段（伪造 provider）
+	// 绡℃敼 payload 娈碉紙浼€?provider锛?
 	body, sig, found := cutState(state)
 	if !found {
 		t.Fatal("state missing separator")
@@ -157,7 +157,7 @@ func TestStateCodec_TamperedRejected(t *testing.T) {
 		t.Fatalf("expected ErrStateInvalid for tampered payload, got %v", err)
 	}
 
-	// 篡改签名段
+	// 绡℃敼绛惧悕娈?
 	tamperedSig := body + "." + sig[:len(sig)-2] + "AA"
 	if _, err := codec.Verify(tamperedSig); !errors.Is(err, ErrStateInvalid) {
 		t.Fatalf("expected ErrStateInvalid for tampered signature, got %v", err)

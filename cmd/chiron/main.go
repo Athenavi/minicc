@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"context"
@@ -10,20 +10,20 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/athenavi/minicc/internal/api"
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/broadcast"
-	"github.com/athenavi/minicc/config"
-	"github.com/athenavi/minicc/internal/db"
-	"github.com/athenavi/minicc/internal/engine"
-	"github.com/athenavi/minicc/internal/monitor"
-	"github.com/athenavi/minicc/internal/session"
-	"github.com/athenavi/minicc/internal/settings"
-	"github.com/athenavi/minicc/internal/storage"
+	"github.com/athenavi/chiron/internal/api"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/broadcast"
+	"github.com/athenavi/chiron/config"
+	"github.com/athenavi/chiron/internal/db"
+	"github.com/athenavi/chiron/internal/engine"
+	"github.com/athenavi/chiron/internal/monitor"
+	"github.com/athenavi/chiron/internal/session"
+	"github.com/athenavi/chiron/internal/settings"
+	"github.com/athenavi/chiron/internal/storage"
 )
 
 func main() {
-	// 宽松加载：APP_SECRET 缺失/弱值时不再退出（安装模式需要先配置主密钥）。
+	// 瀹芥澗鍔犺浇锛欰PP_SECRET 缂哄け/寮卞€兼椂涓嶅啀閫€鍑猴紙瀹夎妯″紡闇€瑕佸厛閰嶇疆涓诲瘑閽ワ級銆?
 	cfg := config.LoadAllowUnconfigured()
 
 	// Logger
@@ -31,7 +31,7 @@ func main() {
 		Level: parseLogLevel(cfg.LogLevel),
 	})))
 
-	slog.Info("starting minicc gateway", "version", "3.0.0", "port", cfg.Port)
+	slog.Info("starting chiron gateway", "version", "0.1.260825.01", "port", cfg.Port)
 
 	// Use defer+os.Exit pattern so deferred cleanups always run
 	exitCode := 0
@@ -40,20 +40,20 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	// 安装模式（setup mode）：APP_SECRET 未配置（无法派生 JWT / 加密密钥，必须先配置主密钥）
-	// 或 PostgreSQL 不可达（需在安装向导中配置 DSN 后重启生效）时进入；
-	// 该模式下仅提供安装向导端点，业务路由返回 503。
+	// 瀹夎妯″紡锛坰etup mode锛夛細APP_SECRET 鏈厤缃紙鏃犳硶娲剧敓 JWT / 鍔犲瘑瀵嗛挜锛屽繀椤诲厛閰嶇疆涓诲瘑閽ワ級
+	// 鎴?PostgreSQL 涓嶅彲杈撅紙闇€鍦ㄥ畨瑁呭悜瀵间腑閰嶇疆 DSN 鍚庨噸鍚敓鏁堬級鏃惰繘鍏ワ紱
+	// 璇ユā寮忎笅浠呮彁渚涘畨瑁呭悜瀵肩鐐癸紝涓氬姟璺敱杩斿洖 503銆?
 	setupMode := !cfg.ValidateAppSecret()
 
-	// ── install.lock 重启生效：安装完成后，用向导加密保存的 DSN/Redis 配置覆盖引导连接值 ──
+	// 鈹€鈹€ install.lock 閲嶅惎鐢熸晥锛氬畨瑁呭畬鎴愬悗锛岀敤鍚戝鍔犲瘑淇濆瓨鐨?DSN/Redis 閰嶇疆瑕嗙洊寮曞杩炴帴鍊?鈹€鈹€
 	if !setupMode {
 		api.ApplyInstallLockConfig(cfg)
 	}
 
-	// ── PostgreSQL ──
+	// 鈹€鈹€ PostgreSQL 鈹€鈹€
 	pgConnected := false
 	if !setupMode && len(cfg.PostgresReadDSNs) > 0 {
-		// Read replicas configured — use DatabaseRouter for read/write splitting
+		// Read replicas configured 鈥?use DatabaseRouter for read/write splitting
 		poolCfg := db.PoolConfig{
 			MaxConns:          cfg.PostgresMaxConn,
 			MinConns:          cfg.PostgresMinConn,
@@ -72,7 +72,7 @@ func main() {
 			if err := db.RunAtlasMigrations(ctx, router.Write(), "migrations"); err != nil {
 				slog.Warn("migrations failed", "error", err)
 			}
-			// 幂等 seed 默认租户（不依赖迁移状态；缺失时注册会违反外键 23503）
+			// 骞傜瓑 seed 榛樿绉熸埛锛堜笉渚濊禆杩佺Щ鐘舵€侊紱缂哄け鏃舵敞鍐屼細杩濆弽澶栭敭 23503锛?
 			if err := db.EnsureDefaultTenant(ctx, router.Write()); err != nil {
 				slog.Warn("ensure default tenant failed", "error", err)
 			}
@@ -81,17 +81,17 @@ func main() {
 	}
 
 	if !setupMode && !pgConnected {
-		// No read replicas or router failed — fall back to single pool
+		// No read replicas or router failed 鈥?fall back to single pool
 		if err := db.ConnectPostgres(ctx, cfg.PostgresDSN, cfg.PostgresMaxConn, cfg.PostgresMinConn); err != nil {
-			// 无数据库降级：进入安装模式，由安装向导配置 DSN（保存后重启生效）
-			slog.Warn("failed to connect to PostgreSQL — entering setup mode; configure database via install wizard", "error", err)
+			// 鏃犳暟鎹簱闄嶇骇锛氳繘鍏ュ畨瑁呮ā寮忥紝鐢卞畨瑁呭悜瀵奸厤缃?DSN锛堜繚瀛樺悗閲嶅惎鐢熸晥锛?
+			slog.Warn("failed to connect to PostgreSQL 鈥?entering setup mode; configure database via install wizard", "error", err)
 		} else {
 			pgConnected = true
 			defer db.ClosePostgres()
 			if err := db.RunAtlasMigrations(ctx, db.Pool, "migrations"); err != nil {
 				slog.Warn("migrations failed", "error", err)
 			}
-			// 幂等 seed 默认租户（不依赖迁移状态；缺失时注册会违反外键 23503）
+			// 骞傜瓑 seed 榛樿绉熸埛锛堜笉渚濊禆杩佺Щ鐘舵€侊紱缂哄け鏃舵敞鍐屼細杩濆弽澶栭敭 23503锛?
 			if err := db.EnsureDefaultTenant(ctx, db.Pool); err != nil {
 				slog.Warn("ensure default tenant failed", "error", err)
 			}
@@ -100,25 +100,25 @@ func main() {
 
 	if !pgConnected {
 		setupMode = true
-		slog.Warn("SETUP MODE: PostgreSQL unavailable — only install wizard will be served")
+		slog.Warn("SETUP MODE: PostgreSQL unavailable 鈥?only install wizard will be served")
 	}
 
-	// 幂等播种市场目录示例（技能/Agent/MCP；目录非空则跳过）
+	// 骞傜瓑鎾甯傚満鐩綍绀轰緥锛堟妧鑳?Agent/MCP锛涚洰褰曢潪绌哄垯璺宠繃锛?
 	if pgConnected {
 		if err := db.SeedMarketCatalog(ctx, db.Pool); err != nil {
 			slog.Warn("seed market catalog failed", "error", err)
 		}
 	}
 
-	// 引导：连上数据库后，读取后台已持久化的基础设施/业务配置覆盖 cfg。
-	// 使后续 Redis/存储/路由初始化使用 DB 值——支持仅凭 APP_SECRET 切换 Redis 集群等，重启生效。
+	// 寮曞锛氳繛涓婃暟鎹簱鍚庯紝璇诲彇鍚庡彴宸叉寔涔呭寲鐨勫熀纭€璁炬柦/涓氬姟閰嶇疆瑕嗙洊 cfg銆?
+	// 浣垮悗缁?Redis/瀛樺偍/璺敱鍒濆鍖栦娇鐢?DB 鍊尖€斺€旀敮鎸佷粎鍑?APP_SECRET 鍒囨崲 Redis 闆嗙兢绛夛紝閲嶅惎鐢熸晥銆?
 	if pgConnected {
 		applyDBSettingsAfterConnect(cfg)
 	}
 
-	// ── Redis ──
-	// 产品决策(2026-08-22)「Redis 必需、无降级」已修订：Redis 不可用时降级运行
-	// （内存限流、无会话热缓存/广播/审计流）；数据库缺失时安装模式完全不需要 Redis。
+	// 鈹€鈹€ Redis 鈹€鈹€
+	// 浜у搧鍐崇瓥(2026-08-22)銆孯edis 蹇呴渶銆佹棤闄嶇骇銆嶅凡淇锛歊edis 涓嶅彲鐢ㄦ椂闄嶇骇杩愯
+	// 锛堝唴瀛橀檺娴併€佹棤浼氳瘽鐑紦瀛?骞挎挱/瀹¤娴侊級锛涙暟鎹簱缂哄け鏃跺畨瑁呮ā寮忓畬鍏ㄤ笉闇€瑕?Redis銆?
 	var atomicRedis *db.AtomicRedis
 	redisCfg := db.RedisConfig{
 		Mode:          cfg.RedisMode,
@@ -132,7 +132,7 @@ func main() {
 	}
 	redisClient, redisErr := db.NewRedisClient(redisCfg)
 	if redisErr != nil {
-		slog.Warn("Redis unavailable — degraded mode (no distributed rate limit / session cache / broadcast / audit stream)", "error", redisErr)
+		slog.Warn("Redis unavailable 鈥?degraded mode (no distributed rate limit / session cache / broadcast / audit stream)", "error", redisErr)
 	} else {
 		atomicRedis = db.NewAtomicRedis(redisClient)
 		db.Redis = atomicRedis
@@ -140,7 +140,7 @@ func main() {
 		slog.Info("redis initialized", "mode", cfg.RedisMode)
 	}
 
-	// ── Audit Consumer: Redis Stream audit:events → PG audit_logs 批量落库 ──
+	// 鈹€鈹€ Audit Consumer: Redis Stream audit:events 鈫?PG audit_logs 鎵归噺钀藉簱 鈹€鈹€
 	if db.Redis != nil {
 		auditSink := db.NewDefaultAuditSink()
 		defer auditSink.Close()
@@ -150,14 +150,14 @@ func main() {
 		slog.Info("audit consumer started", "stream", "audit:events")
 	}
 
-	// ── Monitor ──
+	// 鈹€鈹€ Monitor 鈹€鈹€
 	monitor.Init()
 
-	// ── Auth: Initialize JWT authenticator ──
-	// 安装模式下 APP_SECRET 未配置、JWT 密钥不可派生，跳过认证初始化；
-	// 安装完成（Step 3 要求 APP_SECRET 有效）重启后按正常模式初始化。
+	// 鈹€鈹€ Auth: Initialize JWT authenticator 鈹€鈹€
+	// 瀹夎妯″紡涓?APP_SECRET 鏈厤缃€丣WT 瀵嗛挜涓嶅彲娲剧敓锛岃烦杩囪璇佸垵濮嬪寲锛?
+	// 瀹夎瀹屾垚锛圫tep 3 瑕佹眰 APP_SECRET 鏈夋晥锛夐噸鍚悗鎸夋甯告ā寮忓垵濮嬪寲銆?
 	if setupMode {
-		slog.Warn("auth skipped: setup mode (APP_SECRET 未配置，安装完成后重启生效)")
+		slog.Warn("auth skipped: setup mode (APP_SECRET 鏈厤缃紝瀹夎瀹屾垚鍚庨噸鍚敓鏁?")
 	} else {
 		auth.InitJWTAuth()
 		if !config.ValidateJWTSecret(cfg.JWTSecret) {
@@ -168,10 +168,10 @@ func main() {
 		slog.Info("auth initialized", "jwt_secret_set", cfg.JWTSecret != "")
 	}
 
-	// ── Rate Limiter: initialized per-router in GatewayRouter ──
+	// 鈹€鈹€ Rate Limiter: initialized per-router in GatewayRouter 鈹€鈹€
 	slog.Info("rate limiter configured", "default_rpm", cfg.RateLimitRPM)
 
-	// ── Event Hub ──
+	// 鈹€鈹€ Event Hub 鈹€鈹€
 	var eventHub *broadcast.Hub
 	if !setupMode {
 		if db.Redis != nil {
@@ -182,8 +182,8 @@ func main() {
 		defer eventHub.Close()
 	}
 
-	// ── Python AI Engine Client ──
-	// 安装模式跳过：INTERNAL_TOKEN 派生自 APP_SECRET，未配置时无法建立可信通道。
+	// 鈹€鈹€ Python AI Engine Client 鈹€鈹€
+	// 瀹夎妯″紡璺宠繃锛欼NTERNAL_TOKEN 娲剧敓鑷?APP_SECRET锛屾湭閰嶇疆鏃舵棤娉曞缓绔嬪彲淇￠€氶亾銆?
 	var pythonClient *engine.PythonClient
 	if !setupMode && cfg.PythonEngineAddress != "" {
 		// Support comma-separated addresses for multi-instance deployment
@@ -201,7 +201,7 @@ func main() {
 			pythonClient = engine.NewPythonClient(addrs...)
 			pythonClient.SetInternalToken(cfg.InternalToken)
 			if cfg.InternalToken == "" {
-				slog.Error("INTERNAL_TOKEN not set but python engine is configured — refusing to start (set INTERNAL_TOKEN env var or remove PYTHON_ENGINE_ADDRESS)")
+				slog.Error("INTERNAL_TOKEN not set but python engine is configured 鈥?refusing to start (set INTERNAL_TOKEN env var or remove PYTHON_ENGINE_ADDRESS)")
 				exitCode = 1
 				return
 			}
@@ -209,25 +209,25 @@ func main() {
 			slog.Info("python engine configured", "addresses", addrs)
 		}
 	} else if !setupMode {
-		slog.Warn("no python engine address configured — agent/graph/skill will be unavailable")
+		slog.Warn("no python engine address configured 鈥?agent/graph/skill will be unavailable")
 	}
 
-	// ── RPA Browser Hub ──
+	// 鈹€鈹€ RPA Browser Hub 鈹€鈹€
 	rpaHub := api.NewRPAHub()
 
-	// ── Storage / Session Manager / HTTP（安装模式：跳过存储与会话，仅提供安装向导）──
+	// 鈹€鈹€ Storage / Session Manager / HTTP锛堝畨瑁呮ā寮忥細璺宠繃瀛樺偍涓庝細璇濓紝浠呮彁渚涘畨瑁呭悜瀵硷級鈹€鈹€
 	var sessionMgr *session.Manager
 	var router http.Handler
 	if setupMode {
-		// 安装令牌（Jenkins 模式）：APP_SECRET 未配置时进程内随机生成并打印到日志，
-		// 部署者凭令牌访问 /install?token=xxx；安装完成后端点关闭。
+		// 瀹夎浠ょ墝锛圝enkins 妯″紡锛夛細APP_SECRET 鏈厤缃椂杩涚▼鍐呴殢鏈虹敓鎴愬苟鎵撳嵃鍒版棩蹇楋紝
+		// 閮ㄧ讲鑰呭嚟浠ょ墝璁块棶 /install?token=xxx锛涘畨瑁呭畬鎴愬悗绔偣鍏抽棴銆?
 		token := api.InitInstallToken(cfg)
-		slog.Warn("SETUP MODE: 系统未配置数据库/主密钥，仅提供安装向导（其余路由返回 503）",
+		slog.Warn("SETUP MODE: 绯荤粺鏈厤缃暟鎹簱/涓诲瘑閽ワ紝浠呮彁渚涘畨瑁呭悜瀵硷紙鍏朵綑璺敱杩斿洖 503锛?,
 			"install_url", "/install?token="+token)
 		sessionMgr = session.NewManager(nil, nil)
 		router = api.NewSetupRouter(cfg)
 	} else {
-		// ── Storage ──
+		// 鈹€鈹€ Storage 鈹€鈹€
 		fileStore, err := storage.NewStore(cfg.StorageBackend, cfg.StorageRoot, cfg.S3Endpoint, cfg.S3Bucket, cfg.S3AccessKey, cfg.S3SecretKey, cfg.S3UseSSL)
 		if err != nil {
 			slog.Error("file store init", "error", err)
@@ -237,17 +237,17 @@ func main() {
 		atomicStore := storage.NewAtomicStore(fileStore)
 		slog.Info("storage initialized", "backend", cfg.StorageBackend)
 
-		// ── Session Manager ──
+		// 鈹€鈹€ Session Manager 鈹€鈹€
 		sessionMgr = session.NewManager(db.Pool, db.Redis)
 		slog.Info("session manager initialized")
 
-		// ── Background Maintenance ──
+		// 鈹€鈹€ Background Maintenance 鈹€鈹€
 		api.StartBlacklistCleaner(ctx)
 
 		router = api.NewGatewayRouter(cfg, pythonClient, eventHub, sessionMgr, atomicStore, atomicRedis, rpaHub)
 	}
 
-	// ── HTTP Server ──
+	// 鈹€鈹€ HTTP Server 鈹€鈹€
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,
 		Handler:      router,
@@ -282,11 +282,11 @@ func main() {
 	slog.Info("server stopped")
 }
 
-// applyDBSettingsAfterConnect 在完成首次数据库连接后，读取 system_settings 中
-// 已持久化的基础设施/业务配置并覆盖 cfg，使后续 Redis/存储/路由初始化使用 DB 值。
-// 依赖：db.Pool 已就绪、cfg.AppSecret 已校验。
-// 作用范围：仅影响进程「后续初始化」使用的配置（Redis 集群、CORS、存储、S3、
-// Agent、限流、支付）；DB 连接本身使用 env/默认引导串，切换数据库集群需重启。
+// applyDBSettingsAfterConnect 鍦ㄥ畬鎴愰娆℃暟鎹簱杩炴帴鍚庯紝璇诲彇 system_settings 涓?
+// 宸叉寔涔呭寲鐨勫熀纭€璁炬柦/涓氬姟閰嶇疆骞惰鐩?cfg锛屼娇鍚庣画 Redis/瀛樺偍/璺敱鍒濆鍖栦娇鐢?DB 鍊笺€?
+// 渚濊禆锛歞b.Pool 宸插氨缁€乧fg.AppSecret 宸叉牎楠屻€?
+// 浣滅敤鑼冨洿锛氫粎褰卞搷杩涚▼銆屽悗缁垵濮嬪寲銆嶄娇鐢ㄧ殑閰嶇疆锛圧edis 闆嗙兢銆丆ORS銆佸瓨鍌ㄣ€丼3銆?
+// Agent銆侀檺娴併€佹敮浠橈級锛汥B 杩炴帴鏈韩浣跨敤 env/榛樿寮曞涓诧紝鍒囨崲鏁版嵁搴撻泦缇ら渶閲嶅惎銆?
 func applyDBSettingsAfterConnect(cfg *config.Config) {
 	if db.Pool == nil {
 		return
@@ -391,3 +391,4 @@ func parseLogLevel(level string) slog.Level {
 		return slog.LevelInfo
 	}
 }
+

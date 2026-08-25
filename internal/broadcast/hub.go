@@ -1,4 +1,4 @@
-package broadcast
+﻿package broadcast
 
 import (
 	"context"
@@ -7,14 +7,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/athenavi/minicc/internal/db"
+	"github.com/athenavi/chiron/internal/db"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
 
-// slowSubSem 限制慢订阅者重试 goroutine 数量（P1 修复：事件风暴下防止
-// goroutine 无界堆积导致 DoS）。超出上限时直接丢弃事件（SSE 可重连补发）。
-var slowSubSem = make(chan struct{}, 512)
+// slowSubSem 闄愬埗鎱㈣闃呰€呴噸璇?goroutine 鏁伴噺锛圥1 淇锛氫簨浠堕鏆翠笅闃叉
+// goroutine 鏃犵晫鍫嗙Н瀵艰嚧 DoS锛夈€傝秴鍑轰笂闄愭椂鐩存帴涓㈠純浜嬩欢锛圫SE 鍙噸杩炶ˉ鍙戯級銆?var slowSubSem = make(chan struct{}, 512)
 
 // Event is a generic event for SSE broadcasting.
 type Event struct {
@@ -45,7 +44,7 @@ func NewHub(rdb db.RedisClient) *Hub {
 	h := &Hub{
 		subs:       make(map[string]chan Event),
 		rdb:        rdb,
-		channel:    "minicc:events",
+		channel:    "chiron:events",
 		localOnly:  rdb == nil,
 		instanceID: uuid.New().String(),
 	}
@@ -97,7 +96,7 @@ func (h *Hub) Publish(event Event) {
 				go func(c chan Event) {
 					defer func() {
 						if r := recover(); r != nil {
-							// channel 已关闭，丢弃事件即可
+							// channel 宸插叧闂紝涓㈠純浜嬩欢鍗冲彲
 						}
 						<-slowSubSem
 					}()

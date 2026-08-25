@@ -1,15 +1,15 @@
-package enterprise
+﻿package enterprise
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	"github.com/athenavi/minicc/internal/db"
+	"github.com/athenavi/chiron/internal/db"
 	"github.com/redis/go-redis/v9"
 )
 
-// ── unionPerms：并集去重 ─────────────────────────────────────────
+// 鈹€鈹€ unionPerms锛氬苟闆嗗幓閲?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestUnionPerms(t *testing.T) {
 	tests := []struct {
@@ -44,15 +44,14 @@ func TestUnionPerms(t *testing.T) {
 	}
 }
 
-// ── encodePerms / decodePerms：nil vs 空切片序列化语义 ───────────
+// 鈹€鈹€ encodePerms / decodePerms锛歯il vs 绌哄垏鐗囧簭鍒楀寲璇箟 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestEncodeDecodePerms(t *testing.T) {
 	tests := []struct {
 		name      string
 		perms     []string
 		wantRaw   string
-		wantEmpty bool // 解码后应为非 nil 空切片
-	}{
+		wantEmpty bool // 瑙ｇ爜鍚庡簲涓洪潪 nil 绌哄垏鐗?	}{
 		{"empty perms encodes to JSON empty array", []string{}, "[]", true},
 		{"nil normalized to JSON empty array", nil, "[]", true},
 		{"non-empty perms roundtrip", []string{"chat:read", "ent:manage"},
@@ -73,8 +72,7 @@ func TestEncodeDecodePerms(t *testing.T) {
 			if !ok {
 				t.Fatalf("decodePerms(%q) ok = false, want true", raw)
 			}
-			// 关键断言：空切片必须解码为非 nil（"明确无权限"语义不可丢失）
-			if decoded == nil {
+			// 鍏抽敭鏂█锛氱┖鍒囩墖蹇呴』瑙ｇ爜涓洪潪 nil锛?鏄庣‘鏃犳潈闄?璇箟涓嶅彲涓㈠け锛?			if decoded == nil {
 				t.Fatalf("decodePerms(%q) returned nil, want non-nil empty slice", raw)
 			}
 			if len(decoded) != len(tt.perms) {
@@ -92,7 +90,7 @@ func TestDecodePerms_CorruptedOrNilPayload(t *testing.T) {
 	}
 }
 
-// ── 缓存键与 TTL 约定 ──────────────────────────────────────────
+// 鈹€鈹€ 缂撳瓨閿笌 TTL 绾﹀畾 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestCacheKeyAndTTL(t *testing.T) {
 	if got := permsCacheKeyPrefix + "user-1"; got != "ent:rbac:perms:user-1" {
@@ -103,11 +101,10 @@ func TestCacheKeyAndTTL(t *testing.T) {
 	}
 }
 
-// ── fake RedisClient：缓存命中 / 未命中路径 ──────────────────────
+// 鈹€鈹€ fake RedisClient锛氱紦瀛樺懡涓?/ 鏈懡涓矾寰?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// fakeRedis 仅实现测试所需的 Get/Set/Del，其余方法通过嵌入接口
-// 保持 nil（测试路径不会触达）。
-type fakeRedis struct {
+// fakeRedis 浠呭疄鐜版祴璇曟墍闇€鐨?Get/Set/Del锛屽叾浣欐柟娉曢€氳繃宓屽叆鎺ュ彛
+// 淇濇寔 nil锛堟祴璇曡矾寰勪笉浼氳Е杈撅級銆?type fakeRedis struct {
 	db.RedisClient
 	store   map[string]string
 	gets    int
@@ -160,17 +157,15 @@ func toIface(keys []string) []interface{} {
 	return out
 }
 
-// swapRedis 临时替换全局 db.Redis 并在测试结束时还原。
-func swapRedis(t *testing.T, client db.RedisClient) {
+// swapRedis 涓存椂鏇挎崲鍏ㄥ眬 db.Redis 骞跺湪娴嬭瘯缁撴潫鏃惰繕鍘熴€?func swapRedis(t *testing.T, client db.RedisClient) {
 	t.Helper()
 	old := db.Redis
 	db.Redis = client
 	t.Cleanup(func() { db.Redis = old })
 }
 
-// TestLoadEffectivePerms_CacheHit 缓存命中时直接返回缓存值，
-// 且不触发任何 DB 回写（无 PG 连接时若回源必然报错）。
-func TestLoadEffectivePerms_CacheHit(t *testing.T) {
+// TestLoadEffectivePerms_CacheHit 缂撳瓨鍛戒腑鏃剁洿鎺ヨ繑鍥炵紦瀛樺€硷紝
+// 涓斾笉瑙﹀彂浠讳綍 DB 鍥炲啓锛堟棤 PG 杩炴帴鏃惰嫢鍥炴簮蹇呯劧鎶ラ敊锛夈€?func TestLoadEffectivePerms_CacheHit(t *testing.T) {
 	tests := []struct {
 		name   string
 		cached string
@@ -208,9 +203,8 @@ func TestLoadEffectivePerms_CacheHit(t *testing.T) {
 	}
 }
 
-// TestLoadEffectivePerms_CorruptedCacheFallback 缓存内容损坏时按未命中处理：
-// 删除脏键并回源 DB（无 PG 池时返回错误，证明未使用脏缓存）。
-func TestLoadEffectivePerms_CorruptedCacheFallback(t *testing.T) {
+// TestLoadEffectivePerms_CorruptedCacheFallback 缂撳瓨鍐呭鎹熷潖鏃舵寜鏈懡涓鐞嗭細
+// 鍒犻櫎鑴忛敭骞跺洖婧?DB锛堟棤 PG 姹犳椂杩斿洖閿欒锛岃瘉鏄庢湭浣跨敤鑴忕紦瀛橈級銆?func TestLoadEffectivePerms_CorruptedCacheFallback(t *testing.T) {
 	fr := newFakeRedis()
 	key := permsCacheKeyPrefix + "u2"
 	fr.store[key] = "{corrupted"
@@ -225,9 +219,8 @@ func TestLoadEffectivePerms_CorruptedCacheFallback(t *testing.T) {
 	}
 }
 
-// TestLoadEffectivePerms_RedisUnavailable 无 Redis 时降级直查 DB（不报 Redis 错误）；
-// 无 PG 池时错误信息应指向 DB 而非 Redis。
-func TestLoadEffectivePerms_RedisUnavailable(t *testing.T) {
+// TestLoadEffectivePerms_RedisUnavailable 鏃?Redis 鏃堕檷绾х洿鏌?DB锛堜笉鎶?Redis 閿欒锛夛紱
+// 鏃?PG 姹犳椂閿欒淇℃伅搴旀寚鍚?DB 鑰岄潪 Redis銆?func TestLoadEffectivePerms_RedisUnavailable(t *testing.T) {
 	swapRedis(t, nil)
 
 	_, err := LoadEffectivePerms(context.Background(), "u3")
@@ -239,7 +232,7 @@ func TestLoadEffectivePerms_RedisUnavailable(t *testing.T) {
 	}
 }
 
-// ── InvalidateUserPerms / InvalidateGroupMembersPerms 降级行为 ───
+// 鈹€鈹€ InvalidateUserPerms / InvalidateGroupMembersPerms 闄嶇骇琛屼负 鈹€鈹€鈹€
 
 func TestInvalidate_NoRedis_NoPanic(t *testing.T) {
 	swapRedis(t, nil)

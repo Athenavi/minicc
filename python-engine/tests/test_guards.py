@@ -1,4 +1,4 @@
-"""Tests for agent 三栅栏（输入/工具/输出）。"""
+﻿"""Tests for agent 涓夋爡鏍忥紙杈撳叆/宸ュ叿/杈撳嚭锛夈€?""
 from __future__ import annotations
 
 import pytest
@@ -20,8 +20,8 @@ class TestInputGuard:
 
     def test_benign_passes(self):
         g = InputGuard()
-        assert g.check("帮我写一个 Python 排序算法") is None
-        assert g.check("查看媒体库") is None
+        assert g.check("甯垜鍐欎竴涓?Python 鎺掑簭绠楁硶") is None
+        assert g.check("鏌ョ湅濯掍綋搴?) is None
         assert g.check("What is the capital of France?") is None
 
 
@@ -33,7 +33,7 @@ class TestToolGuard:
 
     def test_absolute_path_blocked(self):
         g = ToolGuard()
-        v = g.evaluate("read_file", {"path": "X:\\project\\minicc\\data\\media"})
+        v = g.evaluate("read_file", {"path": "X:\\project\\chiron\\data\\media"})
         assert v.action == "block" and "absolute path" in v.reason
         v2 = g.evaluate("shell_exec", {"command": "Get-ChildItem 'C:\\Windows'"})
         assert v2.action == "block"
@@ -54,10 +54,10 @@ class TestToolGuard:
 class TestOutputGuard:
     def test_host_path_replaced(self):
         g = OutputGuard(max_hits=10)
-        out = g.sanitize("媒体库在 X:\\project\\minicc\\data\\media 下，当前为空")
+        out = g.sanitize("濯掍綋搴撳湪 X:\\project\\chiron\\data\\media 涓嬶紝褰撳墠涓虹┖")
         assert HOST_PATH_PLACEHOLDER in out
-        assert "X:\\project\\minicc" not in out
-        assert "python-engine" not in g.sanitize("文件在 python-engine\\app 下")
+        assert "X:\\project\\chiron" not in out
+        assert "python-engine" not in g.sanitize("鏂囦欢鍦?python-engine\\app 涓?)
 
     def test_secret_replaced(self):
         g = OutputGuard(max_hits=10)
@@ -66,13 +66,13 @@ class TestOutputGuard:
 
     def test_benign_unchanged(self):
         g = OutputGuard(max_hits=10)
-        out = g.sanitize("已保存为 sorting.py，实现了 6 种排序算法")
-        assert out == "已保存为 sorting.py，实现了 6 种排序算法"
+        out = g.sanitize("宸蹭繚瀛樹负 sorting.py锛屽疄鐜颁簡 6 绉嶆帓搴忕畻娉?)
+        assert out == "宸蹭繚瀛樹负 sorting.py锛屽疄鐜颁簡 6 绉嶆帓搴忕畻娉?
 
     def test_threshold_blocks(self):
         g = OutputGuard(max_hits=2)
-        g.sanitize("路径 A: C:\\a\\b")
-        g.sanitize("路径 B: C:\\c\\d")
+        g.sanitize("璺緞 A: C:\\a\\b")
+        g.sanitize("璺緞 B: C:\\c\\d")
         assert g.blocked is True
 
     def test_reset(self):
@@ -81,3 +81,5 @@ class TestOutputGuard:
         assert g.blocked is True
         g.reset()
         assert g.blocked is False and g.hits == []
+
+

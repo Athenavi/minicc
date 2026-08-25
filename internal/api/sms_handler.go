@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -11,34 +11,34 @@ import (
 	"strings"
 	"time"
 
-	"github.com/athenavi/minicc/config"
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/db"
+	"github.com/athenavi/chiron/config"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/db"
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
-// ── 短信验证码登录 + 手机号绑定 ─────────────────────────
+// 鈹€鈹€ 鐭俊楠岃瘉鐮佺櫥褰?+ 鎵嬫満鍙风粦瀹?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 //
-// 防滥用四保险（复用既有设施）：
-//  1. 人机验证栅栏：发码/登录均过 CaptchaHandler.Enforce（启用/失败升级强制）；
-//  2. 发送冷却：同号冷却期内拒绝重发（Redis TTL 标记）；
-//  3. 每日上限：同号每日发送次数受限（Redis 24h 计数）；
-//  4. 验证码尝试次数：错 5 次作废，需重新获取；登录失败计入 IP 失败计数。
+// 闃叉互鐢ㄥ洓淇濋櫓锛堝鐢ㄦ棦鏈夎鏂斤級锛?
+//  1. 浜烘満楠岃瘉鏍呮爮锛氬彂鐮?鐧诲綍鍧囪繃 CaptchaHandler.Enforce锛堝惎鐢?澶辫触鍗囩骇寮哄埗锛夛紱
+//  2. 鍙戦€佸喎鍗达細鍚屽彿鍐峰嵈鏈熷唴鎷掔粷閲嶅彂锛圧edis TTL 鏍囪锛夛紱
+//  3. 姣忔棩涓婇檺锛氬悓鍙锋瘡鏃ュ彂閫佹鏁板彈闄愶紙Redis 24h 璁℃暟锛夛紱
+//  4. 楠岃瘉鐮佸皾璇曟鏁帮細閿?5 娆′綔搴燂紝闇€閲嶆柊鑾峰彇锛涚櫥褰曞け璐ヨ鍏?IP 澶辫触璁℃暟銆?
 
 const (
-	smsMaxTries         = 5                // 验证码最大尝试次数，超过作废
-	smsCodeKeyPrefix    = "sms:code:"      // 验证码
-	smsTriesKeyPrefix   = "sms:tries:"     // 尝试计数
-	smsCoolKeyPrefix    = "sms:cool:"      // 发送冷却标记
-	smsDailyKeyPrefix   = "sms:day:"       // 每日发送计数
-	smsCodeDigits       = 6                // 验证码位数
-	smsDailyWindow      = 24 * time.Hour   // 每日计数窗口
-	smsMaxDailyLimit    = 100              // 每日上限配置上限
-	smsMaxCodeTTL       = 15 * time.Minute // 验证码有效期上限
+	smsMaxTries         = 5                // 楠岃瘉鐮佹渶澶у皾璇曟鏁帮紝瓒呰繃浣滃簾
+	smsCodeKeyPrefix    = "sms:code:"      // 楠岃瘉鐮?
+	smsTriesKeyPrefix   = "sms:tries:"     // 灏濊瘯璁℃暟
+	smsCoolKeyPrefix    = "sms:cool:"      // 鍙戦€佸喎鍗存爣璁?
+	smsDailyKeyPrefix   = "sms:day:"       // 姣忔棩鍙戦€佽鏁?
+	smsCodeDigits       = 6                // 楠岃瘉鐮佷綅鏁?
+	smsDailyWindow      = 24 * time.Hour   // 姣忔棩璁℃暟绐楀彛
+	smsMaxDailyLimit    = 100              // 姣忔棩涓婇檺閰嶇疆涓婇檺
+	smsMaxCodeTTL       = 15 * time.Minute // 楠岃瘉鐮佹湁鏁堟湡涓婇檺
 )
 
-// smsCodeStore 抽象验证码存取（生产 Redis，测试内存 fake）。
+// smsCodeStore 鎶借薄楠岃瘉鐮佸瓨鍙栵紙鐢熶骇 Redis锛屾祴璇曞唴瀛?fake锛夈€?
 type smsCodeStore interface {
 	SetCode(ctx context.Context, phone, code string, ttl time.Duration) error
 	GetCode(ctx context.Context, phone string) (string, error)
@@ -50,7 +50,7 @@ type smsCodeStore interface {
 	IncrDaily(ctx context.Context, phone string) (int, error)
 }
 
-// redisSmsCodeStore 是 Redis 实现。
+// redisSmsCodeStore 鏄?Redis 瀹炵幇銆?
 type redisSmsCodeStore struct {
 	rdb db.RedisClient
 }
@@ -68,7 +68,7 @@ func (s redisSmsCodeStore) GetCode(ctx context.Context, phone string) (string, e
 	}
 	v, err := s.rdb.Get(ctx, smsCodeKeyPrefix+phone).Result()
 	if err != nil {
-		// 过期/不存在视为空码
+		// 杩囨湡/涓嶅瓨鍦ㄨ涓虹┖鐮?
 		return "", nil
 	}
 	return v, nil
@@ -136,7 +136,7 @@ func (s redisSmsCodeStore) IncrDaily(ctx context.Context, phone string) (int, er
 	return int(n), nil
 }
 
-// smsConfigRow 是 ent_sms_config 的内存形态（secret 保留密文）。
+// smsConfigRow 鏄?ent_sms_config 鐨勫唴瀛樺舰鎬侊紙secret 淇濈暀瀵嗘枃锛夈€?
 type smsConfigRow struct {
 	Provider         string
 	SignName         string
@@ -152,18 +152,18 @@ type smsConfigRow struct {
 	Enabled          bool
 }
 
-// SmsHandler 提供短信验证码登录、手机号绑定/解绑与短信服务配置管理。
+// SmsHandler 鎻愪緵鐭俊楠岃瘉鐮佺櫥褰曘€佹墜鏈哄彿缁戝畾/瑙ｇ粦涓庣煭淇℃湇鍔￠厤缃鐞嗐€?
 type SmsHandler struct {
 	auth    *auth.Authenticator
 	cfg     *config.Config
 	db      entQuerier
 	encKey  []byte
 	sender  auth.SmsSender
-	captcha *CaptchaHandler // 可选：nil 跳过人机验证（单测用）
+	captcha *CaptchaHandler // 鍙€夛細nil 璺宠繃浜烘満楠岃瘉锛堝崟娴嬬敤锛?
 	store   smsCodeStore
 }
 
-// NewSmsHandler 构造短信 handler；加密密钥沿用 SSO 密钥，验证码存储依赖 Redis。
+// NewSmsHandler 鏋勯€犵煭淇?handler锛涘姞瀵嗗瘑閽ユ部鐢?SSO 瀵嗛挜锛岄獙璇佺爜瀛樺偍渚濊禆 Redis銆?
 func NewSmsHandler(authenticator *auth.Authenticator, cfg *config.Config, captcha *CaptchaHandler) *SmsHandler {
 	return &SmsHandler{
 		auth:    authenticator,
@@ -176,21 +176,21 @@ func NewSmsHandler(authenticator *auth.Authenticator, cfg *config.Config, captch
 	}
 }
 
-// RegisterPublicRoutes 挂载公开路由（无 authMW；外层须套 rlMW）。
+// RegisterPublicRoutes 鎸傝浇鍏紑璺敱锛堟棤 authMW锛涘灞傞』濂?rlMW锛夈€?
 func (h *SmsHandler) RegisterPublicRoutes(mux *http.ServeMux, rlMW func(http.Handler) http.Handler) {
 	mux.Handle("GET /v1/auth/sms/status", rlMW(http.HandlerFunc(h.PublicStatus)))
 	mux.Handle("POST /v1/auth/sms/code", rlMW(http.HandlerFunc(h.SendCode)))
 	mux.Handle("POST /v1/auth/sms/login", rlMW(http.HandlerFunc(h.Login)))
 }
 
-// RegisterUserRoutes 挂载用户自助路由（authMW）：手机号查询 / 绑定 / 解绑。
+// RegisterUserRoutes 鎸傝浇鐢ㄦ埛鑷姪璺敱锛坅uthMW锛夛細鎵嬫満鍙锋煡璇?/ 缁戝畾 / 瑙ｇ粦銆?
 func (h *SmsHandler) RegisterUserRoutes(mux *http.ServeMux, authMW func(http.Handler) http.Handler) {
 	mux.Handle("GET /v1/auth/sms/bind", authMW(http.HandlerFunc(h.GetBind)))
 	mux.Handle("POST /v1/auth/sms/bind", authMW(http.HandlerFunc(h.Bind)))
 	mux.Handle("DELETE /v1/auth/sms/bind", authMW(http.HandlerFunc(h.Unbind)))
 }
 
-// RegisterAdminRoutes 挂载管理路由（authMW + RequireEntPerm("sso:manage")）。
+// RegisterAdminRoutes 鎸傝浇绠＄悊璺敱锛坅uthMW + RequireEntPerm("sso:manage")锛夈€?
 func (h *SmsHandler) RegisterAdminRoutes(mux *http.ServeMux, authMW func(http.Handler) http.Handler) {
 	guard := func(hf http.HandlerFunc) http.Handler {
 		return authMW(RequireEntPerm("sso:manage")(hf))
@@ -199,10 +199,10 @@ func (h *SmsHandler) RegisterAdminRoutes(mux *http.ServeMux, authMW func(http.Ha
 	mux.Handle("PUT /v1/ent/sms/config", guard(h.UpdateConfig))
 }
 
-// ── 公开路由 ────────────────────────────────────────────
+// 鈹€鈹€ 鍏紑璺敱 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 // PublicStatus GET /v1/auth/sms/status
-// 前端据此决定是否展示"短信登录"标签页。
+// 鍓嶇鎹鍐冲畾鏄惁灞曠ず"鐭俊鐧诲綍"鏍囩椤点€?
 func (h *SmsHandler) PublicStatus(w http.ResponseWriter, r *http.Request) {
 	row, err := h.loadConfig(r.Context())
 	if err != nil {
@@ -220,11 +220,11 @@ type sendSmsCodeRequest struct {
 	Phone          string `json:"phone"`
 	CaptchaToken   string `json:"captcha_token"`
 	CaptchaRandstr string `json:"captcha_randstr"`
-	Purpose        string `json:"purpose"` // login（默认）| bind
+	Purpose        string `json:"purpose"` // login锛堥粯璁わ級| bind
 }
 
-// SendCode POST /v1/auth/sms/code（公开，须套 rlMW）
-// 防滥用：人机验证 + 发送冷却 + 每日上限。
+// SendCode POST /v1/auth/sms/code锛堝叕寮€锛岄』濂?rlMW锛?
+// 闃叉互鐢細浜烘満楠岃瘉 + 鍙戦€佸喎鍗?+ 姣忔棩涓婇檺銆?
 func (h *SmsHandler) SendCode(w http.ResponseWriter, r *http.Request) {
 	var req sendSmsCodeRequest
 	if err := DecodeJSON(w, r, &req); err != nil {
@@ -252,12 +252,12 @@ func (h *SmsHandler) SendCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if row == nil || !row.Enabled {
-		Forbidden(w, "短信服务未启用")
+		Forbidden(w, "鐭俊鏈嶅姟鏈惎鐢?)
 		return
 	}
 	if req.Purpose == "login" || req.Purpose == "" {
 		if !row.LoginEnabled {
-			Forbidden(w, "短信登录未启用")
+			Forbidden(w, "鐭俊鐧诲綍鏈惎鐢?)
 			return
 		}
 	}
@@ -265,7 +265,7 @@ func (h *SmsHandler) SendCode(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	cool, err := h.store.InCooldown(ctx, phone)
 	if err != nil {
-		logAndRespond(w, err, http.StatusServiceUnavailable, "验证码存储不可用")
+		logAndRespond(w, err, http.StatusServiceUnavailable, "楠岃瘉鐮佸瓨鍌ㄤ笉鍙敤")
 		return
 	}
 	if cool {
@@ -274,7 +274,7 @@ func (h *SmsHandler) SendCode(w http.ResponseWriter, r *http.Request) {
 	}
 	daily, err := h.store.IncrDaily(ctx, phone)
 	if err != nil {
-		logAndRespond(w, err, http.StatusServiceUnavailable, "验证码存储不可用")
+		logAndRespond(w, err, http.StatusServiceUnavailable, "楠岃瘉鐮佸瓨鍌ㄤ笉鍙敤")
 		return
 	}
 	if daily > row.DailyLimit {
@@ -303,17 +303,17 @@ func (h *SmsHandler) SendCode(w http.ResponseWriter, r *http.Request) {
 	}, phone, code); err != nil {
 		if errors.Is(err, auth.ErrSmsUnreachable) {
 			db.AuditLog(ctx, "", "sms_send_unreachable", r.URL.Path, "phone="+phone, r.RemoteAddr, nil)
-			logAndRespond(w, err, http.StatusBadGateway, "短信服务商不可达")
+			logAndRespond(w, err, http.StatusBadGateway, "鐭俊鏈嶅姟鍟嗕笉鍙揪")
 			return
 		}
 		db.AuditLog(ctx, "", "sms_send_failed", r.URL.Path, "phone="+phone, r.RemoteAddr, nil)
-		logAndRespond(w, err, http.StatusBadGateway, "短信发送失败")
+		logAndRespond(w, err, http.StatusBadGateway, "鐭俊鍙戦€佸け璐?)
 		return
 	}
 
 	ttl := time.Duration(row.CodeTTLSeconds) * time.Second
 	if err := h.store.SetCode(ctx, phone, code, ttl); err != nil {
-		logAndRespond(w, err, http.StatusServiceUnavailable, "验证码存储不可用")
+		logAndRespond(w, err, http.StatusServiceUnavailable, "楠岃瘉鐮佸瓨鍌ㄤ笉鍙敤")
 		return
 	}
 	if err := h.store.ResetTries(ctx, phone); err != nil {
@@ -338,7 +338,7 @@ type smsLoginRequest struct {
 	CaptchaRandstr string `json:"captcha_randstr"`
 }
 
-// Login POST /v1/auth/sms/login（公开，须套 rlMW）
+// Login POST /v1/auth/sms/login锛堝叕寮€锛岄』濂?rlMW锛?
 func (h *SmsHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req smsLoginRequest
 	if err := DecodeJSON(w, r, &req); err != nil {
@@ -351,7 +351,7 @@ func (h *SmsHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.TrimSpace(req.Code) == "" {
-		BadRequest(w, "验证码不能为空")
+		BadRequest(w, "楠岃瘉鐮佷笉鑳戒负绌?)
 		return
 	}
 
@@ -370,7 +370,7 @@ func (h *SmsHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if row == nil || !row.Enabled || !row.LoginEnabled {
-		Forbidden(w, "短信登录未启用")
+		Forbidden(w, "鐭俊鐧诲綍鏈惎鐢?)
 		return
 	}
 
@@ -385,7 +385,7 @@ func (h *SmsHandler) Login(w http.ResponseWriter, r *http.Request) {
 		db.DefaultTenantID, phone).Scan(&user.ID, &user.Email, &user.Name, &user.Role)
 	if errors.Is(err, pgx.ErrNoRows) {
 		if !row.AutoRegister {
-			NotFound(w, "该手机号未注册")
+			NotFound(w, "璇ユ墜鏈哄彿鏈敞鍐?)
 			return
 		}
 		user, err = h.provisionSmsUser(ctx, phone)
@@ -414,7 +414,7 @@ func (h *SmsHandler) Login(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// provisionSmsUser 自动建号：email 以手机号兜底、随机不可登录密码（password_set=FALSE）。
+// provisionSmsUser 鑷姩寤哄彿锛歟mail 浠ユ墜鏈哄彿鍏滃簳銆侀殢鏈轰笉鍙櫥褰曞瘑鐮侊紙password_set=FALSE锛夈€?
 func (h *SmsHandler) provisionSmsUser(ctx context.Context, phone string) (UserResponse, error) {
 	randomPassword := make([]byte, 32)
 	if _, err := rand.Read(randomPassword); err != nil {
@@ -425,7 +425,7 @@ func (h *SmsHandler) provisionSmsUser(ctx context.Context, phone string) (UserRe
 		return UserResponse{}, err
 	}
 	email := phone + "@sms.local"
-	name := "用户" + phone[max(0, len(phone)-4):]
+	name := "鐢ㄦ埛" + phone[max(0, len(phone)-4):]
 	var user UserResponse
 	err = h.db.QueryRow(ctx,
 		`INSERT INTO users (tenant_id, email, name, password_hash, role, phone, password_set)
@@ -434,7 +434,7 @@ func (h *SmsHandler) provisionSmsUser(ctx context.Context, phone string) (UserRe
 		 RETURNING id, email, name, role`,
 		db.DefaultTenantID, email, name, string(passwordHash), phone).Scan(&user.ID, &user.Email, &user.Name, &user.Role)
 	if errors.Is(err, pgx.ErrNoRows) {
-		// 并发建号：另一请求已用该手机号建号，直接复用
+		// 骞跺彂寤哄彿锛氬彟涓€璇锋眰宸茬敤璇ユ墜鏈哄彿寤哄彿锛岀洿鎺ュ鐢?
 		err = h.db.QueryRow(ctx,
 			`SELECT id, email, name, role FROM users WHERE tenant_id = $1 AND phone = $2`,
 			db.DefaultTenantID, phone).Scan(&user.ID, &user.Email, &user.Name, &user.Role)
@@ -446,17 +446,17 @@ func (h *SmsHandler) provisionSmsUser(ctx context.Context, phone string) (UserRe
 	return user, nil
 }
 
-// verifyCode 校验验证码；失败时已写响应并返回 false。
-// 错误累计 smsMaxTries 次后作废验证码，并计入 IP 失败计数（触发人机验证升级）。
+// verifyCode 鏍￠獙楠岃瘉鐮侊紱澶辫触鏃跺凡鍐欏搷搴斿苟杩斿洖 false銆?
+// 閿欒绱 smsMaxTries 娆″悗浣滃簾楠岃瘉鐮侊紝骞惰鍏?IP 澶辫触璁℃暟锛堣Е鍙戜汉鏈洪獙璇佸崌绾э級銆?
 func (h *SmsHandler) verifyCode(w http.ResponseWriter, r *http.Request, phone, code string) bool {
 	ctx := r.Context()
 	stored, err := h.store.GetCode(ctx, phone)
 	if err != nil {
-		logAndRespond(w, err, http.StatusServiceUnavailable, "验证码存储不可用")
+		logAndRespond(w, err, http.StatusServiceUnavailable, "楠岃瘉鐮佸瓨鍌ㄤ笉鍙敤")
 		return false
 	}
 	if stored == "" {
-		BadRequest(w, "验证码已过期，请重新获取")
+		BadRequest(w, "楠岃瘉鐮佸凡杩囨湡锛岃閲嶆柊鑾峰彇")
 		return false
 	}
 	if stored != strings.TrimSpace(code) {
@@ -470,21 +470,21 @@ func (h *SmsHandler) verifyCode(w http.ResponseWriter, r *http.Request, phone, c
 		if tries >= smsMaxTries {
 			_ = h.store.DelCode(ctx, phone)
 			_ = h.store.ResetTries(ctx, phone)
-			BadRequest(w, "验证码错误次数过多，请重新获取")
+			BadRequest(w, "楠岃瘉鐮侀敊璇鏁拌繃澶氾紝璇烽噸鏂拌幏鍙?)
 			return false
 		}
-		BadRequest(w, "验证码错误")
+		BadRequest(w, "楠岃瘉鐮侀敊璇?)
 		return false
 	}
-	// 验证通过即作废（一次性），防重放
+	// 楠岃瘉閫氳繃鍗充綔搴燂紙涓€娆℃€э級锛岄槻閲嶆斁
 	_ = h.store.DelCode(ctx, phone)
 	_ = h.store.ResetTries(ctx, phone)
 	return true
 }
 
-// ── 用户自助：手机号绑定 ────────────────────────────────
+// 鈹€鈹€ 鐢ㄦ埛鑷姪锛氭墜鏈哄彿缁戝畾 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// GetBind GET /v1/auth/sms/bind（authMW）返回当前绑定手机号。
+// GetBind GET /v1/auth/sms/bind锛坅uthMW锛夎繑鍥炲綋鍓嶇粦瀹氭墜鏈哄彿銆?
 func (h *SmsHandler) GetBind(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	if claims == nil {
@@ -514,7 +514,7 @@ type smsBindRequest struct {
 	Code  string `json:"code"`
 }
 
-// Bind POST /v1/auth/sms/bind（authMW）验证码校验后绑定手机号。
+// Bind POST /v1/auth/sms/bind锛坅uthMW锛夐獙璇佺爜鏍￠獙鍚庣粦瀹氭墜鏈哄彿銆?
 func (h *SmsHandler) Bind(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	if claims == nil {
@@ -537,7 +537,7 @@ func (h *SmsHandler) Bind(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if row == nil || !row.Enabled {
-		Forbidden(w, "短信服务未启用")
+		Forbidden(w, "鐭俊鏈嶅姟鏈惎鐢?)
 		return
 	}
 	if !h.verifyCode(w, r, phone, req.Code) {
@@ -549,7 +549,7 @@ func (h *SmsHandler) Bind(w http.ResponseWriter, r *http.Request) {
 		`UPDATE users SET phone = $2, updated_at = NOW() WHERE id = $1`,
 		claims.UserID, phone); err != nil {
 		if isUniqueViolation(err) {
-			JSON(w, http.StatusConflict, APIResponse{Success: false, Error: "该手机号已绑定其他账号"})
+			JSON(w, http.StatusConflict, APIResponse{Success: false, Error: "璇ユ墜鏈哄彿宸茬粦瀹氬叾浠栬处鍙?})
 			return
 		}
 		logAndRespond(w, err, http.StatusInternalServerError, ErrDBUnavailable)
@@ -559,8 +559,8 @@ func (h *SmsHandler) Bind(w http.ResponseWriter, r *http.Request) {
 	OK(w, map[string]any{"status": "bound", "phone": phone})
 }
 
-// Unbind DELETE /v1/auth/sms/bind（authMW）
-// 守卫：无口令密码且无三方身份时拒绝解绑（保留至少一种登录方式）。
+// Unbind DELETE /v1/auth/sms/bind锛坅uthMW锛?
+// 瀹堝崼锛氭棤鍙ｄ护瀵嗙爜涓旀棤涓夋柟韬唤鏃舵嫆缁濊В缁戯紙淇濈暀鑷冲皯涓€绉嶇櫥褰曟柟寮忥級銆?
 func (h *SmsHandler) Unbind(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	if claims == nil {
@@ -585,11 +585,11 @@ func (h *SmsHandler) Unbind(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if phone == nil || *phone == "" {
-		BadRequest(w, "当前账号未绑定手机号")
+		BadRequest(w, "褰撳墠璐﹀彿鏈粦瀹氭墜鏈哄彿")
 		return
 	}
 	if !passwordSet && identityCount == 0 {
-		Forbidden(w, "解绑后将无可用登录方式，请先设置密码或绑定其他登录方式")
+		Forbidden(w, "瑙ｇ粦鍚庡皢鏃犲彲鐢ㄧ櫥褰曟柟寮忥紝璇峰厛璁剧疆瀵嗙爜鎴栫粦瀹氬叾浠栫櫥褰曟柟寮?)
 		return
 	}
 	if _, err := h.db.Exec(ctx,
@@ -601,9 +601,9 @@ func (h *SmsHandler) Unbind(w http.ResponseWriter, r *http.Request) {
 	OK(w, map[string]string{"status": "unbound"})
 }
 
-// ── 管理端配置 ──────────────────────────────────────────
+// 鈹€鈹€ 绠＄悊绔厤缃?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// GetConfig GET /v1/ent/sms/config（secret 脱敏）。
+// GetConfig GET /v1/ent/sms/config锛坰ecret 鑴辨晱锛夈€?
 func (h *SmsHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	row, err := h.loadConfig(r.Context())
 	if err != nil {
@@ -642,7 +642,7 @@ type updateSmsConfigRequest struct {
 	SignName          *string `json:"sign_name"`
 	TemplateID        *string `json:"template_id"`
 	AccessKeyID       *string `json:"access_key_id"`
-	Secret            *string `json:"secret"` // 空串/脱敏占位 = 保留原值
+	Secret            *string `json:"secret"` // 绌轰覆/鑴辨晱鍗犱綅 = 淇濈暀鍘熷€?
 	Endpoint          *string `json:"endpoint"`
 	CodeTTLSeconds    *int    `json:"code_ttl_seconds"`
 	SendIntervalSecs  *int    `json:"send_interval_seconds"`
@@ -652,7 +652,7 @@ type updateSmsConfigRequest struct {
 	Enabled           *bool   `json:"enabled"`
 }
 
-// UpdateConfig PUT /v1/ent/sms/config（单租户单行 upsert）。
+// UpdateConfig PUT /v1/ent/sms/config锛堝崟绉熸埛鍗曡 upsert锛夈€?
 func (h *SmsHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	var req updateSmsConfigRequest
 	if err := DecodeJSON(w, r, &req); err != nil {
@@ -665,7 +665,7 @@ func (h *SmsHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 以既有值（或缺省）为底，逐字段覆盖
+	// 浠ユ棦鏈夊€硷紙鎴栫己鐪侊級涓哄簳锛岄€愬瓧娈佃鐩?
 	row := &smsConfigRow{
 		Provider: auth.SmsAliyun, CodeTTLSeconds: 300, SendIntervalSecs: 60, DailyLimit: 10,
 	}
@@ -710,7 +710,7 @@ func (h *SmsHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		row.Enabled = *req.Enabled
 	}
 
-	// secret：新值加密；空串/占位保留原密文
+	// secret锛氭柊鍊煎姞瀵嗭紱绌轰覆/鍗犱綅淇濈暀鍘熷瘑鏂?
 	secretEnc := ""
 	if existing != nil {
 		secretEnc = existing.SecretEnc
@@ -728,17 +728,17 @@ func (h *SmsHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		secretEnc = enc
 	}
 
-	// 数值边界
+	// 鏁板€艰竟鐣?
 	if row.CodeTTLSeconds < 60 || row.CodeTTLSeconds > int(smsMaxCodeTTL.Seconds()) {
-		BadRequest(w, fmt.Sprintf("code_ttl_seconds 需在 60-%d 之间", int(smsMaxCodeTTL.Seconds())))
+		BadRequest(w, fmt.Sprintf("code_ttl_seconds 闇€鍦?60-%d 涔嬮棿", int(smsMaxCodeTTL.Seconds())))
 		return
 	}
 	if row.SendIntervalSecs < 0 || row.SendIntervalSecs > 3600 {
-		BadRequest(w, "send_interval_seconds 需在 0-3600 之间")
+		BadRequest(w, "send_interval_seconds 闇€鍦?0-3600 涔嬮棿")
 		return
 	}
 	if row.DailyLimit < 1 || row.DailyLimit > smsMaxDailyLimit {
-		BadRequest(w, fmt.Sprintf("daily_limit 需在 1-%d 之间", smsMaxDailyLimit))
+		BadRequest(w, fmt.Sprintf("daily_limit 闇€鍦?1-%d 涔嬮棿", smsMaxDailyLimit))
 		return
 	}
 	if len(row.SignName) > 64 || len(row.TemplateID) > 64 || len(row.AccessKeyID) > 256 || len(row.Endpoint) > 512 {
@@ -746,29 +746,29 @@ func (h *SmsHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 启用前置校验（fail-loud）
+	// 鍚敤鍓嶇疆鏍￠獙锛坒ail-loud锛?
 	if row.Enabled {
 		if secretEnc == "" {
-			BadRequest(w, "短信 AccessKeySecret 必须先配置才能启用")
+			BadRequest(w, "鐭俊 AccessKeySecret 蹇呴』鍏堥厤缃墠鑳藉惎鐢?)
 			return
 		}
 		if row.Provider != auth.SmsCustom {
 			if row.SignName == "" {
-				BadRequest(w, "短信签名（sign_name）必须先配置才能启用")
+				BadRequest(w, "鐭俊绛惧悕锛坰ign_name锛夊繀椤诲厛閰嶇疆鎵嶈兘鍚敤")
 				return
 			}
 			if row.TemplateID == "" {
-				BadRequest(w, "短信模板 ID（template_id）必须先配置才能启用")
+				BadRequest(w, "鐭俊妯℃澘 ID锛坱emplate_id锛夊繀椤诲厛閰嶇疆鎵嶈兘鍚敤")
 				return
 			}
 		}
 		if row.Provider == auth.SmsCustom && row.Endpoint == "" {
-			BadRequest(w, "custom 短信服务必须配置发送端点（endpoint）")
+			BadRequest(w, "custom 鐭俊鏈嶅姟蹇呴』閰嶇疆鍙戦€佺鐐癸紙endpoint锛?)
 			return
 		}
 	}
 	if row.LoginEnabled && !row.Enabled {
-		BadRequest(w, "短信登录（login_enabled）依赖发送能力（enabled），请先启用短信服务")
+		BadRequest(w, "鐭俊鐧诲綍锛坙ogin_enabled锛変緷璧栧彂閫佽兘鍔涳紙enabled锛夛紝璇峰厛鍚敤鐭俊鏈嶅姟")
 		return
 	}
 
@@ -806,7 +806,7 @@ func (h *SmsHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	OK(w, h.configResponse(updated, true))
 }
 
-// ── 内部 ────────────────────────────────────────────────
+// 鈹€鈹€ 鍐呴儴 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func (h *SmsHandler) loadConfig(ctx context.Context) (*smsConfigRow, error) {
 	var row smsConfigRow

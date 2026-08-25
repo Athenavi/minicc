@@ -1,4 +1,4 @@
-package db
+﻿package db
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/athenavi/minicc/internal/monitor"
+	"github.com/athenavi/chiron/internal/monitor"
 )
 
 // PoolMu guards Pool for concurrent access (e.g. hot-reload reconnection).
@@ -31,8 +31,7 @@ func ConnectPostgres(ctx context.Context, dsn string, maxConn, minConn int) erro
 	cfg.MaxConnLifetime = 30 * time.Minute
 	cfg.MaxConnIdleTime = 5 * time.Minute
 	cfg.HealthCheckPeriod = 30 * time.Second
-	// P 性能/稳定：statement_timeout 防慢查询长期占用连接耗尽池
-	// 长查询（迁移/批量）应走独立连接，不复用业务池
+	// P 鎬ц兘/绋冲畾锛歴tatement_timeout 闃叉參鏌ヨ闀挎湡鍗犵敤杩炴帴鑰楀敖姹?	// 闀挎煡璇紙杩佺Щ/鎵归噺锛夊簲璧扮嫭绔嬭繛鎺ワ紝涓嶅鐢ㄤ笟鍔℃睜
 	cfg.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
 		_, err := conn.Exec(ctx, "SET statement_timeout = 30000")
 		return err
@@ -56,7 +55,7 @@ func ConnectPostgres(ctx context.Context, dsn string, maxConn, minConn int) erro
 	PoolMu.Unlock()
 	slog.Info("postgres connected", "max_conns", maxConn, "min_conns", minConn)
 
-	// 注册连接池监控到全局 metrics
+	// 娉ㄥ唽杩炴帴姹犵洃鎺у埌鍏ㄥ眬 metrics
 	monitor.RegisterExtraStats(PoolStats)
 	return nil
 }

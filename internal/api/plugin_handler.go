@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"bufio"
@@ -15,14 +15,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/athenavi/minicc/config"
-	"github.com/athenavi/minicc/internal/auth"
+	"github.com/athenavi/chiron/config"
+	"github.com/athenavi/chiron/internal/auth"
 )
 
-// allowedPluginCommands 返回 PLUGIN_COMMAND_ALLOWLIST 环境变量配置的命令白名单
-// （以逗号分隔的可执行文件 basename）。空列表 = 默认禁用自定义插件命令
-// （安全默认：防止任意登录用户配置任意命令并在网关/引擎主机执行）。
-func allowedPluginCommands() map[string]bool {
+// allowedPluginCommands 杩斿洖 PLUGIN_COMMAND_ALLOWLIST 鐜鍙橀噺閰嶇疆鐨勫懡浠ょ櫧鍚嶅崟
+// 锛堜互閫楀彿鍒嗛殧鐨勫彲鎵ц鏂囦欢 basename锛夈€傜┖鍒楄〃 = 榛樿绂佺敤鑷畾涔夋彃浠跺懡浠?// 锛堝畨鍏ㄩ粯璁わ細闃叉浠绘剰鐧诲綍鐢ㄦ埛閰嶇疆浠绘剰鍛戒护骞跺湪缃戝叧/寮曟搸涓绘満鎵ц锛夈€?func allowedPluginCommands() map[string]bool {
 	raw := strings.TrimSpace(os.Getenv("PLUGIN_COMMAND_ALLOWLIST"))
 	if raw == "" {
 		return nil
@@ -37,8 +35,7 @@ func allowedPluginCommands() map[string]bool {
 	return allowed
 }
 
-// checkPluginCommandAllowed 校验命令 basename 是否在白名单内。
-func checkPluginCommandAllowed(command string) error {
+// checkPluginCommandAllowed 鏍￠獙鍛戒护 basename 鏄惁鍦ㄧ櫧鍚嶅崟鍐呫€?func checkPluginCommandAllowed(command string) error {
 	if strings.TrimSpace(command) == "" {
 		return fmt.Errorf("command is required")
 	}
@@ -53,8 +50,7 @@ func checkPluginCommandAllowed(command string) error {
 	return nil
 }
 
-// isAdminRole 判断当前请求是否为 owner/admin（插件命令执行敏感操作）。
-func isAdminRole(r *http.Request) bool {
+// isAdminRole 鍒ゆ柇褰撳墠璇锋眰鏄惁涓?owner/admin锛堟彃浠跺懡浠ゆ墽琛屾晱鎰熸搷浣滐級銆?func isAdminRole(r *http.Request) bool {
 	claims := auth.GetClaims(r.Context())
 	if claims == nil {
 		return false
@@ -62,7 +58,7 @@ func isAdminRole(r *http.Request) bool {
 	return claims.Role == "owner" || claims.Role == "admin"
 }
 
-// maskSensitiveEnv 对 MCPPlugin.Env 中疑似敏感字段做脱敏处理
+// maskSensitiveEnv 瀵?MCPPlugin.Env 涓枒浼兼晱鎰熷瓧娈靛仛鑴辨晱澶勭悊
 func maskSensitiveEnv(plugins []MCPPlugin) {
 	sensitiveKeys := []string{"key", "secret", "token", "password", "api_key", "apikey"}
 	for i := range plugins {
@@ -81,9 +77,7 @@ func maskSensitiveEnv(plugins []MCPPlugin) {
 }
 
 // PluginHandler manages per-user MCP plugin configurations.
-// 配置存储：{PluginDataDir}/{user_id}/plugins.json（用户级隔离，S 安全修复：
-// 原实现全局单文件，任何登录用户都可读写/修改其他用户的插件配置）。
-type PluginHandler struct {
+// 閰嶇疆瀛樺偍锛歿PluginDataDir}/{user_id}/plugins.json锛堢敤鎴风骇闅旂锛孲 瀹夊叏淇锛?// 鍘熷疄鐜板叏灞€鍗曟枃浠讹紝浠讳綍鐧诲綍鐢ㄦ埛閮藉彲璇诲啓/淇敼鍏朵粬鐢ㄦ埛鐨勬彃浠堕厤缃級銆?type PluginHandler struct {
 	cfg           *config.Config
 	authenticator *auth.Authenticator
 	dataDir       string
@@ -99,7 +93,7 @@ type MCPPlugin struct {
 	Description string            `json:"description,omitempty"`
 	Version     string            `json:"version,omitempty"`
 	Status      string            `json:"status"`
-	Source      string            `json:"source,omitempty"` // "market" = 市场授权叠加项（非用户本地配置）
+	Source      string            `json:"source,omitempty"` // "market" = 甯傚満鎺堟潈鍙犲姞椤癸紙闈炵敤鎴锋湰鍦伴厤缃級
 }
 
 // pluginsFile is the on-disk structure of plugins.json.
@@ -115,18 +109,15 @@ func NewPluginHandler(cfg *config.Config, authenticator *auth.Authenticator) *Pl
 	return &PluginHandler{cfg: cfg, authenticator: authenticator, dataDir: dir}
 }
 
-// userPluginPath 返回当前用户的插件配置文件路径。
-func (h *PluginHandler) userPluginPath(userID string) string {
-	// 安全：清理 userID 防止路径遍历（如 ../tenant/evil）
-	safe := filepath.Clean(filepath.Base(userID))
+// userPluginPath 杩斿洖褰撳墠鐢ㄦ埛鐨勬彃浠堕厤缃枃浠惰矾寰勩€?func (h *PluginHandler) userPluginPath(userID string) string {
+	// 瀹夊叏锛氭竻鐞?userID 闃叉璺緞閬嶅巻锛堝 ../tenant/evil锛?	safe := filepath.Clean(filepath.Base(userID))
 	if safe == "." || safe == "" {
 		safe = "unknown"
 	}
 	return filepath.Join(h.dataDir, safe, "plugins.json")
 }
 
-// resolveUser 从请求认证信息取当前用户 ID（authMW 已保证登录）。
-func (h *PluginHandler) resolveUser(r *http.Request) string {
+// resolveUser 浠庤姹傝璇佷俊鎭彇褰撳墠鐢ㄦ埛 ID锛坅uthMW 宸蹭繚璇佺櫥褰曪級銆?func (h *PluginHandler) resolveUser(r *http.Request) string {
 	claims := auth.GetClaims(r.Context())
 	if claims != nil {
 		return claims.UserID
@@ -134,8 +125,7 @@ func (h *PluginHandler) resolveUser(r *http.Request) string {
 	return ""
 }
 
-// resolveTenant 取当前租户 ID：claims 优先，缺省回退默认租户（市场门控用）。
-func (h *PluginHandler) resolveTenant(r *http.Request) string {
+// resolveTenant 鍙栧綋鍓嶇鎴?ID锛歝laims 浼樺厛锛岀己鐪佸洖閫€榛樿绉熸埛锛堝競鍦洪棬鎺х敤锛夈€?func (h *PluginHandler) resolveTenant(r *http.Request) string {
 	claims := auth.GetClaims(r.Context())
 	if claims != nil && claims.TenantID != "" {
 		return claims.TenantID
@@ -143,7 +133,7 @@ func (h *PluginHandler) resolveTenant(r *http.Request) string {
 	return DefaultTenantID
 }
 
-// ── List ──
+// 鈹€鈹€ List 鈹€鈹€
 
 func (h *PluginHandler) List(w http.ResponseWriter, r *http.Request) {
 	userID := h.resolveUser(r)
@@ -168,14 +158,13 @@ func (h *PluginHandler) List(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 叠加市场已授权插件（来源标注 market；查询失败静默跳过，不影响本地列表）
+	// 鍙犲姞甯傚満宸叉巿鏉冩彃浠讹紙鏉ユ簮鏍囨敞 market锛涙煡璇㈠け璐ラ潤榛樿烦杩囷紝涓嶅奖鍝嶆湰鍦板垪琛級
 	plugins = h.overlayMarketPlugins(r, plugins)
 	maskSensitiveEnv(plugins)
 	OK(w, plugins)
 }
 
-// overlayMarketPlugins 将租户已安装且启用的市场插件追加到列表（去重）。
-func (h *PluginHandler) overlayMarketPlugins(r *http.Request, plugins []MCPPlugin) []MCPPlugin {
+// overlayMarketPlugins 灏嗙鎴峰凡瀹夎涓斿惎鐢ㄧ殑甯傚満鎻掍欢杩藉姞鍒板垪琛紙鍘婚噸锛夈€?func (h *PluginHandler) overlayMarketPlugins(r *http.Request, plugins []MCPPlugin) []MCPPlugin {
 	items, err := ListEnabledMarketItems(r.Context(), "plugin", h.resolveTenant(r))
 	if err != nil {
 		slog.Debug("plugin list: market overlay skipped", "error", err)
@@ -210,7 +199,7 @@ func (h *PluginHandler) overlayMarketPlugins(r *http.Request, plugins []MCPPlugi
 	return plugins
 }
 
-// ── Install ──
+// 鈹€鈹€ Install 鈹€鈹€
 
 func (h *PluginHandler) Install(w http.ResponseWriter, r *http.Request) {
 	userID := h.resolveUser(r)
@@ -228,9 +217,7 @@ func (h *PluginHandler) Install(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 企业市场门控：市场存在同名 published 条目且租户未启用时禁止安装
-	// （查询失败 / 未上架能力由 IsItemEnabledForTenant 内部 fail-open 放行）
-	if enabled, _ := IsItemEnabledForTenant(r.Context(), "plugin", name, h.resolveTenant(r)); !enabled {
+	// 浼佷笟甯傚満闂ㄦ帶锛氬競鍦哄瓨鍦ㄥ悓鍚?published 鏉＄洰涓旂鎴锋湭鍚敤鏃剁姝㈠畨瑁?	// 锛堟煡璇㈠け璐?/ 鏈笂鏋惰兘鍔涚敱 IsItemEnabledForTenant 鍐呴儴 fail-open 鏀捐锛?	if enabled, _ := IsItemEnabledForTenant(r.Context(), "plugin", name, h.resolveTenant(r)); !enabled {
 		Forbidden(w, "plugin is not enabled for this tenant by market policy")
 		return
 	}
@@ -250,7 +237,7 @@ func (h *PluginHandler) Install(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "command is required")
 		return
 	}
-	// P0-S7 修复：命令必须命中白名单（默认禁用），防任意命令执行
+	// P0-S7 淇锛氬懡浠ゅ繀椤诲懡涓櫧鍚嶅崟锛堥粯璁ょ鐢級锛岄槻浠绘剰鍛戒护鎵ц
 	if err := checkPluginCommandAllowed(body.Command); err != nil {
 		Forbidden(w, err.Error())
 		return
@@ -292,7 +279,7 @@ func (h *PluginHandler) Install(w http.ResponseWriter, r *http.Request) {
 	OK(w, plugin)
 }
 
-// ── Uninstall ──
+// 鈹€鈹€ Uninstall 鈹€鈹€
 
 func (h *PluginHandler) Uninstall(w http.ResponseWriter, r *http.Request) {
 	userID := h.resolveUser(r)
@@ -344,7 +331,7 @@ func (h *PluginHandler) Uninstall(w http.ResponseWriter, r *http.Request) {
 	OK(w, map[string]string{"status": "deleted", "name": name})
 }
 
-// ── Update ──
+// 鈹€鈹€ Update 鈹€鈹€
 
 func (h *PluginHandler) Update(w http.ResponseWriter, r *http.Request) {
 	userID := h.resolveUser(r)
@@ -397,7 +384,7 @@ func (h *PluginHandler) Update(w http.ResponseWriter, r *http.Request) {
 				BadRequest(w, "command must not be empty")
 				return
 			}
-			// P0-S7 修复：命令必须命中白名单（默认禁用）
+			// P0-S7 淇锛氬懡浠ゅ繀椤诲懡涓櫧鍚嶅崟锛堥粯璁ょ鐢級
 			if err := checkPluginCommandAllowed(*body.Command); err != nil {
 				Forbidden(w, err.Error())
 				return
@@ -439,10 +426,10 @@ func (h *PluginHandler) Update(w http.ResponseWriter, r *http.Request) {
 	OK(w, map[string]string{"name": name, "updated": "true"})
 }
 
-// ── Test ──
+// 鈹€鈹€ Test 鈹€鈹€
 
 func (h *PluginHandler) Test(w http.ResponseWriter, r *http.Request) {
-	// P0-S7 修复：执行用户自定义命令的测试端点仅限 owner/admin
+	// P0-S7 淇锛氭墽琛岀敤鎴疯嚜瀹氫箟鍛戒护鐨勬祴璇曠鐐逛粎闄?owner/admin
 	if !isAdminRole(r) {
 		Forbidden(w, "plugin test requires admin role")
 		return
@@ -496,17 +483,17 @@ func (h *PluginHandler) Test(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := cmd.Start(); err != nil {
 		OK(w, map[string]interface{}{
-			"ok": false, "message": "无法启动进程: " + err.Error(),
+			"ok": false, "message": "鏃犳硶鍚姩杩涚▼: " + err.Error(),
 			"duration_ms": time.Since(start).Milliseconds(),
 		})
 		return
 	}
 	defer func() { _ = cmd.Process.Kill() }()
 
-	req := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"minicc","version":"1.0"}}}`
+	req := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"chiron","version":"1.0"}}}`
 	if _, err := stdin.Write([]byte(req + "\n")); err != nil {
 		OK(w, map[string]interface{}{
-			"ok": false, "message": "写入握手请求失败: " + err.Error(),
+			"ok": false, "message": "鍐欏叆鎻℃墜璇锋眰澶辫触: " + err.Error(),
 			"duration_ms": time.Since(start).Milliseconds(),
 		})
 		return
@@ -525,11 +512,11 @@ func (h *PluginHandler) Test(w http.ResponseWriter, r *http.Request) {
 	select {
 	case resp := <-ch:
 		ok := resp.err == nil && strings.Contains(resp.line, "jsonrpc")
-		msg := "MCP 握手成功"
+		msg := "MCP 鎻℃墜鎴愬姛"
 		if !ok {
-			msg = "无有效 MCP initialize 响应" + strings.TrimSpace(resp.line)
+			msg = "鏃犳湁鏁?MCP initialize 鍝嶅簲" + strings.TrimSpace(resp.line)
 			if resp.err != nil {
-				msg = "读取响应失败: " + resp.err.Error()
+				msg = "璇诲彇鍝嶅簲澶辫触: " + resp.err.Error()
 			}
 		}
 		OK(w, map[string]interface{}{
@@ -538,13 +525,13 @@ func (h *PluginHandler) Test(w http.ResponseWriter, r *http.Request) {
 		})
 	case <-ctx.Done():
 		OK(w, map[string]interface{}{
-			"ok": false, "message": "连接超时（无 MCP initialize 响应）",
+			"ok": false, "message": "杩炴帴瓒呮椂锛堟棤 MCP initialize 鍝嶅簲锛?,
 			"duration_ms": time.Since(start).Milliseconds(),
 		})
 	}
 }
 
-// ── Internal helpers ──
+// 鈹€鈹€ Internal helpers 鈹€鈹€
 
 func (h *PluginHandler) readPlugins(userID string) ([]MCPPlugin, error) {
 	data, err := os.ReadFile(h.userPluginPath(userID))

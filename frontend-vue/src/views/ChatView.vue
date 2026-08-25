@@ -26,7 +26,7 @@ const themeStore = useThemeStore()
 const route = useRoute()
 const router = useRouter()
 
-// ── 会话状态 ──
+// ── 会话状�?──
 const sessions = ref<ChatSession[]>([])
 const activeSessionId = ref('')
 const activeSession = computed(() => sessions.value.find(s => s.id === activeSessionId.value) || null)
@@ -34,8 +34,8 @@ const loading = ref(false)
 const items = ref<ChatItem[]>([])
 let activeSSE: EventSource | null = null
 
-// ── Trace ID (当前会话的链路追踪标识) ──────────────────────────────
-const currentTraceId = ref('')  // SSE done 事件回传的 trace_id
+// ── Trace ID (当前会话的链路追踪标�? ──────────────────────────────
+const currentTraceId = ref('')  // SSE done 事件回传�?trace_id
 
 // S 安全修复：待确认工具调用（三态栅栏“确认”态）
 interface PendingApproval {
@@ -64,22 +64,22 @@ const modeOptions = [
   { label: '常规', value: 'normal' },
   { label: '极简', value: 'minimal' },
   { label: 'PTC', value: 'ptc' },
-  { label: '创造', value: 'creative' },
+  { label: '创�?, value: 'creative' },
 ]
 const mode = ref('normal')
 
-// ── 模型路由：会话 llm_config.model（空 = 后端默认路由）──
+// ── 模型路由：会�?llm_config.model（空 = 后端默认路由）──
 const llmModel = ref('')
 
-// ── 对话模式预设（mode → temperature/max_tokens；用户显式覆盖优先）──
+// ── 对话模式预设（mode �?temperature/max_tokens；用户显式覆盖优先）──
 const MODE_PRESETS: Record<string, { temperature: number; max_tokens: number; note?: string }> = {
   normal: { temperature: 0.6, max_tokens: 4096 },
-  minimal: { temperature: 0.2, max_tokens: 1024, note: '简短回复' },
-  ptc: { temperature: 0.4, max_tokens: 4096, note: '分步思考' },
+  minimal: { temperature: 0.2, max_tokens: 1024, note: '简短回�? },
+  ptc: { temperature: 0.4, max_tokens: 4096, note: '分步思�? },
   creative: { temperature: 1.0, max_tokens: 8192 },
 }
 
-/** 构造 llm_config：mode + 对应预设 temperature/max_tokens + 模型路由 model（base 已显式携带的字段优先保留） */
+/** 构�?llm_config：mode + 对应预设 temperature/max_tokens + 模型路由 model（base 已显式携带的字段优先保留�?*/
 function buildLlmConfig(base?: Record<string, any>): Record<string, any> {
   const cfg: Record<string, any> = { mode: mode.value, ...(base || {}) }
   // 模型路由：会话选定模型写入 llm_config（空 = 不携带，走后端默认路由）
@@ -92,7 +92,7 @@ function buildLlmConfig(base?: Record<string, any>): Record<string, any> {
   return cfg
 }
 
-/** 模型切换：更新 llmModel ref + 会话级持久化（SSE 模式已有会话时立即保存 llm_config） */
+/** 模型切换：更�?llmModel ref + 会话级持久化（SSE 模式已有会话时立即保�?llm_config�?*/
 function onModelChange(m: string) {
   if (m === llmModel.value) return
   llmModel.value = m
@@ -102,19 +102,19 @@ function onModelChange(m: string) {
   }
 }
 
-/** 模式切换：更新 mode ref + 提示（仅影响后续消息）+ 会话级持久化（SSE 模式已有会话时立即保存 llm_config） */
+/** 模式切换：更�?mode ref + 提示（仅影响后续消息�? 会话级持久化（SSE 模式已有会话时立即保�?llm_config�?*/
 function onModeChange(m: string) {
   if (m === mode.value) return
   mode.value = m
   const opt = modeOptions.find(o => o.value === m)
   const preset = MODE_PRESETS[m]
-  message.info(`已切换到「${opt?.label || m}」模式${preset?.note ? `（${preset.note}）` : ''}，仅影响后续消息`)
+  message.info(`已切换到�?{opt?.label || m}」模�?{preset?.note ? `�?{preset.note}）` : ''}，仅影响后续消息`)
   if (!unifiedMode.value && activeSessionId.value) {
     void updateConversation(activeSessionId.value, { llm_config: buildLlmConfig() } as any).catch(() => {})
   }
 }
 
-/** 归一化后端 metadata（可能为 JSON 字符串或对象） */
+/** 归一化后�?metadata（可能为 JSON 字符串或对象�?*/
 function normalizeMeta(raw: any): Record<string, any> | undefined {
   if (!raw) return undefined
   if (typeof raw === 'string') {
@@ -123,25 +123,25 @@ function normalizeMeta(raw: any): Record<string, any> | undefined {
   return raw && typeof raw === 'object' ? raw : undefined
 }
 
-// ── 互联互通：统一任务模式 + 上下文芯片（与 SSE 流式并列的新路径）──
+// ── 互联互通：统一任务模式 + 上下文芯片（�?SSE 流式并列的新路径）──
 // 路由 query 约定（由 WorkstationNav / 各工作台入口发起）：
-//   ?task=<sessionId>          统一会话（拉历史 + 继续追问）
-//   ?task=&error=xxx           仅错误提示
-//   ?kb=<id> / ?agent=<id> / ?skill=<name> / ?workflow=<id|name>   上下文附加
-//   ?mode=<auto|agent|workflow> 创建时模式（WorkflowView 传 workflow）
+//   ?task=<sessionId>          统一会话（拉历史 + 继续追问�?
+//   ?task=&error=xxx           仅错误提�?
+//   ?kb=<id> / ?agent=<id> / ?skill=<name> / ?workflow=<id|name>   上下文附�?
+//   ?mode=<auto|agent|workflow> 创建时模式（WorkflowView �?workflow�?
 interface ContextChip {
   type: 'kb' | 'agent' | 'skill' | 'workflow'
   label: string
   value: string
 }
 const contextChips = ref<ContextChip[]>([])
-// Agent 配置（从 /v1/agents 尽力取；取不到则只传 agent_id，由后端兼容）
+// Agent 配置（从 /v1/agents 尽力取；取不到则只传 agent_id，由后端兼容�?
 const agentCfg = ref<{ id: string; name?: string; system_prompt?: string; model?: string; max_turns?: number } | null>(null)
-const errorBanner = ref('')          // query.error 提示条
-const unifiedSessionId = ref('')     // 统一任务会话 id（query.task）
-const unifiedSubmitMode = ref('auto') // 会话创建时的 mode（shared_context.mode 优先）
+const errorBanner = ref('')          // query.error 提示�?
+const unifiedSessionId = ref('')     // 统一任务会话 id（query.task�?
+const unifiedSubmitMode = ref('auto') // 会话创建时的 mode（shared_context.mode 优先�?
 const unifiedMode = computed(() => !!unifiedSessionId.value)
-// 纯展示 flag：任务提交成功 → 徽标短暂过渡到“完成”态后复位
+// 纯展�?flag：任务提交成�?�?徽标短暂过渡到“完成”态后复位
 const unifiedJustFinished = ref(false)
 let unifiedDoneTimer: ReturnType<typeof setTimeout> | null = null
 function flashUnifiedDone() {
@@ -158,7 +158,7 @@ async function applyRouteQuery() {
   appliedQueryKey = key
 
   const task = typeof q.task === 'string' && q.task.trim() ? q.task.trim() : ''
-  // task 变更 / 退出统一模式 → 重置消息区（避免污染普通 SSE 会话）
+  // task 变更 / 退出统一模式 �?重置消息区（避免污染普�?SSE 会话�?
   if (task !== unifiedSessionId.value) {
     unifiedSessionId.value = task
     items.value = []
@@ -179,20 +179,20 @@ async function initContextChips(q: Record<string, any>) {
   const skill = typeof q.skill === 'string' && q.skill ? q.skill : ''
   const workflow = typeof q.workflow === 'string' && q.workflow ? q.workflow : ''
   const chips: ContextChip[] = []
-  if (kb) chips.push({ type: 'kb', label: `知识库 #${kb.slice(0, 8)}`, value: kb })
+  if (kb) chips.push({ type: 'kb', label: `知识�?#${kb.slice(0, 8)}`, value: kb })
   if (agent) chips.push({ type: 'agent', label: `Agent #${agent.slice(0, 8)}`, value: agent })
-  if (skill) chips.push({ type: 'skill', label: `技能 ${skill}`, value: skill })
-  if (workflow) chips.push({ type: 'workflow', label: `工作流 ${workflow}`, value: workflow })
+  if (skill) chips.push({ type: 'skill', label: `技�?${skill}`, value: skill })
+  if (workflow) chips.push({ type: 'workflow', label: `工作�?${workflow}`, value: workflow })
   contextChips.value = chips
   agentCfg.value = null
-  // ── 尽力补全展示名 / Agent 配置（失败则保留 id 占位）──
+  // ── 尽力补全展示�?/ Agent 配置（失败则保留 id 占位）──
   if (kb) {
     try {
       const res = await api.get(`/v1/kb/${encodeURIComponent(kb)}`)
       const d = res.data?.data || res.data
       if (d?.name) {
         const c = contextChips.value.find(x => x.type === 'kb')
-        if (c) c.label = `知识库 ${d.name}`
+        if (c) c.label = `知识�?${d.name}`
       }
     } catch { /* 保留 id 占位 */ }
   }
@@ -221,13 +221,13 @@ async function initContextChips(q: Record<string, any>) {
       const rec = list.find((x: any) => x.id === workflow)
       if (rec?.name) {
         const c = contextChips.value.find(x => x.type === 'workflow')
-        if (c) c.label = `工作流 ${rec.name}`
+        if (c) c.label = `工作�?${rec.name}`
       }
-    } catch { /* 无列表时保留原值 */ }
+    } catch { /* 无列表时保留原�?*/ }
   }
 }
 
-/** 移除单个上下文芯片：本地 context 与路由 query 双源同步清空（侧栏上下文面板触发） */
+/** 移除单个上下文芯片：本地 context 与路�?query 双源同步清空（侧栏上下文面板触发�?*/
 function removeContextChip(type: ContextChip['type']) {
   contextChips.value = contextChips.value.filter(c => c.type !== type)
   if (type === 'agent') agentCfg.value = null
@@ -239,7 +239,7 @@ function removeContextChip(type: ContextChip['type']) {
   }
 }
 
-/** 清空全部上下文：本地 context 与路由 query（kb/agent/skill/workflow）一并清空 */
+/** 清空全部上下文：本地 context 与路�?query（kb/agent/skill/workflow）一并清�?*/
 function clearContext() {
   contextChips.value = []
   agentCfg.value = null
@@ -261,7 +261,7 @@ function clearUnifiedMessages() {
   message.info('已清空统一任务消息')
 }
 
-/** 统一任务模式：退出（移除 task/error query；路由 watcher 触发 applyRouteQuery 重置消息区） */
+/** 统一任务模式：退出（移除 task/error query；路�?watcher 触发 applyRouteQuery 重置消息区） */
 async function exitUnifiedMode() {
   const q: Record<string, any> = { ...route.query }
   delete q.task
@@ -274,7 +274,7 @@ function openKb(kbId: string) {
   if (kbId) void router.push(`/knowledge/${encodeURIComponent(kbId)}`)
 }
 
-/** 组装发送时附带的 context（普通 SSE 模式与统一任务模式共用） */
+/** 组装发送时附带�?context（普�?SSE 模式与统一任务模式共用�?*/
 function buildContext(): Record<string, any> | undefined {
   const ctx: Record<string, any> = {}
   const kb = contextChips.value.find(c => c.type === 'kb')
@@ -298,7 +298,7 @@ function buildContext(): Record<string, any> | undefined {
   return Object.keys(ctx).length ? ctx : undefined
 }
 
-/** 安全改造：附件签名 URL 解析 — /media/ 公开路径 → 短时效签名 URL；非 /media/ 前缀原样；失败回退原 url */
+/** 安全改造：附件签名 URL 解析 �?/media/ 公开路径 �?短时效签�?URL；非 /media/ 前缀原样；失败回退�?url */
 async function resolveAttachmentUrls(attachments?: ChatAttachment[]): Promise<ChatAttachment[]> {
   if (!attachments?.length) return []
   return Promise.all(attachments.map(async a => {
@@ -308,14 +308,14 @@ async function resolveAttachmentUrls(attachments?: ChatAttachment[]): Promise<Ch
   }))
 }
 
-/** 拉取统一会话历史（GET /v1/chat/sessions/{id}/messages） */
+/** 拉取统一会话历史（GET /v1/chat/sessions/{id}/messages�?*/
 async function loadUnifiedSession(sessionId: string) {
   loading.value = true
   try {
     const res = await getChatSessionMessages(sessionId)
     const d = (res?.messages ? res : (res?.data || {})) as any
     const list = Array.isArray(d.messages) ? d.messages : []
-    // 会话创建时的 mode（shared_context 优先，其次 query.mode，兜底 auto）
+    // 会话创建时的 mode（shared_context 优先，其�?query.mode，兜�?auto�?
     const sharedMode = d.shared_context?.mode
     unifiedSubmitMode.value =
       (typeof sharedMode === 'string' && sharedMode) ||
@@ -323,13 +323,13 @@ async function loadUnifiedSession(sessionId: string) {
       'auto'
     items.value = buildUnifiedItems(list)
   } catch {
-    errorBanner.value = errorBanner.value || '统一会话加载失败，可直接发送消息继续';
+    errorBanner.value = errorBanner.value || '统一会话加载失败，可直接发送消息继�?;
   } finally {
     loading.value = false
   }
 }
 
-/** 统一会话消息 → 现有 ChatItem（user/assistant 映射现有消息组件；metadata 带 kb 时插知识库引用标签） */
+/** 统一会话消息 �?现有 ChatItem（user/assistant 映射现有消息组件；metadata �?kb 时插知识库引用标签） */
 function buildUnifiedItems(list: any[]): ChatItem[] {
   const out: ChatItem[] = []
   ;(list || []).forEach((m: any, idx: number) => {
@@ -359,7 +359,7 @@ function buildUnifiedItems(list: any[]): ChatItem[] {
   return out
 }
 
-/** 统一任务模式发送：POST /v1/chat/submit，返回 output 追加为 assistant 消息 */
+/** 统一任务模式发送：POST /v1/chat/submit，返�?output 追加�?assistant 消息 */
 async function sendUnified(text: string, attachments?: ChatAttachment[]) {
   if (!unifiedSessionId.value) return
   loading.value = true
@@ -368,14 +368,14 @@ async function sendUnified(text: string, attachments?: ChatAttachment[]) {
   const userItemId = items.value[items.value.length - 1]?.id
   currentTraceId.value = ''
   try {
-    // 安全改造：附件若为 /media/ 公开路径，先解析为签名 URL 再随消息发送（loading 期间发送已禁用）
+    // 安全改造：附件若为 /media/ 公开路径，先解析为签�?URL 再随消息发送（loading 期间发送已禁用�?
     const resolvedAtts = await resolveAttachmentUrls(attachments)
     const res = await api.post('/v1/chat/submit', {
       message: text,
       session_id: unifiedSessionId.value,
       mode: unifiedSubmitMode.value || 'auto',
       context: buildContext(),
-      // 模型路由：统一任务发送同样携带 llm_config.model（空 = 后端默认）
+      // 模型路由：统一任务发送同样携�?llm_config.model（空 = 后端默认�?
       llm_config: llmModel.value ? { model: llmModel.value } : {},
       ...(resolvedAtts.length
         ? { attachments: resolvedAtts.map(a => ({ id: a.id, name: a.name, mime_type: a.mimeType, url: a.url, is_image: a.isImage })) }
@@ -388,21 +388,21 @@ async function sendUnified(text: string, attachments?: ChatAttachment[]) {
     flashUnifiedDone()
   } catch (e: any) {
     markMessageFailed(userItemId, e.message || '网络错误')
-    message.error('发送失败: ' + (e.message || '网络错误'))
+    message.error('发送失�? ' + (e.message || '网络错误'))
   } finally {
     loading.value = false
     stopTurnTimer()
   }
 }
 
-/** 追加 assistant 消息；metadata 有 kb_hits/kb_id 时在其下显示“引用了知识库(×N)”小标签 */
+/** 追加 assistant 消息；metadata �?kb_hits/kb_id 时在其下显示“引用了知识�?×N)”小标签 */
 function appendAssistantWithKb(content: string, meta: any) {
   const { reasoning, body } = splitThinking(String(content))
   if (reasoning) items.value.push({ kind: 'reasoning', content: reasoning, id: genItemId() })
   if (body) {
     items.value.push({
       kind: 'text', role: 'assistant', content: body, id: genItemId(),
-      // 反向定位：透传 /v1/chat/submit 返回的 metadata
+      // 反向定位：透传 /v1/chat/submit 返回�?metadata
       metadata: normalizeMeta(meta),
     } as any)
     const n = typeof meta.kb_hits === 'number' ? meta.kb_hits : meta.kb_id ? 1 : 0
@@ -412,7 +412,7 @@ function appendAssistantWithKb(content: string, meta: any) {
   }
 }
 
-// 统一任务模式：新消息后自动滚到底部
+// 统一任务模式：新消息后自动滚到底�?
 watch(() => items.value.length, async () => {
   if (!unifiedMode.value) return
   await nextTick()
@@ -420,7 +420,7 @@ watch(() => items.value.length, async () => {
   if (el) el.scrollTop = el.scrollHeight
 })
 
-// 侧面板（主从时间线：轨迹 / 会话历史）；上下文面板：桌面端（≥1025px）默认展开常驻，≤1024px 折叠为抽屉
+// 侧面板（主从时间线：轨迹 / 会话历史）；上下文面板：桌面端（�?025px）默认展开常驻，≤1024px 折叠为抽�?
 const panelOpen = ref(window.matchMedia('(min-width: 1025px)').matches)
 const panelView = ref<'trajectory' | 'sessions'>('trajectory')
 const trajectoryFocus = ref<number | null>(null)
@@ -431,7 +431,7 @@ function onTrajectoryFocus(index: number) {
   trajectoryToken.value += 1
 }
 
-// 打开面板并直达指定视图；点击已激活的入口则收起
+// 打开面板并直达指定视图；点击已激活的入口则收�?
 function openPanel(view: 'trajectory' | 'sessions') {
   if (panelOpen.value && panelView.value === view) {
     panelOpen.value = false
@@ -447,9 +447,9 @@ function openContextPanel() {
   panelOpen.value = true
 }
 
-// turn 计时（deepseek turnStatusClock）
+// turn 计时（deepseek turnStatusClock�?
 const turnElapsed = ref(0)
-const connectionLost = ref(false)  // SSE 断线横幅（deepseek ConnectionBanner）
+const connectionLost = ref(false)  // SSE 断线横幅（deepseek ConnectionBanner�?
 let turnTimer: ReturnType<typeof setInterval> | null = null
 
 function startTurnTimer() {
@@ -464,21 +464,21 @@ function stopTurnTimer() {
 
 function persistSessions() { localStorage.setItem('chat_sessions', JSON.stringify(sessions.value)) }
 
-// ── 会话 CRUD（保留原逻辑） ──
+// ── 会话 CRUD（保留原逻辑�?──
 onMounted(async () => {
-  // 互联互通：解析 /chat query（task / error / kb / agent / skill / workflow）
+  // 互联互通：解析 /chat query（task / error / kb / agent / skill / workflow�?
   await applyRouteQuery()
   await loadSessions()
   // 统一任务模式不自动切换普通会话；其余保持原有行为
   if (!unifiedMode.value && sessions.value.length > 0) {
     await switchSession(sessions.value[0].id)
   }
-  // 互联互通：同一路由内 query 变化（如 WorkstationNav 再次跳转）
+  // 互联互通：同一路由�?query 变化（如 WorkstationNav 再次跳转�?
   watch(() => route.query, () => applyRouteQuery())
-  // P2-G: 监听网络在线/离线状态
+  // P2-G: 监听网络在线/离线状�?
   window.addEventListener('online', onOnline)
   window.addEventListener('offline', onOffline)
-  // P2-H: 全局键盘快捷键
+  // P2-H: 全局键盘快捷�?
   window.addEventListener('keydown', onGlobalKeydown)
 })
 
@@ -499,7 +499,7 @@ let reconnectAttempts = 0
 function onOffline() {
   isOnline.value = false
   connectionLost.value = true
-  // 离线时停止 SSE 重试
+  // 离线时停�?SSE 重试
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
 }
 
@@ -514,10 +514,10 @@ function onOnline() {
 async function attemptReconnect() {
   if (!isOnline.value) return
   reconnectAttempts++
-  // 指数退避：1s, 2s, 4s, 8s, 16s（最多 16s）
+  // 指数退避：1s, 2s, 4s, 8s, 16s（最�?16s�?
   const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 16000)
   if (reconnectAttempts > 1) {
-    // 非首次重连，先等待
+    // 非首次重连，先等�?
     await new Promise(r => setTimeout(r, delay))
   }
   if (!isOnline.value) return
@@ -526,19 +526,19 @@ async function attemptReconnect() {
     await api.get('/health', { timeout: 5000 })
     connectionLost.value = false
     reconnectAttempts = 0
-    // 重连成功后重新加载当前会话（可能错过 SSE 事件）
+    // 重连成功后重新加载当前会话（可能错过 SSE 事件�?
     if (activeSessionId.value) {
       await switchSession(activeSessionId.value)
     }
   } catch {
-    // 仍未可达，安排下一次重试（最多 5 次）
+    // 仍未可达，安排下一次重试（最�?5 次）
     if (reconnectAttempts < 5) {
       reconnectTimer = setTimeout(attemptReconnect, delay)
     }
   }
 }
 
-// P2-I: 导出当前会话为 Markdown 文件
+// P2-I: 导出当前会话�?Markdown 文件
 function exportMarkdown() {
   if (!items.value.length) {
     message.warning('当前没有可导出的消息')
@@ -551,7 +551,7 @@ function exportMarkdown() {
     if (it.kind !== 'text') continue
     const role = it.role === 'user' ? '🧑 用户' : '🤖 助手'
     lines.push(`## ${role}`, '')
-    lines.push(it.content || '(空消息)')
+    lines.push(it.content || '(空消�?')
     if (it.attachments?.length) {
       lines.push('')
       for (const a of it.attachments) {
@@ -561,7 +561,7 @@ function exportMarkdown() {
     }
     lines.push('')
   }
-  // 工具调用也导出（便于审计）
+  // 工具调用也导出（便于审计�?
   const toolCalls = items.value.filter(i => i.kind === 'tool_call')
   if (toolCalls.length) {
     lines.push('---', '', '## 工具调用记录', '')
@@ -580,7 +580,7 @@ function exportMarkdown() {
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
-  message.success('已导出 Markdown')
+  message.success('已导�?Markdown')
 }
 
 // P3-C: 斜杠命令处理
@@ -589,7 +589,7 @@ function onSlashCommand(cmd: string) {
     case '/clear':
       items.value = []
       activeSessionId.value = ''
-      message.info('已清空当前对话')
+      message.info('已清空当前对�?)
       break
     case '/export':
       exportMarkdown()
@@ -598,7 +598,7 @@ function onSlashCommand(cmd: string) {
       items.value = []
       activeSessionId.value = ''
       panelOpen.value = false
-      message.info('已新建会话')
+      message.info('已新建会�?)
       break
     case '/theme':
       themeStore.toggleTheme()
@@ -612,9 +612,9 @@ function onSlashCommand(cmd: string) {
   }
 }
 
-// P2-H: 全局键盘快捷键
-// Ctrl/Cmd+K: 打开侧边栏 + 切到会话历史视图
-// Esc: 关闭侧边栏（若打开）
+// P2-H: 全局键盘快捷�?
+// Ctrl/Cmd+K: 打开侧边�?+ 切到会话历史视图
+// Esc: 关闭侧边栏（若打开�?
 function onGlobalKeydown(e: KeyboardEvent) {
   // Ctrl/Cmd + K
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
@@ -626,7 +626,7 @@ function onGlobalKeydown(e: KeyboardEvent) {
       searchInput?.focus()
     })
   }
-  // Esc 关闭侧边栏
+  // Esc 关闭侧边�?
   if (e.key === 'Escape' && panelOpen.value) {
     panelOpen.value = false
   }
@@ -648,21 +648,21 @@ async function loadSessions() {
 async function createSession() {
   let session: ChatSession | null = null
   try {
-    const res = await api.post('/v1/conversations', { title: '新对话', llm_config: buildLlmConfig() })
+    const res = await api.post('/v1/conversations', { title: '新对�?, llm_config: buildLlmConfig() })
     const data = res.data?.data || res.data
-    if (data?.id) session = { id: data.id, title: data.title || '新对话', created_at: data.created_at, updated_at: data.updated_at }
+    if (data?.id) session = { id: data.id, title: data.title || '新对�?, created_at: data.created_at, updated_at: data.updated_at }
   } catch { /* fallback */ }
   if (!session) {
     const id = crypto.randomUUID()
-    session = { id, title: '新对话', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }
+    session = { id, title: '新对�?, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }
   }
   sessions.value.unshift(session); persistSessions()
-  panelView.value = 'trajectory' // 新建会话后回到轨迹视图
+  panelView.value = 'trajectory' // 新建会话后回到轨迹视�?
   try { await switchSession(session.id) } catch { /* ignore */ }
 }
 
 async function switchSession(id: string) {
-  // 互联互通：从统一任务模式切到普通会话 → 移除 task/error（保留 kb/agent/skill/workflow 上下文）
+  // 互联互通：从统一任务模式切到普通会�?�?移除 task/error（保�?kb/agent/skill/workflow 上下文）
   if (unifiedMode.value && unifiedSessionId.value) {
     const q = { ...route.query }
     delete q.task
@@ -672,11 +672,11 @@ async function switchSession(id: string) {
     unifiedSessionId.value = ''
   }
   if (id === activeSessionId.value) return
-  // S 修复：请求序号守卫 — 快速切换会话时，先发的慢请求返回后不得覆盖新切换
+  // S 修复：请求序号守�?�?快速切换会话时，先发的慢请求返回后不得覆盖新切�?
   const mySeq = ++switchSeq.value
   activeSessionId.value = id; items.value = []; loading.value = true
   hasMore.value = false; earliestCursor.value = ''; loadingEarlier.value = false
-  initialLoading.value = true  // P2-E: 显示骨架屏
+  initialLoading.value = true  // P2-E: 显示骨架�?
   try {
     const res = await api.get(`/v1/conversations/${id}?limit=${HISTORY_PAGE_SIZE}`)
     if (mySeq !== switchSeq.value) return  // 已切到其它会话，丢弃本次结果
@@ -686,7 +686,7 @@ async function switchSession(id: string) {
       earliestCursor.value = data.cursor || ''
       hasMore.value = !!data.has_more
     }
-    // ── 会话级模式恢复：历史 llm_config.mode 有效则恢复 mode ref（切换器与 toolbar 同步高亮）──
+    // ── 会话级模式恢复：历史 llm_config.mode 有效则恢�?mode ref（切换器�?toolbar 同步高亮）──
     let cfg: any = data?.llm_config
     if (typeof cfg === 'string') { try { cfg = JSON.parse(cfg) } catch { cfg = undefined } }
     const savedMode = cfg?.mode
@@ -698,30 +698,30 @@ async function switchSession(id: string) {
   } catch { /* fallback */ } finally {
     if (mySeq === switchSeq.value) {
       loading.value = false
-      initialLoading.value = false  // P2-E: 隐藏骨架屏
+      initialLoading.value = false  // P2-E: 隐藏骨架�?
     }
   }
 }
 
-// P 性能：cursor 分页 — 触顶加载更早的消息（首屏只加载最近 HISTORY_PAGE_SIZE 条）
+// P 性能：cursor 分页 �?触顶加载更早的消息（首屏只加载最�?HISTORY_PAGE_SIZE 条）
 const HISTORY_PAGE_SIZE = 50
 const hasMore = ref(false)
 const earliestCursor = ref('')
 const loadingEarlier = ref(false)
 const initialLoading = ref(false)  // P2-E: 首次加载会话历史的骨架屏
-const switchSeq = ref(0)  // S 修复：切会话请求序号，用于丢弃过期响应
+const switchSeq = ref(0)  // S 修复：切会话请求序号，用于丢弃过期响�?
 
 function mergeHistory(messages: any[], toolCalls: any[]): ChatItem[] {
-  // 重构：工具调用双源渲染 — tool_calls 表为主源，messages 内联 tool_calls 列兜底
-  // （旧数据/中断场景 tool_calls 表可能为空，从 assistant 消息内联列还原工具链）
+  // 重构：工具调用双源渲�?�?tool_calls 表为主源，messages 内联 tool_calls 列兜�?
+  // （旧数据/中断场景 tool_calls 表可能为空，�?assistant 消息内联列还原工具链�?
   interface TimelineEntry { t: number; items: ChatItem[] }
   const timeline: TimelineEntry[] = (messages || [])
     .filter((m: any) => (m.role === 'user' || m.role === 'assistant') && m.content)
     .map((m: any) => {
-      const clock = formatClock(m.created_at) // S 修复：历史消息日期还原
+      const clock = formatClock(m.created_at) // S 修复：历史消息日期还�?
       const items: ChatItem[] = []
       if (m.role === 'user') {
-        // 剥离后端安全净化添加的 <user_input> 包装（Go InputSanitizer）
+        // 剥离后端安全净化添加的 <user_input> 包装（Go InputSanitizer�?
         items.push({ kind: 'text', role: 'user', content: stripUserInputTag(m.content), time: clock, id: m.id })
       } else {
         // assistant 历史：流式保存的原始文本（含 [thinking] 碎片）→ 宽松拆分
@@ -729,16 +729,16 @@ function mergeHistory(messages: any[], toolCalls: any[]): ChatItem[] {
         if (reasoning) items.push({ kind: 'reasoning', content: reasoning, time: clock, id: `${m.id}:r` })
         if (body) items.push({
           kind: 'text', role: 'assistant', content: body, time: clock, id: m.id,
-          // 反向定位：透传消息 metadata（kb_id/kb_hits/workflow_id/agent_id/trace_id）
+          // 反向定位：透传消息 metadata（kb_id/kb_hits/workflow_id/agent_id/trace_id�?
           metadata: normalizeMeta((m as any)?.metadata),
         } as any)
       }
       return { t: new Date(m.created_at).getTime(), items }
     })
 
-  // 1) 主源：tool_calls 表记录
+  // 1) 主源：tool_calls 表记�?
   const callsById = new Map<string, any>((toolCalls || []).map((tc: any) => [tc.id, tc]))
-  // 2) 兜底源：messages 内联 tool_calls 列（存 id 集合 ["c1","c2"]；兼容旧 OpenAI 格式对象数组）
+  // 2) 兜底源：messages 内联 tool_calls 列（�?id 集合 ["c1","c2"]；兼容旧 OpenAI 格式对象数组�?
   ;(messages || []).forEach((m: any) => {
     if (m.role !== 'assistant' || !m.tool_calls || m.tool_calls === '[]') return
     let inline: any[]
@@ -787,7 +787,7 @@ function mergeHistory(messages: any[], toolCalls: any[]): ChatItem[] {
     const d = new Date(e.t)
     const dayKey = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
     if (i > 0 && prevDay !== dayKey) {
-      merged.push({ kind: 'date_divider', content: `${d.getMonth() + 1}月${d.getDate()}日`, id: `date-${dayKey}-${i}` })
+      merged.push({ kind: 'date_divider', content: `${d.getMonth() + 1}�?{d.getDate()}日`, id: `date-${dayKey}-${i}` })
     }
     merged.push(...e.items)
     prevDay = dayKey
@@ -817,7 +817,7 @@ async function loadEarlier() {
     hasMore.value = false
   } finally {
     loadingEarlier.value = false
-    // 保持滚动位置（顶部插入内容后补偿）
+    // 保持滚动位置（顶部插入内容后补偿�?
     await nextTick()
     if (el) el.scrollTop = el.scrollHeight - prevHeight
   }
@@ -832,12 +832,12 @@ async function deleteSession(id: string) {
   }
 }
 
-// 删除前确认（菜单 danger 项 → Modal.confirm）
+// 删除前确认（菜单 danger �?�?Modal.confirm�?
 function requestDelete(id: string) {
   const s = sessions.value.find(x => x.id === id)
   Modal.confirm({
     title: '删除对话',
-    content: `确定删除「${s?.title || '新对话'}」？此操作不可恢复。`,
+    content: `确定删除�?{s?.title || '新对�?}」？此操作不可恢复。`,
     okText: '删除',
     okButtonProps: { danger: true },
     cancelText: '取消',
@@ -845,7 +845,7 @@ function requestDelete(id: string) {
   })
 }
 
-// ── 重命名（deepseek session rename dialog：Modal + 行内输入） ──
+// ── 重命名（deepseek session rename dialog：Modal + 行内输入�?──
 const renameTarget = ref<ChatSession | null>(null)
 const renameDraft = ref('')
 const renaming = ref(false)
@@ -863,7 +863,7 @@ async function confirmRename() {
   if (!title || !target) return
   renaming.value = true
   try {
-    // 会话级持久化：重命名时一并保存 llm_config（含 mode）
+    // 会话级持久化：重命名时一并保�?llm_config（含 mode�?
     await updateConversation(target.id, { title, llm_config: buildLlmConfig() } as any)
     const s = sessions.value.find(x => x.id === target.id)
     if (s) s.title = title
@@ -871,13 +871,13 @@ async function confirmRename() {
     message.success('已重命名')
     renameTarget.value = null
   } catch (e: any) {
-    message.error('重命名失败: ' + (e?.response?.data?.error || e?.message || '网络错误'))
+    message.error('重命名失�? ' + (e?.response?.data?.error || e?.message || '网络错误'))
   } finally {
     renaming.value = false
   }
 }
 
-// ── 置顶（列表排序：pinned DESC → updated_at DESC） ──
+// ── 置顶（列表排序：pinned DESC �?updated_at DESC�?──
 function sortSessions() {
   sessions.value = [...sessions.value].sort((a, b) => {
     if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1
@@ -892,7 +892,7 @@ async function togglePin(id: string, pinned: boolean) {
   s.pinned = pinned
   sortSessions(); persistSessions()
   try {
-    // 会话级持久化：置顶时一并保存 llm_config（含 mode）
+    // 会话级持久化：置顶时一并保�?llm_config（含 mode�?
     await updateConversation(id, { pinned, llm_config: buildLlmConfig() } as any)
   } catch {
     s.pinned = prev // 失败回滚
@@ -901,16 +901,16 @@ async function togglePin(id: string, pinned: boolean) {
   }
 }
 
-// P3-D: 设置会话标签（前端 localStorage 持久化，无需后端支持）
+// P3-D: 设置会话标签（前�?localStorage 持久化，无需后端支持�?
 function setSessionTag(id: string, tag: string) {
   const s = sessions.value.find(x => x.id === id)
   if (!s) return
   s.tag = tag || undefined
   persistSessions()
-  message.success(tag ? `已设置标签：${tag}` : '已清除标签')
+  message.success(tag ? `已设置标签：${tag}` : '已清除标�?)
 }
 
-// ── 分享（chat.deepseek.com/share/{id} 风格：选消息 → 生成链接 → 可取消） ──
+// ── 分享（chat.deepseek.com/share/{id} 风格：选消�?�?生成链接 �?可取消） ──
 const shareOpen = ref(false)
 const shareTarget = ref<ChatSession | null>(null)
 const shareInfo = ref<ShareInfo | null>(null)
@@ -941,9 +941,9 @@ async function openShare(id: string) {
   shareTarget.value = s
   shareInfo.value = null
   shareError.value = ''
-  shareMessageIds.value = shareCandidates.value.map(c => c.id) // 默认全选
+  shareMessageIds.value = shareCandidates.value.map(c => c.id) // 默认全�?
   if (!isGuest.value) {
-    try { shareInfo.value = await getActiveShare(s.id) } catch { /* 无活跃分享 */ }
+    try { shareInfo.value = await getActiveShare(s.id) } catch { /* 无活跃分�?*/ }
   }
   shareOpen.value = true
 }
@@ -956,7 +956,7 @@ function toggleShareMessage(id: string) {
 
 async function generateShare() {
   if (!shareTarget.value) return
-  if (shareMessageIds.value.length === 0) { message.warning('请至少选择一条要分享的消息'); return }
+  if (shareMessageIds.value.length === 0) { message.warning('请至少选择一条要分享的消�?); return }
   shareLoading.value = true
   shareError.value = ''
   try {
@@ -974,7 +974,7 @@ async function revokeCurrentShare() {
   try {
     await revokeShare(shareTarget.value.id)
     shareInfo.value = null
-    message.success('分享已取消，链接已失效')
+    message.success('分享已取消，链接已失�?)
   } catch {
     message.error('取消分享失败')
   } finally {
@@ -989,14 +989,14 @@ function shareUrl(): string {
 async function copyShareLink() {
   try {
     await navigator.clipboard.writeText(shareUrl())
-    message.success('链接已复制')
+    message.success('链接已复�?)
   } catch {
     message.error('复制失败')
   }
 }
 
-// ── SSE 编排：事件 → ChatItem ──
-// 流式缓冲：累积 assistant 原始文本后整体重算（跨 chunk 的 [thinking] 标签正确配对）
+// ── SSE 编排：事�?�?ChatItem ──
+// 流式缓冲：累�?assistant 原始文本后整体重算（�?chunk �?[thinking] 标签正确配对�?
 let streamBuf = ''
 let streamTextId = ''
 let streamReasonId = ''
@@ -1011,7 +1011,7 @@ function appendUserText(text: string, attachments?: ChatAttachment[]) {
   items.value.push({ kind: 'text', role: 'user', content: text, id: genItemId(), attachments })
 }
 
-// P 性能/正确性：稳定 id（虚拟列表 key + 流式定位，loadEarlier 头部插入不错位）
+// P 性能/正确性：稳定 id（虚拟列�?key + 流式定位，loadEarlier 头部插入不错位）
 let itemIdSeq = 0
 function genItemId() {
   return `msg_${Date.now().toString(36)}_${itemIdSeq++}`
@@ -1099,7 +1099,7 @@ function onSSEMessage(raw: any) {
       })
     }
   } else if (type === 'approval') {
-    // S 安全修复：工具确认请求 — 展示确认卡片，等待用户允许/拒绝
+    // S 安全修复：工具确认请�?�?展示确认卡片，等待用户允�?拒绝
     const callId = d?.id ?? d?.tool_call_id ?? String(Date.now())
     pendingApprovals.value.push({
       id: callId,
@@ -1107,12 +1107,12 @@ function onSSEMessage(raw: any) {
       arguments: d?.arguments ?? '',
     })
   } else if (type === 'guardrail_blocked') {
-    // S 安全修复：输入/输出栅栏拦截 — 提示并停止
+    // S 安全修复：输�?输出栅栏拦截 �?提示并停�?
     flushStreamingFlags()
     loading.value = false
     stopTurnTimer()
     activeSSE?.close(); activeSSE = null
-    message.warning(d?.content || '请求被安全策略拦截')
+    message.warning(d?.content || '请求被安全策略拦�?)
   } else if (type === 'error') {
     flushStreamingFlags()
     loading.value = false
@@ -1123,7 +1123,7 @@ function onSSEMessage(raw: any) {
 }
 
 async function sendMessage(text: string, attachments?: ChatAttachment[]) {
-  // 互联互通：统一任务模式 → POST /v1/chat/submit（与 SSE 流式并列的新路径）
+  // 互联互通：统一任务模式 �?POST /v1/chat/submit（与 SSE 流式并列的新路径�?
   if (unifiedMode.value && unifiedSessionId.value) {
     await sendUnified(text, attachments)
     return
@@ -1135,7 +1135,7 @@ async function sendMessage(text: string, attachments?: ChatAttachment[]) {
   appendUserText(text, attachments)
   const userItemId = items.value[items.value.length - 1]?.id
   const sessionId = activeSessionId.value || crypto.randomUUID()
-  currentTraceId.value = ''  // 清空上一次 trace_id
+  currentTraceId.value = ''  // 清空上一�?trace_id
   try {
     if (activeSSE) { activeSSE.close(); activeSSE = null }
     activeSSE = await createSSEConnection(
@@ -1144,17 +1144,17 @@ async function sendMessage(text: string, attachments?: ChatAttachment[]) {
       () => {
         loading.value = false
         stopTurnTimer()
-        connectionLost.value = true   // SSE 断线 → 顶部横幅（deepseek ConnectionBanner）
+        connectionLost.value = true   // SSE 断线 �?顶部横幅（deepseek ConnectionBanner�?
         activeSSE?.close(); activeSSE = null
         // P1-3: 标记用户消息为失败，展示重试按钮
         markMessageFailed(userItemId, '连接已断开')
       },
     )
     const body: any = { content: text, session_id: sessionId, llm_config: buildLlmConfig() }
-    // 互联互通：上下文附加（知识库/Agent/技能/工作流，普通 SSE 模式同样携带）
+    // 互联互通：上下文附加（知识�?Agent/技�?工作流，普�?SSE 模式同样携带�?
     const ctx = buildContext()
     if (ctx) body.context = ctx
-    // 安全改造：附件若为 /media/ 公开路径，先解析为短时效签名 URL 再发送（loading 期间发送已禁用）
+    // 安全改造：附件若为 /media/ 公开路径，先解析为短时效签名 URL 再发送（loading 期间发送已禁用�?
     const resolvedAtts = await resolveAttachmentUrls(attachments)
     if (resolvedAtts.length) {
       body.attachments = resolvedAtts.map(a => ({ id: a.id, name: a.name, mime_type: a.mimeType, url: a.url, is_image: a.isImage }))
@@ -1162,14 +1162,14 @@ async function sendMessage(text: string, attachments?: ChatAttachment[]) {
     await api.post('/submit', body)
     activeSessionId.value = sessionId
   } catch (e: any) {
-    // S 修复：发送失败时关闭 SSE，避免连接泄漏 + 迟到流事件污染消息列表
+    // S 修复：发送失败时关闭 SSE，避免连接泄�?+ 迟到流事件污染消息列�?
     if (activeSSE) { activeSSE.close(); activeSSE = null }
     loading.value = false
     stopTurnTimer()
     flushStreamingFlags()
-    // P1-3: 标记用户消息为失败，展示重试按钮（而非仅 toast）
+    // P1-3: 标记用户消息为失败，展示重试按钮（而非�?toast�?
     markMessageFailed(userItemId, e.message || '网络错误')
-    message.error('发送失败: ' + (e.message || '网络错误'))
+    message.error('发送失�? ' + (e.message || '网络错误'))
   }
 }
 
@@ -1190,7 +1190,7 @@ function truncateFrom(itemId: string): { text?: string; attachments?: ChatAttach
   if (idx < 0) return {}
   const removed = items.value.slice(idx)
   items.value = items.value.slice(0, idx)
-  // 找到被删除的用户消息文本（用于 regenerate：取上一条用户消息）
+  // 找到被删除的用户消息文本（用�?regenerate：取上一条用户消息）
   const userMsg = removed.find(i => i.kind === 'text' && i.role === 'user') as any
   return userMsg ? { text: userMsg.content, attachments: userMsg.attachments } : {}
 }
@@ -1201,12 +1201,12 @@ function retryFromUserMessage(itemId: string, newText: string) {
   sendMessage(newText)
 }
 
-/** 助手消息重新生成：删除该消息及之后所有，取上一条用户消息重发 */
+/** 助手消息重新生成：删除该消息及之后所有，取上一条用户消息重�?*/
 function regenerateAssistant(itemId: string) {
-  // 找到这条助手消息之前的最后一条用户消息
+  // 找到这条助手消息之前的最后一条用户消�?
   const idx = items.value.findIndex(i => i.id === itemId)
   if (idx < 0) return
-  // 向前找最近一条用户消息
+  // 向前找最近一条用户消�?
   let userMsg: any = null
   for (let i = idx - 1; i >= 0; i--) {
     const it = items.value[i]
@@ -1217,7 +1217,7 @@ function regenerateAssistant(itemId: string) {
     // 连同附件一起重发（注意：这里也删掉了之前的用户消息，所以要带回去）
     sendMessage(userMsg.content, userMsg.attachments)
   } else {
-    message.warning('未找到对应的用户消息，无法重新生成')
+    message.warning('未找到对应的用户消息，无法重新生�?)
   }
 }
 
@@ -1239,18 +1239,18 @@ function stopGeneration() {
   if (activeSSE) { activeSSE.close(); activeSSE = null }
   loading.value = false
   flushStreamingFlags()
-  // P2-F: 标记最后一条助手消息为"已停止"，在下方显示"继续生成"提示
+  // P2-F: 标记最后一条助手消息为"已停�?，在下方显示"继续生成"提示
   const last = items.value[items.value.length - 1]
   if (last && last.kind === 'text' && last.role === 'assistant') {
     last.stopped = true
   }
 }
 
-// P2-F: 继续生成（停止后）— 等价于重新生成最后一条助手消息
+// P2-F: 继续生成（停止后）�?等价于重新生成最后一条助手消�?
 function continueGeneration() {
   const last = items.value[items.value.length - 1]
   if (last && last.kind === 'text' && last.role === 'assistant' && last.stopped) {
-    // 用 regenerate 逻辑：删除该消息及之后所有，用上一条用户消息重发
+    // �?regenerate 逻辑：删除该消息及之后所有，用上一条用户消息重�?
     regenerateAssistant(last.id!)
   }
 }
@@ -1260,14 +1260,14 @@ function continueGeneration() {
   <div class="chat-layout">
     <div class="chat-main">
       <div v-if="connectionLost" class="connection-banner">
-        {{ isOnline ? '与服务器的连接已断开，正在尝试重连…' : '网络已断开，请检查网络连接' }}
+        {{ isOnline ? '与服务器的连接已断开，正在尝试重连�? : '网络已断开，请检查网络连�? }}
       </div>
       <div class="chat-body">
-        <!-- 内容区工具条：对话名称居中（避开左上角品牌胶囊），右侧会话/轨迹入口 -->
+        <!-- 内容区工具条：对话名称居中（避开左上角品牌胶囊），右侧会�?轨迹入口 -->
         <div class="chat-toolbar">
           <div class="toolbar-side" aria-hidden="true" />
           <div class="toolbar-center">
-            <span class="toolbar-title">{{ unifiedMode ? '统一任务' : (activeSession?.title || 'MiniCC') }}</span>
+            <span class="toolbar-title">{{ unifiedMode ? '统一任务' : (activeSession?.title || 'Chiron') }}</span>
             <span class="toolbar-mode">{{ unifiedMode ? (unifiedSubmitMode || 'auto') : (modeOptions.find(o => o.value === mode)?.label || '常规') }}</span>
           </div>
           <div class="toolbar-side toolbar-actions">
@@ -1289,10 +1289,10 @@ function continueGeneration() {
               <template #icon><HistoryOutlined /></template>
               <span class="toolbar-label">轨迹</span>
             </Button>
-            <!-- P2-I: 导出当前会话为 Markdown -->
+            <!-- P2-I: 导出当前会话�?Markdown -->
             <Button
               type="text" size="small" class="toolbar-btn"
-              title="导出为 Markdown"
+              title="导出�?Markdown"
               :disabled="!items.length"
               @click="exportMarkdown"
             >
@@ -1302,7 +1302,7 @@ function continueGeneration() {
             <!-- P3-A: 暗色模式切换 -->
             <Button
               type="text" size="small" class="toolbar-btn"
-              :title="themeStore.isDark ? '切换到亮色模式' : '切换到暗色模式'"
+              :title="themeStore.isDark ? '切换到亮色模�? : '切换到暗色模�?"
               @click="themeStore.toggleTheme()"
             >
               <template #icon>
@@ -1313,29 +1313,29 @@ function continueGeneration() {
           </div>
         </div>
 
-        <!-- 互联互通：错误提示条（query.error） -->
+        <!-- 互联互通：错误提示条（query.error�?-->
         <div v-if="errorBanner" class="unified-error-banner">
           <span class="ueb-text">{{ errorBanner }}</span>
           <CloseOutlined class="ueb-close" title="关闭" @click="errorBanner = ''" />
         </div>
 
-        <!-- 互联互通：统一任务模式（WorkstationNav 发起；POST /v1/chat/submit，不走 SSE） -->
+        <!-- 互联互通：统一任务模式（WorkstationNav 发起；POST /v1/chat/submit，不�?SSE�?-->
         <template v-if="unifiedMode">
-          <!-- 统一任务标识 + 会话 mode 标签 + 清空/退出（编排中脉冲 + 完成态过渡） -->
+          <!-- 统一任务标识 + 会话 mode 标签 + 清空/退出（编排中脉�?+ 完成态过渡） -->
           <div class="unified-bar">
             <span class="ub-badge" :class="{ running: loading, done: unifiedJustFinished }">
-              {{ loading ? '编排中' : unifiedJustFinished ? '完成' : '统一任务' }}
+              {{ loading ? '编排�? : unifiedJustFinished ? '完成' : '统一任务' }}
             </span>
             <span class="ub-mode">{{ unifiedSubmitMode || 'auto' }}</span>
             <span class="ub-spacer" />
             <button type="button" class="ub-btn" :disabled="!items.length" @click="clearUnifiedMessages">清空</button>
-            <button type="button" class="ub-btn exit" title="退出统一任务模式" @click="exitUnifiedMode">退出</button>
+            <button type="button" class="ub-btn exit" title="退出统一任务模式" @click="exitUnifiedMode">退�?/button>
           </div>
-          <!-- 执行中：正在编排/执行子任务的轻量提示（CallChainTimeline 在 trace 就绪后展示） -->
+          <!-- 执行中：正在编排/执行子任务的轻量提示（CallChainTimeline �?trace 就绪后展示） -->
           <div v-if="loading" class="unified-exec-hint">
-            <span class="ueh-dot" />正在编排/执行子任务…<template v-if="turnElapsed >= 2">&nbsp;·&nbsp;{{ turnElapsed }}s</template>
+            <span class="ueh-dot" />正在编排/执行子任务�?template v-if="turnElapsed >= 2">&nbsp;·&nbsp;{{ turnElapsed }}s</template>
           </div>
-          <div v-if="!items.length && !loading" class="unified-empty">统一任务会话已就绪，直接发送消息即可继续追问</div>
+          <div v-if="!items.length && !loading" class="unified-empty">统一任务会话已就绪，直接发送消息即可继续追�?/div>
           <div class="unified-list">
             <template v-for="(it, i) in items" :key="it.id ?? i">
               <MessageItem
@@ -1347,14 +1347,14 @@ function continueGeneration() {
                 @retry-failed="retryFailedMessage"
               />
               <div v-else-if="(it as any).kind === 'kb_hits'" class="kb-hits-tag">
-                <span class="kb-hits-text">引用了知识库（×{{ (it as any).count || 1 }}）</span>
+                <span class="kb-hits-text">引用了知识库（×{{ (it as any).count || 1 }}�?/span>
                 <a
                   v-if="(it as any).kb_id"
                   class="kb-hits-link"
                   href="#"
                   title="查看引用的知识库"
                   @click.prevent="openKb((it as any).kb_id)"
-                >查看知识库</a>
+                >查看知识�?/a>
               </div>
             </template>
           </div>
@@ -1383,7 +1383,7 @@ function continueGeneration() {
             @continue="continueGeneration"
             @retry-failed="retryFailedMessage"
           />
-          <!-- ── Trace 调用链时间线 (仅在有 trace_id 且非 loading 时显示) ── -->
+          <!-- ── Trace 调用链时间线 (仅在�?trace_id 且非 loading 时显�? ── -->
           <CallChainTimeline
             v-if="currentTraceId && !loading"
             :trace-id="currentTraceId"
@@ -1421,7 +1421,7 @@ function continueGeneration() {
       />
     </div>
 
-    <!-- 侧面板自由浮动抽屉（轨迹 ⇄ 会话历史主从导航）+ 点击遮罩关闭 -->
+    <!-- 侧面板自由浮动抽屉（轨迹 �?会话历史主从导航�? 点击遮罩关闭 -->
     <Transition name="overlay-fade">
       <div v-if="panelOpen" class="panel-overlay" @click="panelOpen = false"></div>
     </Transition>
@@ -1451,7 +1451,7 @@ function continueGeneration() {
     <!-- 重命名对话框 -->
     <Modal
       :open="!!renameTarget"
-      title="重命名对话"
+      title="重命名对�?
       :confirm-loading="renaming"
       ok-text="保存"
       cancel-text="取消"
@@ -1466,10 +1466,10 @@ function continueGeneration() {
       />
     </Modal>
 
-    <!-- 分享对话框（选消息 → 生成链接 → 可随时取消） -->
+    <!-- 分享对话框（选消�?�?生成链接 �?可随时取消） -->
     <Modal
       :open="shareOpen"
-      :title="`分享「${shareTarget?.title || '新对话'}」`"
+      :title="`分享�?{shareTarget?.title || '新对�?}」`"
       :footer="null"
       width="560px"
       @cancel="shareOpen = false"
@@ -1478,12 +1478,12 @@ function continueGeneration() {
         type="warning"
         show-icon
         class="share-risk"
-        message="分享链接对任何获得链接的人可见"
-        description="请勿分享包含敏感或隐私信息的内容。你可以随时取消分享，取消后链接立即失效。"
+        message="分享链接对任何获得链接的人可�?
+        description="请勿分享包含敏感或隐私信息的内容。你可以随时取消分享，取消后链接立即失效�?
       />
 
       <template v-if="isGuest">
-        <div class="share-guest-tip">登录后即可生成分享链接。</div>
+        <div class="share-guest-tip">登录后即可生成分享链接�?/div>
       </template>
 
       <template v-else-if="shareInfo">
@@ -1497,13 +1497,13 @@ function continueGeneration() {
           </Button>
         </div>
         <div class="share-manage">
-          <span class="share-manage-hint">链接已公开，任何获得链接的人均可查看。</span>
+          <span class="share-manage-hint">链接已公开，任何获得链接的人均可查看�?/span>
           <Button danger :loading="shareRevoking" @click="revokeCurrentShare">取消分享</Button>
         </div>
       </template>
 
       <template v-else>
-        <div class="share-select-title">选择要分享的消息（{{ shareMessageIds.length }}/{{ shareCandidates.length }}）</div>
+        <div class="share-select-title">选择要分享的消息（{{ shareMessageIds.length }}/{{ shareCandidates.length }}�?/div>
         <div class="share-select-list">
           <label
             v-for="c in shareCandidates"
@@ -1512,8 +1512,8 @@ function continueGeneration() {
             @click.prevent="toggleShareMessage(c.id)"
           >
             <Checkbox :checked="shareMessageIds.includes(c.id)" @click.stop />
-            <span class="share-select-role" :class="c.role">{{ c.role === 'user' ? '我' : 'AI' }}</span>
-            <span class="share-select-preview">{{ c.preview || '（空消息）' }}</span>
+            <span class="share-select-role" :class="c.role">{{ c.role === 'user' ? '�? : 'AI' }}</span>
+            <span class="share-select-preview">{{ c.preview || '（空消息�? }}</span>
           </label>
         </div>
         <div v-if="shareError" class="share-error">{{ shareError }}</div>
@@ -1562,7 +1562,7 @@ function continueGeneration() {
 .toolbar-btn:hover { color: var(--text-primary) !important; background: var(--bg-hover) !important; }
 .toolbar-btn.active { color: var(--primary); background: var(--primary-bg); }
 .toolbar-btn:not(:disabled):active { transform: scale(0.94); }
-/* ── 响应式：≤1024px 侧栏抽屉化；≤768px 工具栏图标化；≤576px 极窄适配 ── */
+/* ── 响应式：�?024px 侧栏抽屉化；�?68px 工具栏图标化；≤576px 极窄适配 ── */
 @media (max-width: 1024px) {
   .chat-toolbar { padding: 0 10px; }
   .toolbar-title { max-width: 32vw; }
@@ -1580,7 +1580,7 @@ function continueGeneration() {
   .approval-zone { padding: 0 12px 8px; }
   .turn-status { margin: 8px auto 0; padding: 0 12px; }
 }
-/* S 安全修复：工具确认卡片 */
+/* S 安全修复：工具确认卡�?*/
 .approval-zone { padding: 0 20px 8px; display: flex; flex-direction: column; gap: 8px; }
 .approval-card { background: var(--bg-card); border: 1px solid var(--border); border-left: 3px solid var(--primary); border-radius: 10px; padding: 10px 14px; }
 .approval-info { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
@@ -1594,14 +1594,14 @@ function continueGeneration() {
 .approval-btn.allow:hover { opacity: 0.9; }
 .approval-btn.danger { background: var(--bg-hover); color: var(--text-primary); }
 .approval-btn.danger:hover { background: var(--danger-bg, rgba(239,68,68,.12)); color: var(--danger, #ef4444); }
-/* 连接断线横幅（deepseek ConnectionBanner：fixed 顶部全宽红底白字） */
+/* 连接断线横幅（deepseek ConnectionBanner：fixed 顶部全宽红底白字�?*/
 .connection-banner {
   position: fixed; top: 0; left: 0; right: 0; z-index: 100;
   padding: 4px 12px; text-align: center;
   font-size: 12px; line-height: 18px;
   background: var(--error); color: #fff;
 }
-/* 分享对话框 */
+/* 分享对话�?*/
 .share-risk { margin-bottom: 14px; }
 .share-guest-tip { padding: 20px 0; text-align: center; color: var(--text-secondary); font-size: 14px; }
 .share-link-row { display: flex; gap: 10px; margin-top: 14px; }
@@ -1622,7 +1622,7 @@ function continueGeneration() {
 .share-select-preview { flex: 1; min-width: 0; font-size: 13px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .share-error { margin-top: 10px; font-size: 12px; color: var(--error); }
 .share-actions { display: flex; justify-content: flex-end; margin-top: 14px; }
-/* turn 状态条：品牌蓝文字流光（deepseek turnStatus） */
+/* turn 状态条：品牌蓝文字流光（deepseek turnStatus�?*/
 .turn-status {
   align-self: flex-start; margin: 10px auto 0; max-width: 748px; padding: 0 24px;
   height: 26px; display: inline-flex; align-items: center;
@@ -1637,12 +1637,12 @@ function continueGeneration() {
 @media (prefers-reduced-motion: reduce) {
   .turn-status { background-position: 0 0; background-size: 100% 100%; animation: none; }
 }
-/* 侧面板遮罩：点击关闭（z 低于面板 120） */
+/* 侧面板遮罩：点击关闭（z 低于面板 120�?*/
 .panel-overlay {
   position: fixed; inset: 0; z-index: 110;
   background: rgba(10, 10, 12, 0.35);
 }
-/* 桌面端（≥1025px）：上下文面板常驻展开，无需遮罩 */
+/* 桌面端（�?025px）：上下文面板常驻展开，无需遮罩 */
 @media (min-width: 1025px) { .panel-overlay { display: none; } }
 .overlay-fade-enter-active, .overlay-fade-leave-active { transition: opacity 0.2s ease; }
 .overlay-fade-enter-from, .overlay-fade-leave-to { opacity: 0; }
@@ -1673,7 +1673,7 @@ function continueGeneration() {
   transition: background 0.3s ease;
 }
 .ub-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: rgba(255, 255, 255, 0.85); }
-/* 编排中：圆点脉冲 + 徽标呼吸（与 .unified-exec-hint 同一语言） */
+/* 编排中：圆点脉冲 + 徽标呼吸（与 .unified-exec-hint 同一语言�?*/
 .ub-badge.running::before {
   animation: uehPulse 1.1s ease-in-out infinite;
   box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.5);
@@ -1726,7 +1726,7 @@ function continueGeneration() {
   .ub-badge { transition: none; }
 }
 
-/* ── 互联互通：统一任务消息列表（复用 MessageItem 渲染 user/assistant）── */
+/* ── 互联互通：统一任务消息列表（复�?MessageItem 渲染 user/assistant）── */
 .unified-list { flex: 1; overflow-y: auto; padding: 12px 0 24px; scrollbar-width: thin; scrollbar-color: var(--text-disabled) transparent; }
 .unified-empty { padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: 13px; }
 /* 知识库引用小标签（assistant 消息下方；kb_id 已知时展示“查看知识库”链接） */

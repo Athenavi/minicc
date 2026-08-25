@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/athenavi/minicc/config"
+	"github.com/athenavi/chiron/config"
 )
 
 func testConfig(t *testing.T, appSecret string) *config.Config {
@@ -16,33 +16,27 @@ func testConfig(t *testing.T, appSecret string) *config.Config {
 	return config.LoadAllowUnconfigured()
 }
 
-// TestInitInstallToken_Derived 意图：APP_SECRET 有效时安装令牌必须为确定性派生
-// （重启后不变，部署者可在启动日志中拿到同一令牌）。
-func TestInitInstallToken_Derived(t *testing.T) {
+// TestInitInstallToken_Derived 鎰忓浘锛欰PP_SECRET 鏈夋晥鏃跺畨瑁呬护鐗屽繀椤讳负纭畾鎬ф淳鐢?// 锛堥噸鍚悗涓嶅彉锛岄儴缃茶€呭彲鍦ㄥ惎鍔ㄦ棩蹇椾腑鎷垮埌鍚屼竴浠ょ墝锛夈€?func TestInitInstallToken_Derived(t *testing.T) {
 	installToken = ""
 	defer func() { installToken = "" }()
 
 	cfg := testConfig(t, "test-app-secret-32-bytes-long-for-testing!")
 	tok1 := InitInstallToken(cfg)
-	tok2 := InitInstallToken(cfg) // 幂等：重复调用返回同一令牌
+	tok2 := InitInstallToken(cfg) // 骞傜瓑锛氶噸澶嶈皟鐢ㄨ繑鍥炲悓涓€浠ょ墝
 	if tok1 == "" || tok1 != tok2 {
 		t.Fatalf("derived install token must be stable and non-empty: %q vs %q", tok1, tok2)
 	}
-	// 与独立派生结果一致（确定性）
+	// 涓庣嫭绔嬫淳鐢熺粨鏋滀竴鑷达紙纭畾鎬э級
 	if tok1 != deriveInstallToken(cfg.AppSecret) {
 		t.Fatalf("InitInstallToken != deriveInstallToken: %q vs %q", tok1, deriveInstallToken(cfg.AppSecret))
 	}
 }
 
-// TestInitInstallToken_RandomFallback 意图：APP_SECRET 缺失（首次部署）时令牌
-// 为进程内随机值（Jenkins 模式），两次独立初始化不得相同。
-func TestInitInstallToken_RandomFallback(t *testing.T) {
+// TestInitInstallToken_RandomFallback 鎰忓浘锛欰PP_SECRET 缂哄け锛堥娆￠儴缃诧級鏃朵护鐗?// 涓鸿繘绋嬪唴闅忔満鍊硷紙Jenkins 妯″紡锛夛紝涓ゆ鐙珛鍒濆鍖栦笉寰楃浉鍚屻€?func TestInitInstallToken_RandomFallback(t *testing.T) {
 	installToken = ""
 	defer func() { installToken = "" }()
 
-	// 用「非空但弱值」模拟 APP_SECRET 缺失：loadDotEnv 只注入 env 为空的键，
-	// 弱值（<32 字符）不满足 ValidateAppSecret → 走随机 fallback 分支。
-	cfg := testConfig(t, "weak")
+	// 鐢ㄣ€岄潪绌轰絾寮卞€笺€嶆ā鎷?APP_SECRET 缂哄け锛歭oadDotEnv 鍙敞鍏?env 涓虹┖鐨勯敭锛?	// 寮卞€硷紙<32 瀛楃锛変笉婊¤冻 ValidateAppSecret 鈫?璧伴殢鏈?fallback 鍒嗘敮銆?	cfg := testConfig(t, "weak")
 	tok1 := InitInstallToken(cfg)
 	installToken = ""
 	tok2 := InitInstallToken(cfg)
@@ -51,11 +45,9 @@ func TestInitInstallToken_RandomFallback(t *testing.T) {
 	}
 }
 
-// TestEncryptSecret_Roundtrip 意图：DSN/Redis 密码以 AES-256-GCM 加密后必须可解密还原，
-// 且密文不得泄露明文；错误密钥（APP_SECRET 变更）解密必须失败。
-func TestEncryptSecret_Roundtrip(t *testing.T) {
+// TestEncryptSecret_Roundtrip 鎰忓浘锛欴SN/Redis 瀵嗙爜浠?AES-256-GCM 鍔犲瘑鍚庡繀椤诲彲瑙ｅ瘑杩樺師锛?// 涓斿瘑鏂囦笉寰楁硠闇叉槑鏂囷紱閿欒瀵嗛挜锛圓PP_SECRET 鍙樻洿锛夎В瀵嗗繀椤诲け璐ャ€?func TestEncryptSecret_Roundtrip(t *testing.T) {
 	secret := "test-app-secret-32-bytes-long-for-testing!"
-	plain := "postgres://user:pass@host:5432/minicc?sslmode=disable"
+	plain := "postgres://user:pass@host:5432/chiron?sslmode=disable"
 
 	enc, err := encryptSecret(secret, plain)
 	if err != nil {
@@ -72,19 +64,18 @@ func TestEncryptSecret_Roundtrip(t *testing.T) {
 		t.Fatalf("roundtrip mismatch: %q", dec)
 	}
 
-	// 错误密钥解密失败
+	// 閿欒瀵嗛挜瑙ｅ瘑澶辫触
 	if _, err := decryptSecret("wrong-app-secret-32-bytes-long-value!!", enc); err == nil {
 		t.Fatalf("decrypt with wrong key must fail")
 	}
-	// 空值往返保持空
+	// 绌哄€煎線杩斾繚鎸佺┖
 	if encEmpty, _ := encryptSecret(secret, ""); encEmpty != "" {
 		t.Fatalf("empty plaintext should stay empty, got %q", encEmpty)
 	}
 }
 
-// TestInstallMW 意图：安装端点必须校验 X-Install-Token（header 或 ?token= 查询参数），
-// 未携带或错误令牌一律 401；令牌匹配时放行。
-func TestInstallMW(t *testing.T) {
+// TestInstallMW 鎰忓浘锛氬畨瑁呯鐐瑰繀椤绘牎楠?X-Install-Token锛坔eader 鎴??token= 鏌ヨ鍙傛暟锛夛紝
+// 鏈惡甯︽垨閿欒浠ょ墝涓€寰?401锛涗护鐗屽尮閰嶆椂鏀捐銆?func TestInstallMW(t *testing.T) {
 	installToken = ""
 	defer func() { installToken = "" }()
 
@@ -95,7 +86,7 @@ func TestInstallMW(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { ok = true })
 	h := installMW(next)
 
-	// 无令牌 → 401
+	// 鏃犱护鐗?鈫?401
 	req := httptest.NewRequest(http.MethodGet, "/v1/install/step1", nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -103,7 +94,7 @@ func TestInstallMW(t *testing.T) {
 		t.Fatalf("no token: got %d, ok=%v", w.Code, ok)
 	}
 
-	// 错误令牌 → 401
+	// 閿欒浠ょ墝 鈫?401
 	ok = false
 	req = httptest.NewRequest(http.MethodGet, "/v1/install/step1", nil)
 	req.Header.Set("X-Install-Token", "wrong")
@@ -113,7 +104,7 @@ func TestInstallMW(t *testing.T) {
 		t.Fatalf("wrong token: got %d, ok=%v", w.Code, ok)
 	}
 
-	// header 正确令牌 → 放行
+	// header 姝ｇ‘浠ょ墝 鈫?鏀捐
 	ok = false
 	req = httptest.NewRequest(http.MethodGet, "/v1/install/step1", nil)
 	req.Header.Set("X-Install-Token", tok)
@@ -123,8 +114,7 @@ func TestInstallMW(t *testing.T) {
 		t.Fatalf("header token: got %d, ok=%v", w.Code, ok)
 	}
 
-	// ?token= 查询参数 → 放行（前端从 URL 读取后转 header，curl 便捷路径）
-	ok = false
+	// ?token= 鏌ヨ鍙傛暟 鈫?鏀捐锛堝墠绔粠 URL 璇诲彇鍚庤浆 header锛宑url 渚挎嵎璺緞锛?	ok = false
 	req = httptest.NewRequest(http.MethodGet, "/v1/install/step1?token="+tok, nil)
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -132,8 +122,7 @@ func TestInstallMW(t *testing.T) {
 		t.Fatalf("query token: got %d, ok=%v", w.Code, ok)
 	}
 
-	// 令牌未初始化（非 setup 模式）时恒拒绝
-	installToken = ""
+	// 浠ょ墝鏈垵濮嬪寲锛堥潪 setup 妯″紡锛夋椂鎭掓嫆缁?	installToken = ""
 	ok = false
 	req = httptest.NewRequest(http.MethodGet, "/v1/install/step1", nil)
 	req.Header.Set("X-Install-Token", tok)
@@ -144,9 +133,8 @@ func TestInstallMW(t *testing.T) {
 	}
 }
 
-// TestInstallLockPersistence 意图：install.lock 加密字段必须能原子落盘并原样读回
-// （Step 2 保存 → 重启后 ApplyInstallLockConfig 读取解密的基础）。
-func TestInstallLockPersistence(t *testing.T) {
+// TestInstallLockPersistence 鎰忓浘锛歩nstall.lock 鍔犲瘑瀛楁蹇呴』鑳藉師瀛愯惤鐩樺苟鍘熸牱璇诲洖
+// 锛圫tep 2 淇濆瓨 鈫?閲嶅惎鍚?ApplyInstallLockConfig 璇诲彇瑙ｅ瘑鐨勫熀纭€锛夈€?func TestInstallLockPersistence(t *testing.T) {
 	secret := "test-app-secret-32-bytes-long-for-testing!"
 	dsnEnc, _ := encryptSecret(secret, "postgres://u:p@h:5432/db")
 	redisEnc, _ := encryptSecret(secret, "localhost:6379")
@@ -168,8 +156,7 @@ func TestInstallLockPersistence(t *testing.T) {
 	}
 	defer os.Remove(installLockPath)
 
-	// 二次写入（Step 2 → Step 3 连续更新）：Windows 上 os.Rename 不覆盖已存在目标，必须兼容
-	original.Step3Done = true
+	// 浜屾鍐欏叆锛圫tep 2 鈫?Step 3 杩炵画鏇存柊锛夛細Windows 涓?os.Rename 涓嶈鐩栧凡瀛樺湪鐩爣锛屽繀椤诲吋瀹?	original.Step3Done = true
 	original.Completed = true
 	if err := SaveInstallLock(original); err != nil {
 		t.Fatalf("SaveInstallLock (overwrite): %v", err)
@@ -193,11 +180,10 @@ func TestInstallLockPersistence(t *testing.T) {
 	}
 }
 
-// TestApplyInstallLockConfig 意图：安装完成后重启，main 用 lock 中加密的 DSN/Redis
-// 配置覆盖引导值；env 显式设置的 POSTGRES_DSN 优先于 lock。
-func TestApplyInstallLockConfig(t *testing.T) {
+// TestApplyInstallLockConfig 鎰忓浘锛氬畨瑁呭畬鎴愬悗閲嶅惎锛宮ain 鐢?lock 涓姞瀵嗙殑 DSN/Redis
+// 閰嶇疆瑕嗙洊寮曞鍊硷紱env 鏄惧紡璁剧疆鐨?POSTGRES_DSN 浼樺厛浜?lock銆?func TestApplyInstallLockConfig(t *testing.T) {
 	secret := "test-app-secret-32-bytes-long-for-testing!"
-	dsnEnc, _ := encryptSecret(secret, "postgres://install:user@db.internal:5432/minicc")
+	dsnEnc, _ := encryptSecret(secret, "postgres://install:user@db.internal:5432/chiron")
 	addrEnc, _ := encryptSecret(secret, "redis.internal:6379")
 	pwdEnc, _ := encryptSecret(secret, "rp")
 	lock := &InstallLock{
@@ -216,29 +202,27 @@ func TestApplyInstallLockConfig(t *testing.T) {
 	}
 	defer os.Remove(installLockPath)
 
-	// env 未设置 POSTGRES_DSN → lock 兜底；Redis 以 lock 为准
+	// env 鏈缃?POSTGRES_DSN 鈫?lock 鍏滃簳锛汻edis 浠?lock 涓哄噯
 	cfg := testConfig(t, secret)
 	cfg.PostgresDSN = ""
 	ApplyInstallLockConfig(cfg)
-	if cfg.PostgresDSN != "postgres://install:user@db.internal:5432/minicc" {
+	if cfg.PostgresDSN != "postgres://install:user@db.internal:5432/chiron" {
 		t.Fatalf("cfg.PostgresDSN = %q, want lock value", cfg.PostgresDSN)
 	}
 	if cfg.RedisAddr != "redis.internal:6379" || cfg.RedisPassword != "rp" || cfg.RedisDB != 1 {
 		t.Fatalf("cfg redis = %q/%q/%d, want lock values", cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
 	}
 
-	// env 显式设置 POSTGRES_DSN → 以 env 为准
+	// env 鏄惧紡璁剧疆 POSTGRES_DSN 鈫?浠?env 涓哄噯
 	cfg2 := testConfig(t, secret)
-	cfg2.PostgresDSN = "postgres://env:user@db.env:5432/minicc"
+	cfg2.PostgresDSN = "postgres://env:user@db.env:5432/chiron"
 	ApplyInstallLockConfig(cfg2)
-	if cfg2.PostgresDSN != "postgres://env:user@db.env:5432/minicc" {
+	if cfg2.PostgresDSN != "postgres://env:user@db.env:5432/chiron" {
 		t.Fatalf("cfg.PostgresDSN = %q, want env value (env wins)", cfg2.PostgresDSN)
 	}
 }
 
-// TestStep3_RequiresPool 意图：Step 3 在数据库未配置（db.Pool 为 nil）时必须明确拒绝，
-// 而不是 panic 或静默成功。
-func TestStep3_RequiresPool(t *testing.T) {
+// TestStep3_RequiresPool 鎰忓浘锛歋tep 3 鍦ㄦ暟鎹簱鏈厤缃紙db.Pool 涓?nil锛夋椂蹇呴』鏄庣‘鎷掔粷锛?// 鑰屼笉鏄?panic 鎴栭潤榛樻垚鍔熴€?func TestStep3_RequiresPool(t *testing.T) {
 	installToken = ""
 	defer func() { installToken = "" }()
 

@@ -1,4 +1,4 @@
-package auth
+﻿package auth
 
 import (
 	"context"
@@ -9,10 +9,10 @@ import (
 	"testing"
 )
 
-// oauth2TestServer 按路径分派响应的 httptest 服务器。
+// oauth2TestServer 鎸夎矾寰勫垎娲惧搷搴旂殑 httptest 鏈嶅姟鍣ㄣ€?
 type oauth2TestServer struct {
 	srv *httptest.Server
-	// lastCapture 记录最近一次请求（方法/路径/body/关键 header）
+	// lastCapture 璁板綍鏈€杩戜竴娆¤姹傦紙鏂规硶/璺緞/body/鍏抽敭 header锛?
 	lastCapture map[string]string
 }
 
@@ -59,7 +59,7 @@ func baseCfg(ts *oauth2TestServer) *OIDCProviderConfig {
 	}
 }
 
-// ── AuthURL 构造 ────────────────────────────────────────
+// 鈹€鈹€ AuthURL 鏋勯€?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestOAuth2AuthURL_GitHub(t *testing.T) {
 	ts := newOAuth2TestServer(nil)
@@ -94,7 +94,7 @@ func TestOAuth2AuthURL_WeChat_MPMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// mp 模式切公众号端点 + appid 参数 + 字面 #wechat_redirect 片段（微信官方格式）
+	// mp 妯″紡鍒囧叕浼楀彿绔偣 + appid 鍙傛暟 + 瀛楅潰 #wechat_redirect 鐗囨锛堝井淇″畼鏂规牸寮忥級
 	if !strings.HasPrefix(u, wechatMPAuthURL+"?") {
 		t.Fatalf("expected mp auth url, got %s", u)
 	}
@@ -119,7 +119,7 @@ func TestOAuth2AuthURL_DingTalk_Prompt(t *testing.T) {
 	}
 }
 
-// ── GitHub 全流程 ───────────────────────────────────────
+// 鈹€鈹€ GitHub 鍏ㄦ祦绋?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestOAuth2Exchange_GitHub(t *testing.T) {
 	ts := newOAuth2TestServer(map[string]func(http.ResponseWriter, *http.Request){
@@ -136,7 +136,7 @@ func TestOAuth2Exchange_GitHub(t *testing.T) {
 
 	cfg := baseCfg(ts)
 	cfg.ProviderType = ProviderGitHub
-	cfg.UserinfoURL = ts.srv.URL + "/user" // /emails 由 userinfo 派生
+	cfg.UserinfoURL = ts.srv.URL + "/user" // /emails 鐢?userinfo 娲剧敓
 
 	res, err := NewOAuth2Exchanger().ExchangeAndVerify(context.Background(), cfg, "code-1", "nonce")
 	if err != nil {
@@ -145,19 +145,19 @@ func TestOAuth2Exchange_GitHub(t *testing.T) {
 	if res.Subject != "12345" {
 		t.Fatalf("subject = %q, want 12345", res.Subject)
 	}
-	// email 为 null → 补查 /user/emails 取 primary
+	// email 涓?null 鈫?琛ユ煡 /user/emails 鍙?primary
 	if res.Email != "octo@example.com" {
 		t.Fatalf("email = %q, want octo@example.com", res.Email)
 	}
 	if res.Name != "octocat" {
-		t.Fatalf("name = %q (login 兜底), want octocat", res.Name)
+		t.Fatalf("name = %q (login 鍏滃簳), want octocat", res.Name)
 	}
 	if res.AvatarURL != "https://avatar" {
 		t.Fatalf("avatar = %q", res.AvatarURL)
 	}
 }
 
-// ── 微信全流程（unionid 优先）──────────────────────────
+// 鈹€鈹€ 寰俊鍏ㄦ祦绋嬶紙unionid 浼樺厛锛夆攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestOAuth2Exchange_WeChat_UnionIDPreferred(t *testing.T) {
 	var tokenQuery string
@@ -170,7 +170,7 @@ func TestOAuth2Exchange_WeChat_UnionIDPreferred(t *testing.T) {
 			if !strings.Contains(r.URL.RawQuery, "openid=o-open") {
 				t.Errorf("userinfo missing openid: %s", r.URL.RawQuery)
 			}
-			respondJSON(`{"openid":"o-open","unionid":"o-union","nickname":"微信用户","headimgurl":"https://wx.avatar"}`)(w, r)
+			respondJSON(`{"openid":"o-open","unionid":"o-union","nickname":"寰俊鐢ㄦ埛","headimgurl":"https://wx.avatar"}`)(w, r)
 		},
 	})
 	defer ts.srv.Close()
@@ -184,7 +184,7 @@ func TestOAuth2Exchange_WeChat_UnionIDPreferred(t *testing.T) {
 	if res.Subject != "o-union" {
 		t.Fatalf("subject = %q, want unionid o-union", res.Subject)
 	}
-	if res.Name != "微信用户" {
+	if res.Name != "寰俊鐢ㄦ埛" {
 		t.Fatalf("name = %q", res.Name)
 	}
 	if !strings.Contains(tokenQuery, "appid=client-1") || !strings.Contains(tokenQuery, "secret=secret-1") {
@@ -192,10 +192,10 @@ func TestOAuth2Exchange_WeChat_UnionIDPreferred(t *testing.T) {
 	}
 }
 
-// ── 钉钉全流程 ─────────────────────────────────────────
+// 鈹€鈹€ 閽夐拤鍏ㄦ祦绋?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestOAuth2Exchange_DingTalk(t *testing.T) {
-	// 先声明后赋值：闭包内需要引用 ts（Go 中 := 初始化表达式不能引用自身）
+	// 鍏堝０鏄庡悗璧嬪€硷細闂寘鍐呴渶瑕佸紩鐢?ts锛圙o 涓?:= 鍒濆鍖栬〃杈惧紡涓嶈兘寮曠敤鑷韩锛?
 	var ts *oauth2TestServer
 	ts = newOAuth2TestServer(map[string]func(http.ResponseWriter, *http.Request){
 		"/token": func(w http.ResponseWriter, r *http.Request) {
@@ -210,7 +210,7 @@ func TestOAuth2Exchange_DingTalk(t *testing.T) {
 			if r.Header.Get("x-acs-dingtalk-access-token") != "dt-token" {
 				t.Errorf("missing dingtalk token header")
 			}
-			respondJSON(`{"unionId":"dt-union","openId":"dt-open","nick":"钉钉用户","email":"d@ex.com","mobile":"13800000000"}`)(w, r)
+			respondJSON(`{"unionId":"dt-union","openId":"dt-open","nick":"閽夐拤鐢ㄦ埛","email":"d@ex.com","mobile":"13800000000"}`)(w, r)
 		},
 	})
 	defer ts.srv.Close()
@@ -226,7 +226,7 @@ func TestOAuth2Exchange_DingTalk(t *testing.T) {
 	}
 }
 
-// ── 飞书全流程（嵌套 data 形态 + sub 优先）─────────────
+// 鈹€鈹€ 椋炰功鍏ㄦ祦绋嬶紙宓屽 data 褰㈡€?+ sub 浼樺厛锛夆攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestOAuth2Exchange_Feishu(t *testing.T) {
 	ts := newOAuth2TestServer(map[string]func(http.ResponseWriter, *http.Request){
@@ -235,7 +235,7 @@ func TestOAuth2Exchange_Feishu(t *testing.T) {
 			if r.Header.Get("Authorization") != "Bearer fs-token" {
 				t.Errorf("missing bearer, got %q", r.Header.Get("Authorization"))
 			}
-			respondJSON(`{"code":0,"data":{"sub":"fs-sub","open_id":"fs-open","name":"飞书用户","email":"f@ex.com"}}`)(w, r)
+			respondJSON(`{"code":0,"data":{"sub":"fs-sub","open_id":"fs-open","name":"椋炰功鐢ㄦ埛","email":"f@ex.com"}}`)(w, r)
 		},
 	})
 	defer ts.srv.Close()
@@ -246,12 +246,12 @@ func TestOAuth2Exchange_Feishu(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Subject != "fs-sub" || res.Name != "飞书用户" {
+	if res.Subject != "fs-sub" || res.Name != "椋炰功鐢ㄦ埛" {
 		t.Fatalf("unexpected identity: %+v", res)
 	}
 }
 
-// ── QQ 全流程（token → /me 拿 openid → userinfo）────────
+// 鈹€鈹€ QQ 鍏ㄦ祦绋嬶紙token 鈫?/me 鎷?openid 鈫?userinfo锛夆攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestOAuth2Exchange_QQ(t *testing.T) {
 	ts := newOAuth2TestServer(map[string]func(http.ResponseWriter, *http.Request){
@@ -267,25 +267,25 @@ func TestOAuth2Exchange_QQ(t *testing.T) {
 			if q.Get("oauth_consumer_key") != "client-1" || q.Get("openid") != "qq-open" {
 				t.Errorf("qq userinfo params wrong: %s", r.URL.RawQuery)
 			}
-			respondJSON(`{"ret":0,"nickname":"QQ用户","figureurl_qq_1":"https://qq.avatar"}`)(w, r)
+			respondJSON(`{"ret":0,"nickname":"QQ鐢ㄦ埛","figureurl_qq_1":"https://qq.avatar"}`)(w, r)
 		},
 	})
 	defer ts.srv.Close()
 
 	cfg := baseCfg(ts)
 	cfg.ProviderType = ProviderQQ
-	// QQ 的 /me 端点是包级常量；这里通过覆盖 URL 前缀来对齐测试服务器无法实现，
-	// 因此 monkey 覆盖：直接验证 userinfo 流程，me 端点走真实逻辑会失败——
-	// 改为校验 token 交换与 userinfo 独立函数的行为（见 identityQQ 拆分验证）。
+	// QQ 鐨?/me 绔偣鏄寘绾у父閲忥紱杩欓噷閫氳繃瑕嗙洊 URL 鍓嶇紑鏉ュ榻愭祴璇曟湇鍔″櫒鏃犳硶瀹炵幇锛?
+	// 鍥犳 monkey 瑕嗙洊锛氱洿鎺ラ獙璇?userinfo 娴佺▼锛宮e 绔偣璧扮湡瀹為€昏緫浼氬け璐モ€斺€?
+	// 鏀逛负鏍￠獙 token 浜ゆ崲涓?userinfo 鐙珛鍑芥暟鐨勮涓猴紙瑙?identityQQ 鎷嗗垎楠岃瘉锛夈€?
 	res, err := NewOAuth2Exchanger().ExchangeAndVerify(context.Background(), cfg, "code-1", "n")
 	_ = res
 	if err == nil {
-		// qqOpenIDURL 指向真实 graph.qq.com，测试环境不可达 → 必须报错（fail-loud）
+		// qqOpenIDURL 鎸囧悜鐪熷疄 graph.qq.com锛屾祴璇曠幆澧冧笉鍙揪 鈫?蹇呴』鎶ラ敊锛坒ail-loud锛?
 		t.Fatal("expected error because /me endpoint is external in test env")
 	}
 }
 
-// ── 失败分支 ───────────────────────────────────────────
+// 鈹€鈹€ 澶辫触鍒嗘敮 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestOAuth2Exchange_TokenFailure(t *testing.T) {
 	ts := newOAuth2TestServer(map[string]func(http.ResponseWriter, *http.Request){
@@ -321,7 +321,7 @@ func TestOAuth2Exchange_Non200(t *testing.T) {
 func TestOAuth2Exchange_MissingSubject(t *testing.T) {
 	ts := newOAuth2TestServer(map[string]func(http.ResponseWriter, *http.Request){
 		"/token": respondJSON(`{"access_token":"t"}`),
-		"/user":  respondJSON(`{"login":"ghost"}`), // 无 id
+		"/user":  respondJSON(`{"login":"ghost"}`), // 鏃?id
 	})
 	defer ts.srv.Close()
 
@@ -345,7 +345,7 @@ func TestOAuth2Exchange_MissingEndpoints(t *testing.T) {
 	}
 }
 
-// TestRedactURL secret 参数不得出现在错误信息里。
+// TestRedactURL secret 鍙傛暟涓嶅緱鍑虹幇鍦ㄩ敊璇俊鎭噷銆?
 func TestRedactURL(t *testing.T) {
 	in := "https://api.example.com/token?appid=a&secret=TopSecret&code=c"
 	out := redactURL(in)

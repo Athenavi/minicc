@@ -1,109 +1,97 @@
-# Contributing to MiniCC
+﻿# Contributing to chiron
 
-欢迎贡献!MiniCC 是一个多租户 SaaS AI Agent 平台(Go 网关 + Python AI 引擎 + Vue 3 前端)。在提交 PR 前,请先阅读本文件与 [SECURITY.md](SECURITY.md)。
+娆㈣繋璐＄尞!chiron 鏄竴涓绉熸埛 SaaS AI Agent 骞冲彴(Go 缃戝叧 + Python AI 寮曟搸 + Vue 3 鍓嶇)銆傚湪鎻愪氦 PR 鍓?璇峰厛闃呰鏈枃浠朵笌 [SECURITY.md](SECURITY.md)銆?
+## 寮€鍙戠幆澧?
+### 鍓嶇疆渚濊禆
 
-## 开发环境
-
-### 前置依赖
-
-| 依赖 | 版本要求 | 用途 |
+| 渚濊禆 | 鐗堟湰瑕佹眰 | 鐢ㄩ€?|
 |---|---|---|
-| Go | 1.26+([go.mod](go.mod) 声明 `go 1.26.6`) | 网关 |
-| Python | 3.11+ | AI 引擎 |
-| Node.js | 22+ | 前端(Vite 8 要求) |
-| pnpm / npm | 任意 | 前端依赖管理(仓库同时提交 `pnpm-lock.yaml` 与 `package-lock.json`,CI 使用 npm) |
-| PostgreSQL | 16(pgvector) | 主库 / 向量库 |
-| Redis | 7 | 必需依赖:队列 / 语义缓存 / 分布式限流 |
-| MinIO / S3 | 可选 | 媒体对象存储(`STORAGE_BACKEND=s3`) |
-| Milvus | 2.5 | 可选,向量检索(也可用 pgvector) |
-| Temporal | 最新 | 可选,工作流引擎 |
+| Go | 1.26+([go.mod](go.mod) 澹版槑 `go 1.26.6`) | 缃戝叧 |
+| Python | 3.11+ | AI 寮曟搸 |
+| Node.js | 22+ | 鍓嶇(Vite 8 瑕佹眰) |
+| pnpm / npm | 浠绘剰 | 鍓嶇渚濊禆绠＄悊(浠撳簱鍚屾椂鎻愪氦 `pnpm-lock.yaml` 涓?`package-lock.json`,CI 浣跨敤 npm) |
+| PostgreSQL | 16(pgvector) | 涓诲簱 / 鍚戦噺搴?|
+| Redis | 7 | 蹇呴渶渚濊禆:闃熷垪 / 璇箟缂撳瓨 / 鍒嗗竷寮忛檺娴?|
+| MinIO / S3 | 鍙€?| 濯掍綋瀵硅薄瀛樺偍(`STORAGE_BACKEND=s3`) |
+| Milvus | 2.5 | 鍙€?鍚戦噺妫€绱?涔熷彲鐢?pgvector) |
+| Temporal | 鏈€鏂?| 鍙€?宸ヤ綔娴佸紩鎿?|
 
-### 搭建步骤
+### 鎼缓姝ラ
 
 ```bash
-# 1. 克隆
-git clone https://github.com/athenavi/minicc.git && cd minicc
+# 1. 鍏嬮殕
+git clone https://github.com/athenavi/chiron.git && cd chiron
 
-# 2. 启动基础设施(PostgreSQL + Redis;需要媒体/向量时再加 minio milvus-standalone temporal)
+# 2. 鍚姩鍩虹璁炬柦(PostgreSQL + Redis;闇€瑕佸獟浣?鍚戦噺鏃跺啀鍔?minio milvus-standalone temporal)
 docker compose up -d postgres redis
 
-# 3. 配置环境变量
+# 3. 閰嶇疆鐜鍙橀噺
 cp .env.example .env
-#    编辑 .env:JWT_SECRET(必填,openssl rand -base64 48)、POSTGRES_DSN、LLM API Key
+#    缂栬緫 .env:JWT_SECRET(蹇呭～,openssl rand -base64 48)銆丳OSTGRES_DSN銆丩LM API Key
 
-# 4. 安装依赖并启动
-python run.py setup      # 首次:安装 Python 依赖、前端依赖
-python run.py start      # 启动网关(:8080)+ 引擎(:8000)+ 前端(:5173)
+# 4. 瀹夎渚濊禆骞跺惎鍔?python run.py setup      # 棣栨:瀹夎 Python 渚濊禆銆佸墠绔緷璧?python run.py start      # 鍚姩缃戝叧(:8080)+ 寮曟搸(:8000)+ 鍓嶇(:5173)
 ```
 
-常用命令:
+甯哥敤鍛戒护:
 
 ```bash
 python run.py status | logs | stop | restart | build
-make build test lint fmt            # Go 侧(可选,CI 已覆盖)
+make build test lint fmt            # Go 渚?鍙€?CI 宸茶鐩?
 ```
 
-## 代码规范
+## 浠ｇ爜瑙勮寖
 
-### Go(网关,`internal/`、`cmd/`、`config/`)
+### Go(缃戝叧,`internal/`銆乣cmd/`銆乣config/`)
 
-- 使用 `gofmt` 格式化,`go vet ./...` 零告警;
-- 提交前运行 `go test ./... -count=1`(相关包);
-- 错误处理:不吞错、不裸 `panic`;日志使用 `log/slog` 结构化输出。
+- 浣跨敤 `gofmt` 鏍煎紡鍖?`go vet ./...` 闆跺憡璀?
+- 鎻愪氦鍓嶈繍琛?`go test ./... -count=1`(鐩稿叧鍖?;
+- 閿欒澶勭悊:涓嶅悶閿欍€佷笉瑁?`panic`;鏃ュ織浣跨敤 `log/slog` 缁撴瀯鍖栬緭鍑恒€?
+### Python(寮曟搸,`python-engine/`)
 
-### Python(引擎,`python-engine/`)
+- `ruff check .` 闆跺憡璀?閰嶇疆瑙?`python-engine/pyproject.toml`:E/F/W/I/N/UP/B,line-length 120);
+- 绫诲瀷鏍囨敞:鏂颁唬鐮佸敖閲忛€氳繃 `mypy app/ --ignore-missing-imports`;
+- 娴嬭瘯:`cd python-engine && python -m pytest tests`(寮傛娴嬭瘯 `asyncio_mode=auto`);闆嗘垚绫绘祴璇曟墦 `@pytest.mark.integration` 鏍囪銆?
+### Vue 3 / TypeScript(鍓嶇,`frontend-vue/`)
 
-- `ruff check .` 零告警(配置见 `python-engine/pyproject.toml`:E/F/W/I/N/UP/B,line-length 120);
-- 类型标注:新代码尽量通过 `mypy app/ --ignore-missing-imports`;
-- 测试:`cd python-engine && python -m pytest tests`(异步测试 `asyncio_mode=auto`);集成类测试打 `@pytest.mark.integration` 标记。
+- `npm run lint`(eslint + eslint-plugin-vue)闆跺憡璀?
+- `npx vue-tsc --noEmit -p tsconfig.app.json` 绫诲瀷妫€鏌ラ€氳繃;
+- 缁勪欢浣跨敤 `<script setup lang="ts">`;璺敱銆佺姸鎬?Pinia)涓?API 灏佽鍒嗗眰娓呮櫚;
+- 鍗曟祴:`npm test`(vitest)銆?
+## 娴嬭瘯
 
-### Vue 3 / TypeScript(前端,`frontend-vue/`)
-
-- `npm run lint`(eslint + eslint-plugin-vue)零告警;
-- `npx vue-tsc --noEmit -p tsconfig.app.json` 类型检查通过;
-- 组件使用 `<script setup lang="ts">`;路由、状态(Pinia)与 API 封装分层清晰;
-- 单测:`npm test`(vitest)。
-
-## 测试
-
-| 层 | 命令 |
+| 灞?| 鍛戒护 |
 |---|---|
-| 网关 | `go test ./... -race -count=1 -timeout=120s` |
-| 引擎 | `cd python-engine && python -m pytest tests` |
-| 前端 | `cd frontend-vue && npm test` |
+| 缃戝叧 | `go test ./... -race -count=1 -timeout=120s` |
+| 寮曟搸 | `cd python-engine && python -m pytest tests` |
+| 鍓嶇 | `cd frontend-vue && npm test` |
 
-CI([.github/workflows/ci.yml](.github/workflows/ci.yml))会在 push / PR 到 `main` 时运行以上三端检查,PR 必须全部通过。
+CI([.github/workflows/ci.yml](.github/workflows/ci.yml))浼氬湪 push / PR 鍒?`main` 鏃惰繍琛屼互涓婁笁绔鏌?PR 蹇呴』鍏ㄩ儴閫氳繃銆?
+## 鎻愪氦淇℃伅瑙勮寖
 
-## 提交信息规范
-
-使用 Conventional Commits 风格:`<type>(<scope>): <subject>`,例如:
+浣跨敤 Conventional Commits 椋庢牸:`<type>(<scope>): <subject>`,渚嬪:
 
 ```text
-feat(media): 增加媒体签名 URL 全链路
-fix(security): 修复存储型 XSS(分片上传 + /media/ 服务)
-refactor(gateway): 抽取统一中间件链
-test(api): /ready 新契约适配
-docs(architecture): 补充多租户隔离矩阵
-ci: 三端 CI 流水线(go/pytest/vue-tsc)
+feat(media): 澧炲姞濯掍綋绛惧悕 URL 鍏ㄩ摼璺?fix(security): 淇瀛樺偍鍨?XSS(鍒嗙墖涓婁紶 + /media/ 鏈嶅姟)
+refactor(gateway): 鎶藉彇缁熶竴涓棿浠堕摼
+test(api): /ready 鏂板绾﹂€傞厤
+docs(architecture): 琛ュ厖澶氱鎴烽殧绂荤煩闃?ci: 涓夌 CI 娴佹按绾?go/pytest/vue-tsc)
 ```
 
 - `type`:`feat` / `fix` / `refactor` / `docs` / `test` / `chore` / `ci` / `perf` / `style`;
-- `scope`(可选):`gateway` / `engine` / `frontend` / `media` / `market` / `security` / `redis` 等;
-- subject 用祈使句、小写开头;中文或英文均可,但同一 PR 内保持一致。
+- `scope`(鍙€?:`gateway` / `engine` / `frontend` / `media` / `market` / `security` / `redis` 绛?
+- subject 鐢ㄧ浣垮彞銆佸皬鍐欏紑澶?涓枃鎴栬嫳鏂囧潎鍙?浣嗗悓涓€ PR 鍐呬繚鎸佷竴鑷淬€?
+## PR 娴佺▼
 
-## PR 流程
+1. 浠庢渶鏂?`main` 鍒囧嚭鍒嗘敮:`git checkout -b feat/my-feature`;
+2. 灏忔鎻愪氦,姣忎釜鎻愪氦淇濇寔鍙瀯寤恒€佸彲娴嬭瘯;
+3. 鎺ㄩ€佸悗鍒涘缓 PR,鐩爣鍒嗘敮 `main`,鎻忚堪鏀瑰姩鍔ㄦ満涓庡奖鍝嶈寖鍥?娑夊強 UI 璇烽檮鎴浘);
+4. CI 涓夌妫€鏌?gateway / engine / frontend)鍏ㄩ儴閫氳繃;
+5. 鑷冲皯 1 鍚嶇淮鎶よ€?review 閫氳繃鍚?squash 鍚堝苟銆?
+## 琛屼负鍑嗗垯(Code of Conduct)
 
-1. 从最新 `main` 切出分支:`git checkout -b feat/my-feature`;
-2. 小步提交,每个提交保持可构建、可测试;
-3. 推送后创建 PR,目标分支 `main`,描述改动动机与影响范围(涉及 UI 请附截图);
-4. CI 三端检查(gateway / engine / frontend)全部通过;
-5. 至少 1 名维护者 review 通过后 squash 合并。
+鏆傜敤 [Contributor Covenant](https://www.contributor-covenant.org/) 2.1 鐗堜綔涓洪粯璁よ涓哄噯鍒?鍦ㄤ粨搴撴寮忓彂甯冨墠,璇蜂繚鎸佸皧閲嶃€佸寘瀹广€佸缓璁炬€х殑鍗忎綔姘涘洿銆傜淮鎶よ€呮湁鏉冩嫆缁濊繚鍙嶅崗浣滅簿绁炵殑鍐呭銆?
+## 闂鍙嶉
 
-## 行为准则(Code of Conduct)
+- Bug / 鍔熻兘寤鸿:GitHub Issues;
+- **瀹夊叏婕忔礊:璇疯蛋 [SECURITY.md](SECURITY.md) 鐨勭鏈夋姤鍛婃笭閬?鍕垮叕寮€鎻愪氦銆?*
 
-暂用 [Contributor Covenant](https://www.contributor-covenant.org/) 2.1 版作为默认行为准则;在仓库正式发布前,请保持尊重、包容、建设性的协作氛围。维护者有权拒绝违反协作精神的内容。
-
-## 问题反馈
-
-- Bug / 功能建议:GitHub Issues;
-- **安全漏洞:请走 [SECURITY.md](SECURITY.md) 的私有报告渠道,勿公开提交。**

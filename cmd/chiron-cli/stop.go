@@ -1,6 +1,6 @@
-package main
+﻿package main
 
-// stop 命令 — 按 .pids/state.json 优雅停止本地服务实例
+// stop 鍛戒护 鈥?鎸?.pids/state.json 浼橀泤鍋滄鏈湴鏈嶅姟瀹炰緥
 
 import (
 	"fmt"
@@ -15,8 +15,8 @@ import (
 
 var stopCmd = &cobra.Command{
 	Use:   "stop",
-	Short: "Stop MiniCC services",
-	Long:  `Stop all running MiniCC services (from .pids/state.json).`,
+	Short: "Stop Chiron services",
+	Long:  `Stop all running Chiron services (from .pids/state.json).`,
 	RunE:  runStop,
 }
 
@@ -24,8 +24,7 @@ func runStop(cmd *cobra.Command, args []string) error {
 	return stopInstances()
 }
 
-// stopInstances 终止所有状态文件中的实例，等待退出后清理状态
-func stopInstances() error {
+// stopInstances 缁堟鎵€鏈夌姸鎬佹枃浠朵腑鐨勫疄渚嬶紝绛夊緟閫€鍑哄悗娓呯悊鐘舵€?func stopInstances() error {
 	state, err := loadState()
 	if err != nil {
 		return err
@@ -45,7 +44,7 @@ func stopInstances() error {
 		fmt.Printf("Stopped %s (PID %d)\n", inst.Name, inst.PID)
 	}
 
-	// 清理状态（只移除成功停止的；失败保留记录便于重试）
+	// 娓呯悊鐘舵€侊紙鍙Щ闄ゆ垚鍔熷仠姝㈢殑锛涘け璐ヤ繚鐣欒褰曚究浜庨噸璇曪級
 	if len(failed) == 0 {
 		if err := clearState(); err != nil {
 			return fmt.Errorf("failed to clear state file: %w", err)
@@ -57,14 +56,14 @@ func stopInstances() error {
 	return nil
 }
 
-// stopProcess 优雅终止进程：先 SIGTERM/taskkill，等待退出，超时强杀
+// stopProcess 浼橀泤缁堟杩涚▼锛氬厛 SIGTERM/taskkill锛岀瓑寰呴€€鍑猴紝瓒呮椂寮烘潃
 func stopProcess(pid int, name string) error {
 	if !processAlive(pid) {
-		return nil // 已退出，无需处理
+		return nil // 宸查€€鍑猴紝鏃犻渶澶勭悊
 	}
 
 	if runtime.GOOS == "windows" {
-		// taskkill 不带 /F 尝试优雅关闭
+		// taskkill 涓嶅甫 /F 灏濊瘯浼橀泤鍏抽棴
 		if err := exec.Command("taskkill", "/PID", strconv.Itoa(pid)).Run(); err != nil {
 			fmt.Printf("warning: taskkill graceful failed for PID %d: %v\n", pid, err)
 		}
@@ -74,7 +73,7 @@ func stopProcess(pid int, name string) error {
 		}
 	}
 
-	// 等待退出（最多 10s），超时强杀
+	// 绛夊緟閫€鍑猴紙鏈€澶?10s锛夛紝瓒呮椂寮烘潃
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		if !processAlive(pid) {
@@ -103,3 +102,4 @@ func clearState() error {
 	state := &State{Instances: []InstanceState{}}
 	return saveState(state)
 }
+

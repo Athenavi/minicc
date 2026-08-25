@@ -1,4 +1,4 @@
-package config
+﻿package config
 
 import (
 	"bufio"
@@ -13,9 +13,9 @@ import (
 )
 
 type Config struct {
-	// AppSecret：部署级主密钥（≥32 字符）。用于：
-	//  - 派生 JWT_SECRET / INTERNAL_TOKEN（当对应环境变量未显式设置时）
-	//  - 加密 system_settings 中敏感配置（LLM/S3/支付密钥、redis/pg 密码）
+	// AppSecret锛氶儴缃茬骇涓诲瘑閽ワ紙鈮?2 瀛楃锛夈€傜敤浜庯細
+	//  - 娲剧敓 JWT_SECRET / INTERNAL_TOKEN锛堝綋瀵瑰簲鐜鍙橀噺鏈樉寮忚缃椂锛?
+	//  - 鍔犲瘑 system_settings 涓晱鎰熼厤缃紙LLM/S3/鏀粯瀵嗛挜銆乺edis/pg 瀵嗙爜锛?
 	AppSecret string
 
 	// Server
@@ -43,21 +43,21 @@ type Config struct {
 	// Auth
 	JWTSecret     string
 	JWTExpiration time.Duration
-	// InternalToken：Go 网关 ↔ Python 引擎共享密钥。
-	// Go 转发请求时注入 X-Internal-Token header，Python 据此校验 ?tenant_id= 透传身份。
-	// 未配置时 Python 侧 fail-close 拒绝 query 透传身份（强制走 JWT/API Key）。
+	// InternalToken锛欸o 缃戝叧 鈫?Python 寮曟搸鍏变韩瀵嗛挜銆?
+	// Go 杞彂璇锋眰鏃舵敞鍏?X-Internal-Token header锛孭ython 鎹鏍￠獙 ?tenant_id= 閫忎紶韬唤銆?
+	// 鏈厤缃椂 Python 渚?fail-close 鎷掔粷 query 閫忎紶韬唤锛堝己鍒惰蛋 JWT/API Key锛夈€?
 	InternalToken string
 
 	// Registration
-	DisableRegistration bool // 生产单租户可关闭公开注册（S 安全加固）
+	DisableRegistration bool // 鐢熶骇鍗曠鎴峰彲鍏抽棴鍏紑娉ㄥ唽锛圫 瀹夊叏鍔犲浐锛?
 
 	// Cookie
-	CookieSecure bool // 生产 HTTPS 下设置 Secure 标志，防止 JWT cookie 明文传输
+	CookieSecure bool // 鐢熶骇 HTTPS 涓嬭缃?Secure 鏍囧織锛岄槻姝?JWT cookie 鏄庢枃浼犺緭
 
 	// CORS
 	CORSOrigins string
 
-	// LLM 调用已转发 Python 引擎（config 中 LLM 配置为遗留死配置，已移除）
+	// LLM 璋冪敤宸茶浆鍙?Python 寮曟搸锛坈onfig 涓?LLM 閰嶇疆涓洪仐鐣欐閰嶇疆锛屽凡绉婚櫎锛?
 
 	// Storage
 	StorageBackend string // "local" or "s3"
@@ -70,7 +70,7 @@ type Config struct {
 
 	// Rate Limit
 	RateLimitRPM       int  // requests per minute per user
-	RateLimitFailClose bool // P1-2: Redis 不可用时是否拒绝写操作（生产=true，开发=false）
+	RateLimitFailClose bool // P1-2: Redis 涓嶅彲鐢ㄦ椂鏄惁鎷掔粷鍐欐搷浣滐紙鐢熶骇=true锛屽紑鍙?false锛?
 	RateLimitGlobal    int  // global requests per minute
 
 	// TrustedProxyCIDRs trusted reverse-proxy CIDRs (comma separated).
@@ -85,18 +85,18 @@ type Config struct {
 	// Log
 	LogLevel string // debug / info / warn / error
 
-	// 支付（支付宝/微信；Stripe 为遗留死配置已移除）
-	PublicBaseURL         string // 公网可达的基础 URL，用于构造支付回调 notify_url
-	FrontendURL           string // 前端地址（如 http://localhost:5173）；SSO 回调 302 目标，空 = 同源 "/"
+	// 鏀粯锛堟敮浠樺疂/寰俊锛汼tripe 涓洪仐鐣欐閰嶇疆宸茬Щ闄わ級
+	PublicBaseURL         string // 鍏綉鍙揪鐨勫熀纭€ URL锛岀敤浜庢瀯閫犳敮浠樺洖璋?notify_url
+	FrontendURL           string // 鍓嶇鍦板潃锛堝 http://localhost:5173锛夛紱SSO 鍥炶皟 302 鐩爣锛岀┖ = 鍚屾簮 "/"
 	AlipayAppID           string
-	AlipayPrivateKey      string // 应用私钥（PEM）
-	AlipayPublicKey       string // 支付宝公钥（PEM）
-	AlipayGateway         string // 默认生产网关；沙箱用 https://openapi-sandbox.dl.alipaydev.com/gateway.do
+	AlipayPrivateKey      string // 搴旂敤绉侀挜锛圥EM锛?
+	AlipayPublicKey       string // 鏀粯瀹濆叕閽ワ紙PEM锛?
+	AlipayGateway         string // 榛樿鐢熶骇缃戝叧锛涙矙绠辩敤 https://openapi-sandbox.dl.alipaydev.com/gateway.do
 	WechatMchID           string
 	WechatAppID           string
-	WechatAPIv3Key        string // APIv3 密钥（32 位）
-	WechatMchCertSerialNo string // 商户 API 证书序列号
-	WechatMchPrivateKey   string // 商户 API 证书私钥（PEM）
+	WechatAPIv3Key        string // APIv3 瀵嗛挜锛?2 浣嶏級
+	WechatMchCertSerialNo string // 鍟嗘埛 API 璇佷功搴忓垪鍙?
+	WechatMchPrivateKey   string // 鍟嗘埛 API 璇佷功绉侀挜锛圥EM锛?
 
 	// Agent behavior
 	AgentMaxTurns     int // max LLM-tool turns per run (default 10)
@@ -104,11 +104,11 @@ type Config struct {
 	AgentContextLimit int // max messages before pruning (default 20)
 	AgentMaxConcurrency int // max concurrent agent runs (default 20)
 
-	// Python AI 引擎
-	PythonEngineAddress string // HTTP 地址，如 "localhost:8000"
+	// Python AI 寮曟搸
+	PythonEngineAddress string // HTTP 鍦板潃锛屽 "localhost:8000"
 	PythonEngineTimeout time.Duration
 
-	// Temporal / LLMGateway 为遗留死配置（未使用），已移除
+	// Temporal / LLMGateway 涓洪仐鐣欐閰嶇疆锛堟湭浣跨敤锛夛紝宸茬Щ闄?
 
 	// PayPal
 	PayPalClientID string
@@ -123,19 +123,19 @@ type Config struct {
 func Load() *Config {
 	cfg := loadConfig()
 
-	// APP_SECRET is required（部署级主密钥）。
+	// APP_SECRET is required锛堥儴缃茬骇涓诲瘑閽ワ級銆?
 	if !cfg.ValidateAppSecret() {
 		os.Stderr.WriteString("FATAL: APP_SECRET environment variable must be set to a strong, unique value (32+ chars)\n")
 		os.Exit(1)
 	}
 
-	// 派生密钥：当 JWT_SECRET / INTERNAL_TOKEN 未显式设置时，由 APP_SECRET 域分离派生。
-	// 安全模型取舍：部署主密钥为唯一必填秘密；若需更强的密钥隔离，仍可显式设置 JWT_SECRET / INTERNAL_TOKEN 覆盖派生值。
+	// 娲剧敓瀵嗛挜锛氬綋 JWT_SECRET / INTERNAL_TOKEN 鏈樉寮忚缃椂锛岀敱 APP_SECRET 鍩熷垎绂绘淳鐢熴€?
+	// 瀹夊叏妯″瀷鍙栬垗锛氶儴缃蹭富瀵嗛挜涓哄敮涓€蹇呭～绉樺瘑锛涜嫢闇€鏇村己鐨勫瘑閽ラ殧绂伙紝浠嶅彲鏄惧紡璁剧疆 JWT_SECRET / INTERNAL_TOKEN 瑕嗙洊娲剧敓鍊笺€?
 	if cfg.JWTSecret == "" {
-		cfg.JWTSecret = deriveSubsecret(cfg.AppSecret, "minicc-jwt")
+		cfg.JWTSecret = deriveSubsecret(cfg.AppSecret, "chiron-jwt")
 	}
 	if cfg.InternalToken == "" {
-		cfg.InternalToken = deriveSubsecret(cfg.AppSecret, "minicc-internal")
+		cfg.InternalToken = deriveSubsecret(cfg.AppSecret, "chiron-internal")
 	}
 
 	// JWT_SECRET is required (derived or explicit).
@@ -147,17 +147,17 @@ func Load() *Config {
 	return cfg
 }
 
-// LoadAllowUnconfigured 与 Load 相同，但允许 APP_SECRET / JWT_SECRET 缺失或弱值而不退出：
-// 供 cmd/minicc 在「安装模式」下启动（部署尚未配置唯一主密钥，无法派生 JWT / 加密密钥）。
-// APP_SECRET 有效时仍执行派生；调用方须用 cfg.ValidateAppSecret() 判断是否进入安装模式。
+// LoadAllowUnconfigured 涓?Load 鐩稿悓锛屼絾鍏佽 APP_SECRET / JWT_SECRET 缂哄け鎴栧急鍊艰€屼笉閫€鍑猴細
+// 渚?cmd/chiron 鍦ㄣ€屽畨瑁呮ā寮忋€嶄笅鍚姩锛堥儴缃插皻鏈厤缃敮涓€涓诲瘑閽ワ紝鏃犳硶娲剧敓 JWT / 鍔犲瘑瀵嗛挜锛夈€?
+// APP_SECRET 鏈夋晥鏃朵粛鎵ц娲剧敓锛涜皟鐢ㄦ柟椤荤敤 cfg.ValidateAppSecret() 鍒ゆ柇鏄惁杩涘叆瀹夎妯″紡銆?
 func LoadAllowUnconfigured() *Config {
 	cfg := loadConfig()
 
 	if cfg.JWTSecret == "" {
-		cfg.JWTSecret = deriveSubsecret(cfg.AppSecret, "minicc-jwt")
+		cfg.JWTSecret = deriveSubsecret(cfg.AppSecret, "chiron-jwt")
 	}
 	if cfg.InternalToken == "" {
-		cfg.InternalToken = deriveSubsecret(cfg.AppSecret, "minicc-internal")
+		cfg.InternalToken = deriveSubsecret(cfg.AppSecret, "chiron-internal")
 	}
 	return cfg
 }
@@ -171,8 +171,8 @@ func loadConfig() *Config {
 		ReadTimeout:     getDuration("READ_TIMEOUT", 10*time.Second),
 		WriteTimeout:    getDuration("WRITE_TIMEOUT", 60*time.Second),
 		IdleTimeout:     getDuration("IDLE_TIMEOUT", 120*time.Second),
-		// 引导连接：仅当未显式设置 POSTGRES_DSN 时使用默认，供「只留 app_secret」初始化后从
-		// system_settings 读取数据库集群配置覆盖（切换集群重启生效）。
+		// 寮曞杩炴帴锛氫粎褰撴湭鏄惧紡璁剧疆 POSTGRES_DSN 鏃朵娇鐢ㄩ粯璁わ紝渚涖€屽彧鐣?app_secret銆嶅垵濮嬪寲鍚庝粠
+		// system_settings 璇诲彇鏁版嵁搴撻泦缇ら厤缃鐩栵紙鍒囨崲闆嗙兢閲嶅惎鐢熸晥锛夈€?
 		PostgresDSN:         getEnv("POSTGRES_DSN", ""),
 		PostgresMaxConn:     getInt("POSTGRES_MAX_CONN", 20),
 		PostgresMinConn:     getInt("POSTGRES_MIN_CONN", 2),
@@ -194,7 +194,7 @@ func loadConfig() *Config {
 		StorageBackend:      getEnv("STORAGE_BACKEND", "local"),
 		StorageRoot:         getEnv("STORAGE_ROOT", "./workspace"),
 		S3Endpoint:          getEnv("S3_ENDPOINT", ""),
-		S3Bucket:            getEnv("S3_BUCKET", "minicc"),
+		S3Bucket:            getEnv("S3_BUCKET", "chiron"),
 		S3AccessKey:         getEnv("S3_ACCESS_KEY", ""),
 		S3SecretKey:         getEnv("S3_SECRET_KEY", ""),
 		S3UseSSL:            isTruthy(getEnv("S3_USE_SSL", "")),
@@ -205,7 +205,7 @@ func loadConfig() *Config {
 		MetricsToken:        getEnv("METRICS_TOKEN", ""),
 		LogLevel:            getEnv("LOG_LEVEL", "info"),
 
-		// 支付（支付宝/微信）
+		// 鏀粯锛堟敮浠樺疂/寰俊锛?
 		PublicBaseURL:         getEnv("PUBLIC_BASE_URL", ""),
 		FrontendURL:           getEnv("FRONTEND_URL", ""),
 		AlipayAppID:           getEnv("ALIPAY_APP_ID", ""),
@@ -222,9 +222,9 @@ func loadConfig() *Config {
 		AgentContextLimit:     getInt("AGENT_CONTEXT_LIMIT", 20),
 		AgentMaxConcurrency:   getInt("AGENT_MAX_CONCURRENCY", 20),
 
-		// Python AI 引擎（连接池配置）
+		// Python AI 寮曟搸锛堣繛鎺ユ睜閰嶇疆锛?
 
-		// Python AI 引擎
+		// Python AI 寮曟搸
 		PythonEngineAddress: getEnv("PYTHON_ENGINE_ADDRESS", "localhost:8000"),
 		PythonEngineTimeout: getDuration("PYTHON_ENGINE_TIMEOUT", 5*time.Minute),
 
@@ -239,12 +239,12 @@ func loadConfig() *Config {
 	return cfg
 }
 
-// ValidateAppSecret 校验部署主密钥强度（≥32 字符，非弱值）。
+// ValidateAppSecret 鏍￠獙閮ㄧ讲涓诲瘑閽ュ己搴︼紙鈮?2 瀛楃锛岄潪寮卞€硷級銆?
 func (c *Config) ValidateAppSecret() bool {
 	return ValidateJWTSecret(c.AppSecret)
 }
 
-// deriveSubsecret 从主密钥派生确定性子密钥（HMAC-SHA256，域分离）。
+// deriveSubsecret 浠庝富瀵嗛挜娲剧敓纭畾鎬у瓙瀵嗛挜锛圚MAC-SHA256锛屽煙鍒嗙锛夈€?
 func deriveSubsecret(secret, domain string) string {
 	if secret == "" {
 		return ""

@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"net/http"
@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/athenavi/minicc/internal/auth"
+	"github.com/athenavi/chiron/internal/auth"
 )
 
-// ── 审计查询参数强制（时间范围 / 分页） ─────────────────────────────────
+// 鈹€鈹€ 瀹¤鏌ヨ鍙傛暟寮哄埗锛堟椂闂磋寖鍥?/ 鍒嗛〉锛?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestParseAuditQuery_DefaultLast7Days(t *testing.T) {
 	now := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC)
@@ -77,7 +77,7 @@ func TestParseAuditQuery_InvalidInput(t *testing.T) {
 	}
 }
 
-// ── AuditMiddleware：写方法 + 管控路径 → 带 userID 的审计 ────────────────
+// 鈹€鈹€ AuditMiddleware锛氬啓鏂规硶 + 绠℃帶璺緞 鈫?甯?userID 鐨勫璁?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestAuditMiddleware_RecordsWriteOnScopedPath(t *testing.T) {
 	var mu sync.Mutex
@@ -90,7 +90,7 @@ func TestAuditMiddleware_RecordsWriteOnScopedPath(t *testing.T) {
 	}
 	t.Cleanup(func() { auditMWRecord = orig })
 
-	// 模拟 authMW 之后的请求：ctx 携带 claims
+	// 妯℃嫙 authMW 涔嬪悗鐨勮姹傦細ctx 鎼哄甫 claims
 	claims := &auth.Claims{UserID: "user-123"}
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -131,9 +131,9 @@ func TestAuditMiddleware_SkipsGetAndUnscopedPaths(t *testing.T) {
 	claims := &auth.Claims{UserID: "user-123"}
 
 	paths := []struct{ method, path string }{
-		{http.MethodGet, "/v1/ent/privacy"},      // GET 不审计
-		{http.MethodPost, "/v1/conversations"},   // 非管控路径不审计
-		{http.MethodDelete, "/v1/plugins/x"},     // 非管控路径不审计
+		{http.MethodGet, "/v1/ent/privacy"},      // GET 涓嶅璁?
+		{http.MethodPost, "/v1/conversations"},   // 闈炵鎺ц矾寰勪笉瀹¤
+		{http.MethodDelete, "/v1/plugins/x"},     // 闈炵鎺ц矾寰勪笉瀹¤
 	}
 	for _, p := range paths {
 		r := httptest.NewRequest(p.method, p.path, nil)

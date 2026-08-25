@@ -1,4 +1,4 @@
-package auth
+﻿package auth
 
 import (
 	"crypto/aes"
@@ -13,13 +13,13 @@ import (
 	"os"
 )
 
-// EnvOIDCSecretKey 是企业 SSO 加密密钥的环境变量名。
-// 原始值必须 ≥ 32 字节；内部经 SHA-256 归一化为 32 字节 AES-256 密钥。
-// 未配置时 SSO 管理写接口返回 503，读/发现接口不受影响。
+// EnvOIDCSecretKey 鏄紒涓?SSO 鍔犲瘑瀵嗛挜鐨勭幆澧冨彉閲忓悕銆?
+// 鍘熷鍊煎繀椤?鈮?32 瀛楄妭锛涘唴閮ㄧ粡 SHA-256 褰掍竴鍖栦负 32 瀛楄妭 AES-256 瀵嗛挜銆?
+// 鏈厤缃椂 SSO 绠＄悊鍐欐帴鍙ｈ繑鍥?503锛岃/鍙戠幇鎺ュ彛涓嶅彈褰卞搷銆?
 const EnvOIDCSecretKey = "ENT_OIDC_SECRET_KEY"
 
-// LoadOIDCEncryptionKey 从环境变量加载 SSO 加密密钥。
-// 未配置或长度不足 32 字节时返回 nil（调用方据此返回 503 提示配置缺失）。
+// LoadOIDCEncryptionKey 浠庣幆澧冨彉閲忓姞杞?SSO 鍔犲瘑瀵嗛挜銆?
+// 鏈厤缃垨闀垮害涓嶈冻 32 瀛楄妭鏃惰繑鍥?nil锛堣皟鐢ㄦ柟鎹杩斿洖 503 鎻愮ず閰嶇疆缂哄け锛夈€?
 func LoadOIDCEncryptionKey() []byte {
 	raw := os.Getenv(EnvOIDCSecretKey)
 	if len(raw) < 8 {
@@ -31,7 +31,7 @@ func LoadOIDCEncryptionKey() []byte {
 	return sum[:]
 }
 
-// EncryptAESGCM 使用 AES-256-GCM 加密明文，返回 base64(nonce || ciphertext || tag)。
+// EncryptAESGCM 浣跨敤 AES-256-GCM 鍔犲瘑鏄庢枃锛岃繑鍥?base64(nonce || ciphertext || tag)銆?
 func EncryptAESGCM(key []byte, plaintext string) (string, error) {
 	gcm, err := newGCM(key)
 	if err != nil {
@@ -41,12 +41,12 @@ func EncryptAESGCM(key []byte, plaintext string) (string, error) {
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return "", fmt.Errorf("aes-gcm nonce: %w", err)
 	}
-	// Seal(nonce, ...) 将 nonce 作为前缀拼接送出，解密时按前缀切分
+	// Seal(nonce, ...) 灏?nonce 浣滀负鍓嶇紑鎷兼帴閫佸嚭锛岃В瀵嗘椂鎸夊墠缂€鍒囧垎
 	sealed := gcm.Seal(nonce, nonce, []byte(plaintext), nil)
 	return base64.StdEncoding.EncodeToString(sealed), nil
 }
 
-// DecryptAESGCM 解密 EncryptAESGCM 的输出。密文被篡改或密钥错误时返回错误。
+// DecryptAESGCM 瑙ｅ瘑 EncryptAESGCM 鐨勮緭鍑恒€傚瘑鏂囪绡℃敼鎴栧瘑閽ラ敊璇椂杩斿洖閿欒銆?
 func DecryptAESGCM(key []byte, encoded string) (string, error) {
 	gcm, err := newGCM(key)
 	if err != nil {

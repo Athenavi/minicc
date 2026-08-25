@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"fmt"
@@ -8,13 +8,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/db"
-	"github.com/athenavi/minicc/internal/monitor"
-	"github.com/athenavi/minicc/internal/settings"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/db"
+	"github.com/athenavi/chiron/internal/monitor"
+	"github.com/athenavi/chiron/internal/settings"
 )
 
-// ── Queue Stats ──
+// 鈹€鈹€ Queue Stats 鈹€鈹€
 
 type QueueStats struct {
 	TaskQueueLength int         `json:"task_queue_length"`
@@ -40,7 +40,7 @@ func (h *AdminHandler) GetQueueStats(w http.ResponseWriter, r *http.Request) {
 		WaitingTasks: []QueueTask{},
 	}
 
-	// 从 Redis 获取队列长度
+	// 浠?Redis 鑾峰彇闃熷垪闀垮害
 	if db.Redis != nil {
 		ctx := r.Context()
 		taskLen, _ := db.Redis.Get(ctx, "queue:tasks:length").Int64()
@@ -61,7 +61,7 @@ func (h *AdminHandler) FlushQueue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	// 通过设置标志通知 worker 清空队列
+	// 閫氳繃璁剧疆鏍囧織閫氱煡 worker 娓呯┖闃熷垪
 	db.Redis.Set(ctx, "queue:flush", "1", 10*time.Second)
 
 	OK(w, map[string]string{"status": "flush_requested"})
@@ -78,7 +78,7 @@ func (h *AdminHandler) PauseQueue(w http.ResponseWriter, r *http.Request) {
 
 	queuePaused.Store(body.Pause)
 
-	// 通过 Redis 通知所有 worker
+	// 閫氳繃 Redis 閫氱煡鎵€鏈?worker
 	if db.Redis != nil {
 		ctx := r.Context()
 		if body.Pause {
@@ -91,7 +91,7 @@ func (h *AdminHandler) PauseQueue(w http.ResponseWriter, r *http.Request) {
 	OK(w, map[string]interface{}{"paused": body.Pause})
 }
 
-// ── Cache Stats ──
+// 鈹€鈹€ Cache Stats 鈹€鈹€
 
 type CacheStats struct {
 	L1HitRate     float64    `json:"l1_hit_rate"`
@@ -119,7 +119,7 @@ func (h *AdminHandler) GetCacheStats(w http.ResponseWriter, r *http.Request) {
 		HotQueries: []HotQuery{},
 	}
 
-	// 从 Redis 获取缓存统计
+	// 浠?Redis 鑾峰彇缂撳瓨缁熻
 	if db.Redis != nil {
 		ctx := r.Context()
 		hits, _ := db.Redis.Get(ctx, "cache:stats:hits").Int64()
@@ -136,7 +136,7 @@ func (h *AdminHandler) GetCacheStats(w http.ResponseWriter, r *http.Request) {
 	OK(w, stats)
 }
 
-// ── Performance Stats ──
+// 鈹€鈹€ Performance Stats 鈹€鈹€
 
 type PerformanceStats struct {
 	Gateway GatewayStats `json:"gateway"`
@@ -178,14 +178,14 @@ func (h *AdminHandler) GetPerformance(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	// 从 monitor snapshot 提取数据
+	// 浠?monitor snapshot 鎻愬彇鏁版嵁
 	if v, ok := snapshot["goroutines"]; ok {
 		if n, ok := v.(int); ok {
 			stats.Gateway.Goroutines = n
 		}
 	}
 
-	// 测量 Redis 延迟
+	// 娴嬮噺 Redis 寤惰繜
 	if db.Redis != nil {
 		ctx := r.Context()
 		start := time.Now()
@@ -193,7 +193,7 @@ func (h *AdminHandler) GetPerformance(w http.ResponseWriter, r *http.Request) {
 		stats.Gateway.RedisLatencyMs = float64(time.Since(start).Microseconds()) / 1000
 	}
 
-	// 测量 DB 延迟
+	// 娴嬮噺 DB 寤惰繜
 	ctx := r.Context()
 	start := time.Now()
 	db.Pool.Ping(ctx)
@@ -202,7 +202,7 @@ func (h *AdminHandler) GetPerformance(w http.ResponseWriter, r *http.Request) {
 	OK(w, stats)
 }
 
-// ── API Keys ──
+// 鈹€鈹€ API Keys 鈹€鈹€
 
 type ApiKey struct {
 	ID         string `json:"id"`
@@ -279,12 +279,10 @@ func (h *AdminHandler) DeleteApiKey(w http.ResponseWriter, r *http.Request) {
 	h.pythonClient.ForwardRequest(w, r, "/v1/admin/api-keys/"+id)
 }
 
-// ── Settings ──
+// 鈹€鈹€ Settings 鈹€鈹€
 
-// settingsCategories 后台「系统设置」允许的配置分组。
-// 敏感键（password/secret/api_key/dsn/token 等）由 settings.Store 用 APP_SECRET
-// 派生密钥加密落库；非敏感配置明文存储。上级配置经 DB 持久化，env 作为默认值。
-var settingsCategories = []string{
+// settingsCategories 鍚庡彴銆岀郴缁熻缃€嶅厑璁哥殑閰嶇疆鍒嗙粍銆?// 鏁忔劅閿紙password/secret/api_key/dsn/token 绛夛級鐢?settings.Store 鐢?APP_SECRET
+// 娲剧敓瀵嗛挜鍔犲瘑钀藉簱锛涢潪鏁忔劅閰嶇疆鏄庢枃瀛樺偍銆備笂绾ч厤缃粡 DB 鎸佷箙鍖栵紝env 浣滀负榛樿鍊笺€?var settingsCategories = []string{
 	"rate_limit", "degradation", "cache", "api_key",
 	"agent", "llm", "storage", "payment", "redis", "postgres", "cors", "s3",
 	"python",
@@ -301,8 +299,7 @@ func validSettingsCategory(c string) bool {
 
 var settingsCategoryList = strings.Join(settingsCategories, ", ")
 
-// intFromValue 从 JSON 解码出的值安全取整数，非数值/越界时返回 fallback。
-func intFromValue(v interface{}, fallback int) int {
+// intFromValue 浠?JSON 瑙ｇ爜鍑虹殑鍊煎畨鍏ㄥ彇鏁存暟锛岄潪鏁板€?瓒婄晫鏃惰繑鍥?fallback銆?func intFromValue(v interface{}, fallback int) int {
 	switch n := v.(type) {
 	case float64:
 		i := int(n)
@@ -323,9 +320,7 @@ func intFromValue(v interface{}, fallback int) int {
 }
 
 // SaveSettings PUT /v1/admin/settings
-// 将某分组配置按 key 逐条 upsert 到 system_settings 表。
-// config 中 value 为 null 的 key 会被删除，使该配置回落到 env 默认值。
-func (h *AdminHandler) SaveSettings(w http.ResponseWriter, r *http.Request) {
+// 灏嗘煇鍒嗙粍閰嶇疆鎸?key 閫愭潯 upsert 鍒?system_settings 琛ㄣ€?// config 涓?value 涓?null 鐨?key 浼氳鍒犻櫎锛屼娇璇ラ厤缃洖钀藉埌 env 榛樿鍊笺€?func (h *AdminHandler) SaveSettings(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Category string                 `json:"category"`
 		Config   map[string]interface{} `json:"config"`
@@ -354,8 +349,7 @@ func (h *AdminHandler) SaveSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 当前操作用户（可空，用于审计 updated_by）
-	userID := ""
+	// 褰撳墠鎿嶄綔鐢ㄦ埛锛堝彲绌猴紝鐢ㄤ簬瀹¤ updated_by锛?	userID := ""
 	if claims := auth.GetClaims(r.Context()); claims != nil {
 		userID = claims.ID
 	}
@@ -370,7 +364,7 @@ func (h *AdminHandler) SaveSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// rate_limit 分组：热更新分布式限流阈值（保存成功后生效）
+	// rate_limit 鍒嗙粍锛氱儹鏇存柊鍒嗗竷寮忛檺娴侀槇鍊硷紙淇濆瓨鎴愬姛鍚庣敓鏁堬級
 	if body.Category == "rate_limit" && h.rateLimiter != nil {
 		global := intFromValue(body.Config["global"], 0)
 		tenant := intFromValue(body.Config["tenant"], 0)
@@ -381,7 +375,7 @@ func (h *AdminHandler) SaveSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// redirect：保存 redis 配置后热换 Redis 连接
+	// redirect锛氫繚瀛?redis 閰嶇疆鍚庣儹鎹?Redis 杩炴帴
 	if body.Category == "redis" {
 		h.hotReloadRedis(body.Config)
 	}
@@ -390,17 +384,14 @@ func (h *AdminHandler) SaveSettings(w http.ResponseWriter, r *http.Request) {
 	OK(w, map[string]interface{}{"status": "saved", "category": body.Category})
 }
 
-// ensureSettingsStore 惰性初始化 DB 加密设置存储。
-func (h *AdminHandler) ensureSettingsStore() *settings.Store {
+// ensureSettingsStore 鎯版€у垵濮嬪寲 DB 鍔犲瘑璁剧疆瀛樺偍銆?func (h *AdminHandler) ensureSettingsStore() *settings.Store {
 	if h.settingsStore == nil && db.Pool != nil {
 		h.settingsStore = settings.New(db.Pool, h.appSecret)
 	}
 	return h.settingsStore
 }
 
-// hotReloadRedis 在保存 redis 分组设置后热换 Redis 连接（AtomicRedis.Swap）。
-// 仅当配置了新地址才执行；失败仅记日志不影响保存结果。
-func (h *AdminHandler) hotReloadRedis(cfg map[string]interface{}) {
+// hotReloadRedis 鍦ㄤ繚瀛?redis 鍒嗙粍璁剧疆鍚庣儹鎹?Redis 杩炴帴锛圓tomicRedis.Swap锛夈€?// 浠呭綋閰嶇疆浜嗘柊鍦板潃鎵嶆墽琛岋紱澶辫触浠呰鏃ュ織涓嶅奖鍝嶄繚瀛樼粨鏋溿€?func (h *AdminHandler) hotReloadRedis(cfg map[string]interface{}) {
 	if h.redis == nil {
 		return
 	}
@@ -424,17 +415,14 @@ func (h *AdminHandler) hotReloadRedis(cfg map[string]interface{}) {
 	slog.Info("redis hot-swapped", "addr", addr)
 }
 
-// strFromValue 从 JSON 解码出的值安全取字符串；非字符串返回 ""。
-func strFromValue(v interface{}) string {
+// strFromValue 浠?JSON 瑙ｇ爜鍑虹殑鍊煎畨鍏ㄥ彇瀛楃涓诧紱闈炲瓧绗︿覆杩斿洖 ""銆?func strFromValue(v interface{}) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
 	return ""
 }
 
-// GetSettings GET /v1/admin/settings?category=... 读取某分组已持久化配置。
-// 无记录时返回空 config（前端保留默认值）。
-func (h *AdminHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
+// GetSettings GET /v1/admin/settings?category=... 璇诲彇鏌愬垎缁勫凡鎸佷箙鍖栭厤缃€?// 鏃犺褰曟椂杩斿洖绌?config锛堝墠绔繚鐣欓粯璁ゅ€硷級銆?func (h *AdminHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 	category := r.URL.Query().Get("category")
 	if category == "" {
 		BadRequest(w, "category is required: "+settingsCategoryList)

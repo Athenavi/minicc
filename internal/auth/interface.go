@@ -1,4 +1,4 @@
-package auth
+﻿package auth
 
 import "context"
 
@@ -17,8 +17,7 @@ type AuthService interface {
 	GetUser(ctx context.Context, userID string) (*User, error)
 
 	// GetUserByEmail retrieves a user by email within the given tenant.
-	// tenantID 防止跨租户同 email 误登录。
-	GetUserByEmail(ctx context.Context, email, tenantID string) (*User, error)
+	// tenantID 闃叉璺ㄧ鎴峰悓 email 璇櫥褰曘€?	GetUserByEmail(ctx context.Context, email, tenantID string) (*User, error)
 
 	// ValidateToken validates a JWT token and returns claims.
 	ValidateToken(ctx context.Context, token string) (*Claims, error)

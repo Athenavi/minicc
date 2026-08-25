@@ -24,12 +24,12 @@ const form = ref({
 
 const rules: Record<string, Rule[]> = {
   email: [
-    { required: true, message: '请输入邮箱', trigger: 'blur' },
-    { type: 'email', message: '邮箱格式不正确', trigger: 'blur' },
+    { required: true, message: '请输入邮�?, trigger: 'blur' },
+    { type: 'email', message: '邮箱格式不正�?, trigger: 'blur' },
   ],
   password: [
-    { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 6, message: '密码至少 6 位', trigger: 'blur' },
+    { required: true, message: '请输入密�?, trigger: 'blur' },
+    { min: 6, message: '密码至少 6 �?, trigger: 'blur' },
   ],
 }
 
@@ -68,7 +68,7 @@ const smsRules: Record<string, Rule[]> = {
   ],
   code: [
     { required: true, message: '请输入验证码', trigger: 'blur' },
-    { len: 6, message: '验证码为 6 位数字', trigger: 'blur' },
+    { len: 6, message: '验证码为 6 位数�?, trigger: 'blur' },
   ],
 }
 
@@ -81,7 +81,7 @@ async function handleSendCode() {
   smsError.value = ''
   const phone = smsForm.value.phone.trim()
   if (!isValidPhone(phone)) {
-    smsError.value = '请输入正确的手机号'
+    smsError.value = '请输入正确的手机�?
     return
   }
   if (needCaptcha.value && captchaConfig.value.provider !== 'custom' && !captchaToken.value) {
@@ -97,7 +97,7 @@ async function handleSendCode() {
       captcha_randstr: captchaRandstr.value,
     })
     start(res.interval || 60)
-    message.success('验证码已发送')
+    message.success('验证码已发�?)
     // 一次性凭据：发送后重置，登录时按需重新验证
     markCaptchaDirty()
     captchaRef.value?.reset()
@@ -106,7 +106,7 @@ async function handleSendCode() {
     const apiErr = e.response?.data?.error
     if (status === 428 || apiErr === 'captcha_required') {
       needCaptcha.value = true
-      smsError.value = '操作过于频繁，请完成人机验证后重试'
+      smsError.value = '操作过于频繁，请完成人机验证后重�?
       captchaRef.value?.reset()
       markCaptchaDirty()
       return
@@ -118,10 +118,10 @@ async function handleSendCode() {
       return
     }
     if (status === 429) {
-      smsError.value = '发送过于频繁，请稍后再试'
+      smsError.value = '发送过于频繁，请稍后再�?
       return
     }
-    smsError.value = apiErr || '验证码发送失败'
+    smsError.value = apiErr || '验证码发送失�?
   } finally {
     sending.value = false
   }
@@ -153,7 +153,7 @@ async function handleSmsLogin() {
     const apiErr = e.response?.data?.error
     if (status === 428 || apiErr === 'captcha_required') {
       needCaptcha.value = true
-      smsError.value = '操作过于频繁，请完成人机验证后重试'
+      smsError.value = '操作过于频繁，请完成人机验证后重�?
       captchaRef.value?.reset()
       markCaptchaDirty()
       return
@@ -171,7 +171,7 @@ async function handleSmsLogin() {
 }
 
 onMounted(async () => {
-  // SSO 登录回跳（successURL 带 ?sso=ok）：cookie 换 Bearer token 建立本地会话
+  // SSO 登录回跳（successURL �??sso=ok）：cookie �?Bearer token 建立本地会话
   if (route.query.sso === 'ok' && !authStore.token) {
     const ok = await authStore.bootstrapSession()
     if (ok) {
@@ -188,14 +188,14 @@ onMounted(async () => {
       verify_url: cfg.verify_url || '',
     }
   } catch {
-    // 配置接口不可达时按无验证码处理（后端仍会兜底校验）
+    // 配置接口不可达时按无验证码处理（后端仍会兜底校验�?
   }
   needCaptcha.value = captchaConfig.value.enabled
   try {
     const st = await getSmsStatus()
     smsEnabled.value = !!(st.enabled && st.login_enabled)
   } catch {
-    // 短信服务状态不可达时隐藏短信登录入口（后端仍会兜底拒绝）
+    // 短信服务状态不可达时隐藏短信登录入口（后端仍会兜底拒绝�?
   }
 })
 
@@ -215,16 +215,16 @@ async function handleLogin() {
       token: captchaToken.value,
       randstr: captchaRandstr.value,
     })
-    // owner/admin 登录后进入管理后台，普通 user 进入对话
+    // owner/admin 登录后进入管理后台，普�?user 进入对话
     const role = authStore.user?.role
     router.push(role === 'admin' || role === 'owner' ? '/admin' : '/chat')
   } catch (e: any) {
     const status = e.response?.status
     const apiErr = e.response?.data?.error
     if (status === 428 || apiErr === 'captcha_required') {
-      // 后端要求人机验证（同 IP 失败升级）→ 强制展示验证码组件
+      // 后端要求人机验证（同 IP 失败升级）→ 强制展示验证码组�?
       needCaptcha.value = true
-      error.value = '操作过于频繁，请完成人机验证后重试'
+      error.value = '操作过于频繁，请完成人机验证后重�?
       captchaRef.value?.reset()
       markCaptchaDirty()
       return
@@ -242,19 +242,19 @@ async function handleLogin() {
 
 <template>
   <div class="login-container">
-    <!-- 左侧品牌展示（≥960px 可见） -->
+    <!-- 左侧品牌展示（≥960px 可见�?-->
     <aside class="login-brand">
-      <div class="login-brand-badge">MiniCC · 企业级 AI Agent 平台</div>
+      <div class="login-brand-badge">Chiron · 企业�?AI Agent 平台</div>
       <h1 class="login-brand-title">
-        让 AI Agent<br /><span>持续工作</span>
+        �?AI Agent<br /><span>持续工作</span>
       </h1>
       <p class="login-brand-desc">
-        自托管、多租户、全栈可控的 AI Agent 平台。对话、Agent、工作流、技能、知识库与插件一体化。
+        自托管、多租户、全栈可控的 AI Agent 平台。对话、Agent、工作流、技能、知识库与插件一体化�?
       </p>
       <div class="login-brand-features">
-        <div class="login-brand-feature">多租户数据隔离</div>
-        <div class="login-brand-feature">端到端轨迹追踪</div>
-        <div class="login-brand-feature">MCP 插件生态</div>
+        <div class="login-brand-feature">多租户数据隔�?/div>
+        <div class="login-brand-feature">端到端轨迹追�?/div>
+        <div class="login-brand-feature">MCP 插件生�?/div>
         <div class="login-brand-feature">HTTPOnly 安全会话</div>
       </div>
     </aside>
@@ -264,7 +264,7 @@ async function handleLogin() {
       <div class="login-header">
         <div class="login-logo">MC</div>
         <div class="login-title">欢迎回来</div>
-        <div class="login-subtitle">登录进入你的 AI 工作台</div>
+        <div class="login-subtitle">登录进入你的 AI 工作�?/div>
       </div>
       <Card :bordered="false" class="login-form-card">
         <Tabs v-model:activeKey="activeTab" centered>
@@ -287,7 +287,7 @@ async function handleLogin() {
             <FormItem label="邮箱" name="email">
               <Input
                 v-model:value="form.email"
-                placeholder="请输入邮箱"
+                placeholder="请输入邮�?
                 size="large"
                 aria-label="邮箱"
                 autocomplete="email"
@@ -299,7 +299,7 @@ async function handleLogin() {
             <FormItem label="密码" name="password">
               <Input
                 v-model:value="form.password"
-                placeholder="请输入密码"
+                placeholder="请输入密�?
                 type="password"
                 size="large"
                 aria-label="密码"
@@ -326,7 +326,7 @@ async function handleLogin() {
                   登录
                 </Button>
                 <Button type="link" block @click="router.push('/register')">
-                  没有账号？注册
+                  没有账号？注�?
                 </Button>
                 <Button type="link" block @click="router.push('/install')">
                   首次部署？初始化系统
@@ -346,7 +346,7 @@ async function handleLogin() {
             :rules="smsRules"
             layout="vertical"
           >
-            <FormItem label="手机号" name="phone">
+            <FormItem label="手机�? name="phone">
               <Input
                 v-model:value="smsForm.phone"
                 placeholder="请输入手机号"
@@ -357,7 +357,7 @@ async function handleLogin() {
               </Input>
             </FormItem>
 
-            <FormItem label="验证码" name="code">
+            <FormItem label="验证�? name="code">
               <Input
                 v-model:value="smsForm.code"
                 placeholder="6 位数字验证码"
@@ -373,7 +373,7 @@ async function handleLogin() {
                     :loading="sending"
                     @click="handleSendCode"
                   >
-                    {{ remaining > 0 ? `${remaining}s 后重发` : '获取验证码' }}
+                    {{ remaining > 0 ? `${remaining}s 后重发` : '获取验证�? }}
                   </Button>
                 </template>
               </Input>
@@ -537,7 +537,7 @@ async function handleLogin() {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* 平板以上：左右分栏品牌展示 */
+/* 平板以上：左右分栏品牌展�?*/
 @media (min-width: 960px) {
   .login-container {
     grid-template-columns: 1.1fr 1fr;
@@ -606,7 +606,7 @@ async function handleLogin() {
     color: var(--text-secondary);
   }
   .login-brand-feature::before {
-    content: '✓';
+    content: '�?;
     color: var(--success);
     font-weight: 700;
     flex-shrink: 0;
@@ -617,7 +617,7 @@ async function handleLogin() {
   .login-brand { display: none; }
 }
 
-/* 移动端 */
+/* 移动�?*/
 @media (max-width: 576px) {
   .login-card {
     padding: 24px 20px;
@@ -631,7 +631,7 @@ async function handleLogin() {
   .login-form-card :deep(.ant-btn:not(.ant-btn-sm)) { min-height: 44px; }
 }
 
-/* 焦点可见性 */
+/* 焦点可见�?*/
 .login-form-card :deep(.ant-input:focus),
 .login-form-card :deep(.ant-input-affix-wrapper-focused),
 .login-form-card :deep(.ant-btn:focus-visible) {

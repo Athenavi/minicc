@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"crypto/rand"
@@ -9,9 +9,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/broadcast"
-	"github.com/athenavi/minicc/internal/session"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/broadcast"
+	"github.com/athenavi/chiron/internal/session"
 )
 
 // handleSSE manages a Server-Sent Events connection for real-time streaming.
@@ -29,9 +29,7 @@ func handleSSE(w http.ResponseWriter, r *http.Request, hub *broadcast.Hub, subID
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 
-	// P1 修复：SSE 长连接豁免服务器 WriteTimeout（默认 60s 会切断流）。
-	// 客户端断开仍由 r.Context().Done() 检测。
-	if rc := http.NewResponseController(w); rc != nil {
+	// P1 淇锛歋SE 闀胯繛鎺ヨ眮鍏嶆湇鍔″櫒 WriteTimeout锛堥粯璁?60s 浼氬垏鏂祦锛夈€?	// 瀹㈡埛绔柇寮€浠嶇敱 r.Context().Done() 妫€娴嬨€?	if rc := http.NewResponseController(w); rc != nil {
 		_ = rc.SetWriteDeadline(time.Time{})
 	}
 
@@ -77,7 +75,7 @@ func handleSSE(w http.ResponseWriter, r *http.Request, hub *broadcast.Hub, subID
 }
 
 // SSEHandler returns an http.HandlerFunc for SSE connections.
-// Requires authentication (authMW) — session_id is checked for ownership
+// Requires authentication (authMW) 鈥?session_id is checked for ownership
 // against the authenticated user (S1: prevent subscribing to other users' streams).
 func SSEHandler(hub *broadcast.Hub, sessionMgr *session.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -85,14 +83,13 @@ func SSEHandler(hub *broadcast.Hub, sessionMgr *session.Manager) http.HandlerFun
 		if subID == "" {
 			var buf [8]byte
 			if _, err := rand.Read(buf[:]); err != nil {
-				// 极端回退：crypto/rand 几乎不会失败，此处仅作防御性兜底
-				subID = fmt.Sprintf("anon-%d-%d", os.Getpid(), time.Now().UnixNano())
+				// 鏋佺鍥為€€锛歝rypto/rand 鍑犱箮涓嶄細澶辫触锛屾澶勪粎浣滈槻寰℃€у厹搴?				subID = fmt.Sprintf("anon-%d-%d", os.Getpid(), time.Now().UnixNano())
 			} else {
 				subID = "anon-" + hex.EncodeToString(buf[:])
 			}
 		}
 		sessionID := r.URL.Query().Get("session_id")
-		// P0-S5: 必须显式指定 session_id，否则订阅到全站事件流（含其他用户对话内容）
+		// P0-S5: 蹇呴』鏄惧紡鎸囧畾 session_id锛屽惁鍒欒闃呭埌鍏ㄧ珯浜嬩欢娴侊紙鍚叾浠栫敤鎴峰璇濆唴瀹癸級
 		if sessionID == "" {
 			BadRequest(w, "session_id is required")
 			return
@@ -105,10 +102,7 @@ func SSEHandler(hub *broadcast.Hub, sessionMgr *session.Manager) http.HandlerFun
 		if sessionMgr != nil {
 			s, err := sessionMgr.GetSession(r.Context(), sessionID)
 			if err != nil {
-				// 新会话：前端先建立 SSE 连接，/submit 才会创建 session。
-				// 此时会话尚不存在、无历史事件可泄露，放行连接等待创建；
-				// 其他错误（DB 故障等）拒绝。
-				if !errors.Is(err, session.ErrSessionNotFound) {
+				// 鏂颁細璇濓細鍓嶇鍏堝缓绔?SSE 杩炴帴锛?submit 鎵嶄細鍒涘缓 session銆?				// 姝ゆ椂浼氳瘽灏氫笉瀛樺湪銆佹棤鍘嗗彶浜嬩欢鍙硠闇诧紝鏀捐杩炴帴绛夊緟鍒涘缓锛?				// 鍏朵粬閿欒锛圖B 鏁呴殰绛夛級鎷掔粷銆?				if !errors.Is(err, session.ErrSessionNotFound) {
 					InternalError(w, "session check failed")
 					return
 				}

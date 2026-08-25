@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { markRaw, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button } from 'ant-design-vue'
@@ -19,14 +19,14 @@ interface Feature {
   icon: any
 }
 
-// 图标组件须 markRaw：避免被 Vue 响应式代理（图标是静态组件，代理会破坏渲染）
+// 鍥炬爣缁勪欢椤?markRaw锛氶伩鍏嶈 Vue 鍝嶅簲寮忎唬鐞嗭紙鍥炬爣鏄潤鎬佺粍浠讹紝浠ｇ悊浼氱牬鍧忔覆鏌擄級
 const features: Feature[] = [
-  { title: '对话', en: 'CHAT', desc: '常规 / 极简 / PTC / 创造四种模式，工具调用全程可视化', path: '/chat', icon: markRaw(MessageOutlined) },
-  { title: 'Agent', en: 'AGENTS', desc: '多智能体协同，任务分发与结果追踪', path: '/agents', icon: markRaw(UserOutlined) },
-  { title: '工作流', en: 'WORKFLOW', desc: '可视化编排多步任务，节点自由连线', path: '/workflow', icon: markRaw(ApartmentOutlined) },
-  { title: '技能', en: 'SKILLS', desc: '插件化技能市场，按需装载与卸载', path: '/skills', icon: markRaw(BlockOutlined) },
-  { title: '知识库', en: 'KNOWLEDGE', desc: '文档入库、向量检索，让 Agent 有据可依', path: '/knowledge', icon: markRaw(BookOutlined) },
-  { title: '插件', en: 'PLUGINS', desc: 'MCP 服务配置，扩展 Agent 的能力边界', path: '/plugins', icon: markRaw(ThunderboltOutlined) },
+  { title: '瀵硅瘽', en: 'CHAT', desc: '甯歌 / 鏋佺畝 / PTC / 鍒涢€犲洓绉嶆ā寮忥紝宸ュ叿璋冪敤鍏ㄧ▼鍙鍖?, path: '/chat', icon: markRaw(MessageOutlined) },
+  { title: 'Agent', en: 'AGENTS', desc: '澶氭櫤鑳戒綋鍗忓悓锛屼换鍔″垎鍙戜笌缁撴灉杩借釜', path: '/agents', icon: markRaw(UserOutlined) },
+  { title: '宸ヤ綔娴?, en: 'WORKFLOW', desc: '鍙鍖栫紪鎺掑姝ヤ换鍔★紝鑺傜偣鑷敱杩炵嚎', path: '/workflow', icon: markRaw(ApartmentOutlined) },
+  { title: '鎶€鑳?, en: 'SKILLS', desc: '鎻掍欢鍖栨妧鑳藉競鍦猴紝鎸夐渶瑁呰浇涓庡嵏杞?, path: '/skills', icon: markRaw(BlockOutlined) },
+  { title: '鐭ヨ瘑搴?, en: 'KNOWLEDGE', desc: '鏂囨。鍏ュ簱銆佸悜閲忔绱紝璁?Agent 鏈夋嵁鍙緷', path: '/knowledge', icon: markRaw(BookOutlined) },
+  { title: '鎻掍欢', en: 'PLUGINS', desc: 'MCP 鏈嶅姟閰嶇疆锛屾墿灞?Agent 鐨勮兘鍔涜竟鐣?, path: '/plugins', icon: markRaw(ThunderboltOutlined) },
 ]
 
 const QUICKSTART_CMD = 'docker compose up -d postgres redis\ncp .env.example .env\npython run.py start'
@@ -45,8 +45,8 @@ function scrollToFeatures() {
   document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })
 }
 
-// ── 特性卡片：IntersectionObserver 交错入场 + hover 3D tilt ──
-// 触屏设备禁用 3D tilt 和 CTA 磁吸（无鼠标 hover 语义，且会触发误触抖动）
+// 鈹€鈹€ 鐗规€у崱鐗囷細IntersectionObserver 浜ら敊鍏ュ満 + hover 3D tilt 鈹€鈹€
+// 瑙﹀睆璁惧绂佺敤 3D tilt 鍜?CTA 纾佸惛锛堟棤榧犳爣 hover 璇箟锛屼笖浼氳Е鍙戣瑙︽姈鍔級
 const isTouch = typeof window !== 'undefined'
   && ('ontouchstart' in window || navigator.maxTouchPoints > 0)
 
@@ -76,8 +76,7 @@ onMounted(() => {
     { threshold: 0.12 },
   )
   cardEls.value.forEach(el => el && cardObserver?.observe(el))
-  // 兜底：即使 IO 未触发（滚动容器异常等），2s 后强制显示所有卡片
-  cardFallbackTimer = window.setTimeout(revealCards, 2000)
+  // 鍏滃簳锛氬嵆浣?IO 鏈Е鍙戯紙婊氬姩瀹瑰櫒寮傚父绛夛級锛?s 鍚庡己鍒舵樉绀烘墍鏈夊崱鐗?  cardFallbackTimer = window.setTimeout(revealCards, 2000)
   window.addEventListener('scroll', onScroll, { passive: true })
 })
 onUnmounted(() => {
@@ -101,7 +100,7 @@ function onCardLeave(e: MouseEvent) {
   card.style.transform = ''
 }
 
-// ── CTA 磁吸：按钮轻微跟随鼠标 ──
+// 鈹€鈹€ CTA 纾佸惛锛氭寜閽交寰窡闅忛紶鏍?鈹€鈹€
 function onCtaMove(e: MouseEvent) {
   if (isTouch) return
   const btn = e.currentTarget as HTMLElement
@@ -116,7 +115,7 @@ function onCtaLeave(e: MouseEvent) {
   btn.style.transform = ''
 }
 
-// ── 滚动到顶部按钮（长页面导航辅助） ──
+// 鈹€鈹€ 婊氬姩鍒伴《閮ㄦ寜閽紙闀块〉闈㈠鑸緟鍔╋級 鈹€鈹€
 const showTop = ref(false)
 function onScroll() {
   showTop.value = window.scrollY > 600
@@ -128,41 +127,38 @@ function scrollToTop() {
 
 <template>
   <div class="home">
-    <!-- Hero：three.js 粒子场 + 渐变光晕 + 网格纹理 + 入场动画 -->
+    <!-- Hero锛歵hree.js 绮掑瓙鍦?+ 娓愬彉鍏夋檿 + 缃戞牸绾圭悊 + 鍏ュ満鍔ㄧ敾 -->
     <section class="hero">
       <div class="hero-glow" aria-hidden />
       <div class="hero-grid-bg" aria-hidden />
       <HomeScene3D />
       <div class="hero-content">
         <span class="hero-badge">
-          <span class="hero-badge-dot" />MiniCC · 自托管 AI Agent 控制台
-        </span>
+          <span class="hero-badge-dot" />chiron 路 鑷墭绠?AI Agent 鎺у埗鍙?        </span>
         <h1 class="hero-title">
-          让 Agent
-          <span class="hero-title-accent">持续工作</span>
-          <br />在真实场景中
+          璁?Agent
+          <span class="hero-title-accent">鎸佺画宸ヤ綔</span>
+          <br />鍦ㄧ湡瀹炲満鏅腑
         </h1>
         <p class="hero-sub">
-          对话、Agent、工作流、技能、知识库与插件一体化，全栈能力自由组合；
-          <br class="hero-br" />轨迹可循、过程可见，你的本地智能工作台。
-        </p>
+          瀵硅瘽銆丄gent銆佸伐浣滄祦銆佹妧鑳姐€佺煡璇嗗簱涓庢彃浠朵竴浣撳寲锛屽叏鏍堣兘鍔涜嚜鐢辩粍鍚堬紱
+          <br class="hero-br" />杞ㄨ抗鍙惊銆佽繃绋嬪彲瑙侊紝浣犵殑鏈湴鏅鸿兘宸ヤ綔鍙般€?        </p>
         <div class="hero-actions">
           <Button type="primary" size="large" class="hero-cta glow" @mousemove="onCtaMove" @mouseleave="onCtaLeave" @click="router.push('/chat')">
-            开始对话
-            <ArrowRightOutlined />
+            寮€濮嬪璇?            <ArrowRightOutlined />
           </Button>
-          <Button size="large" class="hero-cta ghost" @mousemove="onCtaMove" @mouseleave="onCtaLeave" @click="scrollToFeatures">浏览功能</Button>
+          <Button size="large" class="hero-cta ghost" @mousemove="onCtaMove" @mouseleave="onCtaLeave" @click="scrollToFeatures">娴忚鍔熻兘</Button>
         </div>
       </div>
     </section>
 
-    <!-- 特性网格 -->
-        <!-- 六大工作台统一入口：快速命令 + 工作台网格 + 最近活动（互联互通） -->
+    <!-- 鐗规€х綉鏍?-->
+        <!-- 鍏ぇ宸ヤ綔鍙扮粺涓€鍏ュ彛锛氬揩閫熷懡浠?+ 宸ヤ綔鍙扮綉鏍?+ 鏈€杩戞椿鍔紙浜掕仈浜掗€氾級 -->
     <WorkstationNav />
 
 <section id="features" class="features">
-      <h2 class="section-title">六大能力，一个控制台</h2>
-      <p class="section-sub">每一块能力都可以独立使用，也可以自由组合</p>
+      <h2 class="section-title">鍏ぇ鑳藉姏锛屼竴涓帶鍒跺彴</h2>
+      <p class="section-sub">姣忎竴鍧楄兘鍔涢兘鍙互鐙珛浣跨敤锛屼篃鍙互鑷敱缁勫悎</p>
       <div class="feature-grid">
         <div
           v-for="(f, i) in features"
@@ -183,44 +179,44 @@ function scrollToTop() {
           <span class="feature-en">{{ f.en }}</span>
           <div class="feature-title">{{ f.title }}</div>
           <div class="feature-desc">{{ f.desc }}</div>
-          <span class="feature-go">进入 <ArrowRightOutlined /></span>
+          <span class="feature-go">杩涘叆 <ArrowRightOutlined /></span>
         </div>
       </div>
     </section>
 
-    <!-- 产品展示：真实工作台窗口预览（玻璃拟态） -->
+    <!-- 浜у搧灞曠ず锛氱湡瀹炲伐浣滃彴绐楀彛棰勮锛堢幓鐠冩嫙鎬侊級 -->
     <section class="showcase">
-      <h2 class="section-title">真实工作台，一次看够</h2>
-      <p class="section-sub">对话、轨迹、工具调用，过程全程可见</p>
+      <h2 class="section-title">鐪熷疄宸ヤ綔鍙帮紝涓€娆＄湅澶?/h2>
+      <p class="section-sub">瀵硅瘽銆佽建杩广€佸伐鍏疯皟鐢紝杩囩▼鍏ㄧ▼鍙</p>
       <div class="showcase-grid">
-        <!-- 窗口 1：对话界面 -->
+        <!-- 绐楀彛 1锛氬璇濈晫闈?-->
         <div class="window-card">
           <div class="window-chrome">
             <span class="win-dot red" /><span class="win-dot yellow" /><span class="win-dot green" />
-            <span class="win-title">MiniCC · 对话</span>
+            <span class="win-title">chiron 路 瀵硅瘽</span>
           </div>
           <div class="window-body chat-preview">
             <div class="pv-msg assistant">
-              <div class="pv-bubble">我来帮你分析这份数据，先把需求拆解成几步…</div>
+              <div class="pv-bubble">鎴戞潵甯綘鍒嗘瀽杩欎唤鏁版嵁锛屽厛鎶婇渶姹傛媶瑙ｆ垚鍑犳鈥?/div>
             </div>
             <div class="pv-msg user">
-              <div class="pv-bubble user">请用 Python 生成季度趋势图</div>
+              <div class="pv-bubble user">璇风敤 Python 鐢熸垚瀛ｅ害瓒嬪娍鍥?/div>
             </div>
             <div class="pv-msg assistant">
-              <div class="pv-tool"><span class="pv-tool-dot" />python_exec · 运行中</div>
-              <div class="pv-bubble">已生成趋势图：Q2 环比 +23%。下面是代码与图表…</div>
+              <div class="pv-tool"><span class="pv-tool-dot" />python_exec 路 杩愯涓?/div>
+              <div class="pv-bubble">宸茬敓鎴愯秼鍔垮浘锛歈2 鐜瘮 +23%銆備笅闈㈡槸浠ｇ爜涓庡浘琛ㄢ€?/div>
             </div>
-            <div class="pv-input"><span>发送消息…</span></div>
+            <div class="pv-input"><span>鍙戦€佹秷鎭€?/span></div>
           </div>
         </div>
-        <!-- 窗口 2：历史导航（轨迹 + 会话） -->
+        <!-- 绐楀彛 2锛氬巻鍙插鑸紙杞ㄨ抗 + 浼氳瘽锛?-->
         <div class="window-card">
           <div class="window-chrome">
             <span class="win-dot red" /><span class="win-dot yellow" /><span class="win-dot green" />
-            <span class="win-title">MiniCC · 历史导航</span>
+            <span class="win-title">chiron 路 鍘嗗彶瀵艰埅</span>
           </div>
           <div class="window-body panel-preview">
-            <div class="pv-panel-head"><span class="pv-panel-title">会话：数据分析</span><span class="pv-panel-caret">▾</span></div>
+            <div class="pv-panel-head"><span class="pv-panel-title">浼氳瘽锛氭暟鎹垎鏋?/span><span class="pv-panel-caret">鈻?/span></div>
             <div class="pv-timeline">
               <div class="pv-timeline-track">
                 <span class="pv-span" style="left: 0%; width: 26%" />
@@ -228,49 +224,49 @@ function scrollToTop() {
                 <span class="pv-span" style="left: 60%; width: 32%" />
               </div>
             </div>
-            <div class="pv-row"><span class="pv-dot" />分析这份数据的趋势</div>
-            <div class="pv-row active"><span class="pv-dot" />生成季度趋势图</div>
-            <div class="pv-row"><span class="pv-dot" />对比去年同期表现</div>
-            <div class="pv-row"><span class="pv-dot" />汇总为周报</div>
+            <div class="pv-row"><span class="pv-dot" />鍒嗘瀽杩欎唤鏁版嵁鐨勮秼鍔?/div>
+            <div class="pv-row active"><span class="pv-dot" />鐢熸垚瀛ｅ害瓒嬪娍鍥?/div>
+            <div class="pv-row"><span class="pv-dot" />瀵规瘮鍘诲勾鍚屾湡琛ㄧ幇</div>
+            <div class="pv-row"><span class="pv-dot" />姹囨€讳负鍛ㄦ姤</div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- 快速开始：终端代码块 -->
+    <!-- 蹇€熷紑濮嬶細缁堢浠ｇ爜鍧?-->
     <section class="quickstart">
-      <h2 class="section-title">快速开始</h2>
-      <p class="section-sub">一条命令启动依赖，三行进入工作台</p>
+      <h2 class="section-title">蹇€熷紑濮?/h2>
+      <p class="section-sub">涓€鏉″懡浠ゅ惎鍔ㄤ緷璧栵紝涓夎杩涘叆宸ヤ綔鍙?/p>
       <div class="terminal-card">
         <div class="window-chrome">
           <span class="win-dot red" /><span class="win-dot yellow" /><span class="win-dot green" />
-          <span class="win-title">zsh · minicc</span>
-          <button type="button" class="term-copy" @click="copyQuickstart">{{ copied ? '已复制' : '复制' }}</button>
+          <span class="win-title">zsh 路 chiron</span>
+          <button type="button" class="term-copy" @click="copyQuickstart">{{ copied ? '宸插鍒? : '澶嶅埗' }}</button>
         </div>
         <div class="terminal-body">
           <div class="term-line"><span class="term-prompt">$</span> docker compose up -d postgres redis</div>
           <div class="term-line"><span class="term-prompt">$</span> cp .env.example .env</div>
           <div class="term-line"><span class="term-prompt">$</span> python run.py start</div>
-          <div class="term-line term-out">→ MiniCC 已启动：http://localhost:5173</div>
+          <div class="term-line term-out">鈫?chiron 宸插惎鍔細http://localhost:5173</div>
         </div>
       </div>
     </section>
 
     <footer class="home-footer">
       <span class="home-footer-brand">
-        <span class="home-footer-logo">MC</span>MiniCC
+        <span class="home-footer-logo">MC</span>chiron
       </span>
-      <span class="home-footer-note">自托管 · 开源 · 你的数据留在你的机器上</span>
+      <span class="home-footer-note">鑷墭绠?路 寮€婧?路 浣犵殑鏁版嵁鐣欏湪浣犵殑鏈哄櫒涓?/span>
     </footer>
 
-    <!-- 滚动到顶部按钮（长页面辅助导航） -->
+    <!-- 婊氬姩鍒伴《閮ㄦ寜閽紙闀块〉闈㈣緟鍔╁鑸級 -->
     <Transition name="top-fade">
       <button
         v-if="showTop"
         type="button"
         class="scroll-top"
-        title="回到顶部"
-        aria-label="回到顶部"
+        title="鍥炲埌椤堕儴"
+        aria-label="鍥炲埌椤堕儴"
         @click="scrollToTop"
       >
         <ArrowUpOutlined />
@@ -389,7 +385,7 @@ function scrollToTop() {
 }
 .hero-cta.ghost:hover { border-color: var(--primary); color: var(--primary); }
 
-/* ── 特性网格 ── */
+/* 鈹€鈹€ 鐗规€х綉鏍?鈹€鈹€ */
 .features { max-width: 1080px; margin: 0 auto; padding: 40px 24px 56px; position: relative; }
 .section-title { font-size: 28px; font-weight: 700; letter-spacing: -0.01em; text-align: center; }
 .section-sub { margin-top: 8px; text-align: center; font-size: 14px; color: var(--text-tertiary); }
@@ -451,7 +447,7 @@ function scrollToTop() {
 .feature-go { margin-top: 12px; font-size: 12px; color: var(--primary); opacity: 0; transform: translateX(-4px); transition: opacity 0.18s ease, transform 0.18s ease; }
 .feature-card:hover .feature-go { opacity: 1; transform: translateX(0); }
 
-/* ── 产品展示：工作台窗口预览 ── */
+/* 鈹€鈹€ 浜у搧灞曠ず锛氬伐浣滃彴绐楀彛棰勮 鈹€鈹€ */
 .showcase { max-width: 1080px; margin: 0 auto; padding: 24px 24px 56px; position: relative; }
 .showcase-grid {
   display: grid;
@@ -570,7 +566,7 @@ function scrollToTop() {
 .pv-row.active { background: var(--primary-bg); color: var(--primary); font-weight: 600; }
 .pv-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); opacity: 0.7; }
 
-/* ── 快速开始：终端代码块 ── */
+/* 鈹€鈹€ 蹇€熷紑濮嬶細缁堢浠ｇ爜鍧?鈹€鈹€ */
 .quickstart { max-width: 760px; margin: 0 auto; padding: 24px 24px 64px; }
 .terminal-card {
   margin-top: 30px;
@@ -600,7 +596,7 @@ function scrollToTop() {
 .term-prompt { color: var(--primary); font-weight: 600; margin-right: 8px; }
 .term-out { color: var(--text-tertiary); margin-top: 6px; }
 
-/* ── CTA ── */
+/* 鈹€鈹€ CTA 鈹€鈹€ */
 .cta { max-width: 1080px; margin: 0 auto; padding: 0 24px 56px; }
 .cta-card {
   display: flex;
@@ -628,7 +624,7 @@ function scrollToTop() {
 .cta-sub { font-size: 14px; color: var(--text-secondary); }
 .cta .hero-cta { margin-top: 14px; }
 
-/* ── 页脚 ── */
+/* 鈹€鈹€ 椤佃剼 鈹€鈹€ */
 .home-footer {
   display: flex;
   align-items: center;
@@ -707,3 +703,4 @@ function scrollToTop() {
 .top-fade-enter-active, .top-fade-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
 .top-fade-enter-from, .top-fade-leave-to { opacity: 0; transform: translateY(8px); }
 </style>
+

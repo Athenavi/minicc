@@ -1,4 +1,4 @@
-package auth
+﻿package auth
 
 import (
 	"context"
@@ -13,27 +13,27 @@ import (
 	"time"
 )
 
-// ── OAuth2 Exchanger（GitHub / 微信 / 钉钉 / 飞书 / QQ）──
+// 鈹€鈹€ OAuth2 Exchanger锛圙itHub / 寰俊 / 閽夐拤 / 椋炰功 / QQ锛夆攢鈹€
 //
-// 实现 OIDCExchanger 同一接口：SSOHandler 按 provider.protocol 分派到
-// OIDC（go-oidc 发现）或本实现（显式端点 + provider 特有身份抽取）。
-// 端点可被数据库覆盖（cfg.AuthURL/TokenURL/UserinfoURL 非空优先），
-// 因此单测可用 httptest 服务器注入全部端点，无需真实凭据。
+// 瀹炵幇 OIDCExchanger 鍚屼竴鎺ュ彛锛歋SOHandler 鎸?provider.protocol 鍒嗘淳鍒?
+// OIDC锛坓o-oidc 鍙戠幇锛夋垨鏈疄鐜帮紙鏄惧紡绔偣 + provider 鐗规湁韬唤鎶藉彇锛夈€?
+// 绔偣鍙鏁版嵁搴撹鐩栵紙cfg.AuthURL/TokenURL/UserinfoURL 闈炵┖浼樺厛锛夛紝
+// 鍥犳鍗曟祴鍙敤 httptest 鏈嶅姟鍣ㄦ敞鍏ュ叏閮ㄧ鐐癸紝鏃犻渶鐪熷疄鍑嵁銆?
 
-// qqOpenIDURL QQ 获取 openid 的固定端点。
+// qqOpenIDURL QQ 鑾峰彇 openid 鐨勫浐瀹氱鐐广€?
 const qqOpenIDURL = "https://graph.qq.com/oauth2.0/me"
 
-// OAuth2Exchanger 是纯 OAuth2 协议的授权码交换实现。
+// OAuth2Exchanger 鏄函 OAuth2 鍗忚鐨勬巿鏉冪爜浜ゆ崲瀹炵幇銆?
 type OAuth2Exchanger struct {
 	client *http.Client
 }
 
-// NewOAuth2Exchanger 构造交换器（15s 超时）。
+// NewOAuth2Exchanger 鏋勯€犱氦鎹㈠櫒锛?5s 瓒呮椂锛夈€?
 func NewOAuth2Exchanger() *OAuth2Exchanger {
 	return &OAuth2Exchanger{client: &http.Client{Timeout: 15 * time.Second}}
 }
 
-// AuthURL 构造授权页跳转 URL。
+// AuthURL 鏋勯€犳巿鏉冮〉璺宠浆 URL銆?
 func (e *OAuth2Exchanger) AuthURL(ctx context.Context, p *OIDCProviderConfig, state, nonce string) (string, error) {
 	if p.AuthURL == "" {
 		return "", fmt.Errorf("oauth2: provider %q has no auth_url", p.ProviderType)
@@ -44,31 +44,31 @@ func (e *OAuth2Exchanger) AuthURL(ctx context.Context, p *OIDCProviderConfig, st
 
 	switch p.ProviderType {
 	case ProviderWeChat:
-		// 微信用 appid 而非 client_id；扫码模式追加 #wechat_redirect
+		// 寰俊鐢?appid 鑰岄潪 client_id锛涙壂鐮佹ā寮忚拷鍔?#wechat_redirect
 		base = wechatEffectiveAuthURL(p.AuthURL, p.Extra)
 		if p.Extra["mode"] == "mp" {
 			scopes = []string{"snsapi_userinfo"}
 		}
 		extra.Set("appid", p.ClientID)
 	case ProviderDingTalk:
-		// 钉钉用 client_id + prompt=consent
+		// 閽夐拤鐢?client_id + prompt=consent
 		extra.Set("client_id", p.ClientID)
 		extra.Set("prompt", "consent")
 	default:
-		// github/feishu/qq 用标准参数
+		// github/feishu/qq 鐢ㄦ爣鍑嗗弬鏁?
 	}
 	return buildAuthURLSpecial(base, p.ClientID, p.RedirectURL, scopes, state, extra, p.ProviderType), nil
 }
 
-// buildAuthURLSpecial 在通用构造基础上处理各 provider 参数名差异。
+// buildAuthURLSpecial 鍦ㄩ€氱敤鏋勯€犲熀纭€涓婂鐞嗗悇 provider 鍙傛暟鍚嶅樊寮傘€?
 func buildAuthURLSpecial(base, clientID, redirectURL string, scopes []string, state string, extra url.Values, providerType string) string {
 	q := url.Values{}
 	if extra.Has("appid") {
-		q.Set("appid", clientID) // 微信
+		q.Set("appid", clientID) // 寰俊
 	} else if extra.Has("client_id") {
-		q.Set("client_id", clientID) // 钉钉（同名，走通用键）
+		q.Set("client_id", clientID) // 閽夐拤锛堝悓鍚嶏紝璧伴€氱敤閿級
 	} else {
-		q.Set("client_id", clientID) // github/feishu/qq 标准
+		q.Set("client_id", clientID) // github/feishu/qq 鏍囧噯
 	}
 	q.Set("redirect_uri", redirectURL)
 	q.Set("response_type", "code")
@@ -93,8 +93,8 @@ func buildAuthURLSpecial(base, clientID, redirectURL string, scopes []string, st
 	return u
 }
 
-// ExchangeAndVerify 授权码换 access_token → 拉取用户身份。
-// OAuth2 协议无 id_token/nonce，expectedNonce 由 state HMAC 承担防重放。
+// ExchangeAndVerify 鎺堟潈鐮佹崲 access_token 鈫?鎷夊彇鐢ㄦ埛韬唤銆?
+// OAuth2 鍗忚鏃?id_token/nonce锛宔xpectedNonce 鐢?state HMAC 鎵挎媴闃查噸鏀俱€?
 func (e *OAuth2Exchanger) ExchangeAndVerify(ctx context.Context, p *OIDCProviderConfig, code, expectedNonce string) (*IDTokenResult, error) {
 	if p.TokenURL == "" || p.UserinfoURL == "" {
 		return nil, fmt.Errorf("oauth2: provider %q missing token_url/userinfo_url", p.ProviderType)
@@ -106,7 +106,7 @@ func (e *OAuth2Exchanger) ExchangeAndVerify(ctx context.Context, p *OIDCProvider
 	return e.fetchIdentity(ctx, p, accessToken)
 }
 
-// exchangeToken 各 provider 授权码 → access_token。
+// exchangeToken 鍚?provider 鎺堟潈鐮?鈫?access_token銆?
 func (e *OAuth2Exchanger) exchangeToken(ctx context.Context, p *OIDCProviderConfig, code string) (string, error) {
 	switch p.ProviderType {
 	case ProviderGitHub:
@@ -124,7 +124,7 @@ func (e *OAuth2Exchanger) exchangeToken(ctx context.Context, p *OIDCProviderConf
 	}
 }
 
-// exchangeGitHub: POST form（client_id/secret/code/redirect_uri）+ Accept: JSON。
+// exchangeGitHub: POST form锛坈lient_id/secret/code/redirect_uri锛? Accept: JSON銆?
 func (e *OAuth2Exchanger) exchangeGitHub(ctx context.Context, p *OIDCProviderConfig, code string) (string, error) {
 	form := url.Values{}
 	form.Set("client_id", p.ClientID)
@@ -150,7 +150,7 @@ func (e *OAuth2Exchanger) exchangeGitHub(ctx context.Context, p *OIDCProviderCon
 	return resp.AccessToken, nil
 }
 
-// exchangeWeChat: GET token_url?appid&secret&code&grant_type。
+// exchangeWeChat: GET token_url?appid&secret&code&grant_type銆?
 func (e *OAuth2Exchanger) exchangeWeChat(ctx context.Context, p *OIDCProviderConfig, code string) (string, error) {
 	q := url.Values{}
 	q.Set("appid", p.ClientID)
@@ -177,10 +177,10 @@ func (e *OAuth2Exchanger) exchangeWeChat(ctx context.Context, p *OIDCProviderCon
 	if resp.AccessToken == "" {
 		return "", fmt.Errorf("oauth2 wechat: token exchange failed: errcode=%d errmsg=%s", resp.ErrCode, resp.ErrMsg)
 	}
-	return resp.AccessToken + "|" + resp.OpenID, nil // openid 随 token 传递
+	return resp.AccessToken + "|" + resp.OpenID, nil // openid 闅?token 浼犻€?
 }
 
-// exchangeDingTalk: POST JSON {clientId, clientSecret, code, grantType}。
+// exchangeDingTalk: POST JSON {clientId, clientSecret, code, grantType}銆?
 func (e *OAuth2Exchanger) exchangeDingTalk(ctx context.Context, p *OIDCProviderConfig, code string) (string, error) {
 	payload, _ := json.Marshal(map[string]string{
 		"clientId":     p.ClientID,
@@ -206,7 +206,7 @@ func (e *OAuth2Exchanger) exchangeDingTalk(ctx context.Context, p *OIDCProviderC
 	return resp.AccessToken, nil
 }
 
-// exchangeFeishu: POST JSON {app_id, app_secret, code, grant_type}，响应兼容顶层/data 两种形态。
+// exchangeFeishu: POST JSON {app_id, app_secret, code, grant_type}锛屽搷搴斿吋瀹归《灞?data 涓ょ褰㈡€併€?
 func (e *OAuth2Exchanger) exchangeFeishu(ctx context.Context, p *OIDCProviderConfig, code string) (string, error) {
 	payload, _ := json.Marshal(map[string]string{
 		"app_id":     p.ClientID,
@@ -229,7 +229,7 @@ func (e *OAuth2Exchanger) exchangeFeishu(ctx context.Context, p *OIDCProviderCon
 	return token, nil
 }
 
-// exchangeQQ: GET token_url?client_id&client_secret&code&redirect_uri&fmt=json。
+// exchangeQQ: GET token_url?client_id&client_secret&code&redirect_uri&fmt=json銆?
 func (e *OAuth2Exchanger) exchangeQQ(ctx context.Context, p *OIDCProviderConfig, code string) (string, error) {
 	q := url.Values{}
 	q.Set("client_id", p.ClientID)
@@ -259,7 +259,7 @@ func (e *OAuth2Exchanger) exchangeQQ(ctx context.Context, p *OIDCProviderConfig,
 	return resp.AccessToken, nil
 }
 
-// fetchIdentity 按 provider 拉取 userinfo 并抽取身份。
+// fetchIdentity 鎸?provider 鎷夊彇 userinfo 骞舵娊鍙栬韩浠姐€?
 func (e *OAuth2Exchanger) fetchIdentity(ctx context.Context, p *OIDCProviderConfig, accessToken string) (*IDTokenResult, error) {
 	switch p.ProviderType {
 	case ProviderGitHub:
@@ -277,7 +277,7 @@ func (e *OAuth2Exchanger) fetchIdentity(ctx context.Context, p *OIDCProviderConf
 	}
 }
 
-// identityGitHub: GET /user（Bearer）；email 缺失时补查 /user/emails。
+// identityGitHub: GET /user锛圔earer锛夛紱email 缂哄け鏃惰ˉ鏌?/user/emails銆?
 func (e *OAuth2Exchanger) identityGitHub(ctx context.Context, p *OIDCProviderConfig, accessToken string) (*IDTokenResult, error) {
 	headers := map[string]string{
 		"Authorization": "Bearer " + accessToken,
@@ -306,7 +306,7 @@ func (e *OAuth2Exchanger) identityGitHub(ctx context.Context, p *OIDCProviderCon
 	}
 	email := user.Email
 	if email == "" {
-		// /user/emails 补查（公开邮箱常常为 null）
+		// /user/emails 琛ユ煡锛堝叕寮€閭甯稿父涓?null锛?
 		emailsURL := strings.TrimSuffix(p.UserinfoURL, "/") + "/emails"
 		if strings.HasSuffix(p.UserinfoURL, "/user") {
 			if data2, err2 := e.do(ctx, http.MethodGet, emailsURL, "", nil, headers); err2 == nil {
@@ -333,7 +333,7 @@ func (e *OAuth2Exchanger) identityGitHub(ctx context.Context, p *OIDCProviderCon
 	}, nil
 }
 
-// identityWeChat: GET userinfo?access_token&openid；subject = unionid 优先。
+// identityWeChat: GET userinfo?access_token&openid锛泂ubject = unionid 浼樺厛銆?
 func (e *OAuth2Exchanger) identityWeChat(ctx context.Context, p *OIDCProviderConfig, accessTokenAndOpenID string) (*IDTokenResult, error) {
 	parts := strings.SplitN(accessTokenAndOpenID, "|", 2)
 	accessToken, openid := parts[0], ""
@@ -369,7 +369,7 @@ func (e *OAuth2Exchanger) identityWeChat(ctx context.Context, p *OIDCProviderCon
 	if user.ErrCode != 0 && user.OpenID == "" {
 		return nil, fmt.Errorf("oauth2 wechat: userinfo failed: errcode=%d errmsg=%s", user.ErrCode, user.ErrMsg)
 	}
-	// unionid 优先：同主体多应用不产生重复身份
+	// unionid 浼樺厛锛氬悓涓讳綋澶氬簲鐢ㄤ笉浜х敓閲嶅韬唤
 	subject := user.UnionID
 	if subject == "" {
 		subject = user.OpenID
@@ -384,7 +384,7 @@ func (e *OAuth2Exchanger) identityWeChat(ctx context.Context, p *OIDCProviderCon
 	}, nil
 }
 
-// identityDingTalk: GET contact/users/me（header x-acs-dingtalk-access-token）。
+// identityDingTalk: GET contact/users/me锛坔eader x-acs-dingtalk-access-token锛夈€?
 func (e *OAuth2Exchanger) identityDingTalk(ctx context.Context, p *OIDCProviderConfig, accessToken string) (*IDTokenResult, error) {
 	data, err := e.do(ctx, http.MethodGet, p.UserinfoURL, "", nil,
 		map[string]string{"x-acs-dingtalk-access-token": accessToken})
@@ -418,7 +418,7 @@ func (e *OAuth2Exchanger) identityDingTalk(ctx context.Context, p *OIDCProviderC
 	}, nil
 }
 
-// identityFeishu: GET userinfo（Bearer），响应兼容顶层/data 两种形态。
+// identityFeishu: GET userinfo锛圔earer锛夛紝鍝嶅簲鍏煎椤跺眰/data 涓ょ褰㈡€併€?
 func (e *OAuth2Exchanger) identityFeishu(ctx context.Context, p *OIDCProviderConfig, accessToken string) (*IDTokenResult, error) {
 	data, err := e.do(ctx, http.MethodGet, p.UserinfoURL, "", nil,
 		map[string]string{"Authorization": "Bearer " + accessToken})
@@ -446,7 +446,7 @@ func (e *OAuth2Exchanger) identityFeishu(ctx context.Context, p *OIDCProviderCon
 	}, nil
 }
 
-// identityQQ: 先 GET /oauth2.0/me 拿 openid，再 GET userinfo。
+// identityQQ: 鍏?GET /oauth2.0/me 鎷?openid锛屽啀 GET userinfo銆?
 func (e *OAuth2Exchanger) identityQQ(ctx context.Context, p *OIDCProviderConfig, accessToken string) (*IDTokenResult, error) {
 	meURL := qqOpenIDURL + "?access_token=" + url.QueryEscape(accessToken) + "&fmt=json"
 	data, err := e.do(ctx, http.MethodGet, meURL, "", nil, nil)
@@ -489,13 +489,13 @@ func (e *OAuth2Exchanger) identityQQ(ctx context.Context, p *OIDCProviderConfig,
 		return nil, fmt.Errorf("oauth2 qq: userinfo failed: ret=%d msg=%s", user.Ret, user.Msg)
 	}
 	return &IDTokenResult{
-		Subject:   me.OpenID, // QQ 无 unionid（除非接互联高级接口）
+		Subject:   me.OpenID, // QQ 鏃?unionid锛堥櫎闈炴帴浜掕仈楂樼骇鎺ュ彛锛?
 		Name:      user.Nickname,
 		AvatarURL: user.FigureQQ,
 	}, nil
 }
 
-// ── HTTP 辅助 ──────────────────────────────────────────
+// 鈹€鈹€ HTTP 杈呭姪 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func (e *OAuth2Exchanger) do(ctx context.Context, method, rawURL, contentType string, body io.Reader, headers map[string]string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, method, rawURL, body)
@@ -523,7 +523,7 @@ func (e *OAuth2Exchanger) do(ctx context.Context, method, rawURL, contentType st
 	return data, nil
 }
 
-// redactURL 抹去 URL 中的 secret/token/code 参数，防日志泄露。
+// redactURL 鎶瑰幓 URL 涓殑 secret/token/code 鍙傛暟锛岄槻鏃ュ織娉勯湶銆?
 func redactURL(rawURL string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -540,7 +540,7 @@ func redactURL(rawURL string) string {
 	return u.String()
 }
 
-// firstString 依次尝试多个点分路径，返回首个非空字符串。
+// firstString 渚濇灏濊瘯澶氫釜鐐瑰垎璺緞锛岃繑鍥為涓潪绌哄瓧绗︿覆銆?
 func firstString(m map[string]any, paths ...string) string {
 	for _, path := range paths {
 		var cur any = m
@@ -567,7 +567,7 @@ func firstString(m map[string]any, paths ...string) string {
 	return ""
 }
 
-// snippet 截取响应片段用于错误信息（上限 200 字节）。
+// snippet 鎴彇鍝嶅簲鐗囨鐢ㄤ簬閿欒淇℃伅锛堜笂闄?200 瀛楄妭锛夈€?
 func snippet(data []byte) string {
 	s := string(data)
 	if len(s) > 200 {

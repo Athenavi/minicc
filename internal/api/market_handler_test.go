@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// withFakeMarketLookup 临时替换市场查询实现，返回恢复函数。
+// withFakeMarketLookup 涓存椂鏇挎崲甯傚満鏌ヨ瀹炵幇锛岃繑鍥炴仮澶嶅嚱鏁般€?
 func withFakeMarketLookup(t *testing.T, fn func(ctx context.Context, itemType, itemName, tenantID string) (bool, bool, error)) {
 	t.Helper()
 	orig := marketItemLookup
@@ -14,8 +14,8 @@ func withFakeMarketLookup(t *testing.T, fn func(ctx context.Context, itemType, i
 	t.Cleanup(func() { marketItemLookup = orig })
 }
 
-// TestIsItemEnabledForTenant_NoPublishedItem 市场无同名 published 条目 → 放行，
-// 保证未上架能力不受市场管控影响。
+// TestIsItemEnabledForTenant_NoPublishedItem 甯傚満鏃犲悓鍚?published 鏉＄洰 鈫?鏀捐锛?
+// 淇濊瘉鏈笂鏋惰兘鍔涗笉鍙楀競鍦虹鎺у奖鍝嶃€?
 func TestIsItemEnabledForTenant_NoPublishedItem(t *testing.T) {
 	withFakeMarketLookup(t, func(ctx context.Context, itemType, itemName, tenantID string) (bool, bool, error) {
 		return false, false, nil
@@ -26,7 +26,7 @@ func TestIsItemEnabledForTenant_NoPublishedItem(t *testing.T) {
 	}
 }
 
-// TestIsItemEnabledForTenant_PublishedGranted 已发布且租户已安装启用 → 放行。
+// TestIsItemEnabledForTenant_PublishedGranted 宸插彂甯冧笖绉熸埛宸插畨瑁呭惎鐢?鈫?鏀捐銆?
 func TestIsItemEnabledForTenant_PublishedGranted(t *testing.T) {
 	withFakeMarketLookup(t, func(ctx context.Context, itemType, itemName, tenantID string) (bool, bool, error) {
 		return true, true, nil
@@ -37,7 +37,7 @@ func TestIsItemEnabledForTenant_PublishedGranted(t *testing.T) {
 	}
 }
 
-// TestIsItemEnabledForTenant_PublishedNotGranted 已发布但租户未安装/禁用 → 拦截。
+// TestIsItemEnabledForTenant_PublishedNotGranted 宸插彂甯冧絾绉熸埛鏈畨瑁?绂佺敤 鈫?鎷︽埅銆?
 func TestIsItemEnabledForTenant_PublishedNotGranted(t *testing.T) {
 	withFakeMarketLookup(t, func(ctx context.Context, itemType, itemName, tenantID string) (bool, bool, error) {
 		return true, false, nil
@@ -48,7 +48,7 @@ func TestIsItemEnabledForTenant_PublishedNotGranted(t *testing.T) {
 	}
 }
 
-// TestIsItemEnabledForTenant_FailOpen 查询失败 → fail-open 放行。
+// TestIsItemEnabledForTenant_FailOpen 鏌ヨ澶辫触 鈫?fail-open 鏀捐銆?
 func TestIsItemEnabledForTenant_FailOpen(t *testing.T) {
 	withFakeMarketLookup(t, func(ctx context.Context, itemType, itemName, tenantID string) (bool, bool, error) {
 		return false, false, errors.New("pg down")
@@ -59,8 +59,8 @@ func TestIsItemEnabledForTenant_FailOpen(t *testing.T) {
 	}
 }
 
-// TestCanCatalogTransition 状态机：仅 draft→published→retired；
-// retired 为终态，不可回 published（非法迁移由 handler 返回 409）。
+// TestCanCatalogTransition 鐘舵€佹満锛氫粎 draft鈫抪ublished鈫抮etired锛?
+// retired 涓虹粓鎬侊紝涓嶅彲鍥?published锛堥潪娉曡縼绉荤敱 handler 杩斿洖 409锛夈€?
 func TestCanCatalogTransition(t *testing.T) {
 	cases := []struct {
 		from, to string
@@ -81,20 +81,20 @@ func TestCanCatalogTransition(t *testing.T) {
 	}
 }
 
-// TestFilterSkillsByMarket discover 响应过滤：仅移除市场已发布且未授权的条目。
+// TestFilterSkillsByMarket discover 鍝嶅簲杩囨护锛氫粎绉婚櫎甯傚満宸插彂甯冧笖鏈巿鏉冪殑鏉＄洰銆?
 func TestFilterSkillsByMarket(t *testing.T) {
 	withFakeMarketLookup(t, func(ctx context.Context, itemType, itemName, tenantID string) (bool, bool, error) {
-		// 仅 "premium-skill" 在市场已发布且未对该租户授权
+		// 浠?"premium-skill" 鍦ㄥ競鍦哄凡鍙戝竷涓旀湭瀵硅绉熸埛鎺堟潈
 		if itemName == "premium-skill" {
 			return true, false, nil
 		}
-		return false, false, nil // 其余未上架 → 放行
+		return false, false, nil // 鍏朵綑鏈笂鏋?鈫?鏀捐
 	})
 	list := []interface{}{
 		map[string]interface{}{"name": "csv_summarize"},
 		map[string]interface{}{"name": "premium-skill"},
-		map[string]interface{}{"no_name_field": true}, // 无名条目原样保留
-		"not-a-map", // 非对象条目原样保留
+		map[string]interface{}{"no_name_field": true}, // 鏃犲悕鏉＄洰鍘熸牱淇濈暀
+		"not-a-map", // 闈炲璞℃潯鐩師鏍蜂繚鐣?
 	}
 	kept := filterSkillsByMarket(context.Background(), list, "t1")
 	if len(kept) != 3 {

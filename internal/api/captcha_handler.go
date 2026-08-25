@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -9,37 +9,37 @@ import (
 	"strings"
 	"time"
 
-	"github.com/athenavi/minicc/config"
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/db"
+	"github.com/athenavi/chiron/config"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/db"
 	"github.com/jackc/pgx/v5"
 )
 
-// ── 人机验证配置管理 + 登录防滥用栅栏 ──────────────────────
+// 鈹€鈹€ 浜烘満楠岃瘉閰嶇疆绠＄悊 + 鐧诲綍闃叉互鐢ㄦ爡鏍?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 //
-// 防滥用双保险：
-//  1. 管理员启用验证码后，登录/注册必须携带有效 captcha token；
-//  2. 未启用时，同一 IP 连续失败达到阈值会"升级"为强制验证码，
-//     继续失败达到硬上限则直接 429 拒绝（Redis 计数，15 分钟窗口）。
+// 闃叉互鐢ㄥ弻淇濋櫓锛?
+//  1. 绠＄悊鍛樺惎鐢ㄩ獙璇佺爜鍚庯紝鐧诲綍/娉ㄥ唽蹇呴』鎼哄甫鏈夋晥 captcha token锛?
+//  2. 鏈惎鐢ㄦ椂锛屽悓涓€ IP 杩炵画澶辫触杈惧埌闃堝€间細"鍗囩骇"涓哄己鍒堕獙璇佺爜锛?
+//     缁х画澶辫触杈惧埌纭笂闄愬垯鐩存帴 429 鎷掔粷锛圧edis 璁℃暟锛?5 鍒嗛挓绐楀彛锛夈€?
 
-// errCaptchaHandled 表示 Enforce 已写响应，调用方应直接 return。
+// errCaptchaHandled 琛ㄧず Enforce 宸插啓鍝嶅簲锛岃皟鐢ㄦ柟搴旂洿鎺?return銆?
 var errCaptchaHandled = errors.New("captcha gate: response already written")
 
 const (
-	captchaFailThreshold = 5   // 连续失败 N 次后强制验证码
-	captchaHardLimit     = 30  // 连续失败 N 次后直接拒绝
+	captchaFailThreshold = 5   // 杩炵画澶辫触 N 娆″悗寮哄埗楠岃瘉鐮?
+	captchaHardLimit     = 30  // 杩炵画澶辫触 N 娆″悗鐩存帴鎷掔粷
 	captchaFailWindow    = 15 * time.Minute
 	captchaFailKeyPrefix = "login:fail:"
 )
 
-// failCounterStore 抽象登录失败计数存储（生产 Redis，测试内存 fake）。
+// failCounterStore 鎶借薄鐧诲綍澶辫触璁℃暟瀛樺偍锛堢敓浜?Redis锛屾祴璇曞唴瀛?fake锛夈€?
 type failCounterStore interface {
 	incr(ctx context.Context, ip string, window time.Duration)
 	get(ctx context.Context, ip string) int
 	clear(ctx context.Context, ip string)
 }
 
-// redisFailCounter 是 Redis 实现：key = login:fail:{ip}，TTL = 窗口期。
+// redisFailCounter 鏄?Redis 瀹炵幇锛歬ey = login:fail:{ip}锛孴TL = 绐楀彛鏈熴€?
 type redisFailCounter struct {
 	rdb db.RedisClient
 }
@@ -74,7 +74,7 @@ func (c redisFailCounter) clear(ctx context.Context, ip string) {
 	c.rdb.Del(ctx, captchaFailKeyPrefix+ip)
 }
 
-// captchaConfigRow 是 ent_captcha_config 的内存形态（secret 保留密文）。
+// captchaConfigRow 鏄?ent_captcha_config 鐨勫唴瀛樺舰鎬侊紙secret 淇濈暀瀵嗘枃锛夈€?
 type captchaConfigRow struct {
 	Provider  string
 	SiteKey   string
@@ -83,15 +83,15 @@ type captchaConfigRow struct {
 	Enabled   bool
 }
 
-// CaptchaHandler 提供验证码配置 CRUD、公开配置下发与防滥用栅栏。
+// CaptchaHandler 鎻愪緵楠岃瘉鐮侀厤缃?CRUD銆佸叕寮€閰嶇疆涓嬪彂涓庨槻婊ョ敤鏍呮爮銆?
 type CaptchaHandler struct {
 	db       entQuerier
 	encKey   []byte
 	verifier auth.CaptchaVerifier
-	counter  failCounterStore // nil 时失败计数降级跳过（仍有 rlMW 兜底）
+	counter  failCounterStore // nil 鏃跺け璐ヨ鏁伴檷绾ц烦杩囷紙浠嶆湁 rlMW 鍏滃簳锛?
 }
 
-// NewCaptchaHandler 构造验证码 handler；密钥沿用 SSO 加密密钥。
+// NewCaptchaHandler 鏋勯€犻獙璇佺爜 handler锛涘瘑閽ユ部鐢?SSO 鍔犲瘑瀵嗛挜銆?
 func NewCaptchaHandler(cfg *config.Config) *CaptchaHandler {
 	return &CaptchaHandler{
 		db:       pgEntStore{},
@@ -101,12 +101,12 @@ func NewCaptchaHandler(cfg *config.Config) *CaptchaHandler {
 	}
 }
 
-// RegisterPublicRoutes 挂载公开路由（无 authMW，供登录页拉取前端组件参数；须套 rlMW）。
+// RegisterPublicRoutes 鎸傝浇鍏紑璺敱锛堟棤 authMW锛屼緵鐧诲綍椤垫媺鍙栧墠绔粍浠跺弬鏁帮紱椤诲 rlMW锛夈€?
 func (h *CaptchaHandler) RegisterPublicRoutes(mux *http.ServeMux, rlMW func(http.Handler) http.Handler) {
 	mux.Handle("GET /v1/auth/captcha/config", rlMW(http.HandlerFunc(h.PublicConfig)))
 }
 
-// RegisterAdminRoutes 挂载管理路由（authMW + RequireEntPerm("sso:manage")）。
+// RegisterAdminRoutes 鎸傝浇绠＄悊璺敱锛坅uthMW + RequireEntPerm("sso:manage")锛夈€?
 func (h *CaptchaHandler) RegisterAdminRoutes(mux *http.ServeMux, authMW func(http.Handler) http.Handler) {
 	guard := func(hf http.HandlerFunc) http.Handler {
 		return authMW(RequireEntPerm("sso:manage")(hf))
@@ -115,10 +115,10 @@ func (h *CaptchaHandler) RegisterAdminRoutes(mux *http.ServeMux, authMW func(htt
 	mux.Handle("PUT /v1/ent/captcha/config", guard(h.UpdateConfig))
 }
 
-// ── 公开配置下发 ────────────────────────────────────────
+// 鈹€鈹€ 鍏紑閰嶇疆涓嬪彂 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 // PublicConfig GET /v1/auth/captcha/config
-// 仅下发前端渲染验证码组件所需的非敏感字段；未启用/未配置返回 enabled=false。
+// 浠呬笅鍙戝墠绔覆鏌撻獙璇佺爜缁勪欢鎵€闇€鐨勯潪鏁忔劅瀛楁锛涙湭鍚敤/鏈厤缃繑鍥?enabled=false銆?
 func (h *CaptchaHandler) PublicConfig(w http.ResponseWriter, r *http.Request) {
 	row, err := h.loadConfig(r.Context())
 	if err != nil {
@@ -133,13 +133,13 @@ func (h *CaptchaHandler) PublicConfig(w http.ResponseWriter, r *http.Request) {
 		"enabled":   true,
 		"provider":  row.Provider,
 		"site_key":  row.SiteKey,
-		"verify_url": row.VerifyURL, // custom 前端组件可能需要；不含 secret
+		"verify_url": row.VerifyURL, // custom 鍓嶇缁勪欢鍙兘闇€瑕侊紱涓嶅惈 secret
 	})
 }
 
-// ── 管理端 ──────────────────────────────────────────────
+// 鈹€鈹€ 绠＄悊绔?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// GetConfig GET /v1/ent/captcha/config（secret 脱敏）。
+// GetConfig GET /v1/ent/captcha/config锛坰ecret 鑴辨晱锛夈€?
 func (h *CaptchaHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	row, err := h.loadConfig(r.Context())
 	if err != nil {
@@ -167,12 +167,12 @@ func (h *CaptchaHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 type updateCaptchaRequest struct {
 	Provider  *string `json:"provider"`
 	SiteKey   *string `json:"site_key"`
-	Secret    *string `json:"secret"` // 空串/脱敏占位 = 保留原值
+	Secret    *string `json:"secret"` // 绌轰覆/鑴辨晱鍗犱綅 = 淇濈暀鍘熷€?
 	VerifyURL *string `json:"verify_url"`
 	Enabled   *bool   `json:"enabled"`
 }
 
-// UpdateConfig PUT /v1/ent/captcha/config（单租户单行 upsert）。
+// UpdateConfig PUT /v1/ent/captcha/config锛堝崟绉熸埛鍗曡 upsert锛夈€?
 func (h *CaptchaHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	var req updateCaptchaRequest
 	if err := DecodeJSON(w, r, &req); err != nil {
@@ -212,7 +212,7 @@ func (h *CaptchaHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		enabled = *req.Enabled
 	}
 
-	// secret：新值加密；空串/占位保留原密文
+	// secret锛氭柊鍊煎姞瀵嗭紱绌轰覆/鍗犱綅淇濈暀鍘熷瘑鏂?
 	secretEnc := ""
 	if existing != nil {
 		secretEnc = existing.SecretEnc
@@ -230,7 +230,7 @@ func (h *CaptchaHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		secretEnc = enc
 	}
 
-	// 启用前置校验：site_key（custom 除外）与 secret 必须齐备，fail-loud
+	// 鍚敤鍓嶇疆鏍￠獙锛歴ite_key锛坈ustom 闄ゅ锛変笌 secret 蹇呴』榻愬锛宖ail-loud
 	if enabled {
 		if secretEnc == "" {
 			BadRequest(w, "captcha secret is required before enabling")
@@ -268,7 +268,7 @@ func (h *CaptchaHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if updated == nil {
-		// 并发删除配置的极端竞态：fail-loud 而非空指针
+		// 骞跺彂鍒犻櫎閰嶇疆鐨勬瀬绔珵鎬侊細fail-loud 鑰岄潪绌烘寚閽?
 		logAndRespond(w, errors.New("captcha config vanished after upsert"),
 			http.StatusInternalServerError, "captcha config unavailable")
 		return
@@ -282,12 +282,12 @@ func (h *CaptchaHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ── 防滥用栅栏（登录/注册调用）─────────────────────────
+// 鈹€鈹€ 闃叉互鐢ㄦ爡鏍忥紙鐧诲綍/娉ㄥ唽璋冪敤锛夆攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// Enforce 在登录/注册等敏感接口的凭据校验前执行：
-//   - 未启用且未达失败阈值 → nil 放行；
-//   - 需要验证码但 token 缺失/校验失败/服务商不可达 → 写响应并返回 errCaptchaHandled；
-//   - 达硬上限 → 429。
+// Enforce 鍦ㄧ櫥褰?娉ㄥ唽绛夋晱鎰熸帴鍙ｇ殑鍑嵁鏍￠獙鍓嶆墽琛岋細
+//   - 鏈惎鐢ㄤ笖鏈揪澶辫触闃堝€?鈫?nil 鏀捐锛?
+//   - 闇€瑕侀獙璇佺爜浣?token 缂哄け/鏍￠獙澶辫触/鏈嶅姟鍟嗕笉鍙揪 鈫?鍐欏搷搴斿苟杩斿洖 errCaptchaHandled锛?
+//   - 杈剧‖涓婇檺 鈫?429銆?
 func (h *CaptchaHandler) Enforce(w http.ResponseWriter, r *http.Request, tok *auth.CaptchaToken) error {
 	ip := clientIP(r)
 
@@ -306,7 +306,7 @@ func (h *CaptchaHandler) Enforce(w http.ResponseWriter, r *http.Request, tok *au
 
 	required := row != nil && row.Enabled
 	if !required && fails >= captchaFailThreshold && row != nil && row.SecretEnc != "" {
-		// 未全局启用但已配置 → 失败升级为强制验证码
+		// 鏈叏灞€鍚敤浣嗗凡閰嶇疆 鈫?澶辫触鍗囩骇涓哄己鍒堕獙璇佺爜
 		required = true
 	}
 
@@ -315,7 +315,7 @@ func (h *CaptchaHandler) Enforce(w http.ResponseWriter, r *http.Request, tok *au
 	}
 
 	if row == nil || row.SecretEnc == "" {
-		// 配置缺失却要求验证 → fail-loud，绝不静默放行
+		// 閰嶇疆缂哄け鍗磋姹傞獙璇?鈫?fail-loud锛岀粷涓嶉潤榛樻斁琛?
 		ServiceUnavailable(w, "captcha is not configured")
 		return errCaptchaHandled
 	}
@@ -346,14 +346,14 @@ func (h *CaptchaHandler) Enforce(w http.ResponseWriter, r *http.Request, tok *au
 			Forbidden(w, "captcha verification failed")
 			return errCaptchaHandled
 		}
-		// 服务商不可达等系统级错误 → fail-loud 502
+		// 鏈嶅姟鍟嗕笉鍙揪绛夌郴缁熺骇閿欒 鈫?fail-loud 502
 		logAndRespond(w, err, http.StatusBadGateway, "captcha provider unavailable")
 		return errCaptchaHandled
 	}
 	return nil
 }
 
-// RecordFailure 登录失败后调用：计数 + 窗口续期。
+// RecordFailure 鐧诲綍澶辫触鍚庤皟鐢細璁℃暟 + 绐楀彛缁湡銆?
 func (h *CaptchaHandler) RecordFailure(ctx context.Context, r *http.Request) {
 	if h.counter == nil {
 		return
@@ -361,7 +361,7 @@ func (h *CaptchaHandler) RecordFailure(ctx context.Context, r *http.Request) {
 	h.counter.incr(ctx, clientIP(r), captchaFailWindow)
 }
 
-// ClearFailures 登录成功后调用：清除失败计数。
+// ClearFailures 鐧诲綍鎴愬姛鍚庤皟鐢細娓呴櫎澶辫触璁℃暟銆?
 func (h *CaptchaHandler) ClearFailures(ctx context.Context, r *http.Request) {
 	if h.counter == nil {
 		return
@@ -376,7 +376,7 @@ func (h *CaptchaHandler) failureCount(ctx context.Context, ip string) int {
 	return h.counter.get(ctx, ip)
 }
 
-// ── 内部 ────────────────────────────────────────────────
+// 鈹€鈹€ 鍐呴儴 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func (h *CaptchaHandler) loadConfig(ctx context.Context) (*captchaConfigRow, error) {
 	var row captchaConfigRow
@@ -397,7 +397,7 @@ func (h *CaptchaHandler) loadConfig(ctx context.Context) (*captchaConfigRow, err
 	return &row, nil
 }
 
-// clientIP 提取客户端 IP（realIPHeader 中间件已把 RemoteAddr 规整为真实 IP）。
+// clientIP 鎻愬彇瀹㈡埛绔?IP锛坮ealIPHeader 涓棿浠跺凡鎶?RemoteAddr 瑙勬暣涓虹湡瀹?IP锛夈€?
 func clientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {

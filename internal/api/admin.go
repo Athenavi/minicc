@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"fmt"
@@ -11,12 +11,12 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/db"
-	"github.com/athenavi/minicc/internal/engine"
-	"github.com/athenavi/minicc/internal/monitor"
-	"github.com/athenavi/minicc/internal/settings"
-	"github.com/athenavi/minicc/internal/storage"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/db"
+	"github.com/athenavi/chiron/internal/engine"
+	"github.com/athenavi/chiron/internal/monitor"
+	"github.com/athenavi/chiron/internal/settings"
+	"github.com/athenavi/chiron/internal/storage"
 )
 
 var validDBName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
@@ -36,12 +36,12 @@ func NewAdminHandler(a *auth.Authenticator, store *storage.AtomicStore, redis *d
 	return &AdminHandler{authenticator: a, store: store, redis: redis, pythonClient: pythonClient}
 }
 
-// 鈹€鈹€ Routes 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// 閳光偓閳光偓 Routes 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
 
 // RegisterRoutes adds admin endpoints to the given router under /v1/admin.
 // Caller is responsible for auth middleware.
 func (h *AdminHandler) RegisterRoutes(r *http.ServeMux) {
-	// 原有端点
+	// 鍘熸湁绔偣
 	r.HandleFunc("GET /metrics", h.Metrics)
 	r.HandleFunc("GET /users", h.ListUsers)
 	r.HandleFunc("GET /users/{id}", h.GetUser)
@@ -58,31 +58,28 @@ func (h *AdminHandler) RegisterRoutes(r *http.ServeMux) {
 	r.HandleFunc("PUT /redis", h.UpdateRedis)
 	r.HandleFunc("POST /redis/test", h.TestRedis)
 
-	// 新增端点：队列管理
-	r.HandleFunc("GET /queue", h.GetQueueStats)
+	// 鏂板绔偣锛氶槦鍒楃鐞?	r.HandleFunc("GET /queue", h.GetQueueStats)
 	r.HandleFunc("POST /queue/flush", h.FlushQueue)
 	r.HandleFunc("POST /queue/pause", h.PauseQueue)
 
-	// 新增端点：缓存监控
-	r.HandleFunc("GET /cache/stats", h.GetCacheStats)
+	// 鏂板绔偣锛氱紦瀛樼洃鎺?	r.HandleFunc("GET /cache/stats", h.GetCacheStats)
 
-	// 新增端点：性能监控
+	// 鏂板绔偣锛氭€ц兘鐩戞帶
 	r.HandleFunc("GET /performance", h.GetPerformance)
 
-	// 新增端点：API Key 管理
+	// 鏂板绔偣锛欰PI Key 绠＄悊
 	r.HandleFunc("GET /api-keys", h.ListApiKeys)
-	// 运维类端点（租户/域名/数据库/Redis/模型/定时任务）—— /admin 全栈实装
+	// 杩愮淮绫荤鐐癸紙绉熸埛/鍩熷悕/鏁版嵁搴?Redis/妯″瀷/瀹氭椂浠诲姟锛夆€斺€?/admin 鍏ㄦ爤瀹炶
 	h.registerOpsRoutes(r)
 	r.HandleFunc("POST /api-keys", h.AddApiKey)
 	r.HandleFunc("PUT /api-keys/{id}", h.UpdateApiKey)
 	r.HandleFunc("DELETE /api-keys/{id}", h.DeleteApiKey)
 
-	// 新增端点：系统设置
-	r.HandleFunc("PUT /settings", h.SaveSettings)
+	// 鏂板绔偣锛氱郴缁熻缃?	r.HandleFunc("PUT /settings", h.SaveSettings)
 	r.HandleFunc("GET /settings", h.GetSettings)
 }
 
-// 鈹€鈹€ Metrics 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// 閳光偓閳光偓 Metrics 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
 
 func (h *AdminHandler) Metrics(w http.ResponseWriter, r *http.Request) {
 	snap := monitor.Snapshot()
@@ -94,7 +91,7 @@ func (h *AdminHandler) Metrics(w http.ResponseWriter, r *http.Request) {
 	OK(w, snap)
 }
 
-// 鈹€鈹€ User Management 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// 閳光偓閳光偓 User Management 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
 
 type AdminUser struct {
 	ID        string `json:"id"`
@@ -195,15 +192,13 @@ func (h *AdminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "invalid role: must be owner, admin, or user")
 		return
 	}
-	// S 安全修复：非 owner 不可将角色提升为 owner（防止 admin 提权）
-	claims := auth.GetClaims(r.Context())
+	// S 瀹夊叏淇锛氶潪 owner 涓嶅彲灏嗚鑹叉彁鍗囦负 owner锛堥槻姝?admin 鎻愭潈锛?	claims := auth.GetClaims(r.Context())
 	if body.Role == "owner" && (claims == nil || claims.Role != "owner") {
 		BadRequest(w, "only owner can assign owner role")
 		return
 	}
 
-	// Build dynamic UPDATE with column name whitelist — tenant_id 作为额外 WHERE 条件防越权
-	// S 安全修复：列名必须来自白名单，防止 SQL 注入
+	// Build dynamic UPDATE with column name whitelist 鈥?tenant_id 浣滀负棰濆 WHERE 鏉′欢闃茶秺鏉?	// S 瀹夊叏淇锛氬垪鍚嶅繀椤绘潵鑷櫧鍚嶅崟锛岄槻姝?SQL 娉ㄥ叆
 	userColumnMap := map[string]string{
 		"email": "email",
 		"name":  "name",
@@ -284,7 +279,7 @@ func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	OK(w, map[string]string{"status": "deleted"})
 }
 
-// 鈹€鈹€ System Management 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// 閳光偓閳光偓 System Management 閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓閳光偓
 
 func (h *AdminHandler) SystemInfo(w http.ResponseWriter, r *http.Request) {
 	info := map[string]interface{}{
@@ -334,7 +329,7 @@ func (h *AdminHandler) TriggerMaintenance(w http.ResponseWriter, r *http.Request
 		}
 	case "flush_cache":
 		if db.Redis != nil {
-			const prefix = "minicc_cache:*"
+			const prefix = "chiron_cache:*"
 			iter := db.Redis.Scan(r.Context(), 0, prefix, 0).Iterator()
 			var deleted int
 			for iter.Next(r.Context()) {
@@ -362,24 +357,24 @@ func (h *AdminHandler) TriggerMaintenance(w http.ResponseWriter, r *http.Request
 func dbNameFromDSN() string {
 	dsn := os.Getenv("POSTGRES_DSN")
 	if dsn == "" {
-		return "minicc" // fallback
+		return "chiron" // fallback
 	}
 	// Parse URL format: postgres://user:pass@host:port/dbname?params
 	u, err := url.Parse(dsn)
 	if err != nil {
-		return "minicc"
+		return "chiron"
 	}
 	if u.Path != "" && u.Path != "/" {
-		// Path is /dbname 鈥?trim leading slash
+		// Path is /dbname 閳?trim leading slash
 		return u.Path[1:]
 	}
-	return "minicc"
+	return "chiron"
 }
 
-// 鈹€鈹€ Backup & Restore 鈹€鈹€
+// 閳光偓閳光偓 Backup & Restore 閳光偓閳光偓
 
 func (h *AdminHandler) CreateBackup(w http.ResponseWriter, r *http.Request) {
-	// P0-P4 修复：pg_dump 输出流式转发，避免整库缓冲入内存导致 OOM
+	// P0-P4 淇锛歱g_dump 杈撳嚭娴佸紡杞彂锛岄伩鍏嶆暣搴撶紦鍐插叆鍐呭瓨瀵艰嚧 OOM
 	cmd := exec.CommandContext(r.Context(), "pg_dump", "--dbname="+extractDSN())
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -391,7 +386,7 @@ func (h *AdminHandler) CreateBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/sql")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=minicc_backup_%s.sql", time.Now().Format("20060102_150405")))
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=chiron_backup_%s.sql", time.Now().Format("20060102_150405")))
 	if _, err := io.Copy(w, stdout); err != nil {
 		slog.Warn("backup stream failed", "error", err)
 	}
@@ -407,8 +402,7 @@ func (h *AdminHandler) RestoreBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
-	// P0-P4 防护：限制恢复文件大小，避免整文件读入内存
-	sqlData, err := io.ReadAll(io.LimitReader(file, 512<<20))
+	// P0-P4 闃叉姢锛氶檺鍒舵仮澶嶆枃浠跺ぇ灏忥紝閬垮厤鏁存枃浠惰鍏ュ唴瀛?	sqlData, err := io.ReadAll(io.LimitReader(file, 512<<20))
 	if err != nil {
 		logAndRespond(w, err, http.StatusInternalServerError, "read file failed")
 		return
@@ -438,7 +432,7 @@ func extractDSN() string {
 	return os.Getenv("POSTGRES_DSN")
 }
 
-// ─── Storage Management ────────────────────────────────────────────
+// 鈹€鈹€鈹€ Storage Management 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 type StorageConfig struct {
 	Backend     string `json:"backend"`
@@ -516,9 +510,9 @@ func (h *AdminHandler) UpdateStorage(w http.ResponseWriter, r *http.Request) {
 	warning := ""
 	if previous != body.Backend {
 		if previous == "local" {
-			warning = "存储后端已从 local 切换为 s3。旧后端中的文件不会自动迁移。"
+			warning = "瀛樺偍鍚庣宸蹭粠 local 鍒囨崲涓?s3銆傛棫鍚庣涓殑鏂囦欢涓嶄細鑷姩杩佺Щ銆?
 		} else {
-			warning = "存储后端已从 s3 切换为 local。旧后端中的文件不会自动迁移。"
+			warning = "瀛樺偍鍚庣宸蹭粠 s3 鍒囨崲涓?local銆傛棫鍚庣涓殑鏂囦欢涓嶄細鑷姩杩佺Щ銆?
 		}
 	}
 
@@ -548,7 +542,7 @@ func (h *AdminHandler) TestStorage(w http.ResponseWriter, r *http.Request) {
 	case "local":
 		OK(w, map[string]interface{}{
 			"status":  "ok",
-			"message": "本地存储可用",
+			"message": "鏈湴瀛樺偍鍙敤",
 		})
 	case "s3":
 		if body.S3Endpoint == "" || body.S3Bucket == "" || body.S3AccessKey == "" || body.S3SecretKey == "" {
@@ -559,7 +553,7 @@ func (h *AdminHandler) TestStorage(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			OK(w, map[string]interface{}{
 				"status":  "error",
-				"message": fmt.Errorf("S3 连接失败: %w", err).Error(),
+				"message": fmt.Errorf("S3 杩炴帴澶辫触: %w", err).Error(),
 			})
 			return
 		}
@@ -568,20 +562,20 @@ func (h *AdminHandler) TestStorage(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			OK(w, map[string]interface{}{
 				"status":  "error",
-				"message": fmt.Errorf("S3 bucket 访问失败: %w", err).Error(),
+				"message": fmt.Errorf("S3 bucket 璁块棶澶辫触: %w", err).Error(),
 			})
 			return
 		}
 		OK(w, map[string]interface{}{
 			"status":  "ok",
-			"message": fmt.Sprintf("S3 连接成功，bucket '%s' 可访问", body.S3Bucket),
+			"message": fmt.Sprintf("S3 杩炴帴鎴愬姛锛宐ucket '%s' 鍙闂?, body.S3Bucket),
 		})
 	default:
 		BadRequest(w, "backend must be 'local' or 's3'")
 	}
 }
 
-// ─── Redis Management ────────────────────────────────────────────
+// 鈹€鈹€鈹€ Redis Management 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func (h *AdminHandler) GetRedis(w http.ResponseWriter, r *http.Request) {
 	if h.redis == nil {

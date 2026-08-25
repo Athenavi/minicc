@@ -1,9 +1,9 @@
-"""工作流节点动态绑定 Skill/MCP (WorkflowNode Skill Binding)
+﻿"""宸ヤ綔娴佽妭鐐瑰姩鎬佺粦瀹?Skill/MCP (WorkflowNode Skill Binding)
 
-功能:
-- 工作流节点支持动态绑定任意已注册能力
-- 运行时从 Capabilities Registry 查询可用 Skill
-- 支持节点级参数热更新
+鍔熻兘:
+- 宸ヤ綔娴佽妭鐐规敮鎸佸姩鎬佺粦瀹氫换鎰忓凡娉ㄥ唽鑳藉姏
+- 杩愯鏃朵粠 Capabilities Registry 鏌ヨ鍙敤 Skill
+- 鏀寔鑺傜偣绾у弬鏁扮儹鏇存柊
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class BoundSkill:
-    """绑定的技能"""
+    """缁戝畾鐨勬妧鑳?""
     capability_id: str
     name: str
     config: dict[str, Any] = field(default_factory=dict)
@@ -29,9 +29,8 @@ class BoundSkill:
 
 
 class WorkflowNodeWithSkill:
-    """带技能绑定的工作流节点
-    
-    增强原版 Node,支持动态绑定任意 Skill
+    """甯︽妧鑳界粦瀹氱殑宸ヤ綔娴佽妭鐐?    
+    澧炲己鍘熺増 Node,鏀寔鍔ㄦ€佺粦瀹氫换鎰?Skill
     """
     
     def __init__(
@@ -46,8 +45,7 @@ class WorkflowNodeWithSkill:
         self.node_type = node_type  # "input" / "llm" / "tool" / "condition" / "output" / "skill"
         self.label = label
         
-        # 技能绑定
-        self.bound_skill: Optional[BoundSkill] = None
+        # 鎶€鑳界粦瀹?        self.bound_skill: Optional[BoundSkill] = None
         if bound_skill_id:
             self.bound_skill = BoundSkill(
                 capability_id=bound_skill_id,
@@ -65,13 +63,11 @@ class WorkflowNodeWithSkill:
         tenant_id: str,
         trace_id: str = "",
     ) -> dict[str, Any]:
-        """使用绑定的技能执行节点
-        
-        流程:
-        1. 从 state 提取输入 (应用 input_mapping)
-        2. 调用能力注册中心查找 executor
-        3. 执行并获取输出
-        4. 应用 output_mapping 注入到 state
+        """浣跨敤缁戝畾鐨勬妧鑳芥墽琛岃妭鐐?        
+        娴佺▼:
+        1. 浠?state 鎻愬彇杈撳叆 (搴旂敤 input_mapping)
+        2. 璋冪敤鑳藉姏娉ㄥ唽涓績鏌ユ壘 executor
+        3. 鎵ц骞惰幏鍙栬緭鍑?        4. 搴旂敤 output_mapping 娉ㄥ叆鍒?state
         """
         from app.core.capabilities import get_registry
         
@@ -84,16 +80,16 @@ class WorkflowNodeWithSkill:
         if not cap or not cap._executor:
             raise ValueError(f"Capability not found or no executor: {self.bound_skill.capability_id}")
         
-        # 提取输入
+        # 鎻愬彇杈撳叆
         input_params = {}
         for out_key, param_name in self.bound_skill.input_mapping.items():
             if out_key in state:
                 input_params[param_name] = state[out_key]
         
-        # 合并显式配置
+        # 鍚堝苟鏄惧紡閰嶇疆
         input_params.update(self.bound_skill.config)
         
-        # 执行
+        # 鎵ц
         start_time = time.time()
         try:
             if hasattr(cap._executor, "__call__"):
@@ -111,13 +107,13 @@ class WorkflowNodeWithSkill:
             self.last_execution_time = time.time()
             self.last_status = "completed"
             
-            # 应用输出映射
+            # 搴旂敤杈撳嚭鏄犲皠
             result = {}
             for skill_key, state_key in self.bound_skill.output_mapping.items():
                 if skill_key in output:
                     result[state_key] = output[skill_key]
             
-            # 如果没有映射,直接返回完整输出
+            # 濡傛灉娌℃湁鏄犲皠,鐩存帴杩斿洖瀹屾暣杈撳嚭
             if not self.bound_skill.output_mapping:
                 result[f"__out_{self.node_id}__"] = output
             
@@ -145,14 +141,14 @@ class WorkflowNodeWithSkill:
             }
 
 
-# ── 增强的工作流引擎 (支持动态节点) ────────────────────────────────
+# 鈹€鈹€ 澧炲己鐨勫伐浣滄祦寮曟搸 (鏀寔鍔ㄦ€佽妭鐐? 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 class DynamicWorkflowEngine:
-    """动态工作流引擎 (支持节点绑定任意 Skill)
+    """鍔ㄦ€佸伐浣滄祦寮曟搸 (鏀寔鑺傜偣缁戝畾浠绘剰 Skill)
     
-    用法:
-    1. 创建 WorkflowNodeWithSkill 实例
-    2. 添加到工作流图中
-    3. 执行时自动调用绑定的 Skill
+    鐢ㄦ硶:
+    1. 鍒涘缓 WorkflowNodeWithSkill 瀹炰緥
+    2. 娣诲姞鍒板伐浣滄祦鍥句腑
+    3. 鎵ц鏃惰嚜鍔ㄨ皟鐢ㄧ粦瀹氱殑 Skill
     """
     
     def __init__(self):
@@ -167,7 +163,7 @@ class DynamicWorkflowEngine:
         bound_skill_id: Optional[str] = None,
         skill_config: Optional[dict] = None,
     ) -> WorkflowNodeWithSkill:
-        """添加节点 (可选绑定 Skill)"""
+        """娣诲姞鑺傜偣 (鍙€夌粦瀹?Skill)"""
         node = WorkflowNodeWithSkill(
             node_id=node_id,
             node_type=node_type,
@@ -183,7 +179,7 @@ class DynamicWorkflowEngine:
         node_type: str = "skill",
         tenant_id: str = "",
     ) -> list[Capability]:
-        """自动发现并推荐可用 Skills"""
+        """鑷姩鍙戠幇骞舵帹鑽愬彲鐢?Skills"""
         caps = await self.registry.list_by_workstation(
             workstation_type=WorkstationType.SKILL,
             tenant_id=tenant_id,
@@ -192,7 +188,7 @@ class DynamicWorkflowEngine:
         return caps
 
 
-# ── Go 侧快捷执行 API Handler ──────────────────────────────────────
+# 鈹€鈹€ Go 渚у揩鎹锋墽琛?API Handler 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 """
 Go internal/api/quick_execute_handler.go
 
@@ -202,7 +198,7 @@ import (
 	"encoding/json"
 	"net/http"
 	
-	"github.com/athenavi/minicc/internal/auth"
+	"github.com/athenavi/chiron/internal/auth"
 )
 
 // QuickExecuteRequest represents a quick execute request.
@@ -228,7 +224,7 @@ func (h *GatewayHandler) QuickExecuteHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	
-	// 构建 Python 请求
+	// 鏋勫缓 Python 璇锋眰
 	pythonReq := map[string]any{
 		"user_input": req.UserInput,
 		"tenant_id":  claims.TenantID,
@@ -251,3 +247,4 @@ func RegisterQuickExecuteRoute(mux *http.ServeMux, h *GatewayHandler, authMW fun
 	mux.Handle("POST /v1/quick-execute", authMW(rlMW(http.HandlerFunc(h.QuickExecuteHandler))))
 }
 """
+

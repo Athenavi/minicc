@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { Card, Row, Col, Form, FormItem, InputNumber, Input, InputPassword, Select, Button, Switch, Slider, message } from 'ant-design-vue'
 import { saveSettings, getSettings } from '@/api/admin'
@@ -33,7 +33,7 @@ const paymentConfig = ref({
   alipay_gateway: '',
 })
 
-// 连接与密钥配置（敏感值由 APP_SECRET 派生密钥加密入库）
+// 杩炴帴涓庡瘑閽ラ厤缃紙鏁忔劅鍊肩敱 APP_SECRET 娲剧敓瀵嗛挜鍔犲瘑鍏ュ簱锛?
 const redisConfig = ref({
   addr: 'localhost:6379',
   password: '',
@@ -56,7 +56,7 @@ const s3Config = ref({
   use_ssl: false,
 })
 
-// Python AI 引擎配置（下发到引擎；api_key 等敏感值加密入库）
+// Python AI 寮曟搸閰嶇疆锛堜笅鍙戝埌寮曟搸锛沘pi_key 绛夋晱鎰熷€煎姞瀵嗗叆搴擄級
 const pythonConfig = ref({
   llm_provider: 'openai',
   llm_model: '',
@@ -164,11 +164,11 @@ http {
 
 const kernelConfig = `# /etc/sysctl.conf
 
-# 文件描述符
+# 鏂囦欢鎻忚堪绗?
 fs.file-max = 2097152
 fs.nr_open = 2097152
 
-# TCP 连接
+# TCP 杩炴帴
 net.core.somaxconn = 65535
 net.ipv4.tcp_max_syn_backlog = 65535
 net.ipv4.tcp_tw_reuse = 1
@@ -177,16 +177,16 @@ net.ipv4.tcp_keepalive_time = 600
 net.ipv4.tcp_keepalive_intvl = 30
 net.ipv4.tcp_keepalive_probes = 3
 
-# 端口范围
+# 绔彛鑼冨洿
 net.ipv4.ip_local_port_range = 1024 65535
 
-# 内存
+# 鍐呭瓨
 net.core.rmem_max = 16777216
 net.core.wmem_max = 16777216
 net.ipv4.tcp_rmem = 4096 87380 16777216
 net.ipv4.tcp_wmem = 4096 65536 16777216
 
-# 应用配置
+# 搴旂敤閰嶇疆
 # /etc/security/limits.conf
 * soft nofile 2097152
 * hard nofile 2097152
@@ -197,9 +197,9 @@ async function saveRateLimit() {
   saving.value = true
   try {
     await saveSettings('rate_limit', rateLimitConfig.value)
-    message.success('限流配置已保存')
+    message.success('闄愭祦閰嶇疆宸蹭繚瀛?)
   } catch (err: any) {
-    message.error('保存失败: ' + (err.message || '未知错误'))
+    message.error('淇濆瓨澶辫触: ' + (err.message || '鏈煡閿欒'))
   } finally {
     saving.value = false
   }
@@ -209,9 +209,9 @@ async function saveDegradation() {
   saving.value = true
   try {
     await saveSettings('degradation', degradationConfig.value)
-    message.success('降级配置已保存')
+    message.success('闄嶇骇閰嶇疆宸蹭繚瀛?)
   } catch (err: any) {
-    message.error('保存失败: ' + (err.message || '未知错误'))
+    message.error('淇濆瓨澶辫触: ' + (err.message || '鏈煡閿欒'))
   } finally {
     saving.value = false
   }
@@ -221,9 +221,9 @@ async function saveCache() {
   saving.value = true
   try {
     await saveSettings('cache', cacheConfig.value)
-    message.success('缓存配置已保存')
+    message.success('缂撳瓨閰嶇疆宸蹭繚瀛?)
   } catch (err: any) {
-    message.error('保存失败: ' + (err.message || '未知错误'))
+    message.error('淇濆瓨澶辫触: ' + (err.message || '鏈煡閿欒'))
   } finally {
     saving.value = false
   }
@@ -233,9 +233,9 @@ async function saveApiKey() {
   saving.value = true
   try {
     await saveSettings('api_key', apiKeyConfig.value)
-    message.success('API Key 配置已保存')
+    message.success('API Key 閰嶇疆宸蹭繚瀛?)
   } catch (err: any) {
-    message.error('保存失败: ' + (err.message || '未知错误'))
+    message.error('淇濆瓨澶辫触: ' + (err.message || '鏈煡閿欒'))
   } finally {
     saving.value = false
   }
@@ -245,9 +245,9 @@ async function saveAgent() {
   saving.value = true
   try {
     await saveSettings('agent', agentConfig.value)
-    message.success('Agent 配置已保存')
+    message.success('Agent 閰嶇疆宸蹭繚瀛?)
   } catch (err: any) {
-    message.error('保存失败: ' + (err.message || '未知错误'))
+    message.error('淇濆瓨澶辫触: ' + (err.message || '鏈煡閿欒'))
   } finally {
     saving.value = false
   }
@@ -257,9 +257,9 @@ async function saveLlm() {
   saving.value = true
   try {
     await saveSettings('llm', llmConfig.value)
-    message.success('模型配置已保存')
+    message.success('妯″瀷閰嶇疆宸蹭繚瀛?)
   } catch (err: any) {
-    message.error('保存失败: ' + (err.message || '未知错误'))
+    message.error('淇濆瓨澶辫触: ' + (err.message || '鏈煡閿欒'))
   } finally {
     saving.value = false
   }
@@ -269,9 +269,9 @@ async function saveStorage() {
   saving.value = true
   try {
     await saveSettings('storage', storageConfig.value)
-    message.success('存储配置已保存')
+    message.success('瀛樺偍閰嶇疆宸蹭繚瀛?)
   } catch (err: any) {
-    message.error('保存失败: ' + (err.message || '未知错误'))
+    message.error('淇濆瓨澶辫触: ' + (err.message || '鏈煡閿欒'))
   } finally {
     saving.value = false
   }
@@ -281,9 +281,9 @@ async function savePayment() {
   saving.value = true
   try {
     await saveSettings('payment', paymentConfig.value)
-    message.success('支付配置已保存')
+    message.success('鏀粯閰嶇疆宸蹭繚瀛?)
   } catch (err: any) {
-    message.error('保存失败: ' + (err.message || '未知错误'))
+    message.error('淇濆瓨澶辫触: ' + (err.message || '鏈煡閿欒'))
   } finally {
     saving.value = false
   }
@@ -293,9 +293,9 @@ async function saveRedis() {
   saving.value = true
   try {
     await saveSettings('redis', redisConfig.value)
-    message.success('Redis 配置已保存并热更新连接')
+    message.success('Redis 閰嶇疆宸蹭繚瀛樺苟鐑洿鏂拌繛鎺?)
   } catch (err: any) {
-    message.error('保存失败: ' + (err.message || '未知错误'))
+    message.error('淇濆瓨澶辫触: ' + (err.message || '鏈煡閿欒'))
   } finally {
     saving.value = false
   }
@@ -305,9 +305,9 @@ async function savePostgres() {
   saving.value = true
   try {
     await saveSettings('postgres', postgresConfig.value)
-    message.success('数据库配置已保存（重启后生效）')
+    message.success('鏁版嵁搴撻厤缃凡淇濆瓨锛堥噸鍚悗鐢熸晥锛?)
   } catch (err: any) {
-    message.error('保存失败: ' + (err.message || '未知错误'))
+    message.error('淇濆瓨澶辫触: ' + (err.message || '鏈煡閿欒'))
   } finally {
     saving.value = false
   }
@@ -317,9 +317,9 @@ async function saveCors() {
   saving.value = true
   try {
     await saveSettings('cors', corsConfig.value)
-    message.success('CORS 配置已保存（重启后生效）')
+    message.success('CORS 閰嶇疆宸蹭繚瀛橈紙閲嶅惎鍚庣敓鏁堬級')
   } catch (err: any) {
-    message.error('保存失败: ' + (err.message || '未知错误'))
+    message.error('淇濆瓨澶辫触: ' + (err.message || '鏈煡閿欒'))
   } finally {
     saving.value = false
   }
@@ -329,9 +329,9 @@ async function saveS3() {
   saving.value = true
   try {
     await saveSettings('s3', s3Config.value)
-    message.success('对象存储配置已保存')
+    message.success('瀵硅薄瀛樺偍閰嶇疆宸蹭繚瀛?)
   } catch (err: any) {
-    message.error('保存失败: ' + (err.message || '未知错误'))
+    message.error('淇濆瓨澶辫触: ' + (err.message || '鏈煡閿欒'))
   } finally {
     saving.value = false
   }
@@ -341,9 +341,9 @@ async function savePython() {
   saving.value = true
   try {
     await saveSettings('python', pythonConfig.value)
-    message.success('Python 引擎配置已保存，引擎重启后生效')
+    message.success('Python 寮曟搸閰嶇疆宸蹭繚瀛橈紝寮曟搸閲嶅惎鍚庣敓鏁?)
   } catch (err: any) {
-    message.error('保存失败: ' + (err.message || '未知错误'))
+    message.error('淇濆瓨澶辫触: ' + (err.message || '鏈煡閿欒'))
   } finally {
     saving.value = false
   }
@@ -351,16 +351,16 @@ async function savePython() {
 
 const copyNginx = () => {
   navigator.clipboard.writeText(nginxConfig)
-  message.success('已复制到剪贴板')
+  message.success('宸插鍒跺埌鍓创鏉?)
 }
 
 const copyKernel = () => {
   navigator.clipboard.writeText(kernelConfig)
-  message.success('已复制到剪贴板')
+  message.success('宸插鍒跺埌鍓创鏉?)
 }
 
-// S 修复：加载已持久化的真实配置（不再以写死的示例默认值覆盖线上配置）。
-// 按返回的 key 覆盖默认值；后端无记录时保留默认（本地为空态）。
+// S 淇锛氬姞杞藉凡鎸佷箙鍖栫殑鐪熷疄閰嶇疆锛堜笉鍐嶄互鍐欐鐨勭ず渚嬮粯璁ゅ€艰鐩栫嚎涓婇厤缃級銆?
+// 鎸夎繑鍥炵殑 key 瑕嗙洊榛樿鍊硷紱鍚庣鏃犺褰曟椂淇濈暀榛樿锛堟湰鍦颁负绌烘€侊級銆?
 function mergeConfig(target: { value: Record<string, any> }, saved: Record<string, any>) {
   for (const k of Object.keys(target.value)) {
     if (saved[k] !== undefined) target.value[k] = saved[k]
@@ -384,7 +384,7 @@ onMounted(async () => {
     mergeConfig(s3Config, await getSettings('s3'))
     mergeConfig(pythonConfig, await getSettings('python'))
   } catch {
-    // 拉取失败保留默认值，不阻断页面
+    // 鎷夊彇澶辫触淇濈暀榛樿鍊硷紝涓嶉樆鏂〉闈?
   } finally {
     loading.value = false
   }
@@ -394,116 +394,116 @@ onMounted(async () => {
 <template>
   <div class="settings">
     <Row :gutter="16">
-      <!-- 限流配置 -->
+      <!-- 闄愭祦閰嶇疆 -->
       <Col :xs="24" :sm="12">
-        <Card title="限流配置">
+        <Card title="闄愭祦閰嶇疆">
           <Form :model="rateLimitConfig" layout="vertical">
-            <FormItem label="全局（每分钟）">
+            <FormItem label="鍏ㄥ眬锛堟瘡鍒嗛挓锛?>
               <InputNumber v-model:value="rateLimitConfig.global" :min="100" :max="1000000" style="width: 100%" />
             </FormItem>
-            <FormItem label="单租户（每分钟）">
+            <FormItem label="鍗曠鎴凤紙姣忓垎閽燂級">
               <InputNumber v-model:value="rateLimitConfig.tenant" :min="10" :max="100000" style="width: 100%" />
             </FormItem>
-            <FormItem label="单用户（每分钟）">
+            <FormItem label="鍗曠敤鎴凤紙姣忓垎閽燂級">
               <InputNumber v-model:value="rateLimitConfig.user" :min="1" :max="10000" style="width: 100%" />
             </FormItem>
           </Form>
-          <Button type="primary" :loading="saving" @click="saveRateLimit">保存</Button>
-          <div class="config-note">保存后即刻生效（热更新）。</div>
+          <Button type="primary" :loading="saving" @click="saveRateLimit">淇濆瓨</Button>
+          <div class="config-note">淇濆瓨鍚庡嵆鍒荤敓鏁堬紙鐑洿鏂帮級銆?/div>
         </Card>
       </Col>
 
-      <!-- 降级配置 -->
+      <!-- 闄嶇骇閰嶇疆 -->
       <Col :xs="24" :sm="12">
-        <Card title="降级配置">
+        <Card title="闄嶇骇閰嶇疆">
           <Form :model="degradationConfig" layout="vertical">
-            <FormItem label="启用降级">
+            <FormItem label="鍚敤闄嶇骇">
               <Switch v-model:checked="degradationConfig.enabled" />
             </FormItem>
-            <FormItem label="轻度过载阈值">
+            <FormItem label="杞诲害杩囪浇闃堝€?>
               <InputNumber v-model:value="degradationConfig.lightThreshold" :min="10000" :max="1000000" style="width: 100%" />
             </FormItem>
-            <FormItem label="中度过载阈值">
+            <FormItem label="涓害杩囪浇闃堝€?>
               <InputNumber v-model:value="degradationConfig.mediumThreshold" :min="50000" :max="1000000" style="width: 100%" />
             </FormItem>
-            <FormItem label="重度过载阈值">
+            <FormItem label="閲嶅害杩囪浇闃堝€?>
               <InputNumber v-model:value="degradationConfig.heavyThreshold" :min="100000" :max="1000000" style="width: 100%" />
             </FormItem>
-            <FormItem label="VIP 优先">
+            <FormItem label="VIP 浼樺厛">
               <Switch v-model:checked="degradationConfig.vipPriority" />
             </FormItem>
           </Form>
-          <Button type="primary" :loading="saving" @click="saveDegradation">保存</Button>
+          <Button type="primary" :loading="saving" @click="saveDegradation">淇濆瓨</Button>
         </Card>
       </Col>
 
-      <!-- 缓存配置 -->
+      <!-- 缂撳瓨閰嶇疆 -->
       <Col :xs="24" :sm="12">
-        <Card title="缓存配置">
+        <Card title="缂撳瓨閰嶇疆">
           <Form :model="cacheConfig" layout="vertical">
-            <FormItem label="L1 容量">
+            <FormItem label="L1 瀹归噺">
               <InputNumber v-model:value="cacheConfig.l1Capacity" :min="100" :max="10000" style="width: 100%" />
             </FormItem>
             <FormItem label="L2 TTL">
               <InputNumber v-model:value="cacheConfig.l2Ttl" :min="60" :max="86400" style="width: 100%" />
             </FormItem>
-            <FormItem label="语义缓存阈值">
+            <FormItem label="璇箟缂撳瓨闃堝€?>
               <Slider v-model:value="cacheConfig.semanticThreshold" :min="0.5" :max="1" :step="0.01" />
             </FormItem>
-            <FormItem label="启用预取">
+            <FormItem label="鍚敤棰勫彇">
               <Switch v-model:checked="cacheConfig.prefetchEnabled" />
             </FormItem>
           </Form>
-          <Button type="primary" :loading="saving" @click="saveCache">保存</Button>
+          <Button type="primary" :loading="saving" @click="saveCache">淇濆瓨</Button>
         </Card>
       </Col>
 
-      <!-- API Key 配置 -->
+      <!-- API Key 閰嶇疆 -->
       <Col :xs="24" :sm="12">
-        <Card title="API Key 配置">
+        <Card title="API Key 閰嶇疆">
           <Form :model="apiKeyConfig" layout="vertical">
-            <FormItem label="熔断阈值">
+            <FormItem label="鐔旀柇闃堝€?>
               <InputNumber v-model:value="apiKeyConfig.circuitBreakerThreshold" :min="1" :max="100" style="width: 100%" />
             </FormItem>
-            <FormItem label="恢复超时">
+            <FormItem label="鎭㈠瓒呮椂">
               <InputNumber v-model:value="apiKeyConfig.recoveryTimeout" :min="10" :max="3600" style="width: 100%" />
             </FormItem>
-            <FormItem label="权重衰减">
+            <FormItem label="鏉冮噸琛板噺">
               <Slider v-model:value="apiKeyConfig.weightDecay" :min="0.1" :max="1" :step="0.1" />
             </FormItem>
-            <FormItem label="自动恢复">
+            <FormItem label="鑷姩鎭㈠">
               <Switch v-model:checked="apiKeyConfig.autoRecovery" />
             </FormItem>
           </Form>
-          <Button type="primary" :loading="saving" @click="saveApiKey">保存</Button>
+          <Button type="primary" :loading="saving" @click="saveApiKey">淇濆瓨</Button>
         </Card>
       </Col>
     </Row>
 
-    <!-- 迁移自 .env 的业务配置（持久化到 DB system_settings） -->
+    <!-- 杩佺Щ鑷?.env 鐨勪笟鍔￠厤缃紙鎸佷箙鍖栧埌 DB system_settings锛?-->
     <Row :gutter="16" class="config-row">
-      <!-- Agent 配置 -->
+      <!-- Agent 閰嶇疆 -->
       <Col :xs="24" :sm="12">
-        <Card title="Agent 配置">
+        <Card title="Agent 閰嶇疆">
           <Form :model="agentConfig" layout="vertical">
-            <FormItem label="最大推理轮数">
+            <FormItem label="鏈€澶ф帹鐞嗚疆鏁?>
               <InputNumber v-model:value="agentConfig.max_turns" :min="1" :max="100" style="width: 100%" />
             </FormItem>
-            <FormItem label="每次调用最大 Token">
+            <FormItem label="姣忔璋冪敤鏈€澶?Token">
               <InputNumber v-model:value="agentConfig.max_tokens" :min="256" :max="32768" style="width: 100%" />
             </FormItem>
-            <FormItem label="上下文消息数限制">
+            <FormItem label="涓婁笅鏂囨秷鎭暟闄愬埗">
               <InputNumber v-model:value="agentConfig.context_limit" :min="1" :max="100" style="width: 100%" />
             </FormItem>
           </Form>
-          <Button type="primary" :loading="saving" @click="saveAgent">保存</Button>
-          <div class="config-note">保存到 DB，运行时消费项重启后生效。</div>
+          <Button type="primary" :loading="saving" @click="saveAgent">淇濆瓨</Button>
+          <div class="config-note">淇濆瓨鍒?DB锛岃繍琛屾椂娑堣垂椤归噸鍚悗鐢熸晥銆?/div>
         </Card>
       </Col>
 
-      <!-- LLM / 模型配置 -->
+      <!-- LLM / 妯″瀷閰嶇疆 -->
       <Col :xs="24" :sm="12">
-        <Card title="模型配置">
+        <Card title="妯″瀷閰嶇疆">
           <Form :model="llmConfig" layout="vertical">
             <FormItem label="Provider">
               <Select v-model:value="llmConfig.provider" style="width: 100%">
@@ -512,126 +512,126 @@ onMounted(async () => {
                 <Select.Option value="deepseek">DeepSeek</Select.Option>
               </Select>
             </FormItem>
-            <FormItem label="默认模型">
+            <FormItem label="榛樿妯″瀷">
               <Input v-model:value="llmConfig.model" placeholder="gpt-4o" />
             </FormItem>
           </Form>
-          <Button type="primary" :loading="saving" @click="saveLlm">保存</Button>
-          <div class="config-note">Provider/Model 已持久化到 DB，重启生效；密钥类敏感值加密入库。</div>
+          <Button type="primary" :loading="saving" @click="saveLlm">淇濆瓨</Button>
+          <div class="config-note">Provider/Model 宸叉寔涔呭寲鍒?DB锛岄噸鍚敓鏁堬紱瀵嗛挜绫绘晱鎰熷€煎姞瀵嗗叆搴撱€?/div>
         </Card>
       </Col>
 
-      <!-- 存储配置 -->
+      <!-- 瀛樺偍閰嶇疆 -->
       <Col :xs="24" :sm="12">
-        <Card title="存储配置">
+        <Card title="瀛樺偍閰嶇疆">
           <Form :model="storageConfig" layout="vertical">
-            <FormItem label="后端类型">
+            <FormItem label="鍚庣绫诲瀷">
               <Select v-model:value="storageConfig.backend" style="width: 100%">
-                <Select.Option value="local">本地磁盘</Select.Option>
+                <Select.Option value="local">鏈湴纾佺洏</Select.Option>
                 <Select.Option value="s3">S3 / MinIO</Select.Option>
               </Select>
             </FormItem>
-            <FormItem label="存储根目录">
+            <FormItem label="瀛樺偍鏍圭洰褰?>
               <Input v-model:value="storageConfig.root" placeholder="./workspace" />
             </FormItem>
           </Form>
-          <Button type="primary" :loading="saving" @click="saveStorage">保存</Button>
-          <div class="config-note">保存到 DB，运行时消费项重启后生效。</div>
+          <Button type="primary" :loading="saving" @click="saveStorage">淇濆瓨</Button>
+          <div class="config-note">淇濆瓨鍒?DB锛岃繍琛屾椂娑堣垂椤归噸鍚悗鐢熸晥銆?/div>
         </Card>
       </Col>
 
-      <!-- 支付配置（非敏感项） -->
+      <!-- 鏀粯閰嶇疆锛堥潪鏁忔劅椤癸級 -->
       <Col :xs="24" :sm="12">
-        <Card title="支付配置">
+        <Card title="鏀粯閰嶇疆">
           <Form :model="paymentConfig" layout="vertical">
-            <FormItem label="公网基础 URL">
+            <FormItem label="鍏綉鍩虹 URL">
               <Input v-model:value="paymentConfig.public_base_url" placeholder="https://api.example.com" />
             </FormItem>
-            <FormItem label="支付宝网关">
+            <FormItem label="鏀粯瀹濈綉鍏?>
               <Input v-model:value="paymentConfig.alipay_gateway" placeholder="https://openapi.alipay.com/gateway.do" />
             </FormItem>
           </Form>
-          <Button type="primary" :loading="saving" @click="savePayment">保存</Button>
-          <div class="config-note">密钥类凭据不入库，由环境变量注入。</div>
+          <Button type="primary" :loading="saving" @click="savePayment">淇濆瓨</Button>
+          <div class="config-note">瀵嗛挜绫诲嚟鎹笉鍏ュ簱锛岀敱鐜鍙橀噺娉ㄥ叆銆?/div>
         </Card>
       </Col>
     </Row>
 
-    <!-- 连接与密钥配置（敏感值 AES-GCM 加密入库） -->
+    <!-- 杩炴帴涓庡瘑閽ラ厤缃紙鏁忔劅鍊?AES-GCM 鍔犲瘑鍏ュ簱锛?-->
     <Row :gutter="16" class="config-row">
-      <!-- Redis 配置 -->
+      <!-- Redis 閰嶇疆 -->
       <Col :xs="24" :sm="12">
-        <Card title="Redis 配置">
+        <Card title="Redis 閰嶇疆">
           <Form :model="redisConfig" layout="vertical">
-            <FormItem label="地址">
+            <FormItem label="鍦板潃">
               <Input v-model:value="redisConfig.addr" placeholder="localhost:6379" />
             </FormItem>
-            <FormItem label="密码（加密入库）">
-              <InputPassword v-model:value="redisConfig.password" placeholder="空则无密码" />
+            <FormItem label="瀵嗙爜锛堝姞瀵嗗叆搴擄級">
+              <InputPassword v-model:value="redisConfig.password" placeholder="绌哄垯鏃犲瘑鐮? />
             </FormItem>
             <FormItem label="DB">
               <InputNumber v-model:value="redisConfig.db" :min="0" :max="15" style="width: 100%" />
             </FormItem>
           </Form>
-          <Button type="primary" :loading="saving" @click="saveRedis">保存</Button>
-          <div class="config-note">保存后热更新连接；可切换 Redis 集群。</div>
+          <Button type="primary" :loading="saving" @click="saveRedis">淇濆瓨</Button>
+          <div class="config-note">淇濆瓨鍚庣儹鏇存柊杩炴帴锛涘彲鍒囨崲 Redis 闆嗙兢銆?/div>
         </Card>
       </Col>
 
-      <!-- PostgreSQL 配置 -->
+      <!-- PostgreSQL 閰嶇疆 -->
       <Col :xs="24" :sm="12">
-        <Card title="数据库（PostgreSQL）配置">
+        <Card title="鏁版嵁搴擄紙PostgreSQL锛夐厤缃?>
           <Form :model="postgresConfig" layout="vertical">
-            <FormItem label="DSN（加密入库）">
-              <InputPassword v-model:value="postgresConfig.dsn" placeholder="postgres://user:pass@host:5432/minicc" />
+            <FormItem label="DSN锛堝姞瀵嗗叆搴擄級">
+              <InputPassword v-model:value="postgresConfig.dsn" placeholder="postgres://user:pass@host:5432/chiron" />
             </FormItem>
           </Form>
-          <Button type="primary" :loading="saving" @click="savePostgres">保存</Button>
-          <div class="config-note">保存到 DB，切换数据库集群需重启生效。</div>
+          <Button type="primary" :loading="saving" @click="savePostgres">淇濆瓨</Button>
+          <div class="config-note">淇濆瓨鍒?DB锛屽垏鎹㈡暟鎹簱闆嗙兢闇€閲嶅惎鐢熸晥銆?/div>
         </Card>
       </Col>
 
-      <!-- CORS 配置 -->
+      <!-- CORS 閰嶇疆 -->
       <Col :xs="24" :sm="12">
-        <Card title="CORS 配置">
+        <Card title="CORS 閰嶇疆">
           <Form :model="corsConfig" layout="vertical">
-            <FormItem label="允许来源（逗号分隔）">
+            <FormItem label="鍏佽鏉ユ簮锛堥€楀彿鍒嗛殧锛?>
               <Input v-model:value="corsConfig.origins" placeholder="http://localhost:5173,https://app.example.com" />
             </FormItem>
           </Form>
-          <Button type="primary" :loading="saving" @click="saveCors">保存</Button>
-          <div class="config-note">保存后重启生效。</div>
+          <Button type="primary" :loading="saving" @click="saveCors">淇濆瓨</Button>
+          <div class="config-note">淇濆瓨鍚庨噸鍚敓鏁堛€?/div>
         </Card>
       </Col>
 
-      <!-- S3 / MinIO 配置 -->
+      <!-- S3 / MinIO 閰嶇疆 -->
       <Col :xs="24" :sm="12">
-        <Card title="对象存储（S3/MinIO）配置">
+        <Card title="瀵硅薄瀛樺偍锛圫3/MinIO锛夐厤缃?>
           <Form :model="s3Config" layout="vertical">
             <FormItem label="Endpoint">
               <Input v-model:value="s3Config.endpoint" placeholder="localhost:9000" />
             </FormItem>
             <FormItem label="Bucket">
-              <Input v-model:value="s3Config.bucket" placeholder="minicc-media" />
+              <Input v-model:value="s3Config.bucket" placeholder="chiron-media" />
             </FormItem>
             <FormItem label="Access Key">
               <Input v-model:value="s3Config.access_key" />
             </FormItem>
-            <FormItem label="Secret Key（加密入库）">
+            <FormItem label="Secret Key锛堝姞瀵嗗叆搴擄級">
               <InputPassword v-model:value="s3Config.secret_key" />
             </FormItem>
-            <FormItem label="启用 SSL">
+            <FormItem label="鍚敤 SSL">
               <Switch v-model:checked="s3Config.use_ssl" />
             </FormItem>
           </Form>
-          <Button type="primary" :loading="saving" @click="saveS3">保存</Button>
-          <div class="config-note">保存后重启生效。</div>
+          <Button type="primary" :loading="saving" @click="saveS3">淇濆瓨</Button>
+          <div class="config-note">淇濆瓨鍚庨噸鍚敓鏁堛€?/div>
         </Card>
       </Col>
 
-      <!-- Python AI 引擎配置 -->
+      <!-- Python AI 寮曟搸閰嶇疆 -->
       <Col :xs="24" :sm="24">
-        <Card title="Python AI 引擎配置">
+        <Card title="Python AI 寮曟搸閰嶇疆">
           <Row :gutter="16">
             <Col :xs="24" :sm="12">
               <Form :model="pythonConfig" layout="vertical">
@@ -642,10 +642,10 @@ onMounted(async () => {
                     <Select.Option value="deepseek">DeepSeek</Select.Option>
                   </Select>
                 </FormItem>
-                <FormItem label="默认模型">
+                <FormItem label="榛樿妯″瀷">
                   <Input v-model:value="pythonConfig.llm_model" placeholder="deepseek-v4-flash" />
                 </FormItem>
-                <FormItem label="LLM API Key（加密入库）">
+                <FormItem label="LLM API Key锛堝姞瀵嗗叆搴擄級">
                   <InputPassword v-model:value="pythonConfig.llm_api_key" />
                 </FormItem>
                 <FormItem label="LLM Base URL">
@@ -655,39 +655,39 @@ onMounted(async () => {
             </Col>
             <Col :xs="24" :sm="12">
               <Form :model="pythonConfig" layout="vertical">
-                <FormItem label="Embedding 模型">
+                <FormItem label="Embedding 妯″瀷">
                   <Input v-model:value="pythonConfig.embedding_model" placeholder="text-embedding-3-small" />
                 </FormItem>
-                <FormItem label="Agent 最大轮数">
+                <FormItem label="Agent 鏈€澶ц疆鏁?>
                   <InputNumber v-model:value="pythonConfig.max_turns" :min="1" :max="100" style="width: 100%" />
                 </FormItem>
-                <FormItem label="队列并发数">
+                <FormItem label="闃熷垪骞跺彂鏁?>
                   <InputNumber v-model:value="pythonConfig.queue_worker_concurrency" :min="1" :max="100" style="width: 100%" />
                 </FormItem>
-                <FormItem label="L1 缓存容量">
+                <FormItem label="L1 缂撳瓨瀹归噺">
                   <InputNumber v-model:value="pythonConfig.cache_l1_capacity" :min="128" :max="100000" style="width: 100%" />
                 </FormItem>
               </Form>
             </Col>
           </Row>
-          <Button type="primary" :loading="saving" @click="savePython">保存</Button>
-          <div class="config-note">引擎启动时经内部端点拉取；API Key 加密入库。</div>
+          <Button type="primary" :loading="saving" @click="savePython">淇濆瓨</Button>
+          <div class="config-note">寮曟搸鍚姩鏃剁粡鍐呴儴绔偣鎷夊彇锛汚PI Key 鍔犲瘑鍏ュ簱銆?/div>
         </Card>
       </Col>
     </Row>
 
-    <!-- Nginx 配置 -->
-    <Card title="Nginx 调优配置" class="config-card">
+    <!-- Nginx 閰嶇疆 -->
+    <Card title="Nginx 璋冧紭閰嶇疆" class="config-card">
       <template #extra>
-        <Button type="primary" ghost @click="copyNginx">复制配置</Button>
+        <Button type="primary" ghost @click="copyNginx">澶嶅埗閰嶇疆</Button>
       </template>
       <pre class="code-block">{{ nginxConfig }}</pre>
     </Card>
 
-    <!-- 内核调优 -->
-    <Card title="内核调优配置" class="config-card">
+    <!-- 鍐呮牳璋冧紭 -->
+    <Card title="鍐呮牳璋冧紭閰嶇疆" class="config-card">
       <template #extra>
-        <Button type="primary" ghost @click="copyKernel">复制配置</Button>
+        <Button type="primary" ghost @click="copyKernel">澶嶅埗閰嶇疆</Button>
       </template>
       <pre class="code-block">{{ kernelConfig }}</pre>
     </Card>
@@ -723,12 +723,12 @@ onMounted(async () => {
   color: var(--text-code, var(--text-primary));
 }
 
-/* 移动端 */
+/* 绉诲姩绔?*/
 @media (max-width: 640px) {
   .code-block { padding: 12px; font-size: 11px; }
 }
 
-/* 窄屏：按钮提高触控高度 */
+/* 绐勫睆锛氭寜閽彁楂樿Е鎺ч珮搴?*/
 @media (max-width: 576px) {
   .settings :deep(.ant-btn:not(.ant-btn-sm):not(.ant-btn-link)) { min-height: 40px; }
 }
@@ -737,3 +737,4 @@ onMounted(async () => {
   .code-block { transition: none; }
 }
 </style>
+

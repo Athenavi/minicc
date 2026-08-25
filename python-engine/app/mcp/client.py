@@ -1,4 +1,4 @@
-"""MCP Client — connects to MCP servers over stdio, discovers and calls tools.
+﻿"""MCP Client 鈥?connects to MCP servers over stdio, discovers and calls tools.
 
 Mirrors Go internal/mcp/client.go with multi-server support.
 """
@@ -40,11 +40,11 @@ class ServerConnection:
         self.name = name
         self._req_id = 0
         self._lock = asyncio.Lock()
-        # 异步读取 stderr 并记录到日志，避免 DEVNULL 丢弃错误信息
+        # 寮傛璇诲彇 stderr 骞惰褰曞埌鏃ュ織锛岄伩鍏?DEVNULL 涓㈠純閿欒淇℃伅
         self._stderr_task = asyncio.ensure_future(self._read_stderr())
 
     async def _read_stderr(self):
-        """异步读取 MCP 服务器 stderr 并记录到日志。"""
+        """寮傛璇诲彇 MCP 鏈嶅姟鍣?stderr 骞惰褰曞埌鏃ュ織銆?""
         try:
             async for line in self.proc.stderr:
                 if line.strip():
@@ -107,7 +107,7 @@ class MCPClient:
 
     async def _connect_server(self, server: ServerDef):
         """Connect to a single MCP server and discover its tools."""
-        # 安全修复（P0-S7）：仅允许 PLUGIN_COMMAND_ALLOWLIST 白名单内的命令被拉起
+        # 瀹夊叏淇锛圥0-S7锛夛細浠呭厑璁?PLUGIN_COMMAND_ALLOWLIST 鐧藉悕鍗曞唴鐨勫懡浠よ鎷夎捣
         from app.tools.ssrf import command_allowed
 
         if not command_allowed(server.command):
@@ -133,7 +133,7 @@ class MCPClient:
         # Initialize
         await conn.send_jsonrpc("initialize", {
             "protocolVersion": "2025-03-26",
-            "clientInfo": {"name": "minicc-python", "version": "3.0.0"},
+            "clientInfo": {"name": "chiron-python", "version": "3.0.0"},
         })
 
         # List tools
@@ -202,3 +202,4 @@ async def load_mcp_config(config_path: str) -> list[ServerDef]:
             env=s.get("env", {}),
         ))
     return servers
+

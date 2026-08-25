@@ -1,5 +1,5 @@
-// MiniCC 压测工具 — 并发压测核心 API
-// 运行：go run ./cmd/stress -vu 50 -duration 30s
+﻿// Chiron 鍘嬫祴宸ュ叿 鈥?骞跺彂鍘嬫祴鏍稿績 API
+// 杩愯锛歡o run ./cmd/stress -vu 50 -duration 30s
 package main
 
 import (
@@ -26,25 +26,25 @@ var (
 )
 
 func main() {
-	vu := flag.Int("vu", 50, "并发虚拟用户数")
-	duration := flag.Duration("duration", 30*time.Second, "压测持续时间")
-	baseURL := flag.String("url", "http://localhost:8080", "目标 URL")
-	email := flag.String("email", "admin@minicc.local", "登录邮箱")
-	pass := flag.String("pass", "Admin123456", "登录密码")
+	vu := flag.Int("vu", 50, "骞跺彂铏氭嫙鐢ㄦ埛鏁?)
+	duration := flag.Duration("duration", 30*time.Second, "鍘嬫祴鎸佺画鏃堕棿")
+	baseURL := flag.String("url", "http://localhost:8080", "鐩爣 URL")
+	email := flag.String("email", "admin@chiron.local", "鐧诲綍閭")
+	pass := flag.String("pass", "Admin123456", "鐧诲綍瀵嗙爜")
 	flag.Parse()
 
-	// 登录获取 cookie
+	// 鐧诲綍鑾峰彇 cookie
 	loginBody, _ := json.Marshal(map[string]string{"email": *email, "password": *pass})
 	resp, err := http.Post(*baseURL+"/v1/auth/login", "application/json", bytes.NewReader(loginBody))
 	if err != nil {
-		fmt.Printf("登录失败: %v\n", err)
+		fmt.Printf("鐧诲綍澶辫触: %v\n", err)
 		return
 	}
 	cookie = resp.Cookies()
 	resp.Body.Close()
-	fmt.Printf("登录成功，cookie: %d 个\n", len(cookie))
+	fmt.Printf("鐧诲綍鎴愬姛锛宑ookie: %d 涓猏n", len(cookie))
 
-	// 压测的 API 端点
+	// 鍘嬫祴鐨?API 绔偣
 	apis := []string{
 		"/v1/ent/audit?limit=20",
 		"/v1/ent/roles",
@@ -57,8 +57,8 @@ func main() {
 		"/metrics",
 	}
 
-	fmt.Printf("压测开始: %d VU, 持续 %v\n", *vu, *duration)
-	fmt.Println("═════════════════════════════════════════════════════════")
+	fmt.Printf("鍘嬫祴寮€濮? %d VU, 鎸佺画 %v\n", *vu, *duration)
+	fmt.Println("鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?)
 
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
@@ -100,8 +100,7 @@ func main() {
 							resp.Body.Close()
 						}
 					}
-					time.Sleep(500 * time.Millisecond) // 思考时间
-				}
+					time.Sleep(500 * time.Millisecond) // 鎬濊€冩椂闂?				}
 			}
 		}(i)
 	}
@@ -111,7 +110,7 @@ func main() {
 	wg.Wait()
 	elapsed := time.Since(startTime)
 
-	// 报告
+	// 鎶ュ憡
 	reqCount := atomic.LoadInt64(&totalReq)
 	errCount := atomic.LoadInt64(&totalErr)
 	avgDur := float64(0)
@@ -124,18 +123,18 @@ func main() {
 		errRate = float64(errCount) / float64(reqCount) * 100
 	}
 
-	fmt.Println("═════════════════════════════════════════════════════════")
-	fmt.Println("  MiniCC 压测报告")
-	fmt.Println("═════════════════════════════════════════════════════════")
-	fmt.Printf("  VU 数:        %d\n", *vu)
-	fmt.Printf("  持续时间:     %v\n", elapsed.Round(time.Second))
-	fmt.Printf("  总请求数:     %d\n", reqCount)
+	fmt.Println("鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?)
+	fmt.Println("  Chiron 鍘嬫祴鎶ュ憡")
+	fmt.Println("鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?)
+	fmt.Printf("  VU 鏁?        %d\n", *vu)
+	fmt.Printf("  鎸佺画鏃堕棿:     %v\n", elapsed.Round(time.Second))
+	fmt.Printf("  鎬昏姹傛暟:     %d\n", reqCount)
 	fmt.Printf("  RPS:          %.1f\n", rps)
-	fmt.Printf("  错误数:       %d\n", errCount)
-	fmt.Printf("  错误率:       %.2f%%\n", errRate)
-	fmt.Printf("  平均响应:     %.0fms\n", avgDur)
-	fmt.Printf("  最小响应:     %dms\n", atomic.LoadInt64(&minDur))
-	fmt.Printf("  最大响应:     %dms\n", atomic.LoadInt64(&maxDur))
-	fmt.Printf("  企业API错误:  %d\n", atomic.LoadInt64(&entApiErr))
-	fmt.Println("═════════════════════════════════════════════════════════")
+	fmt.Printf("  閿欒鏁?       %d\n", errCount)
+	fmt.Printf("  閿欒鐜?       %.2f%%\n", errRate)
+	fmt.Printf("  骞冲潎鍝嶅簲:     %.0fms\n", avgDur)
+	fmt.Printf("  鏈€灏忓搷搴?     %dms\n", atomic.LoadInt64(&minDur))
+	fmt.Printf("  鏈€澶у搷搴?     %dms\n", atomic.LoadInt64(&maxDur))
+	fmt.Printf("  浼佷笟API閿欒:  %d\n", atomic.LoadInt64(&entApiErr))
+	fmt.Println("鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?)
 }

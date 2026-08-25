@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "MiniCC RPA Bridge",
+  "name": "Chiron RPA Bridge",
   "version": "1.0.0",
-  "description": "Connects your browser to MiniCC AI Agent for automated web operations.",
+  "description": "Connects your browser to Chiron AI Agent for automated web operations.",
   "permissions": [
     "activeTab",
     "tabs",

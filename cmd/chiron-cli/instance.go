@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 var instanceCmd = &cobra.Command{
 	Use:   "instance",
 	Short: "Manage instances",
-	Long:  `Manage MiniCC local service instances (.pids/state.json).`,
+	Long:  `Manage Chiron local service instances (.pids/state.json).`,
 }
 
 var instanceListCmd = &cobra.Command{
@@ -77,7 +77,7 @@ func runInstanceList(cmd *cobra.Command, args []string) error {
 func runInstanceAdd(cmd *cobra.Command, args []string) error {
 	name := args[0]
 	if instancePID <= 0 {
-		return fmt.Errorf("--pid 必须 > 0")
+		return fmt.Errorf("--pid 蹇呴』 > 0")
 	}
 	state, err := loadState()
 	if err != nil {
@@ -102,8 +102,7 @@ func runInstanceRemove(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("instance not found: %s", name)
 	}
 
-	// 若进程仍在运行则先终止
-	if inst.PID > 0 && processAlive(inst.PID) {
+	// 鑻ヨ繘绋嬩粛鍦ㄨ繍琛屽垯鍏堢粓姝?	if inst.PID > 0 && processAlive(inst.PID) {
 		if err := stopProcess(inst.PID, name); err != nil {
 			return fmt.Errorf("failed to stop %s: %w", name, err)
 		}
@@ -117,3 +116,4 @@ func runInstanceRemove(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Removed instance: %s\n", name)
 	return nil
 }
+

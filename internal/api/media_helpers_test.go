@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"errors"
@@ -8,7 +8,7 @@ import (
 
 func TestWouldCreateCycle(t *testing.T) {
 	parentOf := map[string]string{
-		"a": "", "b": "a", "c": "b", // a → root; b → a; c → b
+		"a": "", "b": "a", "c": "b", // a 鈫?root; b 鈫?a; c 鈫?b
 	}
 	getParent := func(id string) (string, error) {
 		p, ok := parentOf[id]

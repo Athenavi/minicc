@@ -1,4 +1,4 @@
-# Multi-stage build — Python AI Engine v3.0
+# Multi-stage build — Python AI Engine v0.1.260825.01
 FROM python:3.11-slim AS base
 
 WORKDIR /app

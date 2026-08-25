@@ -1,4 +1,4 @@
-package auth
+﻿package auth
 
 import (
 	"context"
@@ -66,11 +66,11 @@ func TestGenerateSmsCode(t *testing.T) {
 	}
 }
 
-// ── custom 契约 ─────────────────────────────────────────
+// 鈹€鈹€ custom 濂戠害 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestHTTPSmsSender_Custom(t *testing.T) {
 	sender := NewHTTPSmsSender()
-	cfg := &SmsConfig{Provider: SmsCustom, AccessKeyID: "k1", AccessKeySecret: "s1", SignName: "MiniCC", TemplateID: "T1"}
+	cfg := &SmsConfig{Provider: SmsCustom, AccessKeyID: "k1", AccessKeySecret: "s1", SignName: "Chiron", TemplateID: "T1"}
 
 	var gotBody map[string]string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -83,11 +83,11 @@ func TestHTTPSmsSender_Custom(t *testing.T) {
 		t.Fatalf("custom send: %v", err)
 	}
 	if gotBody["phone"] != "13800138000" || gotBody["code"] != "123456" ||
-		gotBody["sign_name"] != "MiniCC" || gotBody["template_id"] != "T1" {
+		gotBody["sign_name"] != "Chiron" || gotBody["template_id"] != "T1" {
 		t.Fatalf("unexpected custom payload: %v", gotBody)
 	}
 
-	// success=false → 拒绝
+	// success=false 鈫?鎷掔粷
 	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{"success": false, "message": "quota exceeded"})
 	}))
@@ -98,19 +98,19 @@ func TestHTTPSmsSender_Custom(t *testing.T) {
 		t.Fatalf("expected send-failed error, got %v", err)
 	}
 
-	// 服务商不可达
+	// 鏈嶅姟鍟嗕笉鍙揪
 	cfg.Endpoint = "http://127.0.0.1:1/send"
 	if err := sender.Send(context.Background(), cfg, "13800138000", "123456"); err == nil || !strings.Contains(err.Error(), "unreachable") {
 		t.Fatalf("expected unreachable error, got %v", err)
 	}
 
-	// custom 缺端点
+	// custom 缂虹鐐?
 	if err := sender.Send(context.Background(), &SmsConfig{Provider: SmsCustom}, "13800138000", "123456"); err == nil {
 		t.Fatal("expected endpoint-required error")
 	}
 }
 
-// ── 阿里云 POP V1 签名（服务端复算验证）──────────────────
+// 鈹€鈹€ 闃块噷浜?POP V1 绛惧悕锛堟湇鍔＄澶嶇畻楠岃瘉锛夆攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestHTTPSmsSender_AliyunSignature(t *testing.T) {
 	const secret = "aliyun-secret"
@@ -118,7 +118,7 @@ func TestHTTPSmsSender_AliyunSignature(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.ParseForm()
 		gotForm = r.PostForm
-		// 复算签名（独立于实现，按官方文档流程）
+		// 澶嶇畻绛惧悕锛堢嫭绔嬩簬瀹炵幇锛屾寜瀹樻柟鏂囨。娴佺▼锛?
 		sig := gotForm.Get("Signature")
 		gotForm.Del("Signature")
 		keys := make([]string, 0, len(gotForm))
@@ -141,13 +141,13 @@ func TestHTTPSmsSender_AliyunSignature(t *testing.T) {
 	sender := NewHTTPSmsSender()
 	cfg := &SmsConfig{
 		Provider: SmsAliyun, AccessKeyID: "LTAI-key", AccessKeySecret: secret,
-		SignName: "MiniCC", TemplateID: "SMS_123", Endpoint: srv.URL,
+		SignName: "Chiron", TemplateID: "SMS_123", Endpoint: srv.URL,
 	}
 	if err := sender.Send(context.Background(), cfg, "13800138000", "654321"); err != nil {
 		t.Fatalf("aliyun send: %v", err)
 	}
 	if gotForm.Get("PhoneNumbers") != "13800138000" || gotForm.Get("TemplateCode") != "SMS_123" ||
-		gotForm.Get("SignName") != "MiniCC" || gotForm.Get("Action") != "SendSms" {
+		gotForm.Get("SignName") != "Chiron" || gotForm.Get("Action") != "SendSms" {
 		t.Fatalf("unexpected aliyun params: %v", gotForm)
 	}
 	var tp map[string]string
@@ -159,7 +159,7 @@ func TestHTTPSmsSender_AliyunSignature(t *testing.T) {
 
 func TestHTTPSmsSender_AliyunRejected(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]string{"Code": "isv.BUSINESS_LIMIT_CONTROL", "Message": "触发分钟级流控"})
+		json.NewEncoder(w).Encode(map[string]string{"Code": "isv.BUSINESS_LIMIT_CONTROL", "Message": "瑙﹀彂鍒嗛挓绾ф祦鎺?})
 	}))
 	defer srv.Close()
 	sender := NewHTTPSmsSender()
@@ -171,7 +171,7 @@ func TestHTTPSmsSender_AliyunRejected(t *testing.T) {
 	}
 }
 
-// ── 腾讯云 TC3 签名（服务端复算验证）────────────────────
+// 鈹€鈹€ 鑵捐浜?TC3 绛惧悕锛堟湇鍔＄澶嶇畻楠岃瘉锛夆攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestHTTPSmsSender_Tencent(t *testing.T) {
 	const (
@@ -198,7 +198,7 @@ func TestHTTPSmsSender_Tencent(t *testing.T) {
 	sender := NewHTTPSmsSender()
 	cfg := &SmsConfig{
 		Provider: SmsTencent, AccessKeyID: secretID, AccessKeySecret: secretKey,
-		SignName: "MiniCC", TemplateID: "T-100", Endpoint: srv.URL,
+		SignName: "Chiron", TemplateID: "T-100", Endpoint: srv.URL,
 	}
 	if err := sender.Send(context.Background(), cfg, "+8613800138000", "888888"); err != nil {
 		t.Fatalf("tencent send: %v", err)
@@ -209,12 +209,12 @@ func TestHTTPSmsSender_Tencent(t *testing.T) {
 	if !strings.HasPrefix(gotAuth, "TC3-HMAC-SHA256 Credential="+secretID+"/") {
 		t.Errorf("unexpected Authorization: %q", gotAuth)
 	}
-	// "+" 前缀剥离 → E.164 裸号
+	// "+" 鍓嶇紑鍓ョ 鈫?E.164 瑁稿彿
 	phones := gotPayload["PhoneNumberSet"].([]any)
 	if phones[0] != "8613800138000" {
 		t.Errorf("expected E.164 phone, got %v", phones)
 	}
-	if gotPayload["TemplateId"] != "T-100" || gotPayload["SignName"] != "MiniCC" {
+	if gotPayload["TemplateId"] != "T-100" || gotPayload["SignName"] != "Chiron" {
 		t.Fatalf("unexpected payload: %v", gotPayload)
 	}
 	params := gotPayload["TemplateParamSet"].([]any)
@@ -227,7 +227,7 @@ func TestHTTPSmsSender_TencentError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{
 			"Response": map[string]any{
-				"Error": map[string]string{"Code": "AuthFailure.SignatureFailure", "Message": "签名错误"},
+				"Error": map[string]string{"Code": "AuthFailure.SignatureFailure", "Message": "绛惧悕閿欒"},
 			},
 		})
 	}))
@@ -253,3 +253,4 @@ func TestHTTPSmsSender_Guards(t *testing.T) {
 		t.Error("expected empty phone error")
 	}
 }
+

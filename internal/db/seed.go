@@ -1,4 +1,4 @@
-package db
+﻿package db
 
 import (
 	"context"
@@ -6,18 +6,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// DefaultTenantID 是单租户部署的默认租户 ID。
-// 与 internal/api/auth.go、internal/session/manager.go 中定义的常量保持一致，
-// 注册与会话落库均硬编码引用该 ID。
-const DefaultTenantID = "00000000-0000-0000-0000-000000000001"
+// DefaultTenantID 鏄崟绉熸埛閮ㄧ讲鐨勯粯璁ょ鎴?ID銆?// 涓?internal/api/auth.go銆乮nternal/session/manager.go 涓畾涔夌殑甯搁噺淇濇寔涓€鑷达紝
+// 娉ㄥ唽涓庝細璇濊惤搴撳潎纭紪鐮佸紩鐢ㄨ ID銆?const DefaultTenantID = "00000000-0000-0000-0000-000000000001"
 
-// EnsureDefaultTenant 幂等确保默认租户存在。
-//
-// users/sessions 等表均有 tenants(id) 外键（users_tenant_id_fkey 等），
-// 而 tenants 表本身没有任何种子数据；若默认租户缺失，注册会直接违反
-// 外键约束（SQLSTATE 23503）。该函数不依赖迁移状态（schema_migrations），
-// 对通过任何方式初始化的库都能生效。
-func EnsureDefaultTenant(ctx context.Context, pool *pgxpool.Pool) error {
+// EnsureDefaultTenant 骞傜瓑纭繚榛樿绉熸埛瀛樺湪銆?//
+// users/sessions 绛夎〃鍧囨湁 tenants(id) 澶栭敭锛坲sers_tenant_id_fkey 绛夛級锛?// 鑰?tenants 琛ㄦ湰韬病鏈変换浣曠瀛愭暟鎹紱鑻ラ粯璁ょ鎴风己澶憋紝娉ㄥ唽浼氱洿鎺ヨ繚鍙?// 澶栭敭绾︽潫锛圫QLSTATE 23503锛夈€傝鍑芥暟涓嶄緷璧栬縼绉荤姸鎬侊紙schema_migrations锛夛紝
+// 瀵归€氳繃浠讳綍鏂瑰紡鍒濆鍖栫殑搴撻兘鑳界敓鏁堛€?func EnsureDefaultTenant(ctx context.Context, pool *pgxpool.Pool) error {
 	_, err := pool.Exec(ctx,
 		`INSERT INTO tenants (id, name) VALUES ($1, 'default') ON CONFLICT (id) DO NOTHING`,
 		DefaultTenantID)

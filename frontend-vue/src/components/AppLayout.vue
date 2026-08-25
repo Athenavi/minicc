@@ -31,9 +31,9 @@ import {
   AppstoreOutlined,
   ConsoleSqlOutlined,
 } from '@ant-design/icons-vue'
-// 全局快速命令：复用 WorkstationNav 的统一执行逻辑（创建 uni 会话 → /chat?task=）
+// 全局快速命令：复用 WorkstationNav 的统一执行逻辑（创�?uni 会话 �?/chat?task=�?
 import {executeQuickCommand} from './WorkstationNav.vue'
-// 全局命令面板（Ctrl/Cmd+K）：六大工作台切换 / 主题 / 快速命令 / 全局搜索 / 最近活动
+// 全局命令面板（Ctrl/Cmd+K）：六大工作台切�?/ 主题 / 快速命�?/ 全局搜索 / 最近活�?
 import CommandPalette from './CommandPalette.vue'
 import ThemeSwitcher from './ThemeSwitcher.vue'
 
@@ -50,7 +50,7 @@ function handleApiError(e: Event) {
 
 onMounted(() => {
   window.addEventListener('api:error', handleApiError)
-  // 刷新用户信息（角色可能已变更；fetchProfile 失败时 token 无效会自动登出）
+  // 刷新用户信息（角色可能已变更；fetchProfile 失败�?token 无效会自动登出）
   if (authStore.token) {
     authStore.fetchProfile()
   }
@@ -73,10 +73,10 @@ const menuItems = computed<MenuItem[]>(() => {
     {key: '/', label: '首页', icon: () => h(HomeOutlined)},
     {key: '/chat', label: '对话', icon: () => h(MessageOutlined)},
     {key: '/agents', label: 'Agent', icon: () => h(UserOutlined)},
-    {key: '/workflow', label: '工作流', icon: () => h(ApartmentOutlined)},
-    {key: '/skills', label: '技能', icon: () => h(BlockOutlined)},
-    {key: '/media', label: '媒体库', icon: () => h(PictureOutlined)},
-    {key: '/knowledge', label: '知识库', icon: () => h(BookOutlined)},
+    {key: '/workflow', label: '工作�?, icon: () => h(ApartmentOutlined)},
+    {key: '/skills', label: '技�?, icon: () => h(BlockOutlined)},
+    {key: '/media', label: '媒体�?, icon: () => h(PictureOutlined)},
+    {key: '/knowledge', label: '知识�?, icon: () => h(BookOutlined)},
     {key: '/memory', label: '记忆', icon: () => h(HistoryOutlined)},
     {key: '/plugins', label: '插件', icon: () => h(ThunderboltOutlined)},
     {key: '/billing', label: '计费', icon: () => h(CreditCardOutlined)},
@@ -87,13 +87,13 @@ const menuItems = computed<MenuItem[]>(() => {
   return items
 })
 
-// 当前路由对应的菜单项文案（品牌胶囊 title 提示）
+// 当前路由对应的菜单项文案（品牌胶�?title 提示�?
 const currentLabel = computed(() => {
   const hit = menuItems.value.find(m => route.path === m.key || route.path.startsWith(m.key + '/'))
   return hit?.label || ''
 })
 
-// 首页（品牌页）强制深色：跟随主题 store 的 current theme，无需额外覆盖
+// 首页（品牌页）强制深色：跟随主题 store �?current theme，无需额外覆盖
 const selectedKeys = computed(() => {
   const exact = menuItems.value.find(m => route.path === m.key)
   return [exact?.key ?? route.path]
@@ -103,15 +103,15 @@ function handleMenuClick(info: any) {
   router.push(info.key)
 }
 
-// 用户下拉（主题切换已并入品牌菜单，单一入口）
+// 用户下拉（主题切换已并入品牌菜单，单一入口�?
 const userMenuItems = computed<any[]>(() => [
   {key: 'profile', label: '个人资料', icon: () => h(UserSwitchOutlined)},
-  {key: 'logout', label: '退出登录', icon: () => h(LogoutOutlined)},
+  {key: 'logout', label: '退出登�?, icon: () => h(LogoutOutlined)},
 ])
 
 async function handleUserMenuClick(info: any) {
   if (info.key === 'logout') {
-    // S 安全：调 authStore.logout 清后端 httpOnly cookie + 本地 user 态
+    // S 安全：调 authStore.logout 清后�?httpOnly cookie + 本地 user �?
     await authStore.logout()
     router.push('/login')
   } else if (info.key === 'profile') {
@@ -119,11 +119,11 @@ async function handleUserMenuClick(info: any) {
   }
 }
 
-// ── 工作台停靠坞：六大工作台全局一键切换（互联互通核心 UX） ──
+// ── 工作台停靠坞：六大工作台全局一键切换（互联互通核�?UX�?──
 interface DockItem {
   key: string
   label: string
-  /** 一句描述（tooltip 副行，与 WorkstationNav workstations.description 对齐） */
+  /** 一句描述（tooltip 副行，与 WorkstationNav workstations.description 对齐�?*/
   desc: string
   icon: any
 }
@@ -131,13 +131,13 @@ interface DockItem {
 const dockItems: DockItem[] = [
   {key: '/chat', label: '对话', desc: '智能对话助手', icon: MessageOutlined},
   {key: '/agents', label: 'Agent', desc: '多智能体协同', icon: RobotOutlined},
-  {key: '/workflow', label: '工作流', desc: 'DAG 流程编排', icon: ApartmentOutlined},
-  {key: '/skills', label: '技能', desc: '工具与 MCP', icon: ThunderboltOutlined},
-  {key: '/knowledge', label: '知识库', desc: 'RAG 检索增强', icon: BookOutlined},
+  {key: '/workflow', label: '工作�?, desc: 'DAG 流程编排', icon: ApartmentOutlined},
+  {key: '/skills', label: '技�?, desc: '工具�?MCP', icon: ThunderboltOutlined},
+  {key: '/knowledge', label: '知识�?, desc: 'RAG 检索增�?, icon: BookOutlined},
   {key: '/plugins', label: '插件', desc: '扩展能力', icon: AppstoreOutlined},
 ]
 
-// 仅登录用户可见；首页（/）已有完整工作台总览（WorkstationNav），停靠坞不重复展示
+// 仅登录用户可见；首页�?）已有完整工作台总览（WorkstationNav），停靠坞不重复展示
 const showDock = computed(() => !!authStore.token && route.path !== '/')
 
 function isDockActive(key: string) {
@@ -148,7 +148,7 @@ function goDock(key: string) {
   if (route.path !== key) router.push(key)
 }
 
-// ── 停靠坞快速命令弹层（复用 WorkstationNav 的 executeQuickCommand 逻辑） ──
+// ── 停靠坞快速命令弹层（复用 WorkstationNav �?executeQuickCommand 逻辑�?──
 const quickOpen = ref(false)
 const quickInput = ref('')
 const quickLoading = ref(false)
@@ -199,12 +199,12 @@ async function runQuickCommand() {
   if (!command || quickLoading.value) return
   quickLoading.value = true
   try {
-    // 与 WorkstationNav 同一套逻辑：创建 uni 会话 → /v1/quick-execute → 跳转 /chat?task=
+    // �?WorkstationNav 同一套逻辑：创�?uni 会话 �?/v1/quick-execute �?跳转 /chat?task=
     await executeQuickCommand(command)
-    message.success('任务已提交，正在对话页展示结果')
+    message.success('任务已提交，正在对话页展示结�?)
     closeQuickCommand()
   } catch {
-    // executeQuickCommand 已携带 error query 跳转 /chat，无需额外处理
+    // executeQuickCommand 已携�?error query 跳转 /chat，无需额外处理
   } finally {
     quickLoading.value = false
   }
@@ -213,12 +213,12 @@ async function runQuickCommand() {
 
 <template>
   <div class="app-shell">
-    <!-- 左上角浮动品牌胶囊（导航入口；不占布局，悬浮于内容之上） -->
+    <!-- 左上角浮动品牌胶囊（导航入口；不占布局，悬浮于内容之上�?-->
     <header :title="currentLabel || '导航菜单'" class="topbar">
       <Dropdown placement="bottomLeft" trigger="click">
         <button class="brand-btn" title="导航菜单" type="button">
           <span class="brand-logo">MC</span>
-          <span class="brand-name">MiniCC</span>
+          <span class="brand-name">Chiron</span>
           <DownOutlined class="brand-caret"/>
         </button>
         <template #overlay>
@@ -232,7 +232,7 @@ async function runQuickCommand() {
       </Dropdown>
     </header>
 
-    <!-- 工作台停靠坞：六大工作台一键切换 + 全局快速命令（玻璃拟态；z-index 低于顶栏） -->
+    <!-- 工作台停靠坞：六大工作台一键切�?+ 全局快速命令（玻璃拟态；z-index 低于顶栏�?-->
     <nav v-if="showDock" aria-label="工作台停靠坞" class="dock">
       <div class="dock-items">
         <button
@@ -252,12 +252,12 @@ async function runQuickCommand() {
         </button>
       </div>
 
-      <!-- 快速命令入口：点击展开弹层（复用 WorkstationNav 的 executeQuickCommand 逻辑） -->
+      <!-- 快速命令入口：点击展开弹层（复�?WorkstationNav �?executeQuickCommand 逻辑�?-->
       <div class="dock-command">
         <button
             ref="quickBtnEl"
             :aria-expanded="quickOpen"
-            :aria-label="quickOpen ? '关闭快速命令' : '打开快速命令'"
+            :aria-label="quickOpen ? '关闭快速命�? : '打开快速命�?"
             :class="{ open: quickOpen }"
             class="dock-command-btn"
             type="button"
@@ -269,18 +269,18 @@ async function runQuickCommand() {
         <section class="cta">
           <div class="cta-card">
             <h2 class="cta-title">准备好开始了吗？</h2>
-            <p class="cta-sub">创建你的第一个会话，体验完整的 Agent 工作流</p>
+            <p class="cta-sub">创建你的第一个会话，体验完整�?Agent 工作�?/p>
             <Transition name="dock-pop">
-              <div v-if="quickOpen" ref="quickPanelEl" aria-label="快速命令" class="dock-popover" role="dialog">
+              <div v-if="quickOpen" ref="quickPanelEl" aria-label="快速命�? class="dock-popover" role="dialog">
                 <div class="dock-popover-head">
-                  <span class="dock-popover-title">快速命令</span>
-                  <span class="dock-popover-hint">自然语言任务 → 自动编排六大工作台，结果进入统一会话</span>
+                  <span class="dock-popover-title">快速命�?/span>
+                  <span class="dock-popover-hint">自然语言任务 �?自动编排六大工作台，结果进入统一会话</span>
                 </div>
                 <div class="dock-command-row">
                   <input
                       v-model="quickInput"
                       class="dock-command-input"
-                      placeholder="例如：'帮我分析 sales.csv 并生成报告'"
+                      placeholder="例如�?帮我分析 sales.csv 并生成报�?"
                       type="text"
                       @keydown.enter="runQuickCommand"
                       @keydown.esc="closeQuickCommand"
@@ -297,7 +297,7 @@ async function runQuickCommand() {
       </div>
     </nav>
 
-    <!-- 右上角用户胶囊（登录时；不占布局） -->
+    <!-- 右上角用户胶囊（登录时；不占布局�?-->
     <div class="topbar-actions">
       <ThemeSwitcher/>
       <div v-if="authStore.user" class="user-fab">
@@ -313,7 +313,7 @@ async function runQuickCommand() {
       </div>
     </div>
 
-    <!-- 全宽内容区（浮动胶囊悬浮其上，不占位；停靠坞可见时桌面 margin-left / 移动端 padding-bottom 避让） -->
+    <!-- 全宽内容区（浮动胶囊悬浮其上，不占位；停靠坞可见时桌�?margin-left / 移动�?padding-bottom 避让�?-->
     <main :class="{ 'app-content--docked': showDock }" class="app-content">
       <router-view v-slot="{ Component }">
         <Transition mode="out-in" name="fade">
@@ -322,7 +322,7 @@ async function runQuickCommand() {
       </router-view>
     </main>
 
-    <!-- 全局命令面板（Ctrl/Cmd+K；Teleport 到 body，覆盖所有页面） -->
+    <!-- 全局命令面板（Ctrl/Cmd+K；Teleport �?body，覆盖所有页面） -->
     <CommandPalette/>
   </div>
 </template>
@@ -342,7 +342,7 @@ async function runQuickCommand() {
   --sidebar-bg: var(--bg-sidebar);
 }
 
-/* ── 左上角浮动品牌胶囊：不占布局、悬浮于内容上（沉浸导航） ── */
+/* ── 左上角浮动品牌胶囊：不占布局、悬浮于内容上（沉浸导航�?── */
 .topbar {
   position: fixed;
   top: 12px;
@@ -411,7 +411,7 @@ async function runQuickCommand() {
   }
 }
 
-/* ── 顶栏右侧操作组：主题切换器 + 用户胶囊 ── */
+/* ── 顶栏右侧操作组：主题切换�?+ 用户胶囊 ── */
 .topbar-actions {
   position: fixed;
   top: 12px;
@@ -470,20 +470,20 @@ async function runQuickCommand() {
   font-weight: 600;
 }
 
-/* ── 全宽内容区（浮动胶囊悬浮其上，内容从顶部开始、无占位） ── */
+/* ── 全宽内容区（浮动胶囊悬浮其上，内容从顶部开始、无占位�?── */
 .app-content {
   height: 100vh;
   overflow-y: auto;
   overflow-x: hidden;
 }
 
-/* ── 工作台停靠坞：玻璃拟态侧栏（互联互通核心 UX） ── */
+/* ── 工作台停靠坞：玻璃拟态侧栏（互联互通核�?UX�?── */
 .dock {
   position: fixed;
-  top: 64px; /* 避开左上角品牌胶囊（顶部 12 + 高 40） */
+  top: 64px; /* 避开左上角品牌胶囊（顶部 12 + �?40�?*/
   left: 10px;
   bottom: 10px;
-  z-index: 20; /* 低于顶栏(30)：快速命令弹层、tooltip 在其上 */
+  z-index: 20; /* 低于顶栏(30)：快速命令弹层、tooltip 在其�?*/
   width: var(--dock-w);
   display: flex;
   flex-direction: column;
@@ -511,7 +511,7 @@ async function runQuickCommand() {
   gap: 6px;
 }
 
-/* 触控目标 44px（≥40px 要求）；active 用 --primary 色底 */
+/* 触控目标 44px（≥40px 要求）；active �?--primary 色底 */
 .dock-item {
   position: relative;
   width: 44px;
@@ -549,7 +549,7 @@ async function runQuickCommand() {
   box-shadow: 0 4px 14px var(--primary-bg), inset 0 1px 1px hsla(0, 0%, 100%, 0.25);
 }
 
-/* 激活项 2px 指示条（桌面：左侧竖向；scaleY 入场动画） */
+/* 激活项 2px 指示条（桌面：左侧竖向；scaleY 入场动画�?*/
 .dock-item.active::before {
   content: '';
   position: absolute;
@@ -574,7 +574,7 @@ async function runQuickCommand() {
   font-size: 18px;
 }
 
-/* hover 名称 tooltip（仅指针设备；触屏无 hover 语义，保留 aria-label） */
+/* hover 名称 tooltip（仅指针设备；触屏无 hover 语义，保�?aria-label�?*/
 .dock-tip {
   position: absolute;
   left: calc(100% + 10px);
@@ -764,12 +764,12 @@ async function runQuickCommand() {
   transform: translateY(4px);
 }
 
-/* 内容区自动避让：桌面 margin-left（悬浮侧栏 10 + 60 + 间距 12） */
+/* 内容区自动避让：桌面 margin-left（悬浮侧�?10 + 60 + 间距 12�?*/
 .app-content--docked {
   margin-left: calc(10px + var(--dock-w) + var(--dock-gap));
 }
 
-/* 移动端（≤768px）：停靠坞改为底部悬浮横条；内容区 padding-bottom 避让 */
+/* 移动端（�?68px）：停靠坞改为底部悬浮横条；内容�?padding-bottom 避让 */
 @media (max-width: 768px) {
   .dock {
     top: auto;
@@ -798,7 +798,7 @@ async function runQuickCommand() {
     height: 40px;
   }
 
-  /* 移动端：指示条改为顶部横向（scaleX 入场） */
+  /* 移动端：指示条改为顶部横向（scaleX 入场�?*/
   .dock-item.active::before {
     left: 50%;
     top: -7px;

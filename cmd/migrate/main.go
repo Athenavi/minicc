@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/athenavi/minicc/internal/db"
+	"github.com/athenavi/chiron/internal/db"
 )
 
 func main() {
@@ -28,7 +28,7 @@ func realMain() {
 	cmd := os.Args[1]
 
 	// Read connection config from env (same vars as main server)
-	dsn := getEnv("POSTGRES_DSN", "postgres://minicc:minicc@localhost:5432/minicc?sslmode=disable")
+	dsn := getEnv("POSTGRES_DSN", "postgres://chiron:chiron@localhost:5432/chiron?sslmode=disable")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -46,7 +46,7 @@ func realMain() {
 		runStatus(ctx, dsn)
 	case "create":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: minicc-migrate create <name>")
+			fmt.Println("Usage: chiron-migrate create <name>")
 			exitCode = 1
 			return
 		}
@@ -61,17 +61,17 @@ func realMain() {
 }
 
 func printUsage() {
-	fmt.Print(`MiniCC Database Migration CLI
+	fmt.Print(`Chiron Database Migration CLI
 
 Usage:
-  minicc-migrate up                    Apply all pending migrations
-  minicc-migrate down [n]              Roll back n migrations (default 1)
-  minicc-migrate status                Show migration status
-  minicc-migrate create <name>         Create a new migration pair
-  minicc-migrate ensure-db             Create the database if it doesn't exist
+  chiron-migrate up                    Apply all pending migrations
+  chiron-migrate down [n]              Roll back n migrations (default 1)
+  chiron-migrate status                Show migration status
+  chiron-migrate create <name>         Create a new migration pair
+  chiron-migrate ensure-db             Create the database if it doesn't exist
 
 Environment:
-  POSTGRES_DSN   Database connection string (default: postgres://minicc:minicc@localhost:5432/minicc?sslmode=disable)
+  POSTGRES_DSN   Database connection string (default: postgres://chiron:chiron@localhost:5432/chiron?sslmode=disable)
 `)
 }
 
@@ -90,8 +90,7 @@ func runUp(ctx context.Context, dsn string) {
 		exitCode = 1
 		return
 	}
-	// 幂等 seed 默认租户（覆盖已应用旧版初始迁移、无种子的库）
-	if err := db.EnsureDefaultTenant(ctx, db.Pool); err != nil {
+	// 骞傜瓑 seed 榛樿绉熸埛锛堣鐩栧凡搴旂敤鏃х増鍒濆杩佺Щ銆佹棤绉嶅瓙鐨勫簱锛?	if err := db.EnsureDefaultTenant(ctx, db.Pool); err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: ensure default tenant: %v\n", err)
 		exitCode = 1
 		return

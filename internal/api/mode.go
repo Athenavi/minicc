@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"encoding/json"
@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/athenavi/minicc/internal/broadcast"
+	"github.com/athenavi/chiron/internal/broadcast"
 )
 
-// ── Mode constants ──
+// 鈹€鈹€ Mode constants 鈹€鈹€
 
 const (
 	ModeAsk  = "ask"
@@ -19,11 +19,11 @@ const (
 
 var validModes = map[string]bool{ModeAsk: true, ModeAuto: true, ModeYOLO: true}
 
-// ── ModeStore ──
+// 鈹€鈹€ ModeStore 鈹€鈹€
 
 type ModeStore struct {
 	mu    sync.RWMutex
-	modes map[string]string // session_id → mode
+	modes map[string]string // session_id 鈫?mode
 }
 
 func NewModeStore() *ModeStore {
@@ -53,7 +53,7 @@ func (s *ModeStore) Delete(sessionID string) {
 	delete(s.modes, sessionID)
 }
 
-// ── Permission Manager ──
+// 鈹€鈹€ Permission Manager 鈹€鈹€
 
 type PermissionRequest struct {
 	SessionID string `json:"session_id"`
@@ -69,7 +69,7 @@ type PermissionResult struct {
 
 type PermissionManager struct {
 	mu      sync.Mutex
-	pending map[string]*PermissionResult // task_id → result
+	pending map[string]*PermissionResult // task_id 鈫?result
 }
 
 func NewPermissionManager() *PermissionManager {
@@ -127,7 +127,7 @@ func (pm *PermissionManager) Reject(taskID string) bool {
 	return true
 }
 
-// ── HTTP Handlers ──
+// 鈹€鈹€ HTTP Handlers 鈹€鈹€
 
 type ModeHandler struct {
 	store    *ModeStore

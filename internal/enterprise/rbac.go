@@ -1,4 +1,4 @@
-package enterprise
+﻿package enterprise
 
 import (
 	"context"
@@ -7,32 +7,24 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/athenavi/minicc/internal/db"
+	"github.com/athenavi/chiron/internal/db"
 	"github.com/redis/go-redis/v9"
 )
 
 const (
-	// permsCacheKeyPrefix 是有效权限缓存键前缀，完整键为 ent:rbac:perms:{userID}
+	// permsCacheKeyPrefix 鏄湁鏁堟潈闄愮紦瀛橀敭鍓嶇紑锛屽畬鏁撮敭涓?ent:rbac:perms:{userID}
 	permsCacheKeyPrefix = "ent:rbac:perms:"
-	// permsCacheTTL 权限缓存过期时间
+	// permsCacheTTL 鏉冮檺缂撳瓨杩囨湡鏃堕棿
 	permsCacheTTL = 5 * time.Minute
 )
 
-// LoadEffectivePerms 聚合用户的企业级有效权限：
-// 用户直接角色权限 ∪ 用户所在群组→群组角色权限（ent_user_roles→ent_roles ∪
-// ent_group_members→ent_group_roles→ent_roles），permissions text[] 并集去重。
-//
-// 返回值语义（防越权的关键区分）：
-//   - nil, nil：用户没有任何 ent 角色记录（直接 + 群组均未关联），
-//     调用方应回退旧权限体系（auth.HasPermission）。此状态不写缓存。
-//   - 非 nil 空切片, nil：用户有角色记录但聚合权限为空，表示"明确无权限"，
-//     调用方禁止回退旧体系。此状态以 "[]" 序列化缓存。
-//   - 非空切片, nil：聚合后的权限点列表（已去重）。
-//
-// Redis 不可用或读取失败时降级直查 DB（slog.Warn，不返回错误）；
-// DB 查询失败返回 error（由调用方决定 fail-open/fail-close 策略）。
-func LoadEffectivePerms(ctx context.Context, userID string) ([]string, error) {
-	// ── 1. 缓存读取（命中直接返回）──
+// LoadEffectivePerms 鑱氬悎鐢ㄦ埛鐨勪紒涓氱骇鏈夋晥鏉冮檺锛?// 鐢ㄦ埛鐩存帴瑙掕壊鏉冮檺 鈭?鐢ㄦ埛鎵€鍦ㄧ兢缁勨啋缇ょ粍瑙掕壊鏉冮檺锛坋nt_user_roles鈫抏nt_roles 鈭?// ent_group_members鈫抏nt_group_roles鈫抏nt_roles锛夛紝permissions text[] 骞堕泦鍘婚噸銆?//
+// 杩斿洖鍊艰涔夛紙闃茶秺鏉冪殑鍏抽敭鍖哄垎锛夛細
+//   - nil, nil锛氱敤鎴锋病鏈変换浣?ent 瑙掕壊璁板綍锛堢洿鎺?+ 缇ょ粍鍧囨湭鍏宠仈锛夛紝
+//     璋冪敤鏂瑰簲鍥為€€鏃ф潈闄愪綋绯伙紙auth.HasPermission锛夈€傛鐘舵€佷笉鍐欑紦瀛樸€?//   - 闈?nil 绌哄垏鐗? nil锛氱敤鎴锋湁瑙掕壊璁板綍浣嗚仛鍚堟潈闄愪负绌猴紝琛ㄧず"鏄庣‘鏃犳潈闄?锛?//     璋冪敤鏂圭姝㈠洖閫€鏃т綋绯汇€傛鐘舵€佷互 "[]" 搴忓垪鍖栫紦瀛樸€?//   - 闈炵┖鍒囩墖, nil锛氳仛鍚堝悗鐨勬潈闄愮偣鍒楄〃锛堝凡鍘婚噸锛夈€?//
+// Redis 涓嶅彲鐢ㄦ垨璇诲彇澶辫触鏃堕檷绾х洿鏌?DB锛坰log.Warn锛屼笉杩斿洖閿欒锛夛紱
+// DB 鏌ヨ澶辫触杩斿洖 error锛堢敱璋冪敤鏂瑰喅瀹?fail-open/fail-close 绛栫暐锛夈€?func LoadEffectivePerms(ctx context.Context, userID string) ([]string, error) {
+	// 鈹€鈹€ 1. 缂撳瓨璇诲彇锛堝懡涓洿鎺ヨ繑鍥烇級鈹€鈹€
 	cacheKey := permsCacheKeyPrefix + userID
 	if rdb := db.Redis; rdb != nil {
 		cached, err := rdb.Get(ctx, cacheKey).Result()
@@ -40,7 +32,7 @@ func LoadEffectivePerms(ctx context.Context, userID string) ([]string, error) {
 			if perms, ok := decodePerms(cached); ok {
 				return perms, nil
 			}
-			// 缓存内容损坏：删除脏键后回源 DB
+			// 缂撳瓨鍐呭鎹熷潖锛氬垹闄よ剰閿悗鍥炴簮 DB
 			if err := rdb.Del(ctx, cacheKey).Err(); err != nil {
 				slog.Warn("ent rbac: failed to delete corrupted cache key",
 					"user_id", userID, "error", err)
@@ -53,17 +45,16 @@ func LoadEffectivePerms(ctx context.Context, userID string) ([]string, error) {
 		slog.Warn("ent rbac: redis unavailable, falling back to DB", "user_id", userID)
 	}
 
-	// ── 2. PG 聚合查询 ──
+	// 鈹€鈹€ 2. PG 鑱氬悎鏌ヨ 鈹€鈹€
 	perms, hasRoles, err := queryEffectivePerms(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
 	if !hasRoles {
-		// 无 ent 角色记录：不缓存（nil 语义），交由调用方回退旧权限体系
-		return nil, nil
+		// 鏃?ent 瑙掕壊璁板綍锛氫笉缂撳瓨锛坣il 璇箟锛夛紝浜ょ敱璋冪敤鏂瑰洖閫€鏃ф潈闄愪綋绯?		return nil, nil
 	}
 
-	// ── 3. 回写缓存（含空切片："[]" 保证"明确无权限"语义可缓存）──
+	// 鈹€鈹€ 3. 鍥炲啓缂撳瓨锛堝惈绌哄垏鐗囷細"[]" 淇濊瘉"鏄庣‘鏃犳潈闄?璇箟鍙紦瀛橈級鈹€鈹€
 	if rdb := db.Redis; rdb != nil {
 		if encoded, err := encodePerms(perms); err == nil {
 			if err := rdb.Set(ctx, cacheKey, encoded, permsCacheTTL).Err(); err != nil {
@@ -75,9 +66,7 @@ func LoadEffectivePerms(ctx context.Context, userID string) ([]string, error) {
 	return perms, nil
 }
 
-// queryEffectivePerms 从 PG 聚合用户的有效权限。
-// 返回 (并集去重后的权限列表, 是否存在任何角色关联, error)。
-func queryEffectivePerms(ctx context.Context, userID string) ([]string, bool, error) {
+// queryEffectivePerms 浠?PG 鑱氬悎鐢ㄦ埛鐨勬湁鏁堟潈闄愩€?// 杩斿洖 (骞堕泦鍘婚噸鍚庣殑鏉冮檺鍒楄〃, 鏄惁瀛樺湪浠讳綍瑙掕壊鍏宠仈, error)銆?func queryEffectivePerms(ctx context.Context, userID string) ([]string, bool, error) {
 	pool := db.ReadPool()
 	if pool == nil {
 		return nil, false, errors.New("ent rbac: postgres pool unavailable")
@@ -112,9 +101,7 @@ CROSS JOIN LATERAL unnest(COALESCE(r.permissions, '{}')) AS p`
 	return unionPerms(perms), true, nil
 }
 
-// InvalidateUserPerms 删除指定用户的有效权限缓存键。
-// Redis 不可用或删除失败时仅记录日志（缓存最多 5 分钟自然过期）。
-func InvalidateUserPerms(ctx context.Context, userID string) {
+// InvalidateUserPerms 鍒犻櫎鎸囧畾鐢ㄦ埛鐨勬湁鏁堟潈闄愮紦瀛橀敭銆?// Redis 涓嶅彲鐢ㄦ垨鍒犻櫎澶辫触鏃朵粎璁板綍鏃ュ織锛堢紦瀛樻渶澶?5 鍒嗛挓鑷劧杩囨湡锛夈€?func InvalidateUserPerms(ctx context.Context, userID string) {
 	rdb := db.Redis
 	if rdb == nil {
 		return
@@ -125,10 +112,7 @@ func InvalidateUserPerms(ctx context.Context, userID string) {
 	}
 }
 
-// InvalidateGroupMembersPerms 批量失效群组所有成员的权限缓存。
-// 供群组/角色写操作（修改群组成员、群组角色绑定、角色权限变更）后调用。
-// 成员查询失败时仅记录日志（依赖 TTL 自然过期兜底，不阻断写路径）。
-func InvalidateGroupMembersPerms(ctx context.Context, groupID string) {
+// InvalidateGroupMembersPerms 鎵归噺澶辨晥缇ょ粍鎵€鏈夋垚鍛樼殑鏉冮檺缂撳瓨銆?// 渚涚兢缁?瑙掕壊鍐欐搷浣滐紙淇敼缇ょ粍鎴愬憳銆佺兢缁勮鑹茬粦瀹氥€佽鑹叉潈闄愬彉鏇达級鍚庤皟鐢ㄣ€?// 鎴愬憳鏌ヨ澶辫触鏃朵粎璁板綍鏃ュ織锛堜緷璧?TTL 鑷劧杩囨湡鍏滃簳锛屼笉闃绘柇鍐欒矾寰勶級銆?func InvalidateGroupMembersPerms(ctx context.Context, groupID string) {
 	rdb := db.Redis
 	if rdb == nil {
 		return
@@ -171,8 +155,7 @@ func InvalidateGroupMembersPerms(ctx context.Context, groupID string) {
 	}
 }
 
-// unionPerms 对权限列表去重（保持首次出现顺序）。纯函数，便于单元测试。
-func unionPerms(perms []string) []string {
+// unionPerms 瀵规潈闄愬垪琛ㄥ幓閲嶏紙淇濇寔棣栨鍑虹幇椤哄簭锛夈€傜函鍑芥暟锛屼究浜庡崟鍏冩祴璇曘€?func unionPerms(perms []string) []string {
 	if len(perms) == 0 {
 		return []string{}
 	}
@@ -188,9 +171,7 @@ func unionPerms(perms []string) []string {
 	return out
 }
 
-// encodePerms 将非 nil 权限切片序列化为缓存值（空切片 → "[]"）。
-// nil 不应进入缓存，故入参约定为非 nil。
-func encodePerms(perms []string) (string, error) {
+// encodePerms 灏嗛潪 nil 鏉冮檺鍒囩墖搴忓垪鍖栦负缂撳瓨鍊硷紙绌哄垏鐗?鈫?"[]"锛夈€?// nil 涓嶅簲杩涘叆缂撳瓨锛屾晠鍏ュ弬绾﹀畾涓洪潪 nil銆?func encodePerms(perms []string) (string, error) {
 	if perms == nil {
 		perms = []string{}
 	}
@@ -201,9 +182,7 @@ func encodePerms(perms []string) (string, error) {
 	return string(data), nil
 }
 
-// decodePerms 反序列化缓存值。ok=false 表示缓存损坏，应按未命中处理。
-// "[]" 解码为非 nil 空切片（明确无权限），与 nil（未配置、不入缓存）区分。
-func decodePerms(raw string) ([]string, bool) {
+// decodePerms 鍙嶅簭鍒楀寲缂撳瓨鍊笺€俹k=false 琛ㄧず缂撳瓨鎹熷潖锛屽簲鎸夋湭鍛戒腑澶勭悊銆?// "[]" 瑙ｇ爜涓洪潪 nil 绌哄垏鐗囷紙鏄庣‘鏃犳潈闄愶級锛屼笌 nil锛堟湭閰嶇疆銆佷笉鍏ョ紦瀛橈級鍖哄垎銆?func decodePerms(raw string) ([]string, bool) {
 	var perms []string
 	if err := json.Unmarshal([]byte(raw), &perms); err != nil || perms == nil {
 		return nil, false

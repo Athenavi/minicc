@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/id"
-	"github.com/athenavi/minicc/internal/session"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/id"
+	"github.com/athenavi/chiron/internal/session"
 )
 
 // ConversationHandler handles CRUD for chat conversations (sessions).
@@ -32,9 +32,9 @@ type Conversation struct {
 	CreatedAt time.Time   `json:"created_at"`
 	UpdatedAt time.Time   `json:"updated_at"`
 	Messages  []Message   `json:"messages,omitempty"`
-	ToolCalls []ToolCall  `json:"tool_calls,omitempty"` // S 修复：工具调用过程落库，刷新后还原
-	Cursor    string      `json:"cursor,omitempty"`     // P 性能修复：分页游标（加载更早消息）
-	HasMore   bool        `json:"has_more"`             // P 性能修复：是否还有更早的消息
+	ToolCalls []ToolCall  `json:"tool_calls,omitempty"` // S 淇锛氬伐鍏疯皟鐢ㄨ繃绋嬭惤搴擄紝鍒锋柊鍚庤繕鍘?
+	Cursor    string      `json:"cursor,omitempty"`     // P 鎬ц兘淇锛氬垎椤垫父鏍囷紙鍔犺浇鏇存棭娑堟伅锛?
+	HasMore   bool        `json:"has_more"`             // P 鎬ц兘淇锛氭槸鍚﹁繕鏈夋洿鏃╃殑娑堟伅
 }
 
 // Message is a single chat message returned to the frontend.
@@ -42,7 +42,7 @@ type Message struct {
 	ID        string    `json:"id"`
 	Role      string    `json:"role"`
 	Content   string    `json:"content"`
-	ToolCalls string    `json:"tool_calls,omitempty"` // assistant 消息的 OpenAI 格式 tool_calls（S 修复）
+	ToolCalls string    `json:"tool_calls,omitempty"` // assistant 娑堟伅鐨?OpenAI 鏍煎紡 tool_calls锛圫 淇锛?
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -100,7 +100,7 @@ func (h *ConversationHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 分页参数：默认返回最近 50 条（P 性能修复：首屏不加载全量，上滚加载更早）
+	// 鍒嗛〉鍙傛暟锛氶粯璁よ繑鍥炴渶杩?50 鏉★紙P 鎬ц兘淇锛氶灞忎笉鍔犺浇鍏ㄩ噺锛屼笂婊氬姞杞芥洿鏃╋級
 	limit := 50
 	if l := r.URL.Query().Get("limit"); l != "" {
 		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
@@ -109,8 +109,8 @@ func (h *ConversationHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	before := r.URL.Query().Get("before")
 
-	// P 性能：messages 与 tool_calls 两个查询并行（pgxpool 并发安全）
-	// 使用 select 确保 context 取消时不泄漏 goroutine
+	// P 鎬ц兘锛歮essages 涓?tool_calls 涓や釜鏌ヨ骞惰锛坧gxpool 骞跺彂瀹夊叏锛?
+	// 浣跨敤 select 纭繚 context 鍙栨秷鏃朵笉娉勬紡 goroutine
 	type pageResult struct {
 		page session.MessagePage
 		err  error
@@ -158,11 +158,11 @@ func (h *ConversationHandler) Get(w http.ResponseWriter, r *http.Request) {
 			ID:        m.ID,
 			Role:      m.Role,
 			Content:   m.Content,
-			ToolCalls: m.ToolCalls, // S 修复：assistant 消息的 tool_calls 随详情返回
+			ToolCalls: m.ToolCalls, // S 淇锛歛ssistant 娑堟伅鐨?tool_calls 闅忚鎯呰繑鍥?
 			CreatedAt: m.CreatedAt,
 		})
 	}
-	// S 修复：工具调用过程落库 — 随会话详情返回，前端刷新后还原工具卡片
+	// S 淇锛氬伐鍏疯皟鐢ㄨ繃绋嬭惤搴?鈥?闅忎細璇濊鎯呰繑鍥烇紝鍓嶇鍒锋柊鍚庤繕鍘熷伐鍏峰崱鐗?
 	for _, tc := range toolCalls {
 		conv.ToolCalls = append(conv.ToolCalls, ToolCall{
 			ID:        tc.ID,
@@ -186,7 +186,7 @@ func (h *ConversationHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if body.Title == "" {
-		body.Title = "新对话"
+		body.Title = "鏂板璇?
 	}
 
 	claims := auth.GetClaims(r.Context())
@@ -247,7 +247,7 @@ func (h *ConversationHandler) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 
-// Update updates a session's title and/or pinned flag (session menu: 重命名/置顶).
+// Update updates a session's title and/or pinned flag (session menu: 閲嶅懡鍚?缃《).
 func (h *ConversationHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {

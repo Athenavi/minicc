@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"bytes"
@@ -11,13 +11,13 @@ import (
 	"strings"
 )
 
-// InputSanitizer 输入净化器，防止 Prompt Injection
+// InputSanitizer 杈撳叆鍑€鍖栧櫒锛岄槻姝?Prompt Injection
 type InputSanitizer struct {
 	injectionPatterns []*regexp.Regexp
 	homoglyphPattern  *regexp.Regexp
 }
 
-// NewInputSanitizer 创建输入净化器
+// NewInputSanitizer 鍒涘缓杈撳叆鍑€鍖栧櫒
 func NewInputSanitizer() *InputSanitizer {
 	patterns := []string{
 		`(?i)ignore\s+(all\s+)?(previous|above|prior|earlier)\s+instructions?`,
@@ -45,14 +45,13 @@ func NewInputSanitizer() *InputSanitizer {
 	for _, p := range patterns {
 		re, err := regexp.Compile(p)
 		if err != nil {
-			slog.Warn("编译注入模式失败", "pattern", p, "error", err)
+			slog.Warn("缂栬瘧娉ㄥ叆妯″紡澶辫触", "pattern", p, "error", err)
 			continue
 		}
 		compiled = append(compiled, re)
 	}
 
-	// 检测非 ASCII 同形异义词（Unicode 混淆攻击：西里尔/希腊/阿拉伯字母伪装成 ASCII）
-	homoglyph := regexp.MustCompile("[\u0400-\u04FF\u0370-\u03FF\u0600-\u06FF]")
+	// 妫€娴嬮潪 ASCII 鍚屽舰寮備箟璇嶏紙Unicode 娣锋穯鏀诲嚮锛氳タ閲屽皵/甯岃厞/闃挎媺浼瓧姣嶄吉瑁呮垚 ASCII锛?	homoglyph := regexp.MustCompile("[\u0400-\u04FF\u0370-\u03FF\u0600-\u06FF]")
 
 	return &InputSanitizer{
 		injectionPatterns: compiled,
@@ -60,15 +59,13 @@ func NewInputSanitizer() *InputSanitizer {
 	}
 }
 
-// Sanitize 净化用户输入
-// 使用 XML 标签包裹 + HTML 转义，防止用户输入被 LLM 解释为指令
-func (s *InputSanitizer) Sanitize(input string) string {
+// Sanitize 鍑€鍖栫敤鎴疯緭鍏?// 浣跨敤 XML 鏍囩鍖呰９ + HTML 杞箟锛岄槻姝㈢敤鎴疯緭鍏ヨ LLM 瑙ｉ噴涓烘寚浠?func (s *InputSanitizer) Sanitize(input string) string {
 	escaped := htmlEscape(input)
 	return fmt.Sprintf("<user_input>\n%s\n</user_input>", escaped)
 }
 
-// DetectInjection 检测 Prompt Injection 攻击
-// 返回 (是否检测到, 匹配的模式描述)
+// DetectInjection 妫€娴?Prompt Injection 鏀诲嚮
+// 杩斿洖 (鏄惁妫€娴嬪埌, 鍖归厤鐨勬ā寮忔弿杩?
 func (s *InputSanitizer) DetectInjection(input string) (bool, string) {
 	normalized := normalizeInput(input)
 
@@ -84,17 +81,15 @@ func (s *InputSanitizer) DetectInjection(input string) (bool, string) {
 	return false, ""
 }
 
-// normalizeInput 归一化用户输入以规避混淆技术
-// 将全角→半角、去除零宽字符、统一空白
+// normalizeInput 褰掍竴鍖栫敤鎴疯緭鍏ヤ互瑙勯伩娣锋穯鎶€鏈?// 灏嗗叏瑙掆啋鍗婅銆佸幓闄ら浂瀹藉瓧绗︺€佺粺涓€绌虹櫧
 func normalizeInput(input string) string {
 	var b strings.Builder
 	b.Grow(len(input))
 	for _, r := range input {
-		// 零宽字符 / 格式控制符（U+200B-200F, U+FE00-FE0F 变体选择符等）
-		if (r >= '\u200B' && r <= '\u200F') || (r >= '\uFE00' && r <= '\uFE0F') || (r >= '\u2060' && r <= '\u2064') {
+		// 闆跺瀛楃 / 鏍煎紡鎺у埗绗︼紙U+200B-200F, U+FE00-FE0F 鍙樹綋閫夋嫨绗︾瓑锛?		if (r >= '\u200B' && r <= '\u200F') || (r >= '\uFE00' && r <= '\uFE0F') || (r >= '\u2060' && r <= '\u2064') {
 			continue
 		}
-		// 全角 ASCII → 半角
+		// 鍏ㄨ ASCII 鈫?鍗婅
 		if r >= '\uFF01' && r <= '\uFF5E' {
 			b.WriteRune(r - 0xFEE0)
 			continue
@@ -105,8 +100,7 @@ func normalizeInput(input string) string {
 	return strings.Join(strings.Fields(lower), " ")
 }
 
-// htmlEscape 转义用户输入中的特殊字符，防止 LLM 将
-// 用户输入中的 XML/HTML 标签误解释为指令
+// htmlEscape 杞箟鐢ㄦ埛杈撳叆涓殑鐗规畩瀛楃锛岄槻姝?LLM 灏?// 鐢ㄦ埛杈撳叆涓殑 XML/HTML 鏍囩璇В閲婁负鎸囦护
 func htmlEscape(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
@@ -129,24 +123,23 @@ func htmlEscape(s string) string {
 	return b.String()
 }
 
-// SanitizeMiddleware 输入净化中间件
+// SanitizeMiddleware 杈撳叆鍑€鍖栦腑闂翠欢
 func SanitizeMiddleware(sanitizer *InputSanitizer) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// 只对 POST 请求进行净化
-			if r.Method != http.MethodPost {
+			// 鍙 POST 璇锋眰杩涜鍑€鍖?			if r.Method != http.MethodPost {
 				next.ServeHTTP(w, r)
 				return
 			}
 
-			// 检查 Content-Type
+			// 妫€鏌?Content-Type
 			ct := r.Header.Get("Content-Type")
 			if !strings.Contains(ct, "application/json") {
 				next.ServeHTTP(w, r)
 				return
 			}
 
-			// 读取请求体（保留所有字段）
+			// 璇诲彇璇锋眰浣擄紙淇濈暀鎵€鏈夊瓧娈碉級
 			r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 			var body map[string]interface{}
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -155,24 +148,22 @@ func SanitizeMiddleware(sanitizer *InputSanitizer) func(http.Handler) http.Handl
 			}
 			defer r.Body.Close()
 
-			// 只对非空 content 字段进行净化
-			if content, ok := body["content"].(string); ok && content != "" {
-				// 检测注入
-				if detected, pattern := sanitizer.DetectInjection(content); detected {
-					slog.Warn("检测到 Prompt Injection 攻击",
+			// 鍙闈炵┖ content 瀛楁杩涜鍑€鍖?			if content, ok := body["content"].(string); ok && content != "" {
+				// 妫€娴嬫敞鍏?				if detected, pattern := sanitizer.DetectInjection(content); detected {
+					slog.Warn("妫€娴嬪埌 Prompt Injection 鏀诲嚮",
 						"pattern", pattern,
 						"content_preview", truncate(content, 100),
 						"path", r.URL.Path,
 						"ip", r.RemoteAddr,
 					)
-					BadRequest(w, "输入内容包含不允许的指令")
+					BadRequest(w, "杈撳叆鍐呭鍖呭惈涓嶅厑璁哥殑鎸囦护")
 					return
 				}
-				// 净化 content
+				// 鍑€鍖?content
 				body["content"] = sanitizer.Sanitize(content)
 			}
 
-			// 重建请求体（保留所有字段）
+			// 閲嶅缓璇锋眰浣擄紙淇濈暀鎵€鏈夊瓧娈碉級
 			newBody, err := json.Marshal(body)
 			if err != nil {
 				slog.Error("sanitize: marshal request body", "error", err)
@@ -187,16 +178,14 @@ func SanitizeMiddleware(sanitizer *InputSanitizer) func(http.Handler) http.Handl
 	}
 }
 
-// OutputScanner 输出扫描器，检测 LLM 响应中的敏感信息
+// OutputScanner 杈撳嚭鎵弿鍣紝妫€娴?LLM 鍝嶅簲涓殑鏁忔劅淇℃伅
 type OutputScanner struct {
-	// 系统提示关键词
-	systemPromptKeywords []string
-	// API Key 模式
+	// 绯荤粺鎻愮ず鍏抽敭璇?	systemPromptKeywords []string
+	// API Key 妯″紡
 	apiKeyPatterns []*regexp.Regexp
 }
 
-// NewOutputScanner 创建输出扫描器
-func NewOutputScanner() *OutputScanner {
+// NewOutputScanner 鍒涘缓杈撳嚭鎵弿鍣?func NewOutputScanner() *OutputScanner {
 	return &OutputScanner{
 		systemPromptKeywords: []string{
 			"system prompt",
@@ -211,17 +200,16 @@ func NewOutputScanner() *OutputScanner {
 	}
 }
 
-// Scan 扫描 LLM 输出
+// Scan 鎵弿 LLM 杈撳嚭
 func (s *OutputScanner) Scan(response string) (safe bool, reason string) {
-	// 检查是否泄露系统提示
-	lower := strings.ToLower(response)
+	// 妫€鏌ユ槸鍚︽硠闇茬郴缁熸彁绀?	lower := strings.ToLower(response)
 	for _, keyword := range s.systemPromptKeywords {
 		if strings.Contains(lower, strings.ToLower(keyword)) {
 			return false, "response may contain system prompt content"
 		}
 	}
 
-	// 检查是否包含 API Key
+	// 妫€鏌ユ槸鍚﹀寘鍚?API Key
 	for _, pattern := range s.apiKeyPatterns {
 		if pattern.MatchString(response) {
 			return false, "response may contain API keys or secrets"
@@ -231,8 +219,7 @@ func (s *OutputScanner) Scan(response string) (safe bool, reason string) {
 	return true, ""
 }
 
-// truncate 截断字符串
-func truncate(s string, maxLen int) string {
+// truncate 鎴柇瀛楃涓?func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}

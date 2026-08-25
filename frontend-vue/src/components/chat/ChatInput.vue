@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, onMounted, watch, computed, nextTick } from 'vue'
 import { Input, Button, Select, message } from 'ant-design-vue'
 import { SendOutlined, StopOutlined, PaperClipOutlined, CloseOutlined, FileOutlined, BranchesOutlined } from '@ant-design/icons-vue'
@@ -11,9 +11,9 @@ const props = defineProps<{
   mode: string
   modeOptions: { label: string; value: string }[]
   disabled?: boolean
-  /** P2-C: 当前会话 ID，用于按会话持久化草稿 */
+  /** P2-C: 褰撳墠浼氳瘽 ID锛岀敤浜庢寜浼氳瘽鎸佷箙鍖栬崏绋?*/
   sessionId?: string
-  /** 模型路由：当前会话 llm_config.model（空 = 后端默认路由） */
+  /** 妯″瀷璺敱锛氬綋鍓嶄細璇?llm_config.model锛堢┖ = 鍚庣榛樿璺敱锛?*/
   model?: string
 }>()
 
@@ -21,11 +21,11 @@ const emit = defineEmits<{
   (e: 'send', text: string, attachments?: ChatAttachment[]): void
   (e: 'stop'): void
   (e: 'update:mode', mode: string): void
-  /** 模型路由：用户选择了模型（空字符串 = 恢复后端默认） */
+  /** 妯″瀷璺敱锛氱敤鎴烽€夋嫨浜嗘ā鍨嬶紙绌哄瓧绗︿覆 = 鎭㈠鍚庣榛樿锛?*/
   (e: 'model-change', model: string): void
-  /** P3-C: 斜杠命令 */
+  /** P3-C: 鏂滄潬鍛戒护 */
   (e: 'command', cmd: string): void
-  /** 上下文快捷按钮：展开侧栏（若为抽屉模式） */
+  /** 涓婁笅鏂囧揩鎹锋寜閽細灞曞紑渚ф爮锛堣嫢涓烘娊灞夋ā寮忥級 */
   (e: 'open-panel'): void
 }>()
 
@@ -34,22 +34,20 @@ const textareaRef = ref()
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const dragOver = ref(false)
 
-// P1-2 附件管理
+// P1-2 闄勪欢绠＄悊
 const pendingAttachments = ref<ChatAttachment[]>([])
 const uploading = ref(false)
 
-// 允许的文件类型（图片 + 常见文档）
-const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml']
+// 鍏佽鐨勬枃浠剁被鍨嬶紙鍥剧墖 + 甯歌鏂囨。锛?const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml']
 const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
 
-// ── 模型路由选择器（GET /v1/models，仅 enabled）──
+// 鈹€鈹€ 妯″瀷璺敱閫夋嫨鍣紙GET /v1/models锛屼粎 enabled锛夆攢鈹€
 const models = ref<LlmModel[]>([])
 const modelsLoading = ref(false)
 const modelValue = ref('')
 const modelOptions = computed(() =>
   models.value.map(m => ({
-    // label：display_name + provider 前缀；value：模型 name（后端路由用）
-    label: m.display_name ? `${m.provider} · ${m.display_name}` : `${m.provider} · ${m.name}`,
+    // label锛歞isplay_name + provider 鍓嶇紑锛泇alue锛氭ā鍨?name锛堝悗绔矾鐢辩敤锛?    label: m.display_name ? `${m.provider} 路 ${m.display_name}` : `${m.provider} 路 ${m.name}`,
     value: m.name,
   })),
 )
@@ -59,25 +57,23 @@ function onModelChange(v: any) {
   emit('model-change', modelValue.value)
 }
 
-// 会话切换/恢复时同步（父组件回传 llm_config.model；空 = 后端默认）
-watch(() => props.model, (v) => { modelValue.value = v || '' }, { immediate: true })
+// 浼氳瘽鍒囨崲/鎭㈠鏃跺悓姝ワ紙鐖剁粍浠跺洖浼?llm_config.model锛涚┖ = 鍚庣榛樿锛?watch(() => props.model, (v) => { modelValue.value = v || '' }, { immediate: true })
 
-// 挂载自动聚焦（deepseek 输入区常驻聚焦）+ 加载可用模型
+// 鎸傝浇鑷姩鑱氱劍锛坉eepseek 杈撳叆鍖哄父椹昏仛鐒︼級+ 鍔犺浇鍙敤妯″瀷
 onMounted(async () => {
   textareaRef.value?.focus?.()
   try {
     modelsLoading.value = true
     models.value = await listModels()
   } catch {
-    // 取不到模型列表时下拉为空，走后端默认路由
+    // 鍙栦笉鍒版ā鍨嬪垪琛ㄦ椂涓嬫媺涓虹┖锛岃蛋鍚庣榛樿璺敱
     models.value = []
   } finally {
     modelsLoading.value = false
   }
 })
 
-// P2-C: 草稿持久化（按会话 ID 存 localStorage）
-const DRAFT_PREFIX = 'minicc:draft:'
+// P2-C: 鑽夌鎸佷箙鍖栵紙鎸変細璇?ID 瀛?localStorage锛?const DRAFT_PREFIX = 'chiron:draft:'
 function draftKey(sid?: string) { return sid ? DRAFT_PREFIX + sid : '' }
 function loadDraft() {
   const key = draftKey(props.sessionId)
@@ -93,17 +89,15 @@ function saveDraft() {
   if (input.value) localStorage.setItem(key, input.value)
   else localStorage.removeItem(key)
 }
-// 会话切换时加载草稿
-watch(() => props.sessionId, () => loadDraft(), { immediate: true })
-// 输入变化时保存草稿（防抖避免频繁写入）
-let saveTimer: ReturnType<typeof setTimeout> | null = null
+// 浼氳瘽鍒囨崲鏃跺姞杞借崏绋?watch(() => props.sessionId, () => loadDraft(), { immediate: true })
+// 杈撳叆鍙樺寲鏃朵繚瀛樿崏绋匡紙闃叉姈閬垮厤棰戠箒鍐欏叆锛?let saveTimer: ReturnType<typeof setTimeout> | null = null
 watch(input, () => {
   if (saveTimer) clearTimeout(saveTimer)
   saveTimer = setTimeout(saveDraft, 300)
 })
 
 function onKeydown(e: KeyboardEvent) {
-  // P3-C: 斜杠命令面板导航
+  // P3-C: 鏂滄潬鍛戒护闈㈡澘瀵艰埅
   if (showSlashMenu.value) {
     if (e.key === 'ArrowDown') {
       e.preventDefault()
@@ -120,11 +114,9 @@ function onKeydown(e: KeyboardEvent) {
       return
     }
   }
-  // Enter 发送（无修饰键）；Shift+Enter 换行；Cmd/Ctrl+Enter 也发送（兼容）
-  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+  // Enter 鍙戦€侊紙鏃犱慨楗伴敭锛夛紱Shift+Enter 鎹㈣锛汣md/Ctrl+Enter 涔熷彂閫侊紙鍏煎锛?  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
     e.preventDefault()
-    // P3-C: 如果在斜杠菜单上且选中了命令，执行命令而非发送
-    if (showSlashMenu.value && filteredCommands.value[slashIndex.value]) {
+    // P3-C: 濡傛灉鍦ㄦ枩鏉犺彍鍗曚笂涓旈€変腑浜嗗懡浠わ紝鎵ц鍛戒护鑰岄潪鍙戦€?    if (showSlashMenu.value && filteredCommands.value[slashIndex.value]) {
       const cmd = filteredCommands.value[slashIndex.value].cmd
       input.value = ''
       showSlashMenu.value = false
@@ -141,12 +133,12 @@ function submit() {
   const atts = pendingAttachments.value.length ? [...pendingAttachments.value] : undefined
   input.value = ''
   pendingAttachments.value = []
-  // P2-C: 发送后清空草稿
+  // P2-C: 鍙戦€佸悗娓呯┖鑽夌
   saveDraft()
   emit('send', text, atts)
 }
 
-// P1-2 文件选择
+// P1-2 鏂囦欢閫夋嫨
 function triggerFilePick() {
   fileInputRef.value?.click()
 }
@@ -158,7 +150,7 @@ async function handleFiles(files: FileList | File[]) {
   try {
     for (const file of arr) {
       if (file.size > MAX_FILE_SIZE) {
-        message.error(`${file.name} 超过 50MB 限制`)
+        message.error(`${file.name} 瓒呰繃 50MB 闄愬埗`)
         continue
       }
       const result = await uploadFile(file)
@@ -172,7 +164,7 @@ async function handleFiles(files: FileList | File[]) {
       })
     }
   } catch (e: any) {
-    message.error('文件上传失败: ' + (e.message || '网络错误'))
+    message.error('鏂囦欢涓婁紶澶辫触: ' + (e.message || '缃戠粶閿欒'))
   } finally {
     uploading.value = false
     if (fileInputRef.value) fileInputRef.value.value = ''
@@ -184,7 +176,7 @@ function onFileChange(e: Event) {
   if (target.files?.length) handleFiles(target.files)
 }
 
-// P1-2 拖拽上传
+// P1-2 鎷栨嫿涓婁紶
 function onDragOver(e: DragEvent) {
   e.preventDefault()
   dragOver.value = true
@@ -199,7 +191,7 @@ function onDrop(e: DragEvent) {
   if (e.dataTransfer?.files?.length) handleFiles(e.dataTransfer.files)
 }
 
-// P1-2 粘贴图片
+// P1-2 绮樿创鍥剧墖
 function onPaste(e: ClipboardEvent) {
   const items = e.clipboardData?.items
   if (!items) return
@@ -211,16 +203,14 @@ function onPaste(e: ClipboardEvent) {
     }
   }
   if (files.length) handleFiles(files)
-  // P3-E: 大文本粘贴折叠预览
-  const text = e.clipboardData?.getData('text')
+  // P3-E: 澶ф枃鏈矘璐存姌鍙犻瑙?  const text = e.clipboardData?.getData('text')
   if (text && text.length > 1000) {
     e.preventDefault()
     pastedLargeText.value = text
   }
 }
 
-// P3-E: 大文本粘贴折叠预览
-const pastedLargeText = ref('')
+// P3-E: 澶ф枃鏈矘璐存姌鍙犻瑙?const pastedLargeText = ref('')
 const PASTE_PREVIEW = 200
 function acceptPastedText() {
   input.value += pastedLargeText.value
@@ -236,13 +226,13 @@ function removeAttachment(id: string) {
   if (idx >= 0) pendingAttachments.value.splice(idx, 1)
 }
 
-// ── P3-C: 斜杠命令 ──
+// 鈹€鈹€ P3-C: 鏂滄潬鍛戒护 鈹€鈹€
 const SLASH_COMMANDS = [
-  { cmd: '/clear', desc: '清空当前对话' },
-  { cmd: '/export', desc: '导出当前会话为 Markdown' },
-  { cmd: '/new', desc: '新建会话' },
-  { cmd: '/theme', desc: '切换暗色/亮色模式' },
-  { cmd: '/stop', desc: '停止生成' },
+  { cmd: '/clear', desc: '娓呯┖褰撳墠瀵硅瘽' },
+  { cmd: '/export', desc: '瀵煎嚭褰撳墠浼氳瘽涓?Markdown' },
+  { cmd: '/new', desc: '鏂板缓浼氳瘽' },
+  { cmd: '/theme', desc: '鍒囨崲鏆楄壊/浜壊妯″紡' },
+  { cmd: '/stop', desc: '鍋滄鐢熸垚' },
 ]
 const showSlashMenu = ref(false)
 const slashIndex = ref(0)
@@ -265,18 +255,18 @@ function onSlashInput() {
     @drop="onDrop"
   >
     <div class="input-card" :class="{ 'drag-active': dragOver }">
-      <!-- P3-E: 大文本粘贴折叠预览 -->
+      <!-- P3-E: 澶ф枃鏈矘璐存姌鍙犻瑙?-->
       <div v-if="pastedLargeText" class="paste-preview">
         <div class="paste-preview-text">
-          {{ pastedLargeText.slice(0, PASTE_PREVIEW) }}<span v-if="pastedLargeText.length > PASTE_PREVIEW">…</span>
+          {{ pastedLargeText.slice(0, PASTE_PREVIEW) }}<span v-if="pastedLargeText.length > PASTE_PREVIEW">鈥?/span>
         </div>
-        <div class="paste-preview-meta">已粘贴 {{ pastedLargeText.length }} 字符</div>
+        <div class="paste-preview-meta">宸茬矘璐?{{ pastedLargeText.length }} 瀛楃</div>
         <div class="paste-preview-actions">
-          <button class="paste-btn discard" type="button" @click="discardPastedText">丢弃</button>
-          <button class="paste-btn accept" type="button" @click="acceptPastedText">插入</button>
+          <button class="paste-btn discard" type="button" @click="discardPastedText">涓㈠純</button>
+          <button class="paste-btn accept" type="button" @click="acceptPastedText">鎻掑叆</button>
         </div>
       </div>
-      <!-- P3-C: 斜杠命令面板 -->
+      <!-- P3-C: 鏂滄潬鍛戒护闈㈡澘 -->
       <div v-if="showSlashMenu" class="slash-menu">
         <div
           v-for="(c, i) in filteredCommands"
@@ -290,7 +280,7 @@ function onSlashInput() {
           <span class="slash-desc">{{ c.desc }}</span>
         </div>
       </div>
-      <!-- P1-2 附件预览区 -->
+      <!-- P1-2 闄勪欢棰勮鍖?-->
       <div v-if="pendingAttachments.length" class="attachment-preview">
         <div v-for="att in pendingAttachments" :key="att.id" class="att-thumb">
           <img v-if="att.isImage" :src="att.url" :alt="att.name" class="att-thumb-img" />
@@ -298,7 +288,7 @@ function onSlashInput() {
             <FileOutlined />
             <span class="att-thumb-name">{{ att.name }}</span>
           </div>
-          <button class="att-remove" type="button" title="移除" @click="removeAttachment(att.id)">
+          <button class="att-remove" type="button" title="绉婚櫎" @click="removeAttachment(att.id)">
             <CloseOutlined />
           </button>
         </div>
@@ -308,10 +298,10 @@ function onSlashInput() {
         v-model:value="input"
         :rows="1"
         :auto-size="{ minRows: 1, maxRows: 5 }"
-        :placeholder="dragOver ? '松开以上传文件' : '发送消息...（输入 / 查看命令）'"
+        :placeholder="dragOver ? '鏉惧紑浠ヤ笂浼犳枃浠? : '鍙戦€佹秷鎭?..锛堣緭鍏?/ 鏌ョ湅鍛戒护锛?"
         class="input-field"
         :disabled="disabled"
-        aria-label="消息输入框"
+        aria-label="娑堟伅杈撳叆妗?
         @keydown="onKeydown"
         @input="onSlashInput"
         @paste="onPaste"
@@ -330,21 +320,21 @@ function onSlashInput() {
             size="small"
             class="attach-btn"
             :loading="uploading"
-            title="上传文件"
+            title="涓婁紶鏂囦欢"
             @click="triggerFilePick"
           >
             <template #icon><PaperClipOutlined /></template>
           </Button>
-          <span class="mode-label">模式</span>
+          <span class="mode-label">妯″紡</span>
           <Select
             :model-value="mode"
             :options="modeOptions"
             size="small"
             style="width: 110px"
-            :title="`当前模式：${modeOptions.find(o => o.value === mode)?.label || mode}（仅影响后续消息）`"
+            :title="`褰撳墠妯″紡锛?{modeOptions.find(o => o.value === mode)?.label || mode}锛堜粎褰卞搷鍚庣画娑堟伅锛塦"
             @update:value="(v: any) => emit('update:mode', String(v))"
           />
-          <span class="mode-label">模型</span>
+          <span class="mode-label">妯″瀷</span>
           <Select
             class="model-select"
             :model-value="modelValue"
@@ -352,29 +342,29 @@ function onSlashInput() {
             :loading="modelsLoading"
             size="small"
             allow-clear
-            placeholder="默认模型"
-            :title="`当前模型：${modelValue || '默认（后端路由）'}（仅影响后续消息）`"
+            placeholder="榛樿妯″瀷"
+            :title="`褰撳墠妯″瀷锛?{modelValue || '榛樿锛堝悗绔矾鐢憋級'}锛堜粎褰卞搷鍚庣画娑堟伅锛塦"
             @update:value="onModelChange"
           />
           <Button
             type="text"
             size="small"
             class="context-btn"
-            title="打开上下文面板（会话/轨迹/上下文）"
+            title="鎵撳紑涓婁笅鏂囬潰鏉匡紙浼氳瘽/杞ㄨ抗/涓婁笅鏂囷級"
             @click="emit('open-panel')"
           >
             <template #icon><BranchesOutlined /></template>
-            <span class="context-label">上下文</span>
+            <span class="context-label">涓婁笅鏂?/span>
           </Button>
         </div>
         <div class="input-left">
-          <span class="input-hint">Enter 发送 · Shift+Enter 换行</span>
+          <span class="input-hint">Enter 鍙戦€?路 Shift+Enter 鎹㈣</span>
           <Button
             class="send-btn"
             :type="loading ? 'default' : 'primary'"
             shape="circle"
             :disabled="(!input.trim() && !pendingAttachments.length && !loading) || disabled"
-            :title="loading ? '停止' : '发送'"
+            :title="loading ? '鍋滄' : '鍙戦€?"
             @click="loading ? emit('stop') : submit()"
           >
             <template #icon>
@@ -389,7 +379,7 @@ function onSlashInput() {
 </template>
 
 <style scoped>
-/* 浮动胶囊输入卡（deepseek InputBar floating capsule：22px 圆角 + 阴影 + 16/24 字号） */
+/* 娴姩鑳跺泭杈撳叆鍗★紙deepseek InputBar floating capsule锛?2px 鍦嗚 + 闃村奖 + 16/24 瀛楀彿锛?*/
 .input-area { padding: 0 16px 8px; }
 .input-card {
   position: relative;
@@ -401,7 +391,7 @@ function onSlashInput() {
   font-size: 16px; line-height: 24px;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
-/* 聚焦态：主色描边 + 主色光晕 */
+/* 鑱氱劍鎬侊細涓昏壊鎻忚竟 + 涓昏壊鍏夋檿 */
 .input-card:focus-within {
   border-color: var(--primary);
   box-shadow: var(--sig-input-shadow), 0 0 0 var(--sig-input-ring) var(--primary-bg);
@@ -411,14 +401,14 @@ function onSlashInput() {
 .input-actions { display: flex; align-items: center; justify-content: space-between; }
 .input-left { display: flex; align-items: center; gap: 8px; }
 .input-hint { font-size: 12px; color: var(--text-tertiary); }
-/* 模式选择器标签 */
+/* 妯″紡閫夋嫨鍣ㄦ爣绛?*/
 .mode-label { flex: none; font-size: 12px; color: var(--text-tertiary); }
-/* 模型路由下拉（与模式切换器同排；窄屏收窄防溢出） */
+/* 妯″瀷璺敱涓嬫媺锛堜笌妯″紡鍒囨崲鍣ㄥ悓鎺掞紱绐勫睆鏀剁獎闃叉孩鍑猴級 */
 .model-select { width: 170px; }
 .model-select :deep(.ant-select-selector) { font-size: 12px; }
 @media (max-width: 768px) { .model-select { width: 150px; } }
 @media (max-width: 576px) { .model-select { width: 126px; } }
-/* 上下文快捷按钮：展开侧栏（抽屉模式） */
+/* 涓婁笅鏂囧揩鎹锋寜閽細灞曞紑渚ф爮锛堟娊灞夋ā寮忥級 */
 .context-btn { color: var(--text-tertiary); display: inline-flex; align-items: center; gap: 4px; }
 .context-btn:hover { color: var(--primary) !important; }
 .context-label { font-size: 12px; }
@@ -426,30 +416,30 @@ function onSlashInput() {
   .context-label { display: none; }
   .context-btn.ant-btn { min-width: 40px; height: 40px; }
 }
-/* 发送按钮：可发送时主色、hover 微放大 + 加深 */
+/* 鍙戦€佹寜閽細鍙彂閫佹椂涓昏壊銆乭over 寰斁澶?+ 鍔犳繁 */
 .send-btn { transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease; }
 .send-btn:not(:disabled):hover { transform: scale(1.06); box-shadow: 0 4px 12px var(--primary-bg); filter: brightness(1.05); }
 .send-btn:disabled { opacity: 0.45; }
 @media (max-width: 768px) { .input-area { padding: 0 12px 8px; } }
-/* ── 移动端：输入区贴底 + 安全区 + 触控目标放大 + 工具栏换行 ── */
+/* 鈹€鈹€ 绉诲姩绔細杈撳叆鍖鸿创搴?+ 瀹夊叏鍖?+ 瑙︽帶鐩爣鏀惧ぇ + 宸ュ叿鏍忔崲琛?鈹€鈹€ */
 @media (max-width: 768px) {
   .input-area { padding: 0 12px calc(8px + env(safe-area-inset-bottom)); }
   .input-card { border-radius: var(--sig-radius-input); }
   .input-actions { gap: 8px; flex-wrap: wrap; row-gap: 6px; }
-  .input-hint { display: none; } /* 窄屏隐藏提示文字，占位符承担语义 */
+  .input-hint { display: none; } /* 绐勫睆闅愯棌鎻愮ず鏂囧瓧锛屽崰浣嶇鎵挎媴璇箟 */
 }
 @media (max-width: 576px) {
   .input-area { padding: 0 8px calc(8px + env(safe-area-inset-bottom)); }
   .input-card { padding: 8px 10px 10px; gap: 10px; }
   .input-actions { flex-wrap: wrap; row-gap: 6px; }
   .input-left { gap: 4px; }
-  .input-left:last-child { margin-left: auto; } /* 发送组靠右，避免与左侧工具组抢行 */
+  .input-left:last-child { margin-left: auto; } /* 鍙戦€佺粍闈犲彸锛岄伩鍏嶄笌宸︿晶宸ュ叿缁勬姠琛?*/
   .attach-btn.ant-btn { min-width: 40px; height: 40px; }
   .send-btn.ant-btn { width: 40px; height: 40px; }
   .paste-btn { min-height: 36px; }
 }
 
-/* P1-2 附件预览区 */
+/* P1-2 闄勪欢棰勮鍖?*/
 .attachment-preview { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0 8px; }
 .att-thumb { position: relative; width: 64px; height: 64px; border-radius: var(--sig-radius-card); border: 1px solid var(--border); background: var(--bg-card); overflow: hidden; }
 .att-thumb-img { width: 100%; height: 100%; object-fit: cover; }
@@ -459,17 +449,17 @@ function onSlashInput() {
 .att-remove:hover { background: var(--error); }
 .attach-btn { color: var(--text-tertiary); display: inline-flex; align-items: center; justify-content: center; }
 .attach-btn:hover { color: var(--primary); }
-/* 拖拽态：边框主色 + 背景淡色 */
+/* 鎷栨嫿鎬侊細杈规涓昏壊 + 鑳屾櫙娣¤壊 */
 .input-card.drag-active { border-color: var(--primary); background: var(--primary-bg); box-shadow: var(--shadow-md), 0 0 0 3px var(--primary-bg); }
 
-/* P3-C: 斜杠命令面板 */
+/* P3-C: 鏂滄潬鍛戒护闈㈡澘 */
 .slash-menu { position: absolute; bottom: 100%; left: 0; right: 0; margin-bottom: 4px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--sig-radius-card); box-shadow: var(--shadow-lg); overflow: hidden; z-index: 10; }
 .slash-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; cursor: pointer; transition: background 0.1s ease; }
 .slash-item.active { background: var(--bg-hover); }
 .slash-cmd { font-weight: 600; color: var(--primary); font-size: 13px; }
 .slash-desc { color: var(--text-tertiary); font-size: 12px; }
 
-/* P3-E: 大文本粘贴折叠预览 */
+/* P3-E: 澶ф枃鏈矘璐存姌鍙犻瑙?*/
 .paste-preview { border: 1px solid var(--border); border-radius: var(--sig-radius-card); padding: 8px 12px; background: var(--bg-secondary); margin-bottom: 4px; }
 .paste-preview-text { font-size: 12px; color: var(--text-secondary); line-height: 1.5; max-height: 80px; overflow: hidden; white-space: pre-wrap; word-break: break-all; }
 .paste-preview-meta { font-size: 11px; color: var(--text-tertiary); margin: 4px 0; }
@@ -479,3 +469,4 @@ function onSlashInput() {
 .paste-btn.accept:hover { opacity: 0.9; }
 .paste-btn.discard:hover { color: var(--error); border-color: var(--error); }
 </style>
+

@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"fmt"
@@ -9,13 +9,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/db"
-	"github.com/athenavi/minicc/internal/id"
-	"github.com/athenavi/minicc/internal/storage"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/db"
+	"github.com/athenavi/chiron/internal/id"
+	"github.com/athenavi/chiron/internal/storage"
 )
 
-// ── Upload (multipart file) ──
+// 鈹€鈹€ Upload (multipart file) 鈹€鈹€
 
 func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
@@ -25,9 +25,9 @@ func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 	tenantID := claims.TenantID
 
-	r.Body = http.MaxBytesReader(w, r.Body, 200<<20) // 200MB 上传上限
+	r.Body = http.MaxBytesReader(w, r.Body, 200<<20) // 200MB 涓婁紶涓婇檺
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
-		// 暴露真实原因（请求体超限 / boundary 缺失 / 格式损坏），便于定位
+		// 鏆撮湶鐪熷疄鍘熷洜锛堣姹備綋瓒呴檺 / boundary 缂哄け / 鏍煎紡鎹熷潖锛夛紝渚夸簬瀹氫綅
 		BadRequest(w, "file too large or invalid form: "+err.Error())
 		return
 	}
@@ -46,24 +46,24 @@ func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 	fileSize := int64(len(fileData))
 
-	// P1-6: 用 magic bytes 检测真实 MIME，避免客户端伪造 Content-Type 上传可执行文件
+	// P1-6: 鐢?magic bytes 妫€娴嬬湡瀹?MIME锛岄伩鍏嶅鎴风浼€?Content-Type 涓婁紶鍙墽琛屾枃浠?
 	declaredMIME := truncateMIME(header.Header.Get("Content-Type"))
 	detectedMIME := truncateMIME(http.DetectContentType(fileData))
-	// 优先采用检测到的 MIME；声明与检测不一致时以检测为准（更安全）
+	// 浼樺厛閲囩敤妫€娴嬪埌鐨?MIME锛涘０鏄庝笌妫€娴嬩笉涓€鑷存椂浠ユ娴嬩负鍑嗭紙鏇村畨鍏級
 	mimeType := detectedMIME
 	if declaredMIME != "" && declaredMIME == detectedMIME {
-		// 声明与检测一致，保留声明的（可能更精确，如 image/png vs image/jpeg）
+		// 澹版槑涓庢娴嬩竴鑷达紝淇濈暀澹版槑鐨勶紙鍙兘鏇寸簿纭紝濡?image/png vs image/jpeg锛?
 		mimeType = declaredMIME
 	}
-	// 拒绝可执行/脚本类 MIME（即使客户端伪装为图片）
-	// P1-6: 传入文件名以便扩展名兜底（PE/ELF magic bytes 只检测为 octet-stream）
+	// 鎷掔粷鍙墽琛?鑴氭湰绫?MIME锛堝嵆浣垮鎴风浼涓哄浘鐗囷級
+	// P1-6: 浼犲叆鏂囦欢鍚嶄互渚挎墿灞曞悕鍏滃簳锛圥E/ELF magic bytes 鍙娴嬩负 octet-stream锛?
 	if isExecutableMIME(mimeType, header.Filename) {
 		BadRequest(w, "file type not allowed: "+mimeType)
 		return
 	}
 	assetType := detectType(mimeType)
 	category := r.FormValue("category")
-	parentID := r.FormValue("parent_id") // 当前目录；空 = 根目录
+	parentID := r.FormValue("parent_id") // 褰撳墠鐩綍锛涚┖ = 鏍圭洰褰?
 
 	dir := h.resolveDir(r)
 	name := r.FormValue("name")
@@ -71,7 +71,7 @@ func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		name = header.Filename
 	}
 
-	// 先插入数据库获取 UUID（含 parent_id，子文件夹上传不落到根目录）
+	// 鍏堟彃鍏ユ暟鎹簱鑾峰彇 UUID锛堝惈 parent_id锛屽瓙鏂囦欢澶逛笂浼犱笉钀藉埌鏍圭洰褰曪級
 	var assetID string
 	err = db.Pool.QueryRow(r.Context(),
 		`INSERT INTO media_assets (id, tenant_id, user_id, type, name, file_url, mime_type, category, size, parent_id, created_at, updated_at)
@@ -91,7 +91,7 @@ func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 	fileURL := h.objectURL(objectKey)
 
-	// 更新 file_url
+	// 鏇存柊 file_url
 	_, err = db.Pool.Exec(r.Context(),
 		`UPDATE media_assets SET file_url = $1 WHERE id = $2 AND tenant_id = $3`,
 		fileURL, assetID, tenantID)
@@ -105,7 +105,7 @@ func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ── PresignUpload — returns a presigned URL for client-side direct upload ──
+// 鈹€鈹€ PresignUpload 鈥?returns a presigned URL for client-side direct upload 鈹€鈹€
 
 func (h *MediaHandler) PresignUpload(w http.ResponseWriter, r *http.Request) {
 	var body struct {
@@ -161,7 +161,7 @@ func (h *MediaHandler) PresignUpload(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ── CompleteUpload — called by client after presigned upload is done ──
+// 鈹€鈹€ CompleteUpload 鈥?called by client after presigned upload is done 鈹€鈹€
 
 func (h *MediaHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
@@ -192,7 +192,7 @@ func (h *MediaHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
 		body.Type = "file"
 	}
 
-	// 校验 file_url 指向配置的存储后端（防止客户端伪造任意 URL 入库）
+	// 鏍￠獙 file_url 鎸囧悜閰嶇疆鐨勫瓨鍌ㄥ悗绔紙闃叉瀹㈡埛绔吉閫犱换鎰?URL 鍏ュ簱锛?
 	inner := h.store
 	if atomic, ok := h.store.(*storage.AtomicStore); ok {
 		inner = atomic.LoadRaw()
@@ -214,7 +214,7 @@ func (h *MediaHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ID 由服务端生成，不信任客户端传入的 body.ID
+	// ID 鐢辨湇鍔＄鐢熸垚锛屼笉淇′换瀹㈡埛绔紶鍏ョ殑 body.ID
 	assetID, err := id.UUID()
 	if err != nil {
 		logAndRespond(w, err, http.StatusInternalServerError, "generate id failed")
@@ -232,7 +232,7 @@ func (h *MediaHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
 	OK(w, map[string]string{"id": assetID, "name": body.Name, "file_url": body.FileURL})
 }
 
-// ── Upload helpers ──
+// 鈹€鈹€ Upload helpers 鈹€鈹€
 
 func detectType(mime string) string {
 	if strings.HasPrefix(mime, "image/") {
@@ -258,12 +258,12 @@ func truncateMIME(mime string) string {
 	return mime
 }
 
-// isExecutableMIME 拦截可执行/脚本类 MIME，防止伪装为图片上传恶意文件。
-// P1-6: 即使 magic bytes 检测出真实类型，仍需拒绝危险类型落地存储。
-// fileName 用于扩展名兜底（net/http 的 DetectContentType 对 PE/ELF/Mach-O
-// 通常返回 application/octet-stream，无法区分可执行文件与普通二进制）。
+// isExecutableMIME 鎷︽埅鍙墽琛?鑴氭湰绫?MIME锛岄槻姝吉瑁呬负鍥剧墖涓婁紶鎭舵剰鏂囦欢銆?
+// P1-6: 鍗充娇 magic bytes 妫€娴嬪嚭鐪熷疄绫诲瀷锛屼粛闇€鎷掔粷鍗遍櫓绫诲瀷钀藉湴瀛樺偍銆?
+// fileName 鐢ㄤ簬鎵╁睍鍚嶅厹搴曪紙net/http 鐨?DetectContentType 瀵?PE/ELF/Mach-O
+// 閫氬父杩斿洖 application/octet-stream锛屾棤娉曞尯鍒嗗彲鎵ц鏂囦欢涓庢櫘閫氫簩杩涘埗锛夈€?
 func isExecutableMIME(mime string, fileName string) bool {
-	// 归一化小写并去掉参数
+	// 褰掍竴鍖栧皬鍐欏苟鍘绘帀鍙傛暟
 	m := strings.ToLower(strings.TrimSpace(mime))
 	if i := strings.Index(m, ";"); i >= 0 {
 		m = strings.TrimSpace(m[:i])
@@ -284,8 +284,8 @@ func isExecutableMIME(mime string, fileName string) bool {
 		"application/x-mach-binary":
 		return true
 	}
-	// 扩展名兜底：octet-stream（PE/ELF/Mach-O magic bytes 通用回退）或 text/plain
-	// （shell 脚本检测为 text/plain）+ 危险扩展名 → 拒绝
+	// 鎵╁睍鍚嶅厹搴曪細octet-stream锛圥E/ELF/Mach-O magic bytes 閫氱敤鍥為€€锛夋垨 text/plain
+	// 锛坰hell 鑴氭湰妫€娴嬩负 text/plain锛? 鍗遍櫓鎵╁睍鍚?鈫?鎷掔粷
 	if m == "application/octet-stream" || m == "" || m == "text/plain" || m == "text/html" {
 		ext := strings.ToLower(filepath.Ext(fileName))
 		switch ext {
@@ -295,7 +295,7 @@ func isExecutableMIME(mime string, fileName string) bool {
 			return true
 		}
 	}
-	// text/plain 可能是任何脚本，但 magic bytes 只能识别文本；
-	// 这里只拦截明确的可执行二进制类型，text/plain 由业务层判断扩展名
+	// text/plain 鍙兘鏄换浣曡剼鏈紝浣?magic bytes 鍙兘璇嗗埆鏂囨湰锛?
+	// 杩欓噷鍙嫤鎴槑纭殑鍙墽琛屼簩杩涘埗绫诲瀷锛宼ext/plain 鐢变笟鍔″眰鍒ゆ柇鎵╁睍鍚?
 	return false
 }

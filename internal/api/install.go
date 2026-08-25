@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -19,26 +19,26 @@ import (
 	"strings"
 	"time"
 
-	"github.com/athenavi/minicc/config"
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/db"
+	"github.com/athenavi/chiron/config"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/db"
 	"golang.org/x/crypto/bcrypt"
 )
 
-// installLockPath：安装状态文件。位于运行时数据目录（与 data/media、data/skills 同级），
-// 由安装流程写入；正常模式启动时读取其中的 DSN/Redis 配置覆盖引导连接（重启生效）。
+// installLockPath锛氬畨瑁呯姸鎬佹枃浠躲€備綅浜庤繍琛屾椂鏁版嵁鐩綍锛堜笌 data/media銆乨ata/skills 鍚岀骇锛夛紝
+// 鐢卞畨瑁呮祦绋嬪啓鍏ワ紱姝ｅ父妯″紡鍚姩鏃惰鍙栧叾涓殑 DSN/Redis 閰嶇疆瑕嗙洊寮曞杩炴帴锛堥噸鍚敓鏁堬級銆?
 const installLockPath = "./data/install.lock"
 
-// ── 安装令牌（Jenkins 模式）───────────────────────────────────────────────
+// 鈹€鈹€ 瀹夎浠ょ墝锛圝enkins 妯″紡锛夆攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 //
-// 所有 /v1/install/* 端点必须携带安装令牌（X-Install-Token header 或 ?token= 查询参数）：
-//   - APP_SECRET 已配置：HMAC-SHA256 确定性派生（重启后不变）；
-//   - APP_SECRET 未配置：进程内随机生成，由 main 打印到启动日志，部署者凭日志令牌进入安装页。
+// 鎵€鏈?/v1/install/* 绔偣蹇呴』鎼哄甫瀹夎浠ょ墝锛圶-Install-Token header 鎴??token= 鏌ヨ鍙傛暟锛夛細
+//   - APP_SECRET 宸查厤缃細HMAC-SHA256 纭畾鎬ф淳鐢燂紙閲嶅惎鍚庝笉鍙橈級锛?
+//   - APP_SECRET 鏈厤缃細杩涚▼鍐呴殢鏈虹敓鎴愶紝鐢?main 鎵撳嵃鍒板惎鍔ㄦ棩蹇楋紝閮ㄧ讲鑰呭嚟鏃ュ織浠ょ墝杩涘叆瀹夎椤点€?
 //
-// 安装完成后（install.lock 标记 completed）安装端点拒绝继续访问，令牌随之失效。
+// 瀹夎瀹屾垚鍚庯紙install.lock 鏍囪 completed锛夊畨瑁呯鐐规嫆缁濈户缁闂紝浠ょ墝闅忎箣澶辨晥銆?
 var installToken string
 
-// InitInstallToken 初始化当前进程的安装令牌并返回（幂等：重复调用返回同一令牌）。
+// InitInstallToken 鍒濆鍖栧綋鍓嶈繘绋嬬殑瀹夎浠ょ墝骞惰繑鍥烇紙骞傜瓑锛氶噸澶嶈皟鐢ㄨ繑鍥炲悓涓€浠ょ墝锛夈€?
 func InitInstallToken(cfg *config.Config) string {
 	if installToken != "" {
 		return installToken
@@ -48,7 +48,7 @@ func InitInstallToken(cfg *config.Config) string {
 	} else {
 		buf := make([]byte, 32)
 		if _, err := rand.Read(buf); err != nil {
-			// 可预测令牌等于没有令牌：系统熵源不可用时必须显式失败（安全 fail-fast）
+			// 鍙娴嬩护鐗岀瓑浜庢病鏈変护鐗岋細绯荤粺鐔垫簮涓嶅彲鐢ㄦ椂蹇呴』鏄惧紡澶辫触锛堝畨鍏?fail-fast锛?
 			panic("crypto/rand unavailable: cannot generate install token")
 		}
 		installToken = base64.RawURLEncoding.EncodeToString(buf)
@@ -56,19 +56,19 @@ func InitInstallToken(cfg *config.Config) string {
 	return installToken
 }
 
-// InstallToken 返回当前进程的安装令牌（未初始化时为空串）。
+// InstallToken 杩斿洖褰撳墠杩涚▼鐨勫畨瑁呬护鐗岋紙鏈垵濮嬪寲鏃朵负绌轰覆锛夈€?
 func InstallToken() string { return installToken }
 
-// InstallTokenIsSet 指示安装令牌是否已初始化（setup 模式）。
+// InstallTokenIsSet 鎸囩ず瀹夎浠ょ墝鏄惁宸插垵濮嬪寲锛坰etup 妯″紡锛夈€?
 func InstallTokenIsSet() bool { return installToken != "" }
 
 func deriveInstallToken(appSecret string) string {
 	h := hmac.New(sha256.New, []byte(appSecret))
-	h.Write([]byte("minicc-install-token"))
+	h.Write([]byte("chiron-install-token"))
 	return base64.RawURLEncoding.EncodeToString(h.Sum(nil))
 }
 
-// installMW 校验安装令牌：X-Install-Token header 优先，其次 ?token= 查询参数；常量时间比较。
+// installMW 鏍￠獙瀹夎浠ょ墝锛歑-Install-Token header 浼樺厛锛屽叾娆??token= 鏌ヨ鍙傛暟锛涘父閲忔椂闂存瘮杈冦€?
 func installMW(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := r.Header.Get("X-Install-Token")
@@ -83,26 +83,26 @@ func installMW(next http.Handler) http.Handler {
 	})
 }
 
-// ── install.lock 状态文件 ─────────────────────────────────────────────────
+// 鈹€鈹€ install.lock 鐘舵€佹枃浠?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// InstallLock 记录安装流程状态。DSN / Redis 密码等敏感字段以 AES-256-GCM 加密后落盘，
-// 密钥由 APP_SECRET 派生（域分离）；仅当 APP_SECRET 有效时才允许写入（Step 2 前由 Step 1 把关）。
+// InstallLock 璁板綍瀹夎娴佺▼鐘舵€併€侱SN / Redis 瀵嗙爜绛夋晱鎰熷瓧娈典互 AES-256-GCM 鍔犲瘑鍚庤惤鐩橈紝
+// 瀵嗛挜鐢?APP_SECRET 娲剧敓锛堝煙鍒嗙锛夛紱浠呭綋 APP_SECRET 鏈夋晥鏃舵墠鍏佽鍐欏叆锛圫tep 2 鍓嶇敱 Step 1 鎶婂叧锛夈€?
 type InstallLock struct {
 	Completed     bool      `json:"completed"`
 	Step1Done     bool      `json:"step1_done"`
 	Step2Done     bool      `json:"step2_done"`
 	Step3Done     bool      `json:"step3_done"`
 	AppSecretSet  bool      `json:"app_secret_set"`
-	AppSecretPlain string   `json:"app_secret_plain,omitempty"` // 安装向导中用户提交的 APP_SECRET（仅内存使用，不落盘）
-	DSN           string    `json:"dsn,omitempty"`            // AES-256-GCM 加密
-	RedisAddr     string    `json:"redis_addr,omitempty"`     // AES-256-GCM 加密
-	RedisPassword string    `json:"redis_password,omitempty"` // AES-256-GCM 加密
+	AppSecretPlain string   `json:"app_secret_plain,omitempty"` // 瀹夎鍚戝涓敤鎴锋彁浜ょ殑 APP_SECRET锛堜粎鍐呭瓨浣跨敤锛屼笉钀界洏锛?
+	DSN           string    `json:"dsn,omitempty"`            // AES-256-GCM 鍔犲瘑
+	RedisAddr     string    `json:"redis_addr,omitempty"`     // AES-256-GCM 鍔犲瘑
+	RedisPassword string    `json:"redis_password,omitempty"` // AES-256-GCM 鍔犲瘑
 	RedisDB       int       `json:"redis_db,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 	CompletedAt   time.Time `json:"completed_at,omitempty"`
 }
 
-// LoadInstallLock 读取安装状态；文件不存在时返回空状态（未安装）。
+// LoadInstallLock 璇诲彇瀹夎鐘舵€侊紱鏂囦欢涓嶅瓨鍦ㄦ椂杩斿洖绌虹姸鎬侊紙鏈畨瑁咃級銆?
 func LoadInstallLock() (*InstallLock, error) {
 	data, err := os.ReadFile(installLockPath)
 	if err != nil {
@@ -118,8 +118,8 @@ func LoadInstallLock() (*InstallLock, error) {
 	return &lk, nil
 }
 
-// SaveInstallLock 原子写入安装状态：随机临时文件 + rename。
-// Windows 的 os.Rename 不覆盖已存在目标，写入前先移除旧文件（本地数据文件，可接受短暂窗口）。
+// SaveInstallLock 鍘熷瓙鍐欏叆瀹夎鐘舵€侊細闅忔満涓存椂鏂囦欢 + rename銆?
+// Windows 鐨?os.Rename 涓嶈鐩栧凡瀛樺湪鐩爣锛屽啓鍏ュ墠鍏堢Щ闄ゆ棫鏂囦欢锛堟湰鍦版暟鎹枃浠讹紝鍙帴鍙楃煭鏆傜獥鍙ｏ級銆?
 func SaveInstallLock(lk *InstallLock) error {
 	dir := filepath.Dir(installLockPath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -134,7 +134,7 @@ func SaveInstallLock(lk *InstallLock) error {
 		return err
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName) // 失败路径清理；成功 rename 后无残留
+	defer os.Remove(tmpName) // 澶辫触璺緞娓呯悊锛涙垚鍔?rename 鍚庢棤娈嬬暀
 	if err := tmp.Chmod(0o600); err != nil {
 		tmp.Close()
 		return err
@@ -154,10 +154,10 @@ func SaveInstallLock(lk *InstallLock) error {
 	return os.Rename(tmpName, installLockPath)
 }
 
-// lockEncryptKey 由 APP_SECRET 派生 install.lock 的 AES-256-GCM 密钥（域分离）。
+// lockEncryptKey 鐢?APP_SECRET 娲剧敓 install.lock 鐨?AES-256-GCM 瀵嗛挜锛堝煙鍒嗙锛夈€?
 func lockEncryptKey(appSecret string) []byte {
 	h := hmac.New(sha256.New, []byte(appSecret))
-	h.Write([]byte("minicc-install-lock-key"))
+	h.Write([]byte("chiron-install-lock-key"))
 	return h.Sum(nil)
 }
 
@@ -208,7 +208,7 @@ func decryptSecret(appSecret, enc string) (string, error) {
 	return string(plain), nil
 }
 
-// dataDirWritable 探测安装状态文件所在目录是否可写（Step 1 环境检测项）。
+// dataDirWritable 鎺㈡祴瀹夎鐘舵€佹枃浠舵墍鍦ㄧ洰褰曟槸鍚﹀彲鍐欙紙Step 1 鐜妫€娴嬮」锛夈€?
 func dataDirWritable() bool {
 	dir := filepath.Dir(installLockPath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -224,11 +224,11 @@ func dataDirWritable() bool {
 	return true
 }
 
-// ApplyInstallLockConfig 由 main 在启动时调用（仅 APP_SECRET 有效时）：
-// 读取已完成的 install.lock，用其中加密保存的 DSN/Redis 配置覆盖引导连接值（重启生效）。
-// lock 不存在、未完成或解密失败（APP_SECRET 变更）时为空操作。
-// 优先级：POSTGRES_DSN 以 env 显式设置为准（lock 仅在 env 未设置时兜底）；
-// Redis 配置以 lock 为准（安装向导最近一次确认的值），后台 system_settings 可再覆盖。
+// ApplyInstallLockConfig 鐢?main 鍦ㄥ惎鍔ㄦ椂璋冪敤锛堜粎 APP_SECRET 鏈夋晥鏃讹級锛?
+// 璇诲彇宸插畬鎴愮殑 install.lock锛岀敤鍏朵腑鍔犲瘑淇濆瓨鐨?DSN/Redis 閰嶇疆瑕嗙洊寮曞杩炴帴鍊硷紙閲嶅惎鐢熸晥锛夈€?
+// lock 涓嶅瓨鍦ㄣ€佹湭瀹屾垚鎴栬В瀵嗗け璐ワ紙APP_SECRET 鍙樻洿锛夋椂涓虹┖鎿嶄綔銆?
+// 浼樺厛绾э細POSTGRES_DSN 浠?env 鏄惧紡璁剧疆涓哄噯锛坙ock 浠呭湪 env 鏈缃椂鍏滃簳锛夛紱
+// Redis 閰嶇疆浠?lock 涓哄噯锛堝畨瑁呭悜瀵兼渶杩戜竴娆＄‘璁ょ殑鍊硷級锛屽悗鍙?system_settings 鍙啀瑕嗙洊銆?
 func ApplyInstallLockConfig(cfg *config.Config) {
 	if cfg == nil || !cfg.ValidateAppSecret() {
 		return
@@ -257,7 +257,7 @@ func ApplyInstallLockConfig(cfg *config.Config) {
 	if pwd, err := decryptSecret(cfg.AppSecret, lk.RedisPassword); err == nil {
 		cfg.RedisPassword = pwd
 	}
-	// RedisDB 仅在 Redis 配置整体可解密时应用，避免半套配置生效（一致性）
+	// RedisDB 浠呭湪 Redis 閰嶇疆鏁翠綋鍙В瀵嗘椂搴旂敤锛岄伩鍏嶅崐濂楅厤缃敓鏁堬紙涓€鑷存€э級
 	if redisOK && lk.RedisDB != 0 {
 		cfg.RedisDB = lk.RedisDB
 	}
@@ -282,7 +282,7 @@ type InstallStatus struct {
 	DB     bool   `json:"db"`
 	Redis  bool   `json:"redis"`
 
-	// 依赖探测明细（初始化页面展示各就绪项）
+	// 渚濊禆鎺㈡祴鏄庣粏锛堝垵濮嬪寲椤甸潰灞曠ず鍚勫氨缁」锛?
 	Deps []InstallDep `json:"deps,omitempty"`
 }
 
@@ -301,22 +301,22 @@ func (h *InstallHandler) Status(w http.ResponseWriter, r *http.Request) {
 	var status InstallStatus
 	status.Deps = make([]InstallDep, 0, 2)
 
-	// 依赖 1：PostgreSQL 连通性（真实 ping）
+	// 渚濊禆 1锛歅ostgreSQL 杩為€氭€э紙鐪熷疄 ping锛?
 	dbOK := db.Pool != nil && db.Pool.Ping(ctx) == nil
 	status.DB = dbOK
 	status.Deps = append(status.Deps, InstallDep{
 		Name:    "postgres",
 		OK:      dbOK,
-		Message: map[bool]string{true: "PostgreSQL 连接正常", false: "PostgreSQL 不可用：请检查 POSTGRES_DSN"}[dbOK],
+		Message: map[bool]string{true: "PostgreSQL 杩炴帴姝ｅ父", false: "PostgreSQL 涓嶅彲鐢細璇锋鏌?POSTGRES_DSN"}[dbOK],
 	})
 
-	// 依赖 2：Redis 连通性（真实 ping）
+	// 渚濊禆 2锛歊edis 杩為€氭€э紙鐪熷疄 ping锛?
 	redisOK := db.Redis != nil && db.Redis.Ping(ctx).Err() == nil
 	status.Redis = redisOK
 	status.Deps = append(status.Deps, InstallDep{
 		Name:    "redis",
 		OK:      redisOK,
-		Message: map[bool]string{true: "Redis 连接正常", false: "Redis 不可用：请检查 REDIS_ADDR / 密码"}[redisOK],
+		Message: map[bool]string{true: "Redis 杩炴帴姝ｅ父", false: "Redis 涓嶅彲鐢細璇锋鏌?REDIS_ADDR / 瀵嗙爜"}[redisOK],
 	})
 
 	// If at least one user with role 'owner' exists, system is initialized
@@ -335,10 +335,10 @@ func (h *InstallHandler) Status(w http.ResponseWriter, r *http.Request) {
 	OK(w, status)
 }
 
-// ── 安装流程（setup 模式）─────────────────────────────────────────────────
+// 鈹€鈹€ 瀹夎娴佺▼锛坰etup 妯″紡锛夆攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// Step1Request 无请求体。
-// Step1 环境检测：APP_SECRET 是否已配置（非弱值/占位符）、安装状态目录是否可写、当前安装进度。
+// Step1Request 鏃犺姹備綋銆?
+// Step1 鐜妫€娴嬶細APP_SECRET 鏄惁宸查厤缃紙闈炲急鍊?鍗犱綅绗︼級銆佸畨瑁呯姸鎬佺洰褰曟槸鍚﹀彲鍐欍€佸綋鍓嶅畨瑁呰繘搴︺€?
 // GET /v1/install/step1
 func (h *InstallHandler) Step1(w http.ResponseWriter, r *http.Request) {
 	lk, err := LoadInstallLock()
@@ -350,7 +350,7 @@ func (h *InstallHandler) Step1(w http.ResponseWriter, r *http.Request) {
 	if lk.Completed {
 		OK(w, map[string]interface{}{
 			"completed":      true,
-			"message":        "系统已完成安装，安装入口已关闭",
+			"message":        "绯荤粺宸插畬鎴愬畨瑁咃紝瀹夎鍏ュ彛宸插叧闂?,
 			"app_secret_set": h.cfg.ValidateAppSecret(),
 		})
 		return
@@ -372,19 +372,19 @@ type Step2Request struct {
 	RedisDB       int    `json:"redis_db,omitempty"`
 }
 
-// Step2 保存数据库配置：验证 PG 连接（成功即建立全局连接池供 Step 3 使用）→
-// Redis 可选（填写则验证连通性）→ 敏感字段 AES-256-GCM 加密后写入 install.lock。
-// 配置在重启服务后全面生效（与现有「重启生效」的架构一致）。
-// 当 APP_SECRET 未在环境变量中配置时，允许通过请求体提交 app_secret，
-// 用于加密落盘并供 Step 3 创建管理员使用（重启后仍需要在 .env 中配置）。
+// Step2 淇濆瓨鏁版嵁搴撻厤缃細楠岃瘉 PG 杩炴帴锛堟垚鍔熷嵆寤虹珛鍏ㄥ眬杩炴帴姹犱緵 Step 3 浣跨敤锛夆啋
+// Redis 鍙€夛紙濉啓鍒欓獙璇佽繛閫氭€э級鈫?鏁忔劅瀛楁 AES-256-GCM 鍔犲瘑鍚庡啓鍏?install.lock銆?
+// 閰嶇疆鍦ㄩ噸鍚湇鍔″悗鍏ㄩ潰鐢熸晥锛堜笌鐜版湁銆岄噸鍚敓鏁堛€嶇殑鏋舵瀯涓€鑷达級銆?
+// 褰?APP_SECRET 鏈湪鐜鍙橀噺涓厤缃椂锛屽厑璁搁€氳繃璇锋眰浣撴彁浜?app_secret锛?
+// 鐢ㄤ簬鍔犲瘑钀界洏骞朵緵 Step 3 鍒涘缓绠＄悊鍛樹娇鐢紙閲嶅惎鍚庝粛闇€瑕佸湪 .env 涓厤缃級銆?
 // POST /v1/install/step2
 func (h *InstallHandler) Step2(w http.ResponseWriter, r *http.Request) {
-	// 确定用于加密的 APP_SECRET：环境变量优先，其次请求体提交
+	// 纭畾鐢ㄤ簬鍔犲瘑鐨?APP_SECRET锛氱幆澧冨彉閲忎紭鍏堬紝鍏舵璇锋眰浣撴彁浜?
 	appSecret := h.cfg.AppSecret
 	if !h.cfg.ValidateAppSecret() {
-		// APP_SECRET 未配置，允许从请求体中提交
-		// 但此时无法解密之前的 lock，因此暂不处理已有 lock 的情况
-		// 先解析请求体获取 app_secret
+		// APP_SECRET 鏈厤缃紝鍏佽浠庤姹備綋涓彁浜?
+		// 浣嗘鏃舵棤娉曡В瀵嗕箣鍓嶇殑 lock锛屽洜姝ゆ殏涓嶅鐞嗗凡鏈?lock 鐨勬儏鍐?
+		// 鍏堣В鏋愯姹備綋鑾峰彇 app_secret
 		lk, lkErr := LoadInstallLock()
 		if lkErr != nil {
 			slog.Error("install step2: read install lock", "error", lkErr)
@@ -392,11 +392,11 @@ func (h *InstallHandler) Step2(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if lk.Completed {
-			BadRequest(w, "系统已完成安装")
+			BadRequest(w, "绯荤粺宸插畬鎴愬畨瑁?)
 			return
 		}
 
-		// 先解码请求体（不提前校验 app_secret，让后续逻辑处理）
+		// 鍏堣В鐮佽姹備綋锛堜笉鎻愬墠鏍￠獙 app_secret锛岃鍚庣画閫昏緫澶勭悊锛?
 		var req Step2Request
 		if err := DecodeJSON(w, r, &req); err != nil {
 			BadRequest(w, ErrInvalidReq)
@@ -404,38 +404,38 @@ func (h *InstallHandler) Step2(w http.ResponseWriter, r *http.Request) {
 		}
 		req.PostgresDSN = strings.TrimSpace(req.PostgresDSN)
 		if req.PostgresDSN == "" {
-			BadRequest(w, "postgres_dsn 必填")
+			BadRequest(w, "postgres_dsn 蹇呭～")
 			return
 		}
 		appSecret = strings.TrimSpace(req.AppSecret)
 		if appSecret == "" {
-			BadRequest(w, "APP_SECRET 未配置：请在表单中填写部署主密钥（APP_SECRET），或先在 .env 配置后重启服务")
+			BadRequest(w, "APP_SECRET 鏈厤缃細璇峰湪琛ㄥ崟涓～鍐欓儴缃蹭富瀵嗛挜锛圓PP_SECRET锛夛紝鎴栧厛鍦?.env 閰嶇疆鍚庨噸鍚湇鍔?)
 			return
 		}
-		// 临时校验：用提交的 app_secret 验证强度
+		// 涓存椂鏍￠獙锛氱敤鎻愪氦鐨?app_secret 楠岃瘉寮哄害
 		if !config.ValidateJWTSecret(appSecret) {
-			BadRequest(w, "APP_SECRET 强度不足：请使用 32 位以上的随机字符串")
+			BadRequest(w, "APP_SECRET 寮哄害涓嶈冻锛氳浣跨敤 32 浣嶄互涓婄殑闅忔満瀛楃涓?)
 			return
 		}
-		// 保存到 lock 中供后续步骤使用
+		// 淇濆瓨鍒?lock 涓緵鍚庣画姝ラ浣跨敤
 		lk.AppSecretPlain = appSecret
 		lk.AppSecretSet = true
 		if lk.CreatedAt.IsZero() {
 			lk.CreatedAt = time.Now()
 		}
 		lk.Step1Done = true
-		// 暂不保存 lock（Step 3 完成时一起保存）
+		// 鏆備笉淇濆瓨 lock锛圫tep 3 瀹屾垚鏃朵竴璧蜂繚瀛橈級
 
-		// 1) 验证 PostgreSQL 连接
+		// 1) 楠岃瘉 PostgreSQL 杩炴帴
 		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 		defer cancel()
 		if err := db.ConnectPostgres(ctx, req.PostgresDSN, h.cfg.PostgresMaxConn, h.cfg.PostgresMinConn); err != nil {
 			slog.Warn("install step2: postgres connect failed", "error", err)
-			BadRequest(w, "PostgreSQL 连接失败：请检查 DSN 地址、端口、账号密码与网络连通性")
+			BadRequest(w, "PostgreSQL 杩炴帴澶辫触锛氳妫€鏌?DSN 鍦板潃銆佺鍙ｃ€佽处鍙峰瘑鐮佷笌缃戠粶杩為€氭€?)
 			return
 		}
 
-		// 2) Redis 可选
+		// 2) Redis 鍙€?
 		redisAddr := strings.TrimSpace(req.RedisAddr)
 		redisSet := redisAddr != ""
 		if redisSet {
@@ -449,7 +449,7 @@ func (h *InstallHandler) Step2(w http.ResponseWriter, r *http.Request) {
 			rc, rerr := db.NewRedisClient(rcfg)
 			if rerr != nil {
 				slog.Warn("install step2: redis init failed", "error", rerr)
-				BadRequest(w, "Redis 连接失败：请检查地址、端口与密码")
+				BadRequest(w, "Redis 杩炴帴澶辫触锛氳妫€鏌ュ湴鍧€銆佺鍙ｄ笌瀵嗙爜")
 				return
 			}
 			pingCtx, cancelPing := context.WithTimeout(r.Context(), 5*time.Second)
@@ -458,12 +458,12 @@ func (h *InstallHandler) Step2(w http.ResponseWriter, r *http.Request) {
 			_ = rc.Close()
 			if perr != nil {
 				slog.Warn("install step2: redis ping failed", "error", perr)
-				BadRequest(w, "Redis 连接失败：请检查地址、端口与密码")
+				BadRequest(w, "Redis 杩炴帴澶辫触锛氳妫€鏌ュ湴鍧€銆佺鍙ｄ笌瀵嗙爜")
 				return
 			}
 		}
 
-		// 3) 加密落盘（密钥使用提交的 app_secret）
+		// 3) 鍔犲瘑钀界洏锛堝瘑閽ヤ娇鐢ㄦ彁浜ょ殑 app_secret锛?
 		dsnEnc, err := encryptSecret(appSecret, req.PostgresDSN)
 		if err != nil {
 			slog.Error("install step2: encrypt dsn", "error", err)
@@ -478,7 +478,7 @@ func (h *InstallHandler) Step2(w http.ResponseWriter, r *http.Request) {
 		lk.RedisAddr = redisAddrEnc
 		lk.RedisPassword = redisPwdEnc
 		lk.RedisDB = req.RedisDB
-		// 不保存 app_secret_plain 到磁盘
+		// 涓嶄繚瀛?app_secret_plain 鍒扮鐩?
 		clearAppSecret := lk.AppSecretPlain
 		lk.AppSecretPlain = ""
 		if err := SaveInstallLock(lk); err != nil {
@@ -486,11 +486,11 @@ func (h *InstallHandler) Step2(w http.ResponseWriter, r *http.Request) {
 			InternalError(w, "failed to save install.lock")
 			return
 		}
-		lk.AppSecretPlain = clearAppSecret // 恢复内存中供后续使用
+		lk.AppSecretPlain = clearAppSecret // 鎭㈠鍐呭瓨涓緵鍚庣画浣跨敤
 
 		OK(w, map[string]interface{}{
 			"step2_done": true,
-			"message":    "数据库配置已保存并验证通过；请继续创建管理员账户",
+			"message":    "鏁版嵁搴撻厤缃凡淇濆瓨骞堕獙璇侀€氳繃锛涜缁х画鍒涘缓绠＄悊鍛樿处鎴?,
 		})
 		return
 	}
@@ -501,7 +501,7 @@ func (h *InstallHandler) Step2(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if lk.Completed {
-		BadRequest(w, "系统已完成安装")
+		BadRequest(w, "绯荤粺宸插畬鎴愬畨瑁?)
 		return
 	}
 
@@ -512,21 +512,21 @@ func (h *InstallHandler) Step2(w http.ResponseWriter, r *http.Request) {
 	}
 	req.PostgresDSN = strings.TrimSpace(req.PostgresDSN)
 	if req.PostgresDSN == "" {
-		BadRequest(w, "postgres_dsn 必填")
+		BadRequest(w, "postgres_dsn 蹇呭～")
 		return
 	}
 
-	// 1) 验证 PostgreSQL 连接；成功后 db.Pool 已就绪（Step 3 创建管理员依赖）
+	// 1) 楠岃瘉 PostgreSQL 杩炴帴锛涙垚鍔熷悗 db.Pool 宸插氨缁紙Step 3 鍒涘缓绠＄悊鍛樹緷璧栵級
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
 	if err := db.ConnectPostgres(ctx, req.PostgresDSN, h.cfg.PostgresMaxConn, h.cfg.PostgresMinConn); err != nil {
-		// 连接错误细节（host/port/user/DSN）仅记录服务端日志，客户端只给通用提示
+		// 杩炴帴閿欒缁嗚妭锛坔ost/port/user/DSN锛変粎璁板綍鏈嶅姟绔棩蹇楋紝瀹㈡埛绔彧缁欓€氱敤鎻愮ず
 		slog.Warn("install step2: postgres connect failed", "error", err)
-		BadRequest(w, "PostgreSQL 连接失败：请检查 DSN 地址、端口、账号密码与网络连通性")
+		BadRequest(w, "PostgreSQL 杩炴帴澶辫触锛氳妫€鏌?DSN 鍦板潃銆佺鍙ｃ€佽处鍙峰瘑鐮佷笌缃戠粶杩為€氭€?)
 		return
 	}
 
-	// 2) Redis 可选：填写则验证连通性（留空 = 不保存 Redis 配置，重启后按 env 默认并降级运行）
+	// 2) Redis 鍙€夛細濉啓鍒欓獙璇佽繛閫氭€э紙鐣欑┖ = 涓嶄繚瀛?Redis 閰嶇疆锛岄噸鍚悗鎸?env 榛樿骞堕檷绾ц繍琛岋級
 	redisAddr := strings.TrimSpace(req.RedisAddr)
 	redisSet := redisAddr != ""
 	if redisSet {
@@ -540,7 +540,7 @@ func (h *InstallHandler) Step2(w http.ResponseWriter, r *http.Request) {
 		rc, rerr := db.NewRedisClient(rcfg)
 		if rerr != nil {
 			slog.Warn("install step2: redis init failed", "error", rerr)
-			BadRequest(w, "Redis 连接失败：请检查地址、端口与密码")
+			BadRequest(w, "Redis 杩炴帴澶辫触锛氳妫€鏌ュ湴鍧€銆佺鍙ｄ笌瀵嗙爜")
 			return
 		}
 		pingCtx, cancelPing := context.WithTimeout(r.Context(), 5*time.Second)
@@ -549,12 +549,12 @@ func (h *InstallHandler) Step2(w http.ResponseWriter, r *http.Request) {
 		_ = rc.Close()
 		if perr != nil {
 			slog.Warn("install step2: redis ping failed", "error", perr)
-			BadRequest(w, "Redis 连接失败：请检查地址、端口与密码")
+			BadRequest(w, "Redis 杩炴帴澶辫触锛氳妫€鏌ュ湴鍧€銆佺鍙ｄ笌瀵嗙爜")
 			return
 		}
 	}
 
-	// 3) 加密落盘（密钥派生自 APP_SECRET，本步之前已校验其有效性）
+	// 3) 鍔犲瘑钀界洏锛堝瘑閽ユ淳鐢熻嚜 APP_SECRET锛屾湰姝ヤ箣鍓嶅凡鏍￠獙鍏舵湁鏁堟€э級
 	dsnEnc, err := encryptSecret(h.cfg.AppSecret, req.PostgresDSN)
 	if err != nil {
 		slog.Error("install step2: encrypt dsn", "error", err)
@@ -582,16 +582,16 @@ func (h *InstallHandler) Step2(w http.ResponseWriter, r *http.Request) {
 
 	OK(w, map[string]interface{}{
 		"step2_done": true,
-		"message":    "数据库配置已保存并验证通过；请继续创建管理员账户",
+		"message":    "鏁版嵁搴撻厤缃凡淇濆瓨骞堕獙璇侀€氳繃锛涜缁х画鍒涘缓绠＄悊鍛樿处鎴?,
 	})
 }
 
-// rebuildDBFromLock 从 install.lock 中解密 DSN 并重建 db.Pool（中断恢复用）。
-// 需要 APP_SECRET 有效，否则无法解密。
+// rebuildDBFromLock 浠?install.lock 涓В瀵?DSN 骞堕噸寤?db.Pool锛堜腑鏂仮澶嶇敤锛夈€?
+// 闇€瑕?APP_SECRET 鏈夋晥锛屽惁鍒欐棤娉曡В瀵嗐€?
 func (h *InstallHandler) rebuildDBFromLock(lk *InstallLock, r *http.Request) error {
 	appSecret := h.cfg.AppSecret
 	if !h.cfg.ValidateAppSecret() {
-		// APP_SECRET 未在环境变量配置，但 lock 中可能保存了 AppSecretPlain
+		// APP_SECRET 鏈湪鐜鍙橀噺閰嶇疆锛屼絾 lock 涓彲鑳戒繚瀛樹簡 AppSecretPlain
 		if lk.AppSecretPlain != "" {
 			appSecret = lk.AppSecretPlain
 		} else {
@@ -614,13 +614,13 @@ type Step3Request struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 	Name     string `json:"name"`
-	// AppSecret 在服务重启后 db.Pool 为 nil 时使用：从 lock 中解密 DSN 重建连接池
+	// AppSecret 鍦ㄦ湇鍔￠噸鍚悗 db.Pool 涓?nil 鏃朵娇鐢細浠?lock 涓В瀵?DSN 閲嶅缓杩炴帴姹?
 	AppSecret string `json:"app_secret,omitempty"`
 }
 
-// Step3 执行数据库迁移、创建首个 owner 管理员并标记安装完成。完成后安装入口关闭；
-// 由于 Step 2 保存的 DSN/Redis 配置需重启后全面生效，前端提示重启服务。
-// 支持中断恢复：当 db.Pool == nil 但 Step2Done == true 时尝试从 lock 解密 DSN 重建连接池。
+// Step3 鎵ц鏁版嵁搴撹縼绉汇€佸垱寤洪涓?owner 绠＄悊鍛樺苟鏍囪瀹夎瀹屾垚銆傚畬鎴愬悗瀹夎鍏ュ彛鍏抽棴锛?
+// 鐢变簬 Step 2 淇濆瓨鐨?DSN/Redis 閰嶇疆闇€閲嶅惎鍚庡叏闈㈢敓鏁堬紝鍓嶇鎻愮ず閲嶅惎鏈嶅姟銆?
+// 鏀寔涓柇鎭㈠锛氬綋 db.Pool == nil 浣?Step2Done == true 鏃跺皾璇曚粠 lock 瑙ｅ瘑 DSN 閲嶅缓杩炴帴姹犮€?
 // POST /v1/install/step3
 func (h *InstallHandler) Step3(w http.ResponseWriter, r *http.Request) {
 	lk, err := LoadInstallLock()
@@ -630,16 +630,16 @@ func (h *InstallHandler) Step3(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if lk.Completed {
-		BadRequest(w, "系统已完成安装")
+		BadRequest(w, "绯荤粺宸插畬鎴愬畨瑁?)
 		return
 	}
 	if !lk.Step2Done {
-		BadRequest(w, "请先完成数据库配置步骤")
+		BadRequest(w, "璇峰厛瀹屾垚鏁版嵁搴撻厤缃楠?)
 		return
 	}
-	// 中断恢复：Step2Done == true 但 db.Pool == nil（服务重启后），从 lock 解密 DSN 重建连接池
+	// 涓柇鎭㈠锛歋tep2Done == true 浣?db.Pool == nil锛堟湇鍔￠噸鍚悗锛夛紝浠?lock 瑙ｅ瘑 DSN 閲嶅缓杩炴帴姹?
 	if db.Pool == nil {
-		// 先解码请求体，获取可能携带的 app_secret 用于解密 DSN
+		// 鍏堣В鐮佽姹備綋锛岃幏鍙栧彲鑳芥惡甯︾殑 app_secret 鐢ㄤ簬瑙ｅ瘑 DSN
 		var req Step3Request
 		if err := DecodeJSON(w, r, &req); err != nil {
 			BadRequest(w, ErrInvalidReq)
@@ -653,31 +653,31 @@ func (h *InstallHandler) Step3(w http.ResponseWriter, r *http.Request) {
 			BadRequest(w, "password must be at least 8 characters")
 			return
 		}
-		// 如果 AppSecretPlain 为空，尝试用请求体中的 app_secret 兜底
+		// 濡傛灉 AppSecretPlain 涓虹┖锛屽皾璇曠敤璇锋眰浣撲腑鐨?app_secret 鍏滃簳
 		if req.AppSecret != "" {
 			if !config.ValidateJWTSecret(req.AppSecret) {
-				BadRequest(w, "APP_SECRET 强度不足")
+				BadRequest(w, "APP_SECRET 寮哄害涓嶈冻")
 				return
 			}
 			lk.AppSecretPlain = req.AppSecret
 		}
 		if err := h.rebuildDBFromLock(lk, r); err != nil {
 			slog.Error("install step3: rebuild pool from lock", "error", err)
-			BadRequest(w, "数据库连接已失效，请重新完成数据库配置步骤")
+			BadRequest(w, "鏁版嵁搴撹繛鎺ュ凡澶辨晥锛岃閲嶆柊瀹屾垚鏁版嵁搴撻厤缃楠?)
 			return
 		}
-		// 执行数据库迁移（幂等：已应用的迁移自动跳过）
+		// 鎵ц鏁版嵁搴撹縼绉伙紙骞傜瓑锛氬凡搴旂敤鐨勮縼绉昏嚜鍔ㄨ烦杩囷級
 		migrateCtx, migrateCancel := context.WithTimeout(r.Context(), 60*time.Second)
 		defer migrateCancel()
 		if err := db.RunAtlasMigrations(migrateCtx, db.Pool, "migrations"); err != nil {
 			slog.Error("install step3: run migrations", "error", err)
-			InternalError(w, "数据库初始化失败，请检查日志确认迁移错误")
+			InternalError(w, "鏁版嵁搴撳垵濮嬪寲澶辫触锛岃妫€鏌ユ棩蹇楃‘璁よ縼绉婚敊璇?)
 			return
 		}
-		// 幂等 seed 默认租户
+		// 骞傜瓑 seed 榛樿绉熸埛
 		if err := db.EnsureDefaultTenant(migrateCtx, db.Pool); err != nil {
 			slog.Error("install step3: ensure default tenant", "error", err)
-			InternalError(w, "默认租户初始化失败")
+			InternalError(w, "榛樿绉熸埛鍒濆鍖栧け璐?)
 			return
 		}
 
@@ -692,7 +692,7 @@ func (h *InstallHandler) Step3(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// 标记安装完成
+		// 鏍囪瀹夎瀹屾垚
 		lk.Step3Done = true
 		lk.Completed = true
 		lk.CompletedAt = time.Now()
@@ -710,7 +710,7 @@ func (h *InstallHandler) Step3(w http.ResponseWriter, r *http.Request) {
 
 		SetTokenCookie(w, token, int(h.cfg.JWTExpiration.Seconds()), h.cfg.CookieSecure)
 		Created(w, map[string]interface{}{
-			"message":   "安装完成，请重启服务使全部功能生效",
+			"message":   "瀹夎瀹屾垚锛岃閲嶅惎鏈嶅姟浣垮叏閮ㄥ姛鑳界敓鏁?,
 			"completed": true,
 			"restart":   true,
 			"user": map[string]string{
@@ -723,7 +723,7 @@ func (h *InstallHandler) Step3(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 非中断恢复路径：db.Pool 已就绪，直接解码请求体
+	// 闈炰腑鏂仮澶嶈矾寰勶細db.Pool 宸插氨缁紝鐩存帴瑙ｇ爜璇锋眰浣?
 	var req Step3Request
 	if err := DecodeJSON(w, r, &req); err != nil {
 		BadRequest(w, ErrInvalidReq)
@@ -738,18 +738,18 @@ func (h *InstallHandler) Step3(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 执行数据库迁移（幂等：已应用的迁移自动跳过）
+	// 鎵ц鏁版嵁搴撹縼绉伙紙骞傜瓑锛氬凡搴旂敤鐨勮縼绉昏嚜鍔ㄨ烦杩囷級
 	migrateCtx, migrateCancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer migrateCancel()
 	if err := db.RunAtlasMigrations(migrateCtx, db.Pool, "migrations"); err != nil {
 		slog.Error("install step3: run migrations", "error", err)
-		InternalError(w, "数据库初始化失败，请检查日志确认迁移错误")
+		InternalError(w, "鏁版嵁搴撳垵濮嬪寲澶辫触锛岃妫€鏌ユ棩蹇楃‘璁よ縼绉婚敊璇?)
 		return
 	}
-	// 幂等 seed 默认租户
+	// 骞傜瓑 seed 榛樿绉熸埛
 	if err := db.EnsureDefaultTenant(migrateCtx, db.Pool); err != nil {
 		slog.Error("install step3: ensure default tenant", "error", err)
-		InternalError(w, "默认租户初始化失败")
+		InternalError(w, "榛樿绉熸埛鍒濆鍖栧け璐?)
 		return
 	}
 
@@ -764,7 +764,7 @@ func (h *InstallHandler) Step3(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 标记安装完成（幂等：重复请求在第一步即被 lock.Completed 拦截）
+	// 鏍囪瀹夎瀹屾垚锛堝箓绛夛細閲嶅璇锋眰鍦ㄧ涓€姝ュ嵆琚?lock.Completed 鎷︽埅锛?
 	lk.Step3Done = true
 	lk.Completed = true
 	lk.CompletedAt = time.Now()
@@ -783,7 +783,7 @@ func (h *InstallHandler) Step3(w http.ResponseWriter, r *http.Request) {
 
 	SetTokenCookie(w, token, int(h.cfg.JWTExpiration.Seconds()), h.cfg.CookieSecure)
 	Created(w, map[string]interface{}{
-		"message":   "安装完成，请重启服务使全部功能生效",
+		"message":   "瀹夎瀹屾垚锛岃閲嶅惎鏈嶅姟浣垮叏閮ㄥ姛鑳界敓鏁?,
 		"completed": true,
 		"restart":   true,
 		"user": map[string]string{
@@ -795,18 +795,18 @@ func (h *InstallHandler) Step3(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ErrAlreadyInitialized 表示系统已存在 owner 账户，禁止重复初始化。
+// ErrAlreadyInitialized 琛ㄧず绯荤粺宸插瓨鍦?owner 璐︽埛锛岀姝㈤噸澶嶅垵濮嬪寲銆?
 var ErrAlreadyInitialized = errors.New("system already initialized")
 
-// createOwnerAccount 原子化创建首个 owner 账户（事务 + 咨询锁保证并发/读副本滞后下只初始化一次）。
-// 已存在 owner 时返回 ErrAlreadyInitialized。
+// createOwnerAccount 鍘熷瓙鍖栧垱寤洪涓?owner 璐︽埛锛堜簨鍔?+ 鍜ㄨ閿佷繚璇佸苟鍙?璇诲壇鏈粸鍚庝笅鍙垵濮嬪寲涓€娆★級銆?
+// 宸插瓨鍦?owner 鏃惰繑鍥?ErrAlreadyInitialized銆?
 func createOwnerAccount(ctx context.Context, email, name, password string) (string, error) {
 	tx, err := db.Pool.Begin(ctx)
 	if err != nil {
 		return "", err
 	}
 	defer tx.Rollback(ctx)
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('minicc_install'))`); err != nil {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('chiron_install'))`); err != nil {
 		return "", err
 	}
 	var count int
@@ -844,7 +844,7 @@ type SetupRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 	Name     string `json:"name"`
-	// AppSecret 在服务重启后 db.Pool 为 nil 时使用：从 lock 中解密 DSN 重建连接池
+	// AppSecret 鍦ㄦ湇鍔￠噸鍚悗 db.Pool 涓?nil 鏃朵娇鐢細浠?lock 涓В瀵?DSN 閲嶅缓杩炴帴姹?
 	AppSecret string `json:"app_secret,omitempty"`
 }
 
@@ -867,7 +867,7 @@ func (h *InstallHandler) Setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 中断恢复：db.Pool == nil（服务重启后），从 lock 重建连接池
+	// 涓柇鎭㈠锛歞b.Pool == nil锛堟湇鍔￠噸鍚悗锛夛紝浠?lock 閲嶅缓杩炴帴姹?
 	if db.Pool == nil {
 		lk, lkErr := LoadInstallLock()
 		if lkErr != nil {
@@ -876,41 +876,41 @@ func (h *InstallHandler) Setup(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !lk.Step2Done {
-			InternalError(w, "数据库未配置，请先完成数据库配置步骤")
+			InternalError(w, "鏁版嵁搴撴湭閰嶇疆锛岃鍏堝畬鎴愭暟鎹簱閰嶇疆姝ラ")
 			return
 		}
-		// 如果 AppSecretPlain 为空，尝试用请求体中的 app_secret 兜底
+		// 濡傛灉 AppSecretPlain 涓虹┖锛屽皾璇曠敤璇锋眰浣撲腑鐨?app_secret 鍏滃簳
 		if req.AppSecret != "" {
 			if !config.ValidateJWTSecret(req.AppSecret) {
-				BadRequest(w, "APP_SECRET 强度不足")
+				BadRequest(w, "APP_SECRET 寮哄害涓嶈冻")
 				return
 			}
 			lk.AppSecretPlain = req.AppSecret
 		}
 		if err := h.rebuildDBFromLock(lk, r); err != nil {
 			slog.Error("install setup: rebuild pool from lock", "error", err)
-			InternalError(w, "数据库连接已失效，请重新完成数据库配置步骤")
+			InternalError(w, "鏁版嵁搴撹繛鎺ュ凡澶辨晥锛岃閲嶆柊瀹屾垚鏁版嵁搴撻厤缃楠?)
 			return
 		}
 	}
 
-	// 执行数据库迁移（幂等：已应用的迁移自动跳过）
+	// 鎵ц鏁版嵁搴撹縼绉伙紙骞傜瓑锛氬凡搴旂敤鐨勮縼绉昏嚜鍔ㄨ烦杩囷級
 	migrateCtx, migrateCancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer migrateCancel()
 	if db.Pool != nil {
 		if err := db.RunAtlasMigrations(migrateCtx, db.Pool, "migrations"); err != nil {
 			slog.Error("install setup: run migrations", "error", err)
-			InternalError(w, "数据库初始化失败，请检查日志确认迁移错误")
+			InternalError(w, "鏁版嵁搴撳垵濮嬪寲澶辫触锛岃妫€鏌ユ棩蹇楃‘璁よ縼绉婚敊璇?)
 			return
 		}
-		// 幂等 seed 默认租户
+		// 骞傜瓑 seed 榛樿绉熸埛
 		if err := db.EnsureDefaultTenant(migrateCtx, db.Pool); err != nil {
 			slog.Error("install setup: ensure default tenant", "error", err)
-			InternalError(w, "默认租户初始化失败")
+			InternalError(w, "榛樿绉熸埛鍒濆鍖栧け璐?)
 			return
 		}
 	} else {
-		InternalError(w, "数据库连接不可用，请检查数据库配置")
+		InternalError(w, "鏁版嵁搴撹繛鎺ヤ笉鍙敤锛岃妫€鏌ユ暟鎹簱閰嶇疆")
 		return
 	}
 

@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -8,14 +8,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/athenavi/minicc/internal/auth"
+	"github.com/athenavi/chiron/internal/auth"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// ── fake 基础设施 ───────────────────────────────────────
+// 鈹€鈹€ fake 鍩虹璁炬柦 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// fakeCaptchaVerifier 是 auth.CaptchaVerifier 的测试替身。
+// fakeCaptchaVerifier 鏄?auth.CaptchaVerifier 鐨勬祴璇曟浛韬€?
 type fakeCaptchaVerifier struct {
 	err      error
 	lastCfg  *auth.CaptchaConfig
@@ -30,7 +30,7 @@ func (f *fakeCaptchaVerifier) Verify(ctx context.Context, cfg *auth.CaptchaConfi
 	return f.err
 }
 
-// memCounter 是 failCounterStore 的内存实现。
+// memCounter 鏄?failCounterStore 鐨勫唴瀛樺疄鐜般€?
 type memCounter struct {
 	counts    map[string]int
 	incrCalls int
@@ -51,7 +51,7 @@ func (m *memCounter) clear(ctx context.Context, ip string) {
 	delete(m.counts, ip)
 }
 
-// captchaScan 构造 ent_captcha_config 行扫描（列序与 loadConfig 一致）。
+// captchaScan 鏋勯€?ent_captcha_config 琛屾壂鎻忥紙鍒楀簭涓?loadConfig 涓€鑷达級銆?
 func captchaScan(provider, siteKey, secretEnc string, enabled bool) func(dest ...any) error {
 	return func(dest ...any) error {
 		*dest[0].(*string) = provider
@@ -70,7 +70,7 @@ func newTestCaptchaHandler(rowScan func(dest ...any) error, v auth.CaptchaVerifi
 			queryRow: func(sql string, args ...any) pgx.Row {
 				if strings.Contains(sql, "ent_captcha_config") {
 					if rowScan == nil {
-						return &fakeRow{} // ErrNoRows → 未配置
+						return &fakeRow{} // ErrNoRows 鈫?鏈厤缃?
 					}
 					return &fakeRow{scan: rowScan}
 				}
@@ -95,7 +95,7 @@ func testCaptchaReq(method, target, body string) *http.Request {
 	return req
 }
 
-// ── PublicConfig：只下发非敏感字段 ─────────────────────
+// 鈹€鈹€ PublicConfig锛氬彧涓嬪彂闈炴晱鎰熷瓧娈?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestCaptchaPublicConfig_Disabled(t *testing.T) {
 	h := newTestCaptchaHandler(nil, &fakeCaptchaVerifier{}, nil)
@@ -129,7 +129,7 @@ func TestCaptchaPublicConfig_EnabledNoSecretLeak(t *testing.T) {
 	}
 }
 
-// ── GetConfig：secret 脱敏回显 ─────────────────────────
+// 鈹€鈹€ GetConfig锛歴ecret 鑴辨晱鍥炴樉 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestCaptchaGetConfig_MasksSecret(t *testing.T) {
 	secretEnc, _ := auth.EncryptAESGCM(testEncKey, "top-captcha-secret")
@@ -149,7 +149,7 @@ func TestCaptchaGetConfig_MasksSecret(t *testing.T) {
 	}
 }
 
-// ── UpdateConfig：启用前置校验 ─────────────────────────
+// 鈹€鈹€ UpdateConfig锛氬惎鐢ㄥ墠缃牎楠?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestCaptchaUpdateConfig_Validation(t *testing.T) {
 	cases := []struct {
@@ -174,10 +174,10 @@ func TestCaptchaUpdateConfig_Validation(t *testing.T) {
 	}
 }
 
-// secret 传脱敏占位符 → 保留原值不报错。
+// secret 浼犺劚鏁忓崰浣嶇 鈫?淇濈暀鍘熷€间笉鎶ラ敊銆?
 func TestCaptchaUpdateConfig_MaskedSecretPlaceholderKept(t *testing.T) {
 	origEnc, _ := auth.EncryptAESGCM(testEncKey, "orig-secret")
-	// 既有配置（未启用），占位符更新后 secret 密文保持原值
+	// 鏃㈡湁閰嶇疆锛堟湭鍚敤锛夛紝鍗犱綅绗︽洿鏂板悗 secret 瀵嗘枃淇濇寔鍘熷€?
 	h := newTestCaptchaHandler(captchaScan(auth.CaptchaTurnstile, "k", origEnc, false), &fakeCaptchaVerifier{}, nil)
 	w := httptest.NewRecorder()
 	h.UpdateConfig(w, testCaptchaReq("PUT", "/v1/ent/captcha/config",
@@ -187,9 +187,9 @@ func TestCaptchaUpdateConfig_MaskedSecretPlaceholderKept(t *testing.T) {
 	}
 }
 
-// custom + verify_url + secret → 允许启用。
+// custom + verify_url + secret 鈫?鍏佽鍚敤銆?
 func TestCaptchaUpdateConfig_CustomOK(t *testing.T) {
-	// 既有 custom 配置（未启用，secret 已配置），启用并补 verify_url
+	// 鏃㈡湁 custom 閰嶇疆锛堟湭鍚敤锛宻ecret 宸查厤缃級锛屽惎鐢ㄥ苟琛?verify_url
 	origEnc, _ := auth.EncryptAESGCM(testEncKey, "orig-secret")
 	h := newTestCaptchaHandler(captchaScan(auth.CaptchaCustom, "", origEnc, false), &fakeCaptchaVerifier{}, nil)
 	w := httptest.NewRecorder()
@@ -200,7 +200,7 @@ func TestCaptchaUpdateConfig_CustomOK(t *testing.T) {
 	}
 }
 
-// ── Enforce 防滥用栅栏 ─────────────────────────────────
+// 鈹€鈹€ Enforce 闃叉互鐢ㄦ爡鏍?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func testCaptchaIP() string { return "192.0.2.1" }
 
@@ -210,7 +210,7 @@ func enforceRequest() *http.Request {
 	return req
 }
 
-// 未启用且失败未达阈值 → 放行（nil）。
+// 鏈惎鐢ㄤ笖澶辫触鏈揪闃堝€?鈫?鏀捐锛坣il锛夈€?
 func TestCaptchaEnforce_NotConfigured_Pass(t *testing.T) {
 	h := newTestCaptchaHandler(nil, &fakeCaptchaVerifier{}, newMemCounter())
 	w := httptest.NewRecorder()
@@ -222,7 +222,7 @@ func TestCaptchaEnforce_NotConfigured_Pass(t *testing.T) {
 	}
 }
 
-// 达硬上限 → 429。
+// 杈剧‖涓婇檺 鈫?429銆?
 func TestCaptchaEnforce_HardLimit_429(t *testing.T) {
 	counter := newMemCounter()
 	counter.counts[testCaptchaIP()] = captchaHardLimit
@@ -238,7 +238,7 @@ func TestCaptchaEnforce_HardLimit_429(t *testing.T) {
 	}
 }
 
-// 已启用但缺 token → 428 captcha_required（前端加载验证码组件的信号）。
+// 宸插惎鐢ㄤ絾缂?token 鈫?428 captcha_required锛堝墠绔姞杞介獙璇佺爜缁勪欢鐨勪俊鍙凤級銆?
 func TestCaptchaEnforce_MissingToken_428(t *testing.T) {
 	secretEnc, _ := auth.EncryptAESGCM(testEncKey, "s")
 	h := newTestCaptchaHandler(captchaScan(auth.CaptchaTurnstile, "k", secretEnc, true), &fakeCaptchaVerifier{}, newMemCounter())
@@ -255,7 +255,7 @@ func TestCaptchaEnforce_MissingToken_428(t *testing.T) {
 	}
 }
 
-// token 校验失败 → 403。
+// token 鏍￠獙澶辫触 鈫?403銆?
 func TestCaptchaEnforce_VerifyFailed_403(t *testing.T) {
 	secretEnc, _ := auth.EncryptAESGCM(testEncKey, "s")
 	v := &fakeCaptchaVerifier{err: auth.ErrCaptchaFailed}
@@ -271,7 +271,7 @@ func TestCaptchaEnforce_VerifyFailed_403(t *testing.T) {
 	}
 }
 
-// 服务商不可达 → fail-loud 502，绝不静默放行。
+// 鏈嶅姟鍟嗕笉鍙揪 鈫?fail-loud 502锛岀粷涓嶉潤榛樻斁琛屻€?
 func TestCaptchaEnforce_Unreachable_502(t *testing.T) {
 	secretEnc, _ := auth.EncryptAESGCM(testEncKey, "s")
 	v := &fakeCaptchaVerifier{err: auth.ErrCaptchaUnreachable}
@@ -287,7 +287,7 @@ func TestCaptchaEnforce_Unreachable_502(t *testing.T) {
 	}
 }
 
-// 校验成功 → 放行。
+// 鏍￠獙鎴愬姛 鈫?鏀捐銆?
 func TestCaptchaEnforce_VerifyOK_Pass(t *testing.T) {
 	secretEnc, _ := auth.EncryptAESGCM(testEncKey, "cap-secret")
 	v := &fakeCaptchaVerifier{}
@@ -309,12 +309,12 @@ func TestCaptchaEnforce_VerifyOK_Pass(t *testing.T) {
 	}
 }
 
-// 未全局启用但同 IP 失败 ≥ 阈值且已配置 secret → 升级强制验证码（428）。
+// 鏈叏灞€鍚敤浣嗗悓 IP 澶辫触 鈮?闃堝€间笖宸查厤缃?secret 鈫?鍗囩骇寮哄埗楠岃瘉鐮侊紙428锛夈€?
 func TestCaptchaEnforce_FailEscalation_428(t *testing.T) {
 	counter := newMemCounter()
 	counter.counts[testCaptchaIP()] = captchaFailThreshold
 	secretEnc, _ := auth.EncryptAESGCM(testEncKey, "s")
-	// enabled=false 但已配置
+	// enabled=false 浣嗗凡閰嶇疆
 	h := newTestCaptchaHandler(captchaScan(auth.CaptchaTurnstile, "k", secretEnc, false), &fakeCaptchaVerifier{}, counter)
 
 	w := httptest.NewRecorder()
@@ -326,7 +326,7 @@ func TestCaptchaEnforce_FailEscalation_428(t *testing.T) {
 	}
 }
 
-// 启用但 secret 缺失 → fail-loud 503，绝不静默放行。
+// 鍚敤浣?secret 缂哄け 鈫?fail-loud 503锛岀粷涓嶉潤榛樻斁琛屻€?
 func TestCaptchaEnforce_EnabledWithoutSecret_503(t *testing.T) {
 	h := newTestCaptchaHandler(captchaScan(auth.CaptchaTurnstile, "k", "", true), &fakeCaptchaVerifier{}, newMemCounter())
 
@@ -339,7 +339,7 @@ func TestCaptchaEnforce_EnabledWithoutSecret_503(t *testing.T) {
 	}
 }
 
-// ── 失败计数联动 ───────────────────────────────────────
+// 鈹€鈹€ 澶辫触璁℃暟鑱斿姩 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func TestCaptchaRecordAndClearFailures(t *testing.T) {
 	counter := newMemCounter()

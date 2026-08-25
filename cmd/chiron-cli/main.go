@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"fmt"
@@ -8,9 +8,9 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "minicc",
-	Short: "MiniCC CLI - AI Agent Platform Management Tool",
-	Long:  `MiniCC CLI provides commands to manage MiniCC services, instances, configuration, and health checks.`,
+	Use:   "chiron",
+	Short: "chiron CLI - AI Agent Platform Management Tool",
+	Long:  `Chiron CLI provides commands to manage Chiron services, instances, configuration, and health checks.`,
 }
 
 func init() {
@@ -31,3 +31,4 @@ func main() {
 		os.Exit(1)
 	}
 }
+

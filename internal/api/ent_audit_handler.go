@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"fmt"
@@ -6,28 +6,28 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/db"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/db"
 )
 
-// ── 企业审计日志查询 ─────────────────────────────────────────────────────
+// 鈹€鈹€ 浼佷笟瀹¤鏃ュ織鏌ヨ 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// EntAuditHandler 提供企业审计日志查询 API。
-// 路由注册由集成任务统一接入（本任务不注册）：
+// EntAuditHandler 鎻愪緵浼佷笟瀹¤鏃ュ織鏌ヨ API銆?
+// 璺敱娉ㄥ唽鐢遍泦鎴愪换鍔＄粺涓€鎺ュ叆锛堟湰浠诲姟涓嶆敞鍐岋級锛?
 //
 //	auditHandler := api.NewEntAuditHandler()
 //	auditHandler.RegisterRoutes(mux, authMW)
 type EntAuditHandler struct{}
 
-// NewEntAuditHandler 创建审计查询 handler。
+// NewEntAuditHandler 鍒涘缓瀹¤鏌ヨ handler銆?
 func NewEntAuditHandler() *EntAuditHandler { return &EntAuditHandler{} }
 
-// RegisterRoutes 挂载审计路由（authMW + RequireEntPerm("audit:read")）。
+// RegisterRoutes 鎸傝浇瀹¤璺敱锛坅uthMW + RequireEntPerm("audit:read")锛夈€?
 func (h *EntAuditHandler) RegisterRoutes(mux *http.ServeMux, authMW func(http.Handler) http.Handler) {
 	mux.Handle("GET /v1/ent/audit", authMW(RequireEntPerm("audit:read")(http.HandlerFunc(h.Query))))
 }
 
-// auditQueryFilter 审计查询的归一化过滤条件（时间范围与分页已强制收敛）。
+// auditQueryFilter 瀹¤鏌ヨ鐨勫綊涓€鍖栬繃婊ゆ潯浠讹紙鏃堕棿鑼冨洿涓庡垎椤靛凡寮哄埗鏀舵暃锛夈€?
 type auditQueryFilter struct {
 	TenantID     string
 	UserID       string
@@ -41,10 +41,10 @@ type auditQueryFilter struct {
 
 const auditMaxRange = 7 * 24 * time.Hour
 
-// parseAuditQuery 解析并强制收敛查询参数（纯函数，独立可测）：
-//   - 时间范围必填语义：from/to 缺省时强制最近 7 天；
-//     显式范围超过 7 天时收敛为 to-7d ~ to；from >= to 报错；
-//   - 强制分页：page>=1，page_size 缺省 50、上限 100。
+// parseAuditQuery 瑙ｆ瀽骞跺己鍒舵敹鏁涙煡璇㈠弬鏁帮紙绾嚱鏁帮紝鐙珛鍙祴锛夛細
+//   - 鏃堕棿鑼冨洿蹇呭～璇箟锛歠rom/to 缂虹渷鏃跺己鍒舵渶杩?7 澶╋紱
+//     鏄惧紡鑼冨洿瓒呰繃 7 澶╂椂鏀舵暃涓?to-7d ~ to锛沠rom >= to 鎶ラ敊锛?
+//   - 寮哄埗鍒嗛〉锛歱age>=1锛宲age_size 缂虹渷 50銆佷笂闄?100銆?
 func parseAuditQuery(q url.Values, now time.Time) (auditQueryFilter, error) {
 	f := auditQueryFilter{
 		UserID:       q.Get("user_id"),
@@ -80,7 +80,7 @@ func parseAuditQuery(q url.Values, now time.Time) (auditQueryFilter, error) {
 	if !f.From.Before(f.To) {
 		return f, fmt.Errorf("from must be before to")
 	}
-	// 时间范围上限 7 天（防止全表扫描，保证命中 idx_audit_logs_tenant_time）
+	// 鏃堕棿鑼冨洿涓婇檺 7 澶╋紙闃叉鍏ㄨ〃鎵弿锛屼繚璇佸懡涓?idx_audit_logs_tenant_time锛?
 	if f.To.Sub(f.From) > auditMaxRange {
 		f.From = f.To.Add(-auditMaxRange)
 	}
@@ -105,7 +105,7 @@ func parseAuditQuery(q url.Values, now time.Time) (auditQueryFilter, error) {
 	return f, nil
 }
 
-// auditLogRow 审计查询响应行。
+// auditLogRow 瀹¤鏌ヨ鍝嶅簲琛屻€?
 type auditLogRow struct {
 	ID           string    `json:"id"`
 	TenantID     string    `json:"tenant_id"`
@@ -119,8 +119,8 @@ type auditLogRow struct {
 }
 
 // Query GET /v1/ent/audit?user_id=&action=&resource_type=&from=&to=&page=&page_size=
-// 租户隔离：claims.TenantID 优先，缺省回退默认租户；纯 SQL 走
-// idx_audit_logs_tenant_time(tenant_id, created_at DESC) 索引。
+// 绉熸埛闅旂锛歝laims.TenantID 浼樺厛锛岀己鐪佸洖閫€榛樿绉熸埛锛涚函 SQL 璧?
+// idx_audit_logs_tenant_time(tenant_id, created_at DESC) 绱㈠紩銆?
 func (h *EntAuditHandler) Query(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	if claims == nil {

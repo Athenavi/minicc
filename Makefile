@@ -1,6 +1,6 @@
-.PHONY: all build run clean test lint fmt
+﻿.PHONY: all build run clean test lint fmt
 
-APP=minicc
+APP=chiron
 BUILD_DIR=build
 
 all: fmt lint test build
@@ -28,7 +28,7 @@ clean:
 
 dev:
 	@echo "starting dev server..."
-	@echo "  POSTGRES_DSN=postgres://minicc:minicc@localhost:5432/minicc?sslmode=disable"
+	@echo "  POSTGRES_DSN=postgres://chiron:chiron@localhost:5432/chiron?sslmode=disable"
 	@echo "  REDIS_ADDR=localhost:6379"
 	$(MAKE) run
 
@@ -40,3 +40,4 @@ docker-run:
 	docker compose up -d
 
 .PHONY: all build run clean test lint fmt dev docker-build docker-run
+

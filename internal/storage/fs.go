@@ -1,4 +1,4 @@
-package storage
+﻿package storage
 
 import (
 	"context"
@@ -104,7 +104,7 @@ func (s *LocalStore) safePath(path string) (string, error) {
 	// Resolve symlinks and verify the real path is still under root.
 	resolved, err := filepath.EvalSymlinks(cleaned)
 	if err != nil {
-		// File may not exist yet (for writes) — check the parent directory.
+		// File may not exist yet (for writes) 鈥?check the parent directory.
 		resolved, err = filepath.EvalSymlinks(filepath.Dir(cleaned))
 		if err != nil {
 			return cleaned, nil // best effort; let the OS handle it
@@ -121,7 +121,7 @@ func (s *LocalStore) safePath(path string) (string, error) {
 	return cleaned, nil
 }
 
-// ─── Store helpers ─────────────────────────────────────────────────────────
+// 鈹€鈹€鈹€ Store helpers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 func NewStore(backend, root, endpoint, bucket, accessKey, secretKey string, useSSL bool) (FileStore, error) {
 	switch backend {

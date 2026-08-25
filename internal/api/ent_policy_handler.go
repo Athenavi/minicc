@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -10,19 +10,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/db"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/db"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
-// ── 企业合规策略：类型与错误 ─────────────────────────────────────────────
+// 鈹€鈹€ 浼佷笟鍚堣绛栫暐锛氱被鍨嬩笌閿欒 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// ErrModelNotAllowed 表示请求的模型不在租户/角色白名单内（403 语义）。
-// 集成任务（如 /submit 拦截）应将该错误映射为 HTTP 403。
+// ErrModelNotAllowed 琛ㄧず璇锋眰鐨勬ā鍨嬩笉鍦ㄧ鎴?瑙掕壊鐧藉悕鍗曞唴锛?03 璇箟锛夈€?
+// 闆嗘垚浠诲姟锛堝 /submit 鎷︽埅锛夊簲灏嗚閿欒鏄犲皠涓?HTTP 403銆?
 var ErrModelNotAllowed = errors.New("model not allowed by enterprise policy")
 
-// EntTenantPolicy 对应 ent_tenant_policies 表（租户级隐私/留存策略）。
+// EntTenantPolicy 瀵瑰簲 ent_tenant_policies 琛紙绉熸埛绾ч殣绉?鐣欏瓨绛栫暐锛夈€?
 type EntTenantPolicy struct {
 	TenantID          string          `json:"tenant_id"`
 	PrivacyMode       bool            `json:"privacy_mode"`
@@ -32,8 +32,8 @@ type EntTenantPolicy struct {
 	UpdatedAt         time.Time       `json:"updated_at"`
 }
 
-// EntModelPolicy 对应 ent_model_policies 表（模型白名单与每模型限速）。
-// RoleID 为 nil 表示租户级兜底策略。
+// EntModelPolicy 瀵瑰簲 ent_model_policies 琛紙妯″瀷鐧藉悕鍗曚笌姣忔ā鍨嬮檺閫燂級銆?
+// RoleID 涓?nil 琛ㄧず绉熸埛绾у厹搴曠瓥鐣ャ€?
 type EntModelPolicy struct {
 	ID               string                    `json:"id"`
 	TenantID         string                    `json:"tenant_id"`
@@ -44,27 +44,27 @@ type EntModelPolicy struct {
 	UpdatedAt        time.Time                 `json:"updated_at"`
 }
 
-// ── Handler ──────────────────────────────────────────────────────────────
+// 鈹€鈹€ Handler 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// EntPolicyHandler 提供企业合规策略 API（租户隐私策略 / 模型访问策略 CRUD），
-// 并导出供集成任务使用的强制点函数（EnforceEnterprisePolicy 等）。
-// 路由注册由集成任务统一接入（本任务不注册）：
+// EntPolicyHandler 鎻愪緵浼佷笟鍚堣绛栫暐 API锛堢鎴烽殣绉佺瓥鐣?/ 妯″瀷璁块棶绛栫暐 CRUD锛夛紝
+// 骞跺鍑轰緵闆嗘垚浠诲姟浣跨敤鐨勫己鍒剁偣鍑芥暟锛圗nforceEnterprisePolicy 绛夛級銆?
+// 璺敱娉ㄥ唽鐢遍泦鎴愪换鍔＄粺涓€鎺ュ叆锛堟湰浠诲姟涓嶆敞鍐岋級锛?
 //
 //	policyHandler := api.NewEntPolicyHandler()
 //	policyHandler.RegisterRoutes(mux, authMW)
 type EntPolicyHandler struct {
-	// resolveAllowed 解析用户适用的模型白名单。
-	// 返回 (allowed, hasPolicy, err)：hasPolicy=false 表示无任何策略（放行）。
-	// nil 时使用默认 PG 实现；测试可注入 fake。
+	// resolveAllowed 瑙ｆ瀽鐢ㄦ埛閫傜敤鐨勬ā鍨嬬櫧鍚嶅崟銆?
+	// 杩斿洖 (allowed, hasPolicy, err)锛歨asPolicy=false 琛ㄧず鏃犱换浣曠瓥鐣ワ紙鏀捐锛夈€?
+	// nil 鏃朵娇鐢ㄩ粯璁?PG 瀹炵幇锛涙祴璇曞彲娉ㄥ叆 fake銆?
 	resolveAllowed func(ctx context.Context, tenantID, userID string) ([]string, bool, error)
 }
 
-// NewEntPolicyHandler 创建策略 handler（默认 PG 实现）。
+// NewEntPolicyHandler 鍒涘缓绛栫暐 handler锛堥粯璁?PG 瀹炵幇锛夈€?
 func NewEntPolicyHandler() *EntPolicyHandler {
 	return &EntPolicyHandler{resolveAllowed: defaultResolveAllowedModels}
 }
 
-// RegisterRoutes 挂载策略路由（authMW + RequireEntPerm("policy:manage")）。
+// RegisterRoutes 鎸傝浇绛栫暐璺敱锛坅uthMW + RequireEntPerm("policy:manage")锛夈€?
 func (h *EntPolicyHandler) RegisterRoutes(mux *http.ServeMux, authMW func(http.Handler) http.Handler) {
 	permMW := RequireEntPerm("policy:manage")
 	handle := func(pattern string, hf http.HandlerFunc) {
@@ -79,8 +79,8 @@ func (h *EntPolicyHandler) RegisterRoutes(mux *http.ServeMux, authMW func(http.H
 	handle("DELETE /v1/ent/model-policies/{id}", h.DeleteModelPolicy)
 }
 
-// entPolicyTenantID 取当前请求的租户 ID：claims 优先，缺省回退默认租户
-// （现行登录链路未签发 tenant_id claim，单租户模式下恒为默认租户）。
+// entPolicyTenantID 鍙栧綋鍓嶈姹傜殑绉熸埛 ID锛歝laims 浼樺厛锛岀己鐪佸洖閫€榛樿绉熸埛
+// 锛堢幇琛岀櫥褰曢摼璺湭绛惧彂 tenant_id claim锛屽崟绉熸埛妯″紡涓嬫亽涓洪粯璁ょ鎴凤級銆?
 func entPolicyTenantID(claims *auth.Claims) string {
 	if claims != nil && claims.TenantID != "" {
 		return claims.TenantID
@@ -88,14 +88,14 @@ func entPolicyTenantID(claims *auth.Claims) string {
 	return DefaultTenantID
 }
 
-// ── 强制点函数（导出给集成任务，独立可测） ────────────────────────────────
+// 鈹€鈹€ 寮哄埗鐐瑰嚱鏁帮紙瀵煎嚭缁欓泦鎴愪换鍔★紝鐙珛鍙祴锛?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// EnforceEnterprisePolicy 校验 modelID 是否在该用户适用的模型白名单内。
+// EnforceEnterprisePolicy 鏍￠獙 modelID 鏄惁鍦ㄨ鐢ㄦ埛閫傜敤鐨勬ā鍨嬬櫧鍚嶅崟鍐呫€?
 //
-// 解析规则：role 精确策略优先（用户直接角色 ∪ 群组成员角色的任一命中），
-// 缺失则回退租户级策略（role_id IS NULL）；两者都无 → 放行。
-// 任何查询失败一律 fail-open（放行 + slog.Warn），保证策略基础设施故障
-// 不阻断业务链路。model 不在白名单返回 ErrModelNotAllowed（403 语义）。
+// 瑙ｆ瀽瑙勫垯锛歳ole 绮剧‘绛栫暐浼樺厛锛堢敤鎴风洿鎺ヨ鑹?鈭?缇ょ粍鎴愬憳瑙掕壊鐨勪换涓€鍛戒腑锛夛紝
+// 缂哄け鍒欏洖閫€绉熸埛绾х瓥鐣ワ紙role_id IS NULL锛夛紱涓よ€呴兘鏃?鈫?鏀捐銆?
+// 浠讳綍鏌ヨ澶辫触涓€寰?fail-open锛堟斁琛?+ slog.Warn锛夛紝淇濊瘉绛栫暐鍩虹璁炬柦鏁呴殰
+// 涓嶉樆鏂笟鍔￠摼璺€俶odel 涓嶅湪鐧藉悕鍗曡繑鍥?ErrModelNotAllowed锛?03 璇箟锛夈€?
 func (h *EntPolicyHandler) EnforceEnterprisePolicy(r *http.Request, claims *auth.Claims, modelID string) error {
 	if modelID == "" {
 		return nil
@@ -121,17 +121,17 @@ func (h *EntPolicyHandler) EnforceEnterprisePolicy(r *http.Request, claims *auth
 	return ErrModelNotAllowed
 }
 
-// defaultPolicyHandler 供包级强制点函数使用的默认实例。
+// defaultPolicyHandler 渚涘寘绾у己鍒剁偣鍑芥暟浣跨敤鐨勯粯璁ゅ疄渚嬨€?
 var defaultPolicyHandler = NewEntPolicyHandler()
 
-// EnforceEnterprisePolicy 包级入口（签名同方法版本），集成任务直接调用。
+// EnforceEnterprisePolicy 鍖呯骇鍏ュ彛锛堢鍚嶅悓鏂规硶鐗堟湰锛夛紝闆嗘垚浠诲姟鐩存帴璋冪敤銆?
 func EnforceEnterprisePolicy(r *http.Request, claims *auth.Claims, modelID string) error {
 	return defaultPolicyHandler.EnforceEnterprisePolicy(r, claims, modelID)
 }
 
-// ResolveAllowedModels 返回用户视角的可用模型清单：
-// 有生效策略时返回白名单；无任何策略时返回 admin_model_configs 全量模型。
-// 查询失败返回 error（供 GET /v1/models 改造后按 fail-open 处理）。
+// ResolveAllowedModels 杩斿洖鐢ㄦ埛瑙嗚鐨勫彲鐢ㄦā鍨嬫竻鍗曪細
+// 鏈夌敓鏁堢瓥鐣ユ椂杩斿洖鐧藉悕鍗曪紱鏃犱换浣曠瓥鐣ユ椂杩斿洖 admin_model_configs 鍏ㄩ噺妯″瀷銆?
+// 鏌ヨ澶辫触杩斿洖 error锛堜緵 GET /v1/models 鏀归€犲悗鎸?fail-open 澶勭悊锛夈€?
 func (h *EntPolicyHandler) ResolveAllowedModels(ctx context.Context, tenantID, userID string) ([]string, error) {
 	allowed, hasPolicy, err := h.resolveAllowed(ctx, tenantID, userID)
 	if err != nil {
@@ -146,13 +146,13 @@ func (h *EntPolicyHandler) ResolveAllowedModels(ctx context.Context, tenantID, u
 	return h.allModelIDs(ctx)
 }
 
-// ResolveAllowedModels 包级入口。
+// ResolveAllowedModels 鍖呯骇鍏ュ彛銆?
 func ResolveAllowedModels(ctx context.Context, tenantID, userID string) ([]string, error) {
 	return defaultPolicyHandler.ResolveAllowedModels(ctx, tenantID, userID)
 }
 
-// GetTenantPrivacyMode 返回租户是否开启隐私模式（无记录 → false）。
-// 集成任务据此在转发 Python 引擎请求时注入 X-Privacy-Mode: no_retention 头。
+// GetTenantPrivacyMode 杩斿洖绉熸埛鏄惁寮€鍚殣绉佹ā寮忥紙鏃犺褰?鈫?false锛夈€?
+// 闆嗘垚浠诲姟鎹鍦ㄨ浆鍙?Python 寮曟搸璇锋眰鏃舵敞鍏?X-Privacy-Mode: no_retention 澶淬€?
 func (h *EntPolicyHandler) GetTenantPrivacyMode(ctx context.Context, tenantID string) (bool, error) {
 	pool := db.ReadPool()
 	if pool == nil {
@@ -170,12 +170,12 @@ func (h *EntPolicyHandler) GetTenantPrivacyMode(ctx context.Context, tenantID st
 	return mode, nil
 }
 
-// GetTenantPrivacyMode 包级入口。
+// GetTenantPrivacyMode 鍖呯骇鍏ュ彛銆?
 func GetTenantPrivacyMode(ctx context.Context, tenantID string) (bool, error) {
 	return defaultPolicyHandler.GetTenantPrivacyMode(ctx, tenantID)
 }
 
-// modelRateLua 单键窗口限流原子脚本：超限返回 0，否则计数 +1 并返回 1。
+// modelRateLua 鍗曢敭绐楀彛闄愭祦鍘熷瓙鑴氭湰锛氳秴闄愯繑鍥?0锛屽惁鍒欒鏁?+1 骞惰繑鍥?1銆?
 const modelRateLua = `
 local cur = tonumber(redis.call("GET", KEYS[1]) or "0")
 if cur >= tonumber(ARGV[1]) then return 0 end
@@ -184,10 +184,10 @@ redis.call("EXPIRE", KEYS[1], ARGV[2])
 return 1
 `
 
-// CheckModelRate 每模型每租户速率检查（RPM，60s 窗口）。
-// 限速值优先取 ent_model_policies.per_model_limits[model]["rpm"]（租户级策略），
-// 缺省回退入参 rpmLimit（调用方从 admin_model_configs.max_rpm 读取）。
-// 键格式 model:{model}:{tenant}；limit<=0 或 Redis 不可用/出错时放行（fail-open）。
+// CheckModelRate 姣忔ā鍨嬫瘡绉熸埛閫熺巼妫€鏌ワ紙RPM锛?0s 绐楀彛锛夈€?
+// 闄愰€熷€间紭鍏堝彇 ent_model_policies.per_model_limits[model]["rpm"]锛堢鎴风骇绛栫暐锛夛紝
+// 缂虹渷鍥為€€鍏ュ弬 rpmLimit锛堣皟鐢ㄦ柟浠?admin_model_configs.max_rpm 璇诲彇锛夈€?
+// 閿牸寮?model:{model}:{tenant}锛沴imit<=0 鎴?Redis 涓嶅彲鐢?鍑洪敊鏃舵斁琛岋紙fail-open锛夈€?
 func (h *EntPolicyHandler) CheckModelRate(ctx context.Context, tenantID, modelID string, rpmLimit int) error {
 	limit := rpmLimit
 	if policyLimit, err := h.policyModelRPM(ctx, tenantID, modelID); err == nil && policyLimit > 0 {
@@ -213,16 +213,16 @@ func (h *EntPolicyHandler) CheckModelRate(ctx context.Context, tenantID, modelID
 	return nil
 }
 
-// CheckModelRate 包级入口。
+// CheckModelRate 鍖呯骇鍏ュ彛銆?
 func CheckModelRate(ctx context.Context, tenantID, modelID string, rpmLimit int) error {
 	return defaultPolicyHandler.CheckModelRate(ctx, tenantID, modelID, rpmLimit)
 }
 
-// ── 默认 PG 解析实现 ─────────────────────────────────────────────────────
+// 鈹€鈹€ 榛樿 PG 瑙ｆ瀽瀹炵幇 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// defaultResolveAllowedModels 从 PG 解析用户适用的模型白名单。
-// 步骤：tenantID 缺省经 users 表解析 → 聚合用户角色（直接 ∪ 群组）→
-// role 精确策略优先、租户级兜底。无策略返回 (nil, false, nil)。
+// defaultResolveAllowedModels 浠?PG 瑙ｆ瀽鐢ㄦ埛閫傜敤鐨勬ā鍨嬬櫧鍚嶅崟銆?
+// 姝ラ锛歵enantID 缂虹渷缁?users 琛ㄨВ鏋?鈫?鑱氬悎鐢ㄦ埛瑙掕壊锛堢洿鎺?鈭?缇ょ粍锛夆啋
+// role 绮剧‘绛栫暐浼樺厛銆佺鎴风骇鍏滃簳銆傛棤绛栫暐杩斿洖 (nil, false, nil)銆?
 func defaultResolveAllowedModels(ctx context.Context, tenantID, userID string) ([]string, bool, error) {
 	pool := db.ReadPool()
 	if pool == nil {
@@ -239,7 +239,7 @@ func defaultResolveAllowedModels(ctx context.Context, tenantID, userID string) (
 		}
 	}
 
-	// 用户角色集合：直接角色 ∪ 群组成员角色
+	// 鐢ㄦ埛瑙掕壊闆嗗悎锛氱洿鎺ヨ鑹?鈭?缇ょ粍鎴愬憳瑙掕壊
 	roleIDs := []string{}
 	if userID != "" {
 		rows, err := pool.Query(ctx,
@@ -265,7 +265,7 @@ func defaultResolveAllowedModels(ctx context.Context, tenantID, userID string) (
 		}
 	}
 
-	// role 精确策略优先（role_id IS NULL 排后），命中第一条即生效
+	// role 绮剧‘绛栫暐浼樺厛锛坮ole_id IS NULL 鎺掑悗锛夛紝鍛戒腑绗竴鏉″嵆鐢熸晥
 	var allowed []string
 	err := pool.QueryRow(ctx,
 		`SELECT allowed_models FROM ent_model_policies
@@ -281,7 +281,7 @@ func defaultResolveAllowedModels(ctx context.Context, tenantID, userID string) (
 	return allowed, true, nil
 }
 
-// allModelIDs 返回 admin_model_configs 全量 model_id（模型清单直接读该表）。
+// allModelIDs 杩斿洖 admin_model_configs 鍏ㄩ噺 model_id锛堟ā鍨嬫竻鍗曠洿鎺ヨ璇ヨ〃锛夈€?
 func (h *EntPolicyHandler) allModelIDs(ctx context.Context) ([]string, error) {
 	pool := db.ReadPool()
 	if pool == nil {
@@ -303,7 +303,7 @@ func (h *EntPolicyHandler) allModelIDs(ctx context.Context) ([]string, error) {
 	return models, rows.Err()
 }
 
-// policyModelRPM 读取租户级策略 per_model_limits[model]["rpm"]（无 → 0）。
+// policyModelRPM 璇诲彇绉熸埛绾х瓥鐣?per_model_limits[model]["rpm"]锛堟棤 鈫?0锛夈€?
 func (h *EntPolicyHandler) policyModelRPM(ctx context.Context, tenantID, modelID string) (int, error) {
 	pool := db.ReadPool()
 	if pool == nil {
@@ -331,9 +331,9 @@ func (h *EntPolicyHandler) policyModelRPM(ctx context.Context, tenantID, modelID
 	return 0, nil
 }
 
-// ── 租户隐私策略端点 ─────────────────────────────────────────────────────
+// 鈹€鈹€ 绉熸埛闅愮绛栫暐绔偣 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// GetPrivacy GET /v1/ent/privacy —— 读取当前租户策略（无记录返回默认值）。
+// GetPrivacy GET /v1/ent/privacy 鈥斺€?璇诲彇褰撳墠绉熸埛绛栫暐锛堟棤璁板綍杩斿洖榛樿鍊硷級銆?
 func (h *EntPolicyHandler) GetPrivacy(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	if claims == nil {
@@ -367,7 +367,7 @@ func (h *EntPolicyHandler) GetPrivacy(w http.ResponseWriter, r *http.Request) {
 	OK(w, p)
 }
 
-// PutPrivacy PUT /v1/ent/privacy —— UPSERT 当前租户策略。
+// PutPrivacy PUT /v1/ent/privacy 鈥斺€?UPSERT 褰撳墠绉熸埛绛栫暐銆?
 func (h *EntPolicyHandler) PutPrivacy(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	if claims == nil {
@@ -419,9 +419,9 @@ func (h *EntPolicyHandler) PutPrivacy(w http.ResponseWriter, r *http.Request) {
 	OK(w, p)
 }
 
-// ── 模型访问策略端点 ─────────────────────────────────────────────────────
+// 鈹€鈹€ 妯″瀷璁块棶绛栫暐绔偣 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// validModelIDSet 从 admin_model_configs 读取合法 model_id 集合（白名单校验用）。
+// validModelIDSet 浠?admin_model_configs 璇诲彇鍚堟硶 model_id 闆嗗悎锛堢櫧鍚嶅崟鏍￠獙鐢級銆?
 func validModelIDSet(ctx context.Context) (map[string]bool, error) {
 	pool := db.ReadPool()
 	if pool == nil {
@@ -443,8 +443,8 @@ func validModelIDSet(ctx context.Context) (map[string]bool, error) {
 	return set, rows.Err()
 }
 
-// validateAllowedModels 校验白名单元素均存在于 admin_model_configs.model_id，
-// 返回非法元素列表（空 = 合法）。
+// validateAllowedModels 鏍￠獙鐧藉悕鍗曞厓绱犲潎瀛樺湪浜?admin_model_configs.model_id锛?
+// 杩斿洖闈炴硶鍏冪礌鍒楄〃锛堢┖ = 鍚堟硶锛夈€?
 func validateAllowedModels(ctx context.Context, models []string) ([]string, error) {
 	if len(models) == 0 {
 		return nil, nil
@@ -477,7 +477,7 @@ func scanModelPolicy(row interface{ Scan(...any) error }) (*EntModelPolicy, erro
 	return &p, nil
 }
 
-// ListModelPolicies GET /v1/ent/model-policies —— 当前租户全部策略。
+// ListModelPolicies GET /v1/ent/model-policies 鈥斺€?褰撳墠绉熸埛鍏ㄩ儴绛栫暐銆?
 func (h *EntPolicyHandler) ListModelPolicies(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	if claims == nil {
@@ -515,7 +515,7 @@ func (h *EntPolicyHandler) ListModelPolicies(w http.ResponseWriter, r *http.Requ
 	OK(w, policies)
 }
 
-// decodeModelPolicyBody 解析创建/更新请求体并做字段校验（白名单元素合法性除外）。
+// decodeModelPolicyBody 瑙ｆ瀽鍒涘缓/鏇存柊璇锋眰浣撳苟鍋氬瓧娈垫牎楠岋紙鐧藉悕鍗曞厓绱犲悎娉曟€ч櫎澶栵級銆?
 func decodeModelPolicyBody(w http.ResponseWriter, r *http.Request) (*EntModelPolicy, bool) {
 	var body struct {
 		RoleID         string                    `json:"role_id"`
@@ -553,8 +553,8 @@ func decodeModelPolicyBody(w http.ResponseWriter, r *http.Request) (*EntModelPol
 }
 
 // CreateModelPolicy POST /v1/ent/model-policies
-// allowed_models 元素必须存在于 admin_model_configs.model_id（违反 422）；
-// UNIQUE NULLS NOT DISTINCT(tenant_id, role_id) 冲突返回 409。
+// allowed_models 鍏冪礌蹇呴』瀛樺湪浜?admin_model_configs.model_id锛堣繚鍙?422锛夛紱
+// UNIQUE NULLS NOT DISTINCT(tenant_id, role_id) 鍐茬獊杩斿洖 409銆?
 func (h *EntPolicyHandler) CreateModelPolicy(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	if claims == nil {
@@ -630,8 +630,8 @@ func (h *EntPolicyHandler) GetModelPolicy(w http.ResponseWriter, r *http.Request
 	OK(w, p)
 }
 
-// UpdateModelPolicy PUT /v1/ent/model-policies/{id}（全量替换 allowed_models /
-// per_model_limits / role_id；校验规则同创建）。
+// UpdateModelPolicy PUT /v1/ent/model-policies/{id}锛堝叏閲忔浛鎹?allowed_models /
+// per_model_limits / role_id锛涙牎楠岃鍒欏悓鍒涘缓锛夈€?
 func (h *EntPolicyHandler) UpdateModelPolicy(w http.ResponseWriter, r *http.Request) {
 	if claims := auth.GetClaims(r.Context()); claims == nil {
 		Unauthorized(w, ErrAuthRequired)

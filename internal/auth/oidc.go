@@ -1,4 +1,4 @@
-package auth
+﻿package auth
 
 import (
 	"context"
@@ -18,66 +18,66 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// ── state / nonce 编解码 ─────────────────────────────────
+// 鈹€鈹€ state / nonce 缂栬В鐮?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 //
-// state 令牌格式: base64url(JSON payload) + "." + base64url(HMAC-SHA256(payload))。
-// payload 携带 provider_id / nonce / 过期时间，防 CSRF（HMAC 不可伪造）与重放（短 TTL）。
+// state 浠ょ墝鏍煎紡: base64url(JSON payload) + "." + base64url(HMAC-SHA256(payload))銆?
+// payload 鎼哄甫 provider_id / nonce / 杩囨湡鏃堕棿锛岄槻 CSRF锛圚MAC 涓嶅彲浼€狅級涓庨噸鏀撅紙鐭?TTL锛夈€?
 
 var (
-	// ErrStateInvalid 表示 state 结构非法或 HMAC 校验失败（含篡改）。
+	// ErrStateInvalid 琛ㄧず state 缁撴瀯闈炴硶鎴?HMAC 鏍￠獙澶辫触锛堝惈绡℃敼锛夈€?
 	ErrStateInvalid = errors.New("invalid sso state")
-	// ErrStateExpired 表示 state 已过期。
+	// ErrStateExpired 琛ㄧず state 宸茶繃鏈熴€?
 	ErrStateExpired = errors.New("sso state expired")
 )
 
-// StatePayload 是 state 令牌承载的数据。
+// StatePayload 鏄?state 浠ょ墝鎵胯浇鐨勬暟鎹€?
 type StatePayload struct {
 	ProviderID string `json:"p"`
 	Nonce      string `json:"n"`
-	ExpiresAt  int64  `json:"e"` // unix 秒
-	// Mode: "login"（默认，兼容旧令牌的空值）| "bind"（绑定已有账号）
+	ExpiresAt  int64  `json:"e"` // unix 绉?
+	// Mode: "login"锛堥粯璁わ紝鍏煎鏃т护鐗岀殑绌哄€硷級| "bind"锛堢粦瀹氬凡鏈夎处鍙凤級
 	Mode string `json:"m,omitempty"`
-	// UID 仅 bind 模式携带：发起绑定的已登录用户（state 由 authMW 保护的路由签发）
+	// UID 浠?bind 妯″紡鎼哄甫锛氬彂璧风粦瀹氱殑宸茬櫥褰曠敤鎴凤紙state 鐢?authMW 淇濇姢鐨勮矾鐢辩鍙戯級
 	UID string `json:"u,omitempty"`
 }
 
-// State 双模式常量。
+// State 鍙屾ā寮忓父閲忋€?
 const (
 	StateModeLogin = "login"
 	StateModeBind  = "bind"
 )
 
-// StateCodec 签发/校验 HMAC 签名的 SSO state 令牌。
+// StateCodec 绛惧彂/鏍￠獙 HMAC 绛惧悕鐨?SSO state 浠ょ墝銆?
 type StateCodec struct {
 	key []byte
 	ttl time.Duration
-	// now 可被测试替换，用于过期分支验证
+	// now 鍙娴嬭瘯鏇挎崲锛岀敤浜庤繃鏈熷垎鏀獙璇?
 	now func() time.Time
 }
 
-// NewStateCodec 构造 StateCodec。key 为签名密钥（≥1 字节），ttl 为有效期。
+// NewStateCodec 鏋勯€?StateCodec銆俴ey 涓虹鍚嶅瘑閽ワ紙鈮? 瀛楄妭锛夛紝ttl 涓烘湁鏁堟湡銆?
 func NewStateCodec(key []byte, ttl time.Duration) *StateCodec {
 	return NewStateCodecWithClock(key, ttl, time.Now)
 }
 
-// NewStateCodecWithClock 允许注入时钟（供测试验证过期分支）。
+// NewStateCodecWithClock 鍏佽娉ㄥ叆鏃堕挓锛堜緵娴嬭瘯楠岃瘉杩囨湡鍒嗘敮锛夈€?
 func NewStateCodecWithClock(key []byte, ttl time.Duration, now func() time.Time) *StateCodec {
 	return &StateCodec{key: key, ttl: ttl, now: now}
 }
 
-// Issue 签发 state 令牌（payload JSON → base64url，附 HMAC-SHA256 签名）。
+// Issue 绛惧彂 state 浠ょ墝锛坧ayload JSON 鈫?base64url锛岄檮 HMAC-SHA256 绛惧悕锛夈€?
 func (c *StateCodec) Issue(providerID, nonce string) (string, error) {
 	return c.IssueMode(providerID, nonce, StateModeLogin, "")
 }
 
-// IssueMode 签发指定模式的 state（bind 模式须携带 uid）。
+// IssueMode 绛惧彂鎸囧畾妯″紡鐨?state锛坆ind 妯″紡椤绘惡甯?uid锛夈€?
 func (c *StateCodec) IssueMode(providerID, nonce, mode, uid string) (string, error) {
 	if providerID == "" || nonce == "" {
 		return "", errors.New("state codec: providerID and nonce are required")
 	}
 	switch mode {
 	case StateModeLogin:
-		uid = "" // login 模式不携带 uid
+		uid = "" // login 妯″紡涓嶆惡甯?uid
 	case StateModeBind:
 		if uid == "" {
 			return "", errors.New("state codec: bind mode requires uid")
@@ -100,8 +100,8 @@ func (c *StateCodec) IssueMode(providerID, nonce, mode, uid string) (string, err
 	return body + "." + c.sign(body), nil
 }
 
-// Verify 校验 state 令牌并返回 payload。
-// 结构非法/HMAC 不匹配 → ErrStateInvalid；超过有效期 → ErrStateExpired。
+// Verify 鏍￠獙 state 浠ょ墝骞惰繑鍥?payload銆?
+// 缁撴瀯闈炴硶/HMAC 涓嶅尮閰?鈫?ErrStateInvalid锛涜秴杩囨湁鏁堟湡 鈫?ErrStateExpired銆?
 func (c *StateCodec) Verify(state string) (*StatePayload, error) {
 	body, sig, found := cutState(state)
 	if !found {
@@ -142,7 +142,7 @@ func (c *StateCodec) sign(body string) string {
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
-// RandomNonce 生成 16 字节随机十六进制 nonce。
+// RandomNonce 鐢熸垚 16 瀛楄妭闅忔満鍗佸叚杩涘埗 nonce銆?
 func RandomNonce() (string, error) {
 	buf := make([]byte, 16)
 	if _, err := rand.Read(buf); err != nil {
@@ -151,10 +151,10 @@ func RandomNonce() (string, error) {
 	return hex.EncodeToString(buf), nil
 }
 
-// ── OIDC IdP 交互 ────────────────────────────────────────
+// 鈹€鈹€ OIDC IdP 浜や簰 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// OIDCProviderConfig 是发起 OIDC 流程所需的 provider 配置（secret 已解密）。
-// protocol=oauth2 时 Issuer 可为空，改用 AuthURL/TokenURL/UserinfoURL。
+// OIDCProviderConfig 鏄彂璧?OIDC 娴佺▼鎵€闇€鐨?provider 閰嶇疆锛坰ecret 宸茶В瀵嗭級銆?
+// protocol=oauth2 鏃?Issuer 鍙负绌猴紝鏀圭敤 AuthURL/TokenURL/UserinfoURL銆?
 type OIDCProviderConfig struct {
 	Issuer       string
 	ClientID     string
@@ -162,38 +162,38 @@ type OIDCProviderConfig struct {
 	Scopes       []string
 	RedirectURL  string
 
-	// ── OAuth2 扩展（protocol=oauth2 时生效）──
-	Protocol     string            // "oidc" | "oauth2"；空视为 oidc
+	// 鈹€鈹€ OAuth2 鎵╁睍锛坧rotocol=oauth2 鏃剁敓鏁堬級鈹€鈹€
+	Protocol     string            // "oidc" | "oauth2"锛涚┖瑙嗕负 oidc
 	ProviderType string            // github/wechat/dingtalk/feishu/qq/custom
-	AuthURL      string            // 授权端点（模板缺省自动填充）
-	TokenURL     string            // token 端点
-	UserinfoURL  string            // userinfo 端点
-	Extra        map[string]string // provider 特有项（微信 mode=open|mp 等）
+	AuthURL      string            // 鎺堟潈绔偣锛堟ā鏉跨己鐪佽嚜鍔ㄥ～鍏咃級
+	TokenURL     string            // token 绔偣
+	UserinfoURL  string            // userinfo 绔偣
+	Extra        map[string]string // provider 鐗规湁椤癸紙寰俊 mode=open|mp 绛夛級
 }
 
-// IDTokenResult 是授权码换 token + 身份校验后的结果
-//（OIDC 来自 id_token claims；OAuth2 来自 userinfo 接口）。
+// IDTokenResult 鏄巿鏉冪爜鎹?token + 韬唤鏍￠獙鍚庣殑缁撴灉
+//锛圤IDC 鏉ヨ嚜 id_token claims锛汷Auth2 鏉ヨ嚜 userinfo 鎺ュ彛锛夈€?
 type IDTokenResult struct {
 	Subject string
 	Email   string
-	// Roles 来自 IdP 的可选 "roles" claim（字符串或字符串数组），用于 role_mapping 匹配
+	// Roles 鏉ヨ嚜 IdP 鐨勫彲閫?"roles" claim锛堝瓧绗︿覆鎴栧瓧绗︿覆鏁扮粍锛夛紝鐢ㄤ簬 role_mapping 鍖归厤
 	Roles []string
-	// Name / AvatarURL / Phone 为 userinfo 可选字段（OAuth2 家族填充）
+	// Name / AvatarURL / Phone 涓?userinfo 鍙€夊瓧娈碉紙OAuth2 瀹舵棌濉厖锛?
 	Name      string
 	AvatarURL string
 	Phone     string
 }
 
-// OIDCExchanger 抽象与 IdP 的交互（发现/授权 URL/授权码交换/id_token 校验），
-// 测试中可替换为 fake，无需真实网络。
+// OIDCExchanger 鎶借薄涓?IdP 鐨勪氦浜掞紙鍙戠幇/鎺堟潈 URL/鎺堟潈鐮佷氦鎹?id_token 鏍￠獙锛夛紝
+// 娴嬭瘯涓彲鏇挎崲涓?fake锛屾棤闇€鐪熷疄缃戠粶銆?
 type OIDCExchanger interface {
-	// AuthURL 构造 IdP 授权页 URL（携带 state 与 nonce）。
+	// AuthURL 鏋勯€?IdP 鎺堟潈椤?URL锛堟惡甯?state 涓?nonce锛夈€?
 	AuthURL(ctx context.Context, p *OIDCProviderConfig, state, nonce string) (string, error)
-	// ExchangeAndVerify 用授权码换 token 并校验 id_token（aud/iss/exp + nonce）。
+	// ExchangeAndVerify 鐢ㄦ巿鏉冪爜鎹?token 骞舵牎楠?id_token锛坅ud/iss/exp + nonce锛夈€?
 	ExchangeAndVerify(ctx context.Context, p *OIDCProviderConfig, code, expectedNonce string) (*IDTokenResult, error)
 }
 
-// RemoteOIDCExchanger 是基于 go-oidc 的真实实现，按 issuer 缓存发现结果。
+// RemoteOIDCExchanger 鏄熀浜?go-oidc 鐨勭湡瀹炲疄鐜帮紝鎸?issuer 缂撳瓨鍙戠幇缁撴灉銆?
 type RemoteOIDCExchanger struct {
 	mu        sync.Mutex
 	providers map[string]*gooidc.Provider
@@ -256,7 +256,7 @@ func (e *RemoteOIDCExchanger) ExchangeAndVerify(ctx context.Context, p *OIDCProv
 	if err != nil {
 		return nil, fmt.Errorf("oidc verify id_token: %w", err)
 	}
-	// go-oidc 不自动校验 nonce，这里手动恒等比较（防重放）
+	// go-oidc 涓嶈嚜鍔ㄦ牎楠?nonce锛岃繖閲屾墜鍔ㄦ亽绛夋瘮杈冿紙闃查噸鏀撅級
 	if idToken.Nonce != expectedNonce {
 		return nil, errors.New("oidc: id_token nonce mismatch")
 	}
@@ -274,8 +274,8 @@ func (e *RemoteOIDCExchanger) ExchangeAndVerify(ctx context.Context, p *OIDCProv
 	return result, nil
 }
 
-// normalizeRolesClaim 将 IdP "roles" claim 归一化为字符串切片。
-// 支持单字符串、字符串数组两种常见形态；其他形态返回空切片。
+// normalizeRolesClaim 灏?IdP "roles" claim 褰掍竴鍖栦负瀛楃涓插垏鐗囥€?
+// 鏀寔鍗曞瓧绗︿覆銆佸瓧绗︿覆鏁扮粍涓ょ甯歌褰㈡€侊紱鍏朵粬褰㈡€佽繑鍥炵┖鍒囩墖銆?
 func normalizeRolesClaim(v any) []string {
 	switch val := v.(type) {
 	case string:

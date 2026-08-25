@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"bytes"
@@ -10,18 +10,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/athenavi/minicc/internal/auth"
+	"github.com/athenavi/chiron/internal/auth"
 )
 
-// ── 内存版 EntCostStore（fake） ──
-// 让成本中心 handler 脱离 PostgreSQL 测试（pgEntCostStore 依赖全局 db.Pool）。
+// 鈹€鈹€ 鍐呭瓨鐗?EntCostStore锛坒ake锛?鈹€鈹€
+// 璁╂垚鏈腑蹇?handler 鑴辩 PostgreSQL 娴嬭瘯锛坧gEntCostStore 渚濊禆鍏ㄥ眬 db.Pool锛夈€?
 
 type fakeEntStore struct {
 	mu sync.Mutex
 
 	pools  map[string]*EntQuotaPool
-	allocs map[string][]EntQuotaAllocation // poolID → allocations
-	sums   map[string]int64                // poolID → 已分配合计
+	allocs map[string][]EntQuotaAllocation // poolID 鈫?allocations
+	sums   map[string]int64                // poolID 鈫?宸插垎閰嶅悎璁?
 
 	createPoolErr  error
 	createAllocErr error
@@ -166,7 +166,7 @@ func (s *fakeEntStore) ResolveTenantID(ctx context.Context, userID string) (stri
 	return s.resolveTenant, nil
 }
 
-// ── 测试辅助 ──
+// 鈹€鈹€ 娴嬭瘯杈呭姪 鈹€鈹€
 
 func entOwnerClaims() *auth.Claims {
 	return &auth.Claims{UserID: "u-owner", Role: "owner", Perms: auth.RolePermissions["owner"]}
@@ -176,7 +176,7 @@ func entUserClaims() *auth.Claims {
 	return &auth.Claims{UserID: "u-normal", Role: "user", Perms: auth.RolePermissions["user"]}
 }
 
-// entDo 发起带 claims 的 httptest 请求并返回状态码与响应体。
+// entDo 鍙戣捣甯?claims 鐨?httptest 璇锋眰骞惰繑鍥炵姸鎬佺爜涓庡搷搴斾綋銆?
 func entDo(t *testing.T, h *EntCostCenterHandler, claims *auth.Claims, method, target string, body any) (int, map[string]any) {
 	t.Helper()
 	var reader *bytes.Reader
@@ -207,9 +207,9 @@ func entDo(t *testing.T, h *EntCostCenterHandler, claims *auth.Claims, method, t
 	return rec.Code, resp
 }
 
-// ── 测试用例 ──
+// 鈹€鈹€ 娴嬭瘯鐢ㄤ緥 鈹€鈹€
 
-// 分配超配：existing(80) + requested(30) > total(100) → 422
+// 鍒嗛厤瓒呴厤锛歟xisting(80) + requested(30) > total(100) 鈫?422
 func TestEntCreateAllocationExceedsPoolReturns422(t *testing.T) {
 	store := newFakeEntStore()
 	poolID := "31111111-1111-1111-1111-111111111111"
@@ -235,7 +235,7 @@ func TestEntCreateAllocationExceedsPoolReturns422(t *testing.T) {
 	}
 }
 
-// 分配在额度内 → 201 且落账
+// 鍒嗛厤鍦ㄩ搴﹀唴 鈫?201 涓旇惤璐?
 func TestEntCreateAllocationWithinPoolReturns201(t *testing.T) {
 	store := newFakeEntStore()
 	poolID := "31111111-1111-1111-1111-111111111111"
@@ -261,7 +261,7 @@ func TestEntCreateAllocationWithinPoolReturns201(t *testing.T) {
 	}
 }
 
-// 配额池唯一约束冲突 → 409
+// 閰嶉姹犲敮涓€绾︽潫鍐茬獊 鈫?409
 func TestEntCreateQuotaConflictReturns409(t *testing.T) {
 	store := newFakeEntStore()
 	store.createPoolErr = errQuotaConflict
@@ -279,7 +279,7 @@ func TestEntCreateQuotaConflictReturns409(t *testing.T) {
 	}
 }
 
-// 非法枚举 → 400
+// 闈炴硶鏋氫妇 鈫?400
 func TestEntCreateQuotaValidationReturns400(t *testing.T) {
 	store := newFakeEntStore()
 	h := NewEntCostCenterHandler(store, nil)
@@ -287,7 +287,7 @@ func TestEntCreateQuotaValidationReturns400(t *testing.T) {
 	status, _ := entDo(t, h, entOwnerClaims(), "POST", "/v1/ent/quotas",
 		map[string]any{
 			"tenant_id":     "21111111-1111-1111-1111-111111111111",
-			"resource_type": "bandwidth", // 非法资源类型
+			"resource_type": "bandwidth", // 闈炴硶璧勬簮绫诲瀷
 			"total_amount":  1000,
 		})
 	if status != http.StatusBadRequest {
@@ -295,7 +295,7 @@ func TestEntCreateQuotaValidationReturns400(t *testing.T) {
 	}
 }
 
-// 创建配额池成功 → 201
+// 鍒涘缓閰嶉姹犳垚鍔?鈫?201
 func TestEntCreateQuotaReturns201(t *testing.T) {
 	store := newFakeEntStore()
 	h := NewEntCostCenterHandler(store, nil)
@@ -315,7 +315,7 @@ func TestEntCreateQuotaReturns201(t *testing.T) {
 	}
 }
 
-// 列表：携带 allocated 字段
+// 鍒楄〃锛氭惡甯?allocated 瀛楁
 func TestEntListQuotasIncludesAllocated(t *testing.T) {
 	store := newFakeEntStore()
 	tenant := "21111111-1111-1111-1111-111111111111"
@@ -337,7 +337,7 @@ func TestEntListQuotasIncludesAllocated(t *testing.T) {
 	}
 }
 
-// 不存在的配额池 → 404
+// 涓嶅瓨鍦ㄧ殑閰嶉姹?鈫?404
 func TestEntGetQuotaNotFoundReturns404(t *testing.T) {
 	h := NewEntCostCenterHandler(newFakeEntStore(), nil)
 	status, _ := entDo(t, h, entOwnerClaims(), "GET",
@@ -347,7 +347,7 @@ func TestEntGetQuotaNotFoundReturns404(t *testing.T) {
 	}
 }
 
-// 删除不存在的分配 → 404
+// 鍒犻櫎涓嶅瓨鍦ㄧ殑鍒嗛厤 鈫?404
 func TestEntDeleteAllocationNotFoundReturns404(t *testing.T) {
 	store := newFakeEntStore()
 	store.deleteAllocHit = false
@@ -359,7 +359,7 @@ func TestEntDeleteAllocationNotFoundReturns404(t *testing.T) {
 	}
 }
 
-// 成本汇总：透传 store 结果
+// 鎴愭湰姹囨€伙細閫忎紶 store 缁撴灉
 func TestEntCostSummary(t *testing.T) {
 	store := newFakeEntStore()
 	store.summary = &entCostSummary{
@@ -381,7 +381,7 @@ func TestEntCostSummary(t *testing.T) {
 	}
 }
 
-// 非法 group_by → 400
+// 闈炴硶 group_by 鈫?400
 func TestEntCostSummaryInvalidGroupByReturns400(t *testing.T) {
 	h := NewEntCostCenterHandler(newFakeEntStore(), nil)
 	status, _ := entDo(t, h, entOwnerClaims(), "GET", "/v1/ent/cost/summary?group_by=week", nil)
@@ -390,7 +390,7 @@ func TestEntCostSummaryInvalidGroupByReturns400(t *testing.T) {
 	}
 }
 
-// 普通 user 角色无 admin:read → 403
+// 鏅€?user 瑙掕壊鏃?admin:read 鈫?403
 func TestEntForbiddenForNonAdmin(t *testing.T) {
 	h := NewEntCostCenterHandler(newFakeEntStore(), nil)
 	status, _ := entDo(t, h, entUserClaims(), "GET", "/v1/ent/cost/summary", nil)
@@ -403,7 +403,7 @@ func TestEntForbiddenForNonAdmin(t *testing.T) {
 	}
 }
 
-// 非 owner 携带 TenantID 时强制锚定自身租户
+// 闈?owner 鎼哄甫 TenantID 鏃跺己鍒堕敋瀹氳嚜韬鎴?
 func TestEntScopedTenantID(t *testing.T) {
 	admin := &auth.Claims{UserID: "u-admin", Role: "admin", TenantID: "t-self", Perms: auth.RolePermissions["admin"]}
 	if got := scopedTenantID(admin, "t-other"); got != "t-self" {
@@ -415,7 +415,7 @@ func TestEntScopedTenantID(t *testing.T) {
 	}
 }
 
-// parseTimeRange 默认区间与校验
+// parseTimeRange 榛樿鍖洪棿涓庢牎楠?
 func TestEntParseTimeRange(t *testing.T) {
 	from, to, err := parseTimeRange("", "")
 	if err != nil || !from.Before(to) {

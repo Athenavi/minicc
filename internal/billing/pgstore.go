@@ -1,4 +1,4 @@
-package billing
+﻿package billing
 
 import (
 	"context"
@@ -8,11 +8,11 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/athenavi/minicc/internal/db"
+	"github.com/athenavi/chiron/internal/db"
 	"github.com/jackc/pgx/v5"
 )
 
-// PGStore implements Store using the minicc PostgreSQL database.
+// PGStore implements Store using the chiron PostgreSQL database.
 // It uses the existing users table for balance and adds a new billing table.
 
 type PGStore struct{}
@@ -48,7 +48,7 @@ func (s *PGStore) EnsureTables(ctx context.Context) error {
 		return fmt.Errorf("create credit_transactions: %w", err)
 	}
 
-	// Create payments table（支付宝/微信/PayPal 通用充值订单）
+	// Create payments table锛堟敮浠樺疂/寰俊/PayPal 閫氱敤鍏呭€艰鍗曪級
 	_, err = db.Pool.Exec(ctx,
 		`CREATE TABLE IF NOT EXISTS payments (
 			id VARCHAR(64) PRIMARY KEY,
@@ -213,7 +213,7 @@ func FormatBalance(userID string, balance int) string {
 	return string(data)
 }
 
-// ── PaymentStore ──────────────────────────────────────────────────────────
+// 鈹€鈹€ PaymentStore 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 const _paymentColumns = `id, user_id, channel, credits, amount_cents, currency, status,
 	COALESCE(qr_code, ''), provider_order_id, trade_no, created_at, paid_at, expired_at`
@@ -255,7 +255,7 @@ func (s *PGStore) GetPaymentByProviderOrderID(ctx context.Context, providerOrder
 	return scanPayment(row)
 }
 
-// MarkPaymentPaid 幂等推进 pending→paid。返回 nil 表示订单非 pending（已处理/不存在）。
+// MarkPaymentPaid 骞傜瓑鎺ㄨ繘 pending鈫抪aid銆傝繑鍥?nil 琛ㄧず璁㈠崟闈?pending锛堝凡澶勭悊/涓嶅瓨鍦級銆?
 func (s *PGStore) MarkPaymentPaid(ctx context.Context, id, tradeNo string) (*Payment, error) {
 	row := db.Pool.QueryRow(ctx,
 		`UPDATE payments SET status = 'paid', trade_no = $2, paid_at = NOW()
@@ -265,7 +265,7 @@ func (s *PGStore) MarkPaymentPaid(ctx context.Context, id, tradeNo string) (*Pay
 	p, err := scanPayment(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil // 已处理或不存在
+			return nil, nil // 宸插鐞嗘垨涓嶅瓨鍦?
 		}
 		return nil, err
 	}

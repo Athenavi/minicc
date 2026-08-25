@@ -1,4 +1,4 @@
-package storage
+﻿package storage
 
 import (
 	"bytes"
@@ -24,8 +24,8 @@ type S3Store struct {
 // NewS3Store creates a new S3Store connected to the given endpoint.
 // endpoint: S3-compatible endpoint (e.g. "play.min.io" or "s3.amazonaws.com").
 // bucket:   the bucket name (created if it doesn't exist).
-// prefix:   optional prefix (subdirectory) — all paths are relative to this.
-// creds:    (accessKey, secretKey, token) — token may be empty for static creds.
+// prefix:   optional prefix (subdirectory) 鈥?all paths are relative to this.
+// creds:    (accessKey, secretKey, token) 鈥?token may be empty for static creds.
 func NewS3Store(endpoint, bucket, prefix, accessKey, secretKey, token string, useSSL bool) (*S3Store, error) {
 	if bucket == "" {
 		return nil, fmt.Errorf("bucket is required")

@@ -1,16 +1,16 @@
-package api
+﻿package api
 
 import (
 	"fmt"
 	"net/http"
 	"time"
 
-	"github.com/athenavi/minicc/internal/auth"
-	"github.com/athenavi/minicc/internal/db"
-	"github.com/athenavi/minicc/internal/storage"
+	"github.com/athenavi/chiron/internal/auth"
+	"github.com/athenavi/chiron/internal/db"
+	"github.com/athenavi/chiron/internal/storage"
 )
 
-// ── Download ──
+// 鈹€鈹€ Download 鈹€鈹€
 
 // Download redirects to the asset's storage URL.
 func (h *MediaHandler) Download(w http.ResponseWriter, r *http.Request) {
@@ -35,7 +35,7 @@ func (h *MediaHandler) Download(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, fileURL, http.StatusFound)
 }
 
-// ── Share ──
+// 鈹€鈹€ Share 鈹€鈹€
 
 // Share returns a time-limited presigned download URL (S3 backend only).
 func (h *MediaHandler) Share(w http.ResponseWriter, r *http.Request) {
@@ -69,7 +69,7 @@ func (h *MediaHandler) Share(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 类型断言取 S3 后端（与 PresignUpload 相同模式）
+	// 绫诲瀷鏂█鍙?S3 鍚庣锛堜笌 PresignUpload 鐩稿悓妯″紡锛?
 	inner := h.store
 	if atomic, ok := h.store.(*storage.AtomicStore); ok {
 		inner = atomic.LoadRaw()

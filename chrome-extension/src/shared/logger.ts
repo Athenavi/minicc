@@ -1,4 +1,4 @@
-const LOG_PREFIX = "[MiniCC RPA]";
+const LOG_PREFIX = "[Chiron RPA]";
 
 export enum LogLevel {
   DEBUG = 0,

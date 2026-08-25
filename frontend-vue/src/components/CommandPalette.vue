@@ -1,14 +1,10 @@
 <script setup lang="ts">
 /**
- * MiniCC 全局命令面板（Ctrl/Cmd + K）
- *
- * 类 Linear / VS Code 的全局命令入口：
- *  - 静态动作：切换六大工作台、切换主题、打开快速命令（/chat?task=）、查看市场、新建会话
- *  - 远程搜索：GET /v1/search?q=xxx（防抖 300ms，输入 ≥2 字符触发）→ 消息 / 媒体结果
- *  - 最近活动：打开时加载 GET /v1/activities?limit=5
- *  - 键盘导航：↑↓ 选择、Enter 执行、Esc 关闭；鼠标 hover 同步高亮
- *  - 打开期间锁定 body 滚动；组件卸载时移除全局监听并恢复
- */
+ * Chiron 全局命令面板（Ctrl/Cmd + K�? *
+ * �?Linear / VS Code 的全局命令入口�? *  - 静态动作：切换六大工作台、切换主题、打开快速命令（/chat?task=）、查看市场、新建会�? *  - 远程搜索：GET /v1/search?q=xxx（防�?300ms，输�?�? 字符触发）→ 消息 / 媒体结果
+ *  - 最近活动：打开时加�?GET /v1/activities?limit=5
+ *  - 键盘导航：↑�?选择、Enter 执行、Esc 关闭；鼠�?hover 同步高亮
+ *  - 打开期间锁定 body 滚动；组件卸载时移除全局监听并恢�? */
 import { computed, markRaw, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useThemeStore } from '../stores/theme'
@@ -39,7 +35,7 @@ const authStore = useAuthStore()
 // ── 数据模型：面板内一条可执行条目 ──
 interface PaletteEntry {
   id: string
-  /** 分组标题：工作台 / 操作 / 最近活动 / 消息 / 媒体 */
+  /** 分组标题：工作台 / 操作 / 最近活�?/ 消息 / 媒体 */
   group: string
   label: string
   desc?: string
@@ -49,20 +45,20 @@ interface PaletteEntry {
   run: () => void | Promise<void>
 }
 
-// ── 静态动作：六大工作台 ──
+// ── 静态动作：六大工作�?──
 // 图标 markRaw：避免被 Vue 响应式代理（图标是静态组件，代理会破坏渲染）
 const workstationActions: PaletteEntry[] = [
-  { id: 'ws_chat', group: '工作台', label: '对话', desc: '智能对话助手', keywords: 'chat 对话 消息 聊天', icon: markRaw(MessageOutlined), run: () => void router.push('/chat') },
-  { id: 'ws_agents', group: '工作台', label: 'Agent', desc: '多智能体协同', keywords: 'agent 智能体 协同 任务', icon: markRaw(RobotOutlined), run: () => void router.push('/agents') },
-  { id: 'ws_workflow', group: '工作台', label: '工作流', desc: 'DAG 流程编排', keywords: 'workflow 工作流 dag 流程 编排', icon: markRaw(ApartmentOutlined), run: () => void router.push('/workflow') },
-  { id: 'ws_skills', group: '工作台', label: '技能', desc: '工具与 MCP', keywords: 'skill 技能 mcp 工具', icon: markRaw(ThunderboltOutlined), run: () => void router.push('/skills') },
-  { id: 'ws_knowledge', group: '工作台', label: '知识库', desc: 'RAG 检索增强', keywords: 'knowledge 知识库 rag 检索 文档', icon: markRaw(BookOutlined), run: () => void router.push('/knowledge') },
-  { id: 'ws_plugins', group: '工作台', label: '插件', desc: '扩展能力', keywords: 'plugin 插件 扩展', icon: markRaw(AppstoreOutlined), run: () => void router.push('/plugins') },
+  { id: 'ws_chat', group: '工作�?, label: '对话', desc: '智能对话助手', keywords: 'chat 对话 消息 聊天', icon: markRaw(MessageOutlined), run: () => void router.push('/chat') },
+  { id: 'ws_agents', group: '工作�?, label: 'Agent', desc: '多智能体协同', keywords: 'agent 智能�?协同 任务', icon: markRaw(RobotOutlined), run: () => void router.push('/agents') },
+  { id: 'ws_workflow', group: '工作�?, label: '工作�?, desc: 'DAG 流程编排', keywords: 'workflow 工作�?dag 流程 编排', icon: markRaw(ApartmentOutlined), run: () => void router.push('/workflow') },
+  { id: 'ws_skills', group: '工作�?, label: '技�?, desc: '工具�?MCP', keywords: 'skill 技�?mcp 工具', icon: markRaw(ThunderboltOutlined), run: () => void router.push('/skills') },
+  { id: 'ws_knowledge', group: '工作�?, label: '知识�?, desc: 'RAG 检索增�?, keywords: 'knowledge 知识�?rag 检�?文档', icon: markRaw(BookOutlined), run: () => void router.push('/knowledge') },
+  { id: 'ws_plugins', group: '工作�?, label: '插件', desc: '扩展能力', keywords: 'plugin 插件 扩展', icon: markRaw(AppstoreOutlined), run: () => void router.push('/plugins') },
 ]
 
 // ── 静态动作：通用操作 ──
 function openQuickCommand() {
-  // 创建统一会话 id → 跳转 /chat?task=<id>（ChatView 统一任务模式；会话不存在时提示可直接发送）
+  // 创建统一会话 id �?跳转 /chat?task=<id>（ChatView 统一任务模式；会话不存在时提示可直接发送）
   const sessionId = `uni_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   void router.push({ path: '/chat', query: { task: sessionId } })
 }
@@ -80,9 +76,9 @@ const utilityActions: PaletteEntry[] = [
   {
     id: 'act_quick',
     group: '操作',
-    label: '打开快速命令',
-    desc: '自然语言任务 → 自动编排六大工作台',
-    keywords: 'quick command 快速命令 统一任务 自然语言 执行',
+    label: '打开快速命�?,
+    desc: '自然语言任务 �?自动编排六大工作�?,
+    keywords: 'quick command 快速命�?统一任务 自然语言 执行',
     icon: markRaw(ConsoleSqlOutlined),
     run: openQuickCommand,
   },
@@ -90,8 +86,8 @@ const utilityActions: PaletteEntry[] = [
     id: 'act_market',
     group: '操作',
     label: '查看市场',
-    desc: '技能 / Agent / MCP 市场',
-    keywords: 'market 市场 技能市场 安装 浏览',
+    desc: '技�?/ Agent / MCP 市场',
+    keywords: 'market 市场 技能市�?安装 浏览',
     icon: markRaw(AppstoreOutlined),
     run: () => void router.push('/skills?tab=market'),
   },
@@ -99,14 +95,14 @@ const utilityActions: PaletteEntry[] = [
     id: 'act_newchat',
     group: '操作',
     label: '新建会话',
-    desc: '开始一段新的对话',
-    keywords: 'new chat 新会话 新对话 新建 开始',
+    desc: '开始一段新的对�?,
+    keywords: 'new chat 新会�?新对�?新建 开�?,
     icon: markRaw(PlusOutlined),
     run: () => void router.push('/chat'),
   },
 ]
 
-// ── 远程状态：搜索 + 最近活动 ──
+// ── 远程状态：搜索 + 最近活�?──
 const open = ref(false)
 const query = ref('')
 const activeIndex = ref(0)
@@ -120,7 +116,7 @@ let searchSeq = 0
 const recentEntries = ref<PaletteEntry[]>([])
 const recentLoading = ref(false)
 
-// ── 远程搜索（防抖 300ms，≥2 字符）──
+// ── 远程搜索（防�?300ms，≥2 字符）──
 async function runSearch(q: string) {
   const seq = ++searchSeq
   try {
@@ -202,7 +198,7 @@ async function loadRecent() {
     const list = res.data?.activities || []
     recentEntries.value = list.map((a: any) => ({
       id: `act_${a.id || a.workstation || ''}_${a.timestamp || 0}`,
-      group: '最近活动',
+      group: '最近活�?,
       label: a.title || '暂无标题',
       desc: a.status_text || '',
       keywords: '',
@@ -210,13 +206,12 @@ async function loadRecent() {
       run: () => void router.push(a.route || '/chat'),
     }))
   } catch {
-    recentEntries.value = [] // 拉取失败保留静态动作，不阻塞面板
-  } finally {
+    recentEntries.value = [] // 拉取失败保留静态动作，不阻塞面�?  } finally {
     recentLoading.value = false
   }
 }
 
-// ── 过滤：空输入 = 最近活动 + 快捷动作；有输入 = 本地静态过滤 + 远程结果 ──
+// ── 过滤：空输入 = 最近活�?+ 快捷动作；有输入 = 本地静态过�?+ 远程结果 ──
 const filtered = computed<PaletteEntry[]>(() => {
   const q = query.value.trim().toLowerCase()
   if (!q) return [...recentEntries.value, ...workstationActions, ...utilityActions]
@@ -275,7 +270,7 @@ function runActive() {
   if (entry) runEntry(entry)
 }
 
-// ── 开关 / 滚动锁定 / 卸载清理 ──
+// ── 开�?/ 滚动锁定 / 卸载清理 ──
 const inputEl = ref<HTMLInputElement | null>(null)
 const listEl = ref<HTMLElement | null>(null)
 
@@ -321,7 +316,7 @@ function onPaletteKeydown(e: KeyboardEvent) {
   }
 }
 
-// 全局 Ctrl/Cmd+K（preventDefault 屏蔽浏览器行为）；打开时 Esc 也可关闭
+// 全局 Ctrl/Cmd+K（preventDefault 屏蔽浏览器行为）；打开�?Esc 也可关闭
 function onGlobalKeydown(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
     e.preventDefault()
@@ -355,21 +350,19 @@ watch(query, (q) => {
   searchTimer = window.setTimeout(() => { void runSearch(trimmed) }, 300)
 })
 
-// 结果变化时钳制高亮索引
-watch(filtered, () => {
+// 结果变化时钳制高亮索�?watch(filtered, () => {
   const len = filtered.value.length
   if (len === 0) activeIndex.value = 0
   else if (activeIndex.value >= len) activeIndex.value = len - 1
 })
 
-// 高亮项滚动可见（列表容器内 nearest）
-watch(activeIndex, () => {
+// 高亮项滚动可见（列表容器�?nearest�?watch(activeIndex, () => {
   void nextTick(() => {
     listEl.value?.querySelector('.palette-item.active')?.scrollIntoView({ block: 'nearest' })
   })
 })
 
-// 路由变化（浏览器前进后退等）→ 收起面板
+// 路由变化（浏览器前进后退等）�?收起面板
 watch(() => route.path, () => {
   if (open.value) closePalette()
 })
@@ -396,7 +389,7 @@ onUnmounted(() => {
           aria-label="全局命令面板"
           @keydown="onPaletteKeydown"
         >
-          <!-- 输入行 -->
+          <!-- 输入�?-->
           <div class="palette-input-row">
             <SearchOutlined class="palette-search-icon" />
             <input
@@ -404,7 +397,7 @@ onUnmounted(() => {
               v-model="query"
               type="text"
               class="palette-input"
-              placeholder="搜索消息、媒体，或输入命令…"
+              placeholder="搜索消息、媒体，或输入命令�?
               autocomplete="off"
               spellcheck="false"
             />
@@ -434,38 +427,38 @@ onUnmounted(() => {
                     <span class="palette-item-label">{{ row.entry?.label }}</span>
                     <span v-if="row.entry?.desc" class="palette-item-desc">{{ row.entry?.desc }}</span>
                   </span>
-                  <span class="palette-item-go">↵</span>
+                  <span class="palette-item-go">�?/span>
                 </div>
               </div>
             </template>
 
-            <!-- 搜索中 -->
+            <!-- 搜索�?-->
             <div v-else-if="searchLoading" class="palette-status">
               <span class="palette-status-spinner"></span>
-              <span>正在搜索…</span>
+              <span>正在搜索�?/span>
             </div>
 
             <!-- 搜索失败 -->
             <div v-else-if="searchError" class="palette-status">搜索失败，请稍后重试</div>
 
-            <!-- 最近活动加载中（空输入、活动未就绪） -->
+            <!-- 最近活动加载中（空输入、活动未就绪�?-->
             <div v-else-if="recentLoading" class="palette-status">
               <span class="palette-status-spinner"></span>
-              <span>正在加载最近活动…</span>
+              <span>正在加载最近活动�?/span>
             </div>
 
-            <!-- 无结果 -->
+            <!-- 无结�?-->
             <EmptyState
               v-else-if="query.trim().length >= 2"
               size="list"
-              description="未找到匹配结果"
-              hint="试试更短的关键词，或直接按 Enter 用本地命令执行"
+              description="未找到匹配结�?
+              hint="试试更短的关键词，或直接�?Enter 用本地命令执�?
             />
           </div>
 
-          <!-- 底部快捷键提示 -->
+          <!-- 底部快捷键提�?-->
           <div class="palette-footer">
-            <span><kbd>↑</kbd><kbd>↓</kbd> 选择</span>
+            <span><kbd>�?/kbd><kbd>�?/kbd> 选择</span>
             <span><kbd>Enter</kbd> 执行</span>
             <span><kbd>Esc</kbd> 关闭</span>
             <span class="palette-footer-tip">Ctrl/Cmd + K 随时唤起</span>
@@ -506,7 +499,7 @@ onUnmounted(() => {
   box-shadow: var(--shadow-lg);
 }
 
-/* ── 输入行 ── */
+/* ── 输入�?── */
 .palette-input-row {
   display: flex;
   align-items: center;
@@ -666,7 +659,7 @@ onUnmounted(() => {
   color: var(--text-muted);
 }
 
-/* ── 开合过渡 ── */
+/* ── 开合过�?── */
 .palette-enter-active,
 .palette-leave-active {
   transition: opacity 0.16s ease;
@@ -685,7 +678,7 @@ onUnmounted(() => {
   transform: translateY(-8px) scale(0.985);
 }
 
-/* ── 移动端：面板贴近顶部、收敛留白 ── */
+/* ── 移动端：面板贴近顶部、收敛留�?── */
 @media (max-width: 768px) {
   .palette-overlay {
     padding: 8vh 10px 16px;

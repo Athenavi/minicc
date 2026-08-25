@@ -1,8 +1,8 @@
-{
+﻿{
   "name": "csv_summarize",
   "description": "Read a CSV string or file path and return summary statistics for each column",
   "version": "1.0.0",
-  "author": "minicc",
+  "author": "chiron",
   "tags": ["csv", "data", "analysis", "statistics"],
   "exec": {
     "type": "python",
@@ -18,3 +18,4 @@
     }
   ]
 }
+

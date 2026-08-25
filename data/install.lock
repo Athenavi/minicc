@@ -1,0 +1,10 @@
+{
+  "completed": false,
+  "step1_done": true,
+  "step2_done": true,
+  "step3_done": false,
+  "app_secret_set": true,
+  "dsn": "uLcBffWymMu/pNWYZEjTyLkQMMHZ6H6kwU9Ai2SkVg3h++uY+MkTymrWtvzCGcKdu3bv1NzCeq03Y3W94brmpmQsqNiRrUdXxYMjrLIZOD1B3tm8jacDo7FLugU",
+  "created_at": "2026-08-25T22:19:08.9030803+08:00",
+  "completed_at": "0001-01-01T00:00:00Z"
+}

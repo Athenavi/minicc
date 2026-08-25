@@ -1,4 +1,4 @@
-module github.com/athenavi/minicc
+module github.com/athenavi/chiron
 
 go 1.26.0
 

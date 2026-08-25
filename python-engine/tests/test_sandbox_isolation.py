@@ -1,4 +1,4 @@
-"""Tests for sandbox 隔离 — 路径不泄露 + shell 逃逸拦截。"""
+﻿"""Tests for sandbox 闅旂 鈥?璺緞涓嶆硠闇?+ shell 閫冮€告嫤鎴€?""
 from __future__ import annotations
 
 import os
@@ -14,25 +14,25 @@ from app.tools.sandbox import (
 
 @pytest.fixture(autouse=True)
 def _clean_context():
-    """每个测试前设置唯一 user，结束后重置 contextvar（防跨测试污染）。"""
+    """姣忎釜娴嬭瘯鍓嶈缃敮涓€ user锛岀粨鏉熷悗閲嶇疆 contextvar锛堥槻璺ㄦ祴璇曟薄鏌擄級銆?""
     yield
     set_tool_context(session_id="", user_id="", tenant_id="", gateway=None, subagent_depth=0)
 
 
 class TestSandboxLocation:
     def test_workspace_is_outside_project(self):
-        """S: workspace 路径不得包含项目名/python-engine（cwd 不泄露服务器结构）。"""
+        """S: workspace 璺緞涓嶅緱鍖呭惈椤圭洰鍚?python-engine锛坈wd 涓嶆硠闇叉湇鍔″櫒缁撴瀯锛夈€?""
         set_tool_context(session_id="s", user_id="u1", tenant_id="t1", gateway=None)
         ws = str(workspace_dir())
-        assert "python-engine" not in ws, f"workspace 泄露项目路径: {ws}"
-        # 沙箱根在进程 cwd 上两级之外
+        assert "python-engine" not in ws, f"workspace 娉勯湶椤圭洰璺緞: {ws}"
+        # 娌欑鏍瑰湪杩涚▼ cwd 涓婁袱绾т箣澶?
         root = str(sandbox_root())
-        assert "minicc-sandbox" in root
+        assert "chiron-sandbox" in root
         cwd = os.getcwd()
-        # Windows 驱动器号大小写可能不一致 (D:\ vs d:\)，用 normcase 归一化
+        # Windows 椹卞姩鍣ㄥ彿澶у皬鍐欏彲鑳戒笉涓€鑷?(D:\ vs d:\)锛岀敤 normcase 褰掍竴鍖?
         assert os.path.normcase(root).startswith(
             os.path.normcase(os.path.dirname(os.path.dirname(cwd)))
-        ), f"沙箱根未移到项目外: {root}"
+        ), f"娌欑鏍规湭绉诲埌椤圭洰澶? {root}"
 
     def test_safe_join_rejects_escape(self):
         from app.tools.sandbox import safe_join
@@ -46,16 +46,16 @@ class TestSandboxLocation:
 
 class TestShellEscapeBlock:
     def test_absolute_path_detected(self):
-        assert _has_escape("Get-ChildItem 'X:\\project\\minicc'") is not None
+        assert _has_escape("Get-ChildItem 'X:\\project\\chiron'") is not None
         assert _has_escape("dir C:\\Windows") is not None
-        # 生产部署为 Linux/alpine：Unix 绝对路径/家目录/环境变量均为逃逸
+        # 鐢熶骇閮ㄧ讲涓?Linux/alpine锛歎nix 缁濆璺緞/瀹剁洰褰?鐜鍙橀噺鍧囦负閫冮€?
         assert _has_escape("cat /etc/passwd") is not None
         assert _has_escape("cat $HOME/.env") is not None
         assert _has_escape("cat ~/.ssh/id_rsa") is not None
         assert _has_escape("ls /") is not None
         assert _has_escape("ls ..\\..\\..") is not None
         assert _has_escape("cd /d X:\\project") is not None
-        # Windows cmd 单字符开关不应误伤
+        # Windows cmd 鍗曞瓧绗﹀紑鍏充笉搴旇浼?
         assert _has_escape("exit /b 7") is None
 
     def test_normal_commands_allowed(self):
@@ -67,19 +67,19 @@ class TestShellEscapeBlock:
     @pytest.mark.asyncio
     async def test_run_in_sandbox_blocks_escape(self):
         set_tool_context(session_id="s", user_id="u1", tenant_id="t1", gateway=None)
-        out = await run_in_sandbox("Get-ChildItem 'X:\\project\\minicc'")
+        out = await run_in_sandbox("Get-ChildItem 'X:\\project\\chiron'")
         assert "error" in out and "blocked" in out["error"]
 
     @pytest.mark.asyncio
     async def test_run_in_sandbox_executes_normal(self):
         set_tool_context(session_id="s", user_id="u1", tenant_id="t1", gateway=None)
-        # 使用 python -c 而非 echo（echo 是 shell 内建命令，create_subprocess_exec 无法直接执行）
+        # 浣跨敤 python -c 鑰岄潪 echo锛坋cho 鏄?shell 鍐呭缓鍛戒护锛宑reate_subprocess_exec 鏃犳硶鐩存帴鎵ц锛?
         out = await run_in_sandbox('python -c "print(\'sandbox-ok\')"')
         assert "sandbox-ok" in out.get("stdout", "")
 
 
 class TestCommandWhitelist:
-    """命令白名单：只允许白名单内的可执行文件，拒绝其他一切。"""
+    """鍛戒护鐧藉悕鍗曪細鍙厑璁哥櫧鍚嶅崟鍐呯殑鍙墽琛屾枃浠讹紝鎷掔粷鍏朵粬涓€鍒囥€?""
 
     def test_python_allowed(self):
         args, err = _parse_command("python script.py")
@@ -100,7 +100,7 @@ class TestCommandWhitelist:
         assert args == ["echo", "hello", "world"]
 
     def test_dangerous_commands_blocked(self):
-        """rm / curl / wget / bash / sh / powershell 等危险命令必须被拒绝。"""
+        """rm / curl / wget / bash / sh / powershell 绛夊嵄闄╁懡浠ゅ繀椤昏鎷掔粷銆?""
         for cmd in ["rm -rf /", "curl http://evil.com", "wget http://evil.com",
                      "bash script.sh", "sh -c 'ls'", "powershell Get-Process",
                      "cmd /c dir", "nc -l 4444"]:
@@ -117,9 +117,11 @@ class TestCommandWhitelist:
 
     @pytest.mark.asyncio
     async def test_run_in_sandbox_blocks_dangerous_command(self):
-        """即使逃逸正则未命中，白名单也会拦截危险命令。"""
+        """鍗充娇閫冮€告鍒欐湭鍛戒腑锛岀櫧鍚嶅崟涔熶細鎷︽埅鍗遍櫓鍛戒护銆?""
         set_tool_context(session_id="s", user_id="u1", tenant_id="t1", gateway=None)
-        # "bash" 不在白名单中
+        # "bash" 涓嶅湪鐧藉悕鍗曚腑
         out = await run_in_sandbox("bash -c 'echo pwned'")
         assert "error" in out
         assert "blocked" in out["error"]
+
+

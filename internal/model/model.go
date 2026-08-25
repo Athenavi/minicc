@@ -1,4 +1,4 @@
-package model
+﻿package model
 
 import (
 	"context"
@@ -46,7 +46,7 @@ type Message struct {
 	SessionID string    `json:"session_id"`
 	Role      string    `json:"role"` // user / assistant / system / tool
 	Content   string    `json:"content"`
-	ToolCalls string    `json:"tool_calls,omitempty"` // OpenAI 格式 tool_calls JSONB（S 修复：落库）
+	ToolCalls string    `json:"tool_calls,omitempty"` // OpenAI 鏍煎紡 tool_calls JSONB锛圫 淇锛氳惤搴擄級
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -75,7 +75,7 @@ type Task struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// ── Memory Types ──────────────────────────────────────────────────────────
+// 鈹€鈹€ Memory Types 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 // MemoryItem is a single entry in the agent's memory.
 type MemoryItem struct {
@@ -173,7 +173,7 @@ func (wm *WorkingMemory) Summarize() string {
 	return strings.Join(parts, "\n")
 }
 
-// ── Episodic Memory (cross-session) ───────────────────────────────────────
+// 鈹€鈹€ Episodic Memory (cross-session) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 type Episode struct {
 	ID        string        `json:"id"`
@@ -243,7 +243,7 @@ func (em *EpisodicMemory) FindByTool(toolName string) []Episode {
 	return result
 }
 
-// ── PostgreSQL-backed Episode Store ──
+// 鈹€鈹€ PostgreSQL-backed Episode Store 鈹€鈹€
 
 type PGEpisodeStore struct {
 	pool *pgxpool.Pool

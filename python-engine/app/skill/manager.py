@@ -1,10 +1,10 @@
-"""技能工作台增强: MCP 协议集成 + 动态注册 + 租户隔离限流
+﻿"""鎶€鑳藉伐浣滃彴澧炲己: MCP 鍗忚闆嗘垚 + 鍔ㄦ€佹敞鍐?+ 绉熸埛闅旂闄愭祦
 
-功能:
-1. MCP (Model Context Protocol) 工具发现与调用
-2. 技能动态注册/卸载 (热更新)
-3. 每租户独立限流 (QPS=50, Burst=100)
-4. Trace 集成: 每次技能执行记录 span
+鍔熻兘:
+1. MCP (Model Context Protocol) 宸ュ叿鍙戠幇涓庤皟鐢?
+2. 鎶€鑳藉姩鎬佹敞鍐?鍗歌浇 (鐑洿鏂?
+3. 姣忕鎴风嫭绔嬮檺娴?(QPS=50, Burst=100)
+4. Trace 闆嗘垚: 姣忔鎶€鑳芥墽琛岃褰?span
 """
 from __future__ import annotations
 
@@ -23,16 +23,16 @@ logger = logging.getLogger(__name__)
 
 
 class SkillType(str, Enum):
-    """技能类型"""
-    PROMPT = "prompt"              # 提示词模板
-    PYTHON_SCRIPT = "python"       # Python 脚本
-    SHELL_COMMAND = "shell"        # Shell 命令
-    HTTP_REQUEST = "http"          # HTTP 请求
-    MCP_TOOL = "mcp"              # MCP 协议工具
+    """鎶€鑳界被鍨?""
+    PROMPT = "prompt"              # 鎻愮ず璇嶆ā鏉?
+    PYTHON_SCRIPT = "python"       # Python 鑴氭湰
+    SHELL_COMMAND = "shell"        # Shell 鍛戒护
+    HTTP_REQUEST = "http"          # HTTP 璇锋眰
+    MCP_TOOL = "mcp"              # MCP 鍗忚宸ュ叿
 
 
 class SkillStatus(str, Enum):
-    """技能状态"""
+    """鎶€鑳界姸鎬?""
     ACTIVE = "active"
     INACTIVE = "inactive"
     ERROR = "error"
@@ -40,7 +40,7 @@ class SkillStatus(str, Enum):
 
 @dataclass
 class SkillMetadata:
-    """技能元数据"""
+    """鎶€鑳藉厓鏁版嵁"""
     skill_id: str
     name: str
     description: str
@@ -50,16 +50,16 @@ class SkillMetadata:
     tags: list[str] = field(default_factory=list)
     input_schema: dict = field(default_factory=dict)  # JSON Schema
     output_schema: dict = field(default_factory=dict)
-    config: dict = field(default_factory=dict)  # 技能配置 (如 prompt 模板)
+    config: dict = field(default_factory=dict)  # 鎶€鑳介厤缃?(濡?prompt 妯℃澘)
     status: SkillStatus = SkillStatus.ACTIVE
     created_at: float = field(default_factory=time.time)
     updated_at: float = 0
-    tenant_id: str = ""  # SaaS 安全: 租户隔离
+    tenant_id: str = ""  # SaaS 瀹夊叏: 绉熸埛闅旂
 
 
 @dataclass
 class SkillExecutionResult:
-    """技能执行结果"""
+    """鎶€鑳芥墽琛岀粨鏋?""
     skill_id: str
     skill_name: str
     success: bool
@@ -72,14 +72,14 @@ class SkillExecutionResult:
 
 
 class MCPClient:
-    """MCP (Model Context Protocol) 客户端
+    """MCP (Model Context Protocol) 瀹㈡埛绔?
     
-    MCP 协议规范:
-    - 传输层: STDIO / HTTP / WebSocket
-    - 消息格式: JSON-RPC 2.0
-    - 核心方法: tools/list, tools/call, resources/read
+    MCP 鍗忚瑙勮寖:
+    - 浼犺緭灞? STDIO / HTTP / WebSocket
+    - 娑堟伅鏍煎紡: JSON-RPC 2.0
+    - 鏍稿績鏂规硶: tools/list, tools/call, resources/read
     
-    参考: https://github.com/modelcontextprotocol/specification
+    鍙傝€? https://github.com/modelcontextprotocol/specification
     """
     
     def __init__(self, server_url: str, transport: str = "http"):
@@ -89,12 +89,12 @@ class MCPClient:
         self._cache_time = 0
     
     async def discover_tools(self) -> list[dict]:
-        """发现 MCP Server 提供的工具"""
-        # 检查缓存 (5 分钟 TTL)
+        """鍙戠幇 MCP Server 鎻愪緵鐨勫伐鍏?""
+        # 妫€鏌ョ紦瀛?(5 鍒嗛挓 TTL)
         if time.time() - self._cache_time < 300 and self._tools_cache:
             return self._tools_cache
 
-        # Fail loud: 不支持的传输方式必须显式抛错。
+        # Fail loud: 涓嶆敮鎸佺殑浼犺緭鏂瑰紡蹇呴』鏄惧紡鎶涢敊銆?
         if self.transport == "stdio":
             response = await self._stdio_rpc("tools/list", {}, timeout=10.0)
             tools = response.get("result", {}).get("tools", [])
@@ -122,7 +122,7 @@ class MCPClient:
                 response.raise_for_status()
                 result = response.json()
             
-            # 解析工具列表
+            # 瑙ｆ瀽宸ュ叿鍒楄〃
             tools = result.get("result", {}).get("tools", [])
             self._tools_cache = tools
             self._cache_time = time.time()
@@ -141,10 +141,10 @@ class MCPClient:
         trace_id: str = "",
         tenant_id: str = "",
     ) -> SkillExecutionResult:
-        """调用 MCP 工具"""
+        """璋冪敤 MCP 宸ュ叿"""
         start_time = time.time()
         
-        # Fail loud: 不支持的传输方式显式抛错。
+        # Fail loud: 涓嶆敮鎸佺殑浼犺緭鏂瑰紡鏄惧紡鎶涢敊銆?
         if self.transport == "stdio":
             response = await self._stdio_rpc(
                 "tools/call",
@@ -207,7 +207,7 @@ class MCPClient:
             
             duration_ms = int((time.time() - start_time) * 1000)
             
-            # 记录 span
+            # 璁板綍 span
             if trace_id:
                 await record_span(
                     trace_id=trace_id,
@@ -246,7 +246,7 @@ class MCPClient:
                 tenant_id=tenant_id,
             )
 
-    # ── STDIO 传输 ──────────────────────────────────────────────────
+    # 鈹€鈹€ STDIO 浼犺緭 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     async def _stdio_rpc(
         self,
@@ -254,17 +254,17 @@ class MCPClient:
         params: dict,
         timeout: float = 30.0,
     ) -> dict[str, Any]:
-        """通过 STDIO 子进程发送 JSON-RPC 2.0 请求。
+        """閫氳繃 STDIO 瀛愯繘绋嬪彂閫?JSON-RPC 2.0 璇锋眰銆?
 
-        MCP STDIO 传输规范:
-        - server_url 字段复用为要执行的命令（如 "node server.js"）
-        - 每行一个 JSON-RPC 消息，通过 stdin/stdout 通信
-        - 先发送 initialize 握手，再发送实际请求
+        MCP STDIO 浼犺緭瑙勮寖:
+        - server_url 瀛楁澶嶇敤涓鸿鎵ц鐨勫懡浠わ紙濡?"node server.js"锛?
+        - 姣忚涓€涓?JSON-RPC 娑堟伅锛岄€氳繃 stdin/stdout 閫氫俊
+        - 鍏堝彂閫?initialize 鎻℃墜锛屽啀鍙戦€佸疄闄呰姹?
 
-        设计决策:
-        - 每次 RPC 请求 spawn 新子进程（简单可靠，避免生命周期管理复杂度）
-        - discover_tools 有 5 分钟缓存，不会频繁 spawn
-        - 超时 kill + stderr 截断 + fail-loud
+        璁捐鍐崇瓥:
+        - 姣忔 RPC 璇锋眰 spawn 鏂板瓙杩涚▼锛堢畝鍗曞彲闈狅紝閬垮厤鐢熷懡鍛ㄦ湡绠＄悊澶嶆潅搴︼級
+        - discover_tools 鏈?5 鍒嗛挓缂撳瓨锛屼笉浼氶绻?spawn
+        - 瓒呮椂 kill + stderr 鎴柇 + fail-loud
         """
         import asyncio
 
@@ -275,8 +275,8 @@ class MCPClient:
                 "(e.g. 'node /path/to/mcp-server.js')"
             )
 
-        # S 安全修复：MCP STDIO 命令必须过白名单(PLUGIN_COMMAND_ALLOWLIST)，
-        # 防 server_url 可被配置/注入控制时任意命令执行。未配置则 fail-close 拒绝。
+        # S 瀹夊叏淇锛歁CP STDIO 鍛戒护蹇呴』杩囩櫧鍚嶅崟(PLUGIN_COMMAND_ALLOWLIST)锛?
+        # 闃?server_url 鍙閰嶇疆/娉ㄥ叆鎺у埗鏃朵换鎰忓懡浠ゆ墽琛屻€傛湭閰嶇疆鍒?fail-close 鎷掔粷銆?
         from app.tools.ssrf import command_allowed
         if not command_allowed(cmd[0]):
             raise ValueError(
@@ -284,7 +284,7 @@ class MCPClient:
                 "(set PLUGIN_COMMAND_ALLOWLIST)"
             )
 
-        # 构造 initialize + 实际请求两条消息
+        # 鏋勯€?initialize + 瀹為檯璇锋眰涓ゆ潯娑堟伅
         init_req = {
             "jsonrpc": "2.0",
             "id": 0,
@@ -292,7 +292,7 @@ class MCPClient:
             "params": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {},
-                "clientInfo": {"name": "minicc-mcp-client", "version": "1.0.0"},
+                "clientInfo": {"name": "chiron-mcp-client", "version": "1.0.0"},
             },
         }
         actual_req = {
@@ -333,7 +333,7 @@ class MCPClient:
                 f"MCP STDIO '{method}' timed out after {timeout}s"
             )
 
-        # 从 stdout 解析 JSON-RPC 响应（取 id=1 的那条）
+        # 浠?stdout 瑙ｆ瀽 JSON-RPC 鍝嶅簲锛堝彇 id=1 鐨勯偅鏉★級
         lines = stdout.decode(errors="replace").strip().splitlines()
         response: dict[str, Any] | None = None
         for line in reversed(lines):
@@ -359,13 +359,13 @@ class MCPClient:
 
 
 class SkillManager:
-    """技能管理器 (租户隔离)
+    """鎶€鑳界鐞嗗櫒 (绉熸埛闅旂)
     
-    功能:
-    1. 技能注册/卸载/更新
-    2. 技能发现 (按类型/标签/状态)
-    3. 技能执行 (统一接口)
-    4. MCP 工具集成
+    鍔熻兘:
+    1. 鎶€鑳芥敞鍐?鍗歌浇/鏇存柊
+    2. 鎶€鑳藉彂鐜?(鎸夌被鍨?鏍囩/鐘舵€?
+    3. 鎶€鑳芥墽琛?(缁熶竴鎺ュ彛)
+    4. MCP 宸ュ叿闆嗘垚
     """
     
     def __init__(self):
@@ -383,13 +383,13 @@ class SkillManager:
         input_schema: dict = {},
         output_schema: dict = {},
     ) -> SkillMetadata:
-        """注册新技能 (带租户隔离)
+        """娉ㄥ唽鏂版妧鑳?(甯︾鎴烽殧绂?
         
-        SaaS 安全:
-        - skill_id 格式: "{tenant_id}:{name}" 防止冲突
-        - metadata 携带 tenant_id 标记
+        SaaS 瀹夊叏:
+        - skill_id 鏍煎紡: "{tenant_id}:{name}" 闃叉鍐茬獊
+        - metadata 鎼哄甫 tenant_id 鏍囪
         """
-        # 构造完整 skill_id (带租户前缀)
+        # 鏋勯€犲畬鏁?skill_id (甯︾鎴峰墠缂€)
         full_skill_id = f"{tenant_id}:{skill_id}"
         
         skill = SkillMetadata(
@@ -406,7 +406,7 @@ class SkillManager:
         
         self._skills[full_skill_id] = skill
         
-        # 如果是 MCP 类型,初始化客户端
+        # 濡傛灉鏄?MCP 绫诲瀷,鍒濆鍖栧鎴风
         if type == SkillType.MCP_TOOL:
             server_url = config.get("server_url", "")
             transport = config.get("transport", "http")
@@ -418,7 +418,7 @@ class SkillManager:
         return skill
     
     async def unregister_skill(self, tenant_id: str, skill_id: str) -> bool:
-        """卸载技能"""
+        """鍗歌浇鎶€鑳?""
         full_skill_id = f"{tenant_id}:{skill_id}"
         if full_skill_id in self._skills:
             del self._skills[full_skill_id]
@@ -432,11 +432,11 @@ class SkillManager:
         skill_type: Optional[SkillType] = None,
         status: Optional[SkillStatus] = None,
     ) -> list[SkillMetadata]:
-        """列出技能 (租户隔离)"""
+        """鍒楀嚭鎶€鑳?(绉熸埛闅旂)"""
         results = []
         for skill in self._skills.values():
             if skill.tenant_id != tenant_id:
-                continue  # SaaS 安全: 过滤其他租户
+                continue  # SaaS 瀹夊叏: 杩囨护鍏朵粬绉熸埛
             if skill_type and skill.type != skill_type:
                 continue
             if status and skill.status != status:
@@ -452,10 +452,10 @@ class SkillManager:
         params: dict,
         trace_id: str = "",
     ) -> SkillExecutionResult:
-        """执行技能 (统一接口 + 租户隔离 + trace)"""
+        """鎵ц鎶€鑳?(缁熶竴鎺ュ彛 + 绉熸埛闅旂 + trace)"""
         start_time = time.time()
         
-        # 查找技能元数据
+        # 鏌ユ壘鎶€鑳藉厓鏁版嵁
         full_skill_id = f"{tenant_id}:{skill_id}"
         skill_meta = self._skills.get(full_skill_id)
         
@@ -470,7 +470,7 @@ class SkillManager:
         
         try:
             if skill_meta.type == SkillType.MCP_TOOL:
-                # MCP 工具调用
+                # MCP 宸ュ叿璋冪敤
                 mcp_client = self._mcp_clients.get(full_skill_id)
                 if not mcp_client:
                     raise ValueError(f"MCP client not initialized for {full_skill_id}")
@@ -485,9 +485,9 @@ class SkillManager:
                 return result
                 
             elif skill_meta.type == SkillType.PROMPT:
-                # 提示词模板渲染 (config 已在 register_skill 时存入元数据)
+                # 鎻愮ず璇嶆ā鏉挎覆鏌?(config 宸插湪 register_skill 鏃跺瓨鍏ュ厓鏁版嵁)
                 prompt = skill_meta.config.get("template", "")
-                # 填充变量
+                # 濉厖鍙橀噺
                 rendered = prompt.format(**params)
                 
                 duration_ms = int((time.time() - start_time) * 1000)
@@ -533,7 +533,7 @@ class SkillManager:
             )
 
 
-    # ── Python 脚本执行 (沙箱) ──────────────────────────────────────
+    # 鈹€鈹€ Python 鑴氭湰鎵ц (娌欑) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     async def _execute_python_script(
         self,
@@ -544,14 +544,14 @@ class SkillManager:
         trace_id: str,
         start_time: float,
     ) -> SkillExecutionResult:
-        """在安全沙箱中执行 Python 脚本技能。
+        """鍦ㄥ畨鍏ㄦ矙绠变腑鎵ц Python 鑴氭湰鎶€鑳姐€?
 
-        复用 run_code 模块的静态 AST 检查 + 运行时 builtins 守卫，
-        确保脚本无法访问宿主文件系统/网络/子进程。
+        澶嶇敤 run_code 妯″潡鐨勯潤鎬?AST 妫€鏌?+ 杩愯鏃?builtins 瀹堝崼锛?
+        纭繚鑴氭湰鏃犳硶璁块棶瀹夸富鏂囦欢绯荤粺/缃戠粶/瀛愯繘绋嬨€?
 
-        config 字段:
-            code:     Python 脚本源码（函数体，可引用 params 变量）
-            timeout:  超时秒数（默认 60，上限 300）
+        config 瀛楁:
+            code:     Python 鑴氭湰婧愮爜锛堝嚱鏁颁綋锛屽彲寮曠敤 params 鍙橀噺锛?
+            timeout:  瓒呮椂绉掓暟锛堥粯璁?60锛屼笂闄?300锛?
         """
         from app.tools.run_code import _check_static, _safe_builtins, _render_result
 
@@ -561,12 +561,12 @@ class SkillManager:
         if not code.strip():
             raise ValueError("skill config missing 'code' field")
 
-        # 静态安全检查：AST 扫描禁止危险模块/调用
+        # 闈欐€佸畨鍏ㄦ鏌ワ細AST 鎵弿绂佹鍗遍櫓妯″潡/璋冪敤
         denied = _check_static(code)
         if denied:
             raise ValueError(f"python script blocked by static guard: {denied}")
 
-        # 将 params 注入为脚本可用的变量
+        # 灏?params 娉ㄥ叆涓鸿剼鏈彲鐢ㄧ殑鍙橀噺
         import io
         import contextlib
         import asyncio
@@ -576,7 +576,7 @@ class SkillManager:
             "__builtins__": _safe_builtins(),
         }
 
-        # 包装为 async 函数（与 run_code 语义一致）
+        # 鍖呰涓?async 鍑芥暟锛堜笌 run_code 璇箟涓€鑷达級
         body = "\n".join("    " + line if line.strip() else line for line in code.splitlines())
         src = f"async def _skill_main():\n{body}\n"
 
@@ -628,7 +628,7 @@ class SkillManager:
             tenant_id=tenant_id,
         )
 
-    # ── Shell 命令执行 (沙箱) ──────────────────────────────────────
+    # 鈹€鈹€ Shell 鍛戒护鎵ц (娌欑) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     async def _execute_shell_command(
         self,
@@ -639,14 +639,14 @@ class SkillManager:
         trace_id: str,
         start_time: float,
     ) -> SkillExecutionResult:
-        """在安全沙箱中执行 Shell 命令技能。
+        """鍦ㄥ畨鍏ㄦ矙绠变腑鎵ц Shell 鍛戒护鎶€鑳姐€?
 
-        复用 sandbox 模块的 run_in_sandbox：cwd 锁定 + 环境清理 +
-        逃逸拦截 + 命令白名单。
+        澶嶇敤 sandbox 妯″潡鐨?run_in_sandbox锛歝wd 閿佸畾 + 鐜娓呯悊 +
+        閫冮€告嫤鎴?+ 鍛戒护鐧藉悕鍗曘€?
 
-        config 字段:
-            command:  命令模板（可用 {var} 引用 params）
-            timeout:  超时秒数（默认 120）
+        config 瀛楁:
+            command:  鍛戒护妯℃澘锛堝彲鐢?{var} 寮曠敤 params锛?
+            timeout:  瓒呮椂绉掓暟锛堥粯璁?120锛?
         """
         from app.tools.sandbox import run_in_sandbox
 
@@ -656,7 +656,7 @@ class SkillManager:
         if not command_template.strip():
             raise ValueError("skill config missing 'command' field")
 
-        # 安全地填充模板变量（仅 str.format，不执行任意代码）
+        # 瀹夊叏鍦板～鍏呮ā鏉垮彉閲忥紙浠?str.format锛屼笉鎵ц浠绘剰浠ｇ爜锛?
         try:
             command = command_template.format(**params)
         except KeyError as e:
@@ -695,7 +695,7 @@ class SkillManager:
             tenant_id=tenant_id,
         )
 
-    # ── HTTP 请求执行 ───────────────────────────────────────────────
+    # 鈹€鈹€ HTTP 璇锋眰鎵ц 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     async def _execute_http_request(
         self,
@@ -706,25 +706,25 @@ class SkillManager:
         trace_id: str,
         start_time: float,
     ) -> SkillExecutionResult:
-        """执行 HTTP 请求技能（带 SSRF 防护）。
+        """鎵ц HTTP 璇锋眰鎶€鑳斤紙甯?SSRF 闃叉姢锛夈€?
 
-        复用 ssrf 模块的 assert_safe_url：解析目标 host，
-        拒绝内网/私有/保留 IP 段。
+        澶嶇敤 ssrf 妯″潡鐨?assert_safe_url锛氳В鏋愮洰鏍?host锛?
+        鎷掔粷鍐呯綉/绉佹湁/淇濈暀 IP 娈点€?
 
-        config 字段:
-            url:             请求 URL 模板（可用 {var} 引用 params）
-            method:          HTTP 方法（默认 GET）
-            headers:         请求头 dict（可选）
-            body_template:   请求体模板（可选）
-            timeout:         超时秒数（默认 30）
-            expected_status: 期望的响应状态码（可选，用于校验）
+        config 瀛楁:
+            url:             璇锋眰 URL 妯℃澘锛堝彲鐢?{var} 寮曠敤 params锛?
+            method:          HTTP 鏂规硶锛堥粯璁?GET锛?
+            headers:         璇锋眰澶?dict锛堝彲閫夛級
+            body_template:   璇锋眰浣撴ā鏉匡紙鍙€夛級
+            timeout:         瓒呮椂绉掓暟锛堥粯璁?30锛?
+            expected_status: 鏈熸湜鐨勫搷搴旂姸鎬佺爜锛堝彲閫夛紝鐢ㄤ簬鏍￠獙锛?
         """
         from app.tools.ssrf import assert_safe_url
 
         try:
             import httpx
         except ImportError:
-            raise ValueError("httpx not installed — cannot execute HTTP request skill")
+            raise ValueError("httpx not installed 鈥?cannot execute HTTP request skill")
 
         url_template = skill_meta.config.get("url", "")
         method = skill_meta.config.get("method", "GET").upper()
@@ -736,7 +736,7 @@ class SkillManager:
         if not url_template.strip():
             raise ValueError("skill config missing 'url' field")
 
-        # 安全地填充模板
+        # 瀹夊叏鍦板～鍏呮ā鏉?
         try:
             url = url_template.format(**params)
         except KeyError as e:
@@ -753,7 +753,7 @@ class SkillManager:
             except Exception as e:
                 raise ValueError(f"body template render failed: {e}")
 
-        # SSRF 防护：拒绝内网/私有地址
+        # SSRF 闃叉姢锛氭嫆缁濆唴缃?绉佹湁鍦板潃
         assert_safe_url(url)
 
         async with httpx.AsyncClient(timeout=timeout) as client:
@@ -804,24 +804,25 @@ class SkillManager:
         )
 
 
-# ── 全局 SkillManager 实例 ────────────────────────────────────────
-# 生产环境应使用 per-tenant 实例 (Redis 隔离)
+# 鈹€鈹€ 鍏ㄥ眬 SkillManager 瀹炰緥 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# 鐢熶骇鐜搴斾娇鐢?per-tenant 瀹炰緥 (Redis 闅旂)
 _global_skill_manager: Optional[SkillManager] = None
 
 
 def get_skill_manager() -> SkillManager:
-    """获取全局技能管理器 (单例)"""
+    """鑾峰彇鍏ㄥ眬鎶€鑳界鐞嗗櫒 (鍗曚緥)"""
     global _global_skill_manager
     if _global_skill_manager is None:
         _global_skill_manager = SkillManager()
     return _global_skill_manager
 
 
-# ── Go 侧限流配置示例 ─────────────────────────────────────────────
-# Go gateway_router.go 中的限流中间件:
+# 鈹€鈹€ Go 渚ч檺娴侀厤缃ず渚?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+# Go gateway_router.go 涓殑闄愭祦涓棿浠?
 # 
 # skillRateLimiter := NewTenantRateLimiter(redis, 50, 100)
 # skillRateMW := skillRateLimiter.Middleware
 # 
 # mux.Handle("POST /v1/skills", authMW(skillRateMW(...)))
 # mux.Handle("GET /v1/skills/{id}/execute", authMW(skillRateMW(...)))
+

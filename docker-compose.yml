@@ -1,25 +1,25 @@
-services:
+﻿services:
 
   postgres:
     image: pgvector/pgvector:pg16-alpine
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-minicc}
-      # P1 安全：生产必须设置强密码；开发环境默认仅本地可访问
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-minicc_dev_change_in_production}
-      POSTGRES_DB: minicc
+      POSTGRES_USER: ${POSTGRES_USER:-chiron}
+      # P1 瀹夊叏锛氱敓浜у繀椤昏缃己瀵嗙爜锛涘紑鍙戠幆澧冮粯璁や粎鏈湴鍙闂?
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-chiron_dev_change_in_production}
+      POSTGRES_DB: chiron
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U minicc" ]
+      test: [ "CMD-SHELL", "pg_isready -U chiron" ]
       interval: 5s
       timeout: 3s
       retries: 5
 
   redis:
     image: redis:7-alpine
-    command: [ "redis-server", "--requirepass", "${REDIS_PASSWORD:-minicc_dev_redis_change_me}" ]
+    command: [ "redis-server", "--requirepass", "${REDIS_PASSWORD:-chiron_dev_redis_change_me}" ]
     ports:
       - "127.0.0.1:6379:6379"
     volumes:
@@ -38,8 +38,8 @@ services:
     environment:
       - DB=postgres12
       - DB_PORT=5432
-      - POSTGRES_USER=minicc
-      - POSTGRES_PWD=minicc
+      - POSTGRES_USER=chiron
+      - POSTGRES_PWD=chiron
       - POSTGRES_SEEDS=postgres
     depends_on:
       postgres:
@@ -132,3 +132,4 @@ volumes:
   etcddata:
   milvusdata:
   prometheusdata:
+

@@ -1,7 +1,7 @@
-package api
+﻿package api
 
 import (
-	"github.com/athenavi/minicc/internal/id"
+	"github.com/athenavi/chiron/internal/id"
 )
 
 // genID produces a snowflake-based unique ID string.

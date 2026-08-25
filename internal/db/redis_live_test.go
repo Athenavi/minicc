@@ -1,4 +1,4 @@
-package db
+﻿package db
 
 import (
 	"context"
@@ -7,9 +7,7 @@ import (
 	"time"
 )
 
-// Redis 第二阶段实测：真实 Redis 集成测试。
-// 本地/CI 无 Redis 时自动跳过（设置 REDIS_TEST_ADDR 启用，如 redis://localhost:6379）。
-
+// Redis 绗簩闃舵瀹炴祴锛氱湡瀹?Redis 闆嗘垚娴嬭瘯銆?// 鏈湴/CI 鏃?Redis 鏃惰嚜鍔ㄨ烦杩囷紙璁剧疆 REDIS_TEST_ADDR 鍚敤锛屽 redis://localhost:6379锛夈€?
 func testRedisAddr(t *testing.T) string {
 	addr := os.Getenv("REDIS_TEST_ADDR")
 	if addr == "" {
@@ -35,7 +33,7 @@ func TestRealRedis_Client(t *testing.T) {
 	}
 
 	// Set/Get round-trip
-	key := "minicc:test:" + time.Now().Format("150405.000")
+	key := "chiron:test:" + time.Now().Format("150405.000")
 	if err := client.Set(ctx, key, "v1", 30*time.Second).Err(); err != nil {
 		t.Fatalf("set: %v", err)
 	}
@@ -47,8 +45,7 @@ func TestRealRedis_Client(t *testing.T) {
 		t.Fatalf("del: n=%d err=%v", n, err)
 	}
 
-	// Do() 任意命令（慢日志/管理操作）
-	if cmd := client.Do(ctx, "ECHO", "mini"); cmd.Err() != nil || cmd.Val() != "mini" {
+	// Do() 浠绘剰鍛戒护锛堟參鏃ュ織/绠＄悊鎿嶄綔锛?	if cmd := client.Do(ctx, "ECHO", "mini"); cmd.Err() != nil || cmd.Val() != "mini" {
 		t.Fatalf("Do ECHO failed: %v", cmd.Err())
 	}
 }
@@ -65,8 +62,7 @@ func TestRealRedis_AtomicLua(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// 原子递增（限流/计数共用脚本路径）
-	key := "minicc:test:counter:" + time.Now().Format("150405.000")
+	// 鍘熷瓙閫掑锛堥檺娴?璁℃暟鍏辩敤鑴氭湰璺緞锛?	key := "chiron:test:counter:" + time.Now().Format("150405.000")
 	for i := 0; i < 5; i++ {
 		if err := atomic.Incr(ctx, key).Err(); err != nil {
 			t.Fatalf("incr %d: %v", i, err)
