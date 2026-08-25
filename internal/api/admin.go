@@ -195,26 +195,42 @@ func (h *AdminHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "invalid role: must be owner, admin, or user")
 		return
 	}
+	// S 安全修复：非 owner 不可将角色提升为 owner（防止 admin 提权）
+	claims := auth.GetClaims(r.Context())
+	if body.Role == "owner" && (claims == nil || claims.Role != "owner") {
+		BadRequest(w, "only owner can assign owner role")
+		return
+	}
 
-	// Build dynamic UPDATE — tenant_id 作为额外 WHERE 条件防越权
+	// Build dynamic UPDATE with column name whitelist — tenant_id 作为额外 WHERE 条件防越权
+	// S 安全修复：列名必须来自白名单，防止 SQL 注入
+	userColumnMap := map[string]string{
+		"email": "email",
+		"name":  "name",
+		"role":  "role",
+	}
 	setClauses := ""
 	args := []interface{}{}
 	argIdx := 1
 
-	if body.Email != "" {
-		setClauses += fmt.Sprintf("email = $%d, ", argIdx)
-		args = append(args, body.Email)
-		argIdx++
+	fieldValues := []struct {
+		field string
+		value string
+	}{
+		{"email", body.Email},
+		{"name", body.Name},
+		{"role", body.Role},
 	}
-	if body.Name != "" {
-		setClauses += fmt.Sprintf("name = $%d, ", argIdx)
-		args = append(args, body.Name)
-		argIdx++
-	}
-	if body.Role != "" {
-		setClauses += fmt.Sprintf("role = $%d, ", argIdx)
-		args = append(args, body.Role)
-		argIdx++
+	for _, fv := range fieldValues {
+		if fv.value != "" {
+			col, ok := userColumnMap[fv.field]
+			if !ok {
+				continue
+			}
+			setClauses += fmt.Sprintf("%s = $%d, ", col, argIdx)
+			args = append(args, fv.value)
+			argIdx++
+		}
 	}
 
 	if setClauses == "" {

@@ -78,7 +78,9 @@ func (e *tenantQuotaEnforcer) enforce(ctx context.Context, claims *auth.Claims, 
 		return nil // 无身份信息无从强制，放行
 	}
 	if ctx == nil {
-		ctx = context.Background()
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
 	}
 	if estimatedTokens <= 0 {
 		estimatedTokens = 1 // 无预估时最小增量，保持计数器热度

@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"sync"
-	"time"
 
 	"github.com/athenavi/minicc/internal/auth"
 	"github.com/athenavi/minicc/internal/db"
@@ -21,9 +19,6 @@ type DistributedRateLimiter struct {
 	globalLimit  int // 全局每分钟请求数
 	tenantLimit  int // 每租户每分钟请求数
 	userLimit    int // 每用户每分钟请求数
-
-	// 本地缓存（减少 Redis 查询）
-	localCache sync.Map
 }
 
 // NewDistributedRateLimiter 创建分布式限流器
@@ -162,32 +157,4 @@ func DistributedRateLimitMiddleware(limiter *DistributedRateLimiter) func(http.H
 			next.ServeHTTP(w, r)
 		})
 	}
-}
-
-// Cleanup 清理过期的本地缓存
-func (l *DistributedRateLimiter) Cleanup(interval time.Duration) {
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				slog.Error("rate limiter cleanup panic", "panic", r)
-			}
-		}()
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for range ticker.C {
-			l.localCache.Range(func(key, value any) bool {
-				if entry, ok := value.(*cacheEntry); ok {
-					if time.Since(entry.ts) > time.Minute {
-						l.localCache.Delete(key)
-					}
-				}
-				return true
-			})
-		}
-	}()
-}
-
-type cacheEntry struct {
-	count int
-	ts    time.Time
 }

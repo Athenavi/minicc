@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 应用代码
+# 应用代码（排除 examples/ 目录，防止生产环境意外加载 mock 代码）
 COPY app/ app/
 
 # 非 root 用户

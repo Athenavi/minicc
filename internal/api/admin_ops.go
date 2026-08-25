@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/athenavi/minicc/internal/auth"
 	"github.com/athenavi/minicc/internal/db"
 	"github.com/athenavi/minicc/internal/id"
 )
@@ -134,17 +133,30 @@ func (h *AdminHandler) UpdateTenant(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, "status must be active or suspended")
 		return
 	}
+	// S 安全修复：列名白名单，防止 SQL 注入
+	tenantColumnMap := map[string]string{
+		"name":   "name",
+		"status": "status",
+	}
 	sets, args := []string{}, []interface{}{}
 	idx := 1
-	if body.Name != "" {
-		sets = append(sets, fmt.Sprintf("name = $%d", idx))
-		args = append(args, body.Name)
-		idx++
+	tenantFields := []struct {
+		field string
+		value string
+	}{
+		{"name", body.Name},
+		{"status", body.Status},
 	}
-	if body.Status != "" {
-		sets = append(sets, fmt.Sprintf("status = $%d", idx))
-		args = append(args, body.Status)
-		idx++
+	for _, fv := range tenantFields {
+		if fv.value != "" {
+			col, ok := tenantColumnMap[fv.field]
+			if !ok {
+				continue
+			}
+			sets = append(sets, fmt.Sprintf("%s = $%d", col, idx))
+			args = append(args, fv.value)
+			idx++
+		}
 	}
 	args = append(args, id)
 	if _, err := db.Pool.Exec(r.Context(),
@@ -215,7 +227,7 @@ var validDomainRe = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(
 
 func (h *AdminHandler) ListDomains(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.ReadPool().Query(r.Context(),
-		`SELECT id::text, domain, ssl_status, verified, created_at FROM domains ORDER BY created_at DESC`)
+		`SELECT id::text, domain, ssl_status, verified, created_at FROM domains ORDER BY created_at DESC LIMIT 100`)
 	if err != nil {
 		logAndRespond(w, err, http.StatusInternalServerError, "list domains failed")
 		return
@@ -240,10 +252,10 @@ func (h *AdminHandler) CreateDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	domain := strings.ToLower(strings.TrimSpace(body.Domain))
-	claims := authClaims(r)
-	tenantID := "00000000-0000-0000-0000-000000000001"
-	if claims != nil && claims.TenantID != "" {
-		tenantID = claims.TenantID
+	tenantID := GetTenantID(r)
+	if tenantID == "" {
+		Unauthorized(w, "missing tenant context")
+		return
 	}
 	if _, err := db.Pool.Exec(r.Context(),
 		`INSERT INTO domains (tenant_id, domain) VALUES ($1, $2) ON CONFLICT (domain) DO NOTHING`,
@@ -623,22 +635,34 @@ func (h *AdminHandler) UpdateModel(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, ErrInvalidReq)
 		return
 	}
+	// S 安全修复：列名白名单，防止 SQL 注入
+	modelColumnMap := map[string]string{
+		"display_name":  "display_name",
+		"enabled":       "enabled",
+		"context_window": "context_window",
+	}
 	sets, args := []string{}, []interface{}{}
 	idx := 1
 	if body.DisplayName != nil {
-		sets = append(sets, fmt.Sprintf("display_name = $%d", idx))
-		args = append(args, *body.DisplayName)
-		idx++
+		if col, ok := modelColumnMap["display_name"]; ok {
+			sets = append(sets, fmt.Sprintf("%s = $%d", col, idx))
+			args = append(args, *body.DisplayName)
+			idx++
+		}
 	}
 	if body.Enabled != nil {
-		sets = append(sets, fmt.Sprintf("enabled = $%d", idx))
-		args = append(args, *body.Enabled)
-		idx++
+		if col, ok := modelColumnMap["enabled"]; ok {
+			sets = append(sets, fmt.Sprintf("%s = $%d", col, idx))
+			args = append(args, *body.Enabled)
+			idx++
+		}
 	}
 	if body.ContextWindow != nil {
-		sets = append(sets, fmt.Sprintf("context_window = $%d", idx))
-		args = append(args, *body.ContextWindow)
-		idx++
+		if col, ok := modelColumnMap["context_window"]; ok {
+			sets = append(sets, fmt.Sprintf("%s = $%d", col, idx))
+			args = append(args, *body.ContextWindow)
+			idx++
+		}
 	}
 	if len(sets) == 0 {
 		BadRequest(w, "nothing to update")
@@ -753,10 +777,20 @@ func (h *AdminHandler) UpdateCronJob(w http.ResponseWriter, r *http.Request) {
 		BadRequest(w, ErrInvalidReq)
 		return
 	}
+	// S 安全修复：列名白名单，防止 SQL 注入
+	cronColumnMap := map[string]string{
+		"name":     "name",
+		"schedule": "schedule",
+		"task":     "task",
+		"enabled":  "enabled",
+	}
 	sets, args := []string{}, []interface{}{}
 	idx := 1
 	apply := func(col string, v *string) {
 		if v != nil {
+			if _, ok := cronColumnMap[col]; !ok {
+				return
+			}
 			sets = append(sets, fmt.Sprintf("%s = $%d", col, idx))
 			args = append(args, *v)
 			idx++
@@ -766,9 +800,11 @@ func (h *AdminHandler) UpdateCronJob(w http.ResponseWriter, r *http.Request) {
 	apply("schedule", body.Schedule)
 	apply("task", body.Task)
 	if body.Enabled != nil {
-		sets = append(sets, fmt.Sprintf("enabled = $%d", idx))
-		args = append(args, *body.Enabled)
-		idx++
+		if _, ok := cronColumnMap["enabled"]; ok {
+			sets = append(sets, fmt.Sprintf("enabled = $%d", idx))
+			args = append(args, *body.Enabled)
+			idx++
+		}
 	}
 	if len(sets) == 0 {
 		BadRequest(w, "nothing to update")
@@ -792,10 +828,6 @@ func (h *AdminHandler) DeleteCronJob(w http.ResponseWriter, r *http.Request) {
 }
 
 // ── 工具 ──
-
-func authClaims(r *http.Request) *auth.Claims {
-	return auth.GetClaims(r.Context())
-}
 
 // runPGDump 落盘 pg_dump（复用 extractDSN）。
 func runPGDump(ctx context.Context, target string) error {

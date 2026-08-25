@@ -98,12 +98,12 @@ def sdk_usage_text() -> str:
 
 
 def _render_result(value: Any) -> Any:
-    """规范化返回值（json-serializable）。"""
+    """规范化返回值（json-serializable），限制递归深度防栈溢出。"""
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     try:
-        return json.loads(json.dumps(value, ensure_ascii=False, default=str))
-    except Exception:
+        return json.loads(json.dumps(value, ensure_ascii=False, default=str, check_circular=True, indent=None))
+    except (ValueError, RecursionError, OverflowError):
         return str(value)
 
 

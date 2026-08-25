@@ -199,7 +199,12 @@ export interface SmsAdminConfig {
 
 export async function getSmsAdminConfig(): Promise<SmsAdminConfig> {
   const { data } = await api.get('/v1/ent/sms/config')
-  return data?.data
+  const cfg: SmsAdminConfig = data?.data
+  // 前端脱敏处理：仅展示 secret 首尾各 2 字符，中间用 *** 替代
+  if (cfg && cfg.secret && cfg.secret.length > 6) {
+    cfg.secret = cfg.secret.slice(0, 2) + '***' + cfg.secret.slice(-2)
+  }
+  return cfg
 }
 
 export async function updateSmsConfig(body: Partial<{
@@ -217,7 +222,12 @@ export async function updateSmsConfig(body: Partial<{
   enabled: boolean
 }>): Promise<SmsAdminConfig> {
   const { data } = await api.put('/v1/ent/sms/config', body)
-  return data?.data
+  const cfg: SmsAdminConfig = data?.data
+  // 前端脱敏处理：仅展示 secret 首尾各 2 字符，中间用 *** 替代
+  if (cfg && cfg.secret && cfg.secret.length > 6) {
+    cfg.secret = cfg.secret.slice(0, 2) + '***' + cfg.secret.slice(-2)
+  }
+  return cfg
 }
 
 /** 手机号校验：可选 + 前缀 + 5-20 位数字（与后端 ValidateSmsPhone 一致） */

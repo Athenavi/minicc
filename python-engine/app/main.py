@@ -212,7 +212,6 @@ async def lifespan(app: FastAPI):
         bind_memory_service(mem_svc)
         bind_prompt_memory(mem_svc)
         logger.info("Memory service initialized (L2 profile card + L3 summaries)")
-        logger.info("Memory service initialized (L2 profile card)")
     except Exception as e:
         logger.warning("Memory service not available: %s", e)
 

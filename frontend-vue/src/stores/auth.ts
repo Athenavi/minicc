@@ -10,10 +10,20 @@ export interface User {
   tenant_id: string
 }
 
+// S 安全修复：仅持久化最小必要字段（id, role, name），不含 email/tenant_id 等敏感信息
+interface UserStored {
+  id: string
+  role: string
+  name: string
+}
+
 function loadUserFromStorage(): User | null {
   try {
     const raw = localStorage.getItem('user')
-    return raw ? JSON.parse(raw) as User : null
+    if (!raw) return null
+    const stored = JSON.parse(raw) as UserStored
+    // 从存储恢复最小字段，其余字段由后端 profile 填充
+    return { id: stored.id, role: stored.role, name: stored.name, email: '', tenant_id: '' }
   } catch {
     return null
   }
@@ -21,7 +31,8 @@ function loadUserFromStorage(): User | null {
 
 function persistUserToStorage(u: User | null) {
   if (u) {
-    localStorage.setItem('user', JSON.stringify(u))
+    const stored: UserStored = { id: u.id, role: u.role, name: u.name }
+    localStorage.setItem('user', JSON.stringify(stored))
   } else {
     localStorage.removeItem('user')
   }

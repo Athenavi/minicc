@@ -256,18 +256,6 @@ function scrollToTop() {
       </div>
     </section>
 
-    <!-- CTA -->
-    <section class="cta">
-      <div class="cta-card">
-        <h2 class="cta-title">准备好开始了吗？</h2>
-        <p class="cta-sub">创建你的第一个会话，体验完整的 Agent 工作流</p>
-        <Button type="primary" size="large" class="hero-cta glow" @mousemove="onCtaMove" @mouseleave="onCtaLeave" @click="router.push('/chat')">
-          立即使用 MiniCC
-          <ArrowRightOutlined />
-        </Button>
-      </div>
-    </section>
-
     <footer class="home-footer">
       <span class="home-footer-brand">
         <span class="home-footer-logo">MC</span>MiniCC

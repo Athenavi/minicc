@@ -44,7 +44,7 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       # P1 安全：生产必须设置强密码；开发环境默认仅本地可访问
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin_dev_change_in_production}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set in .env}
     volumes:
       - miniodata:/data
     healthcheck:
@@ -113,8 +113,8 @@ services:
       STORAGE_BACKEND: "s3"
       S3_ENDPOINT: "minio:9000"
       S3_BUCKET: "minicc-media"
-      S3_ACCESS_KEY: "minioadmin"
-      S3_SECRET_KEY: "minioadmin123"
+      S3_ACCESS_KEY: "${MINIO_ROOT_USER:-minioadmin}"
+      S3_SECRET_KEY: "${MINIO_ROOT_PASSWORD:?S3_SECRET_KEY must be set in .env}"
       JWT_SECRET: "${JWT_SECRET:?JWT_SECRET must be set in .env (openssl rand -base64 48)}"
       COOKIE_SECURE: "${COOKIE_SECURE:-false}"
       # Python AI 瀵洘鎼搁崷鏉挎絻
@@ -191,7 +191,7 @@ services:
       minio:
         condition: service_healthy
     environment:
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set in .env}
     entrypoint: >
       /bin/sh -c "
       mc alias set myminio http://minio:9000 minioadmin $MINIO_ROOT_PASSWORD;
