@@ -122,8 +122,9 @@ async function loadPhone() {
     const res = await getSmsBind()
     phone.value = res.phone || ''
     phoneBound.value = !!res.bound
-  } catch {
+  } catch (e) {
     // 短信服务未配置/不可达时静默隐藏绑定表单
+    console.warn('loadPhone failed:', e)
     phoneBound.value = false
   } finally {
     phoneLoading.value = false

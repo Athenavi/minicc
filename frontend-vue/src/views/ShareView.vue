@@ -21,13 +21,13 @@ md.renderer.rules.fence = (tokens: any[], idx: number) => {
   const lang = md.utils.escapeHtml((token.info || '').trim().toLowerCase() || 'code')
   const code = md.utils.escapeHtml(token.content)
   const encoded = encodeURIComponent(token.content)
-  return `<div class="code-block"><div class="code-block-head"><span class="code-lang">${lang}</span><button class="code-copy" data-code="${encoded}">复制</button></div><pre><code>${code}</code></pre></div>`
+  return `<div class="code-block"><div class="code-block-head"><span class="code-lang">${lang}</span><span class="code-copy" data-code="${encoded}">复制</span></div><pre><code>${code}</code></pre></div>`
 }
 
 function renderMarkdown(src: string): string {
   try {
     return DOMPurify.sanitize(md.render(src), {
-      ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'code', 'pre', 'ul', 'ol', 'li', 'a', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'span', 'div', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'hr', 'del', 'sup', 'sub', 'button'],
+      ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'code', 'pre', 'ul', 'ol', 'li', 'a', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'span', 'div', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'hr', 'del', 'sup', 'sub'],
       ALLOWED_ATTR: ['href', 'target', 'rel', 'class', 'data-code'],
       ALLOW_DATA_ATTR: true,
     })

@@ -54,8 +54,9 @@ class PersistentTerminal:
         self._prune_procs()
         # S 修复：ws 用局部变量，避免写成实例属性后被并发请求覆盖导致跨会话串 cwd/cd
         ws = str(workspace_dir())
-        proc = await asyncio.create_subprocess_shell(
-            _shell_command(),
+        shell_exe = _shell_command()
+        proc = await asyncio.create_subprocess_exec(
+            shell_exe,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,

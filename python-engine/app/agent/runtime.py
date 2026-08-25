@@ -113,7 +113,7 @@ def _truncate_tool_result(result: dict, cfg: CompactionConfig | None = None) -> 
     """
     from app.agent.guards import OutputGuard
     text = json.dumps(result, ensure_ascii=False, default=str)
-    text = OutputGuard(max_hits=10_000).sanitize(text)
+    text = OutputGuard(max_hits=1000).sanitize(text)
     if cfg is not None:
         return _truncate_text(text, cfg.tool_result_max_chars, cfg.tool_result_head, cfg.tool_result_tail)
     return _truncate_text(text)

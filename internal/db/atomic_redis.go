@@ -22,7 +22,11 @@ func NewAtomicRedis(initial RedisClient) *AtomicRedis {
 }
 
 func (a *AtomicRedis) load() RedisClient {
-	return *a.current.Load()
+	p := a.current.Load()
+	if p == nil {
+		panic("AtomicRedis: not initialized — use NewAtomicRedis")
+	}
+	return *p
 }
 
 func (a *AtomicRedis) Get(ctx context.Context, key string) *redis.StringCmd {

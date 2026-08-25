@@ -58,8 +58,8 @@ class TenantRateLimiter:
     ) -> bool:
         """滑动窗口检查 + 计数（原子操作）
 
-        关键修复：使用唯一 member ID（uuid）而非 id(self)，避免并发请求时
-        ZADD 覆盖同一 member 导致限流计数失真。
+        先清理过期记录 → 检查是否超限 → 仅在未超限时添加当前请求。
+        避免 ZADD 后 ZREM 回滚的竞态问题（ZREM 失败会导致计数永久偏大）。
         """
         pipe = self._redis.pipeline(transaction=True)
         window_start = now - window_seconds
@@ -68,9 +68,6 @@ class TenantRateLimiter:
         pipe.zremrangebyscore(key, "-inf", window_start)
         # 计数
         pipe.zcard(key)
-        # 添加当前请求（使用唯一 UUID 作为 member）
-        member = f"{now}:{uuid.uuid4().hex[:16]}"
-        pipe.zadd(key, {member: now})
         # 设置 key 过期（兜底清理）
         pipe.expire(key, int(window_seconds) + 1)
 
@@ -78,10 +75,11 @@ class TenantRateLimiter:
         count = results[1]  # ZCARD 结果
 
         if count >= max_requests:
-            # 超限，移除刚添加的记录
-            await self._redis.zrem(key, member)
             return False
 
+        # 未超限才添加当前请求（使用唯一 UUID 作为 member）
+        member = f"{now}:{uuid.uuid4().hex[:16]}"
+        await self._redis.zadd(key, {member: now})
         return True
 
     async def get_remaining(self, tenant_id: str) -> dict:

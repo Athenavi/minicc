@@ -150,7 +150,7 @@ class OutputGuard:
     - 替换命中次数超过 ``max_hits`` 后 ``blocked`` 置位（调用方应截断输出）。
     """
 
-    def __init__(self, max_hits: int = 3):
+    def __init__(self, max_hits: int = 10):
         self.max_hits = max_hits
         self.hits: list[str] = []  # 记录命中原因
         self._blocked = False

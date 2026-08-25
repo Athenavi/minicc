@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log/slog"
 	"net/http"
 	"sort"
 	"strconv"
@@ -81,6 +82,9 @@ func handleActivities(w http.ResponseWriter, r *http.Request) {
 			if err := rows.Scan(&ws, &route, &title, &status, &ts); err == nil {
 				items = append(items, item{ws, route, title, status, ts})
 			}
+		}
+		if err := rows.Err(); err != nil {
+			slog.Warn("activities rows iteration error", "error", err)
 		}
 		rows.Close()
 	}

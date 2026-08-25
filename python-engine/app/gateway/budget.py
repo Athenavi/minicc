@@ -55,22 +55,25 @@ class TokenBudget:
         if not tenant_id or actual_tokens <= 0:
             return
 
-        key = self._key(tenant_id)
-        new_used = await self._redis.hincrby(key, "used", actual_tokens)
+        try:
+            key = self._key(tenant_id)
+            new_used = await self._redis.hincrby(key, "used", actual_tokens)
 
-        # 检查是否需要告警
-        limit_raw = await self._redis.hget(key, "limit")
-        if limit_raw:
-            limit = int(limit_raw)
-            if limit > 0 and new_used / limit >= self.BUDGET_WARN_RATIO:
-                await self._redis.publish(
-                    "budget:alerts",
-                    json.dumps({"tenant_id": tenant_id, "used": new_used, "limit": limit}),
-                )
-                logger.warning(
-                    "Budget alert: tenant=%s used=%d limit=%d (%.0f%%)",
-                    tenant_id, new_used, limit, new_used / limit * 100,
-                )
+            # 检查是否需要告警
+            limit_raw = await self._redis.hget(key, "limit")
+            if limit_raw:
+                limit = int(limit_raw)
+                if limit > 0 and new_used / limit >= self.BUDGET_WARN_RATIO:
+                    await self._redis.publish(
+                        "budget:alerts",
+                        json.dumps({"tenant_id": tenant_id, "used": new_used, "limit": limit}),
+                    )
+                    logger.warning(
+                        "Budget alert: tenant=%s used=%d limit=%d (%.0f%%)",
+                        tenant_id, new_used, limit, new_used / limit * 100,
+                    )
+        except Exception as e:
+            logger.exception("Budget deduct failed for tenant=%s: %s", tenant_id, e)
 
     async def get_usage(self, tenant_id: str) -> tuple[int, int]:
         """返回 (used, limit)"""

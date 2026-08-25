@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -184,7 +185,11 @@ func (c *AuditConsumer) Start(ctx context.Context) error {
 	}
 
 	// 创建消费者组
-	c.rdb.XGroupCreateMkStream(ctx, c.stream, c.group, "0")
+	if err := c.rdb.XGroupCreateMkStream(ctx, c.stream, c.group, "0").Err(); err != nil {
+		if !strings.Contains(err.Error(), "BUSYGROUP") {
+			slog.Warn("audit consumer group create error", "error", err)
+		}
+	}
 
 	consumerID := "audit-worker-" + time.Now().Format("20060102150405")
 

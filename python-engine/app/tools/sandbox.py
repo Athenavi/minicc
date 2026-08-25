@@ -127,13 +127,8 @@ def _parse_command(command: str) -> tuple[list[str], str | None]:
 
     exe_name = _normalize_exe(parts[0])
 
-    # 允许 Python 解释器（含 sys.executable 完整路径匹配）
-    if exe_name in ("python", "python3"):
-        return parts, None
-    if os.path.normcase(parts[0]) == os.path.normcase(sys.executable):
-        return parts, None
-
-    # 白名单校验
+    # 白名单校验（python/python3 已在 _ALLOWED_EXECUTABLES 中，
+    # sys.executable 完整路径由 _normalize_exe 规范化后统一走白名单校验）
     if exe_name not in _ALLOWED_EXECUTABLES:
         return [], f"executable not allowed: {exe_name}"
 

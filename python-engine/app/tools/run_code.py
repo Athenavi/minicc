@@ -216,6 +216,13 @@ def _run_subprocess_sync(
                 try:
                     result_obj = future.result(timeout=max(1, deadline - time.time()))
                 except Exception as e:  # noqa: BLE001 — 工具调用失败
+                    if time.time() >= deadline:
+                        _kill_proc_sync(proc)
+                        return {
+                            "isError": True,
+                            "message": f"tool call timed out (exceeded overall {timeout}s deadline)",
+                            "logs": "",
+                        }
                     resp: dict[str, Any] = {
                         "type": "tool_error",
                         "call_id": call_id,

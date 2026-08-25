@@ -193,7 +193,7 @@ async def web_fetch(url: str, max_chars: int = FETCH_MAX_CHARS) -> dict[str, Any
         return {"url": url, "status_code": e.response.status_code, "content": ""}
     except Exception as e:  # noqa: BLE001
         logger.warning("web_fetch failed: %s", e)
-        return {"error": f"web fetch unavailable: {e}"}
+        return {"error": "web fetch unavailable"}
     return result
 
 

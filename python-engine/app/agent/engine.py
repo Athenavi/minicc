@@ -249,20 +249,22 @@ class AgentSession:
         """Create the agent_sessions table if it doesn't exist."""
         if pool is None:
             return
-        await pool.execute(
-            """
-            CREATE TABLE IF NOT EXISTS agent_sessions (
-                id            VARCHAR(64) PRIMARY KEY,
-                user_id       VARCHAR(64) NOT NULL DEFAULT '',
-                messages_json JSONB       NOT NULL DEFAULT '[]',
-                created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            )
-            """
-        )
-        await pool.execute(
-            "CREATE INDEX IF NOT EXISTS idx_agent_sessions_user ON agent_sessions(user_id)"
-        )
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS agent_sessions (
+                        id            VARCHAR(64) PRIMARY KEY,
+                        user_id       VARCHAR(64) NOT NULL DEFAULT '',
+                        messages_json JSONB       NOT NULL DEFAULT '[]',
+                        created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                    """
+                )
+                await conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_agent_sessions_user ON agent_sessions(user_id)"
+                )
 
     # -- helpers ------------------------------------------------------------
 

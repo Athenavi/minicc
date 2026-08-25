@@ -154,8 +154,8 @@ async def run_agent(
             break
 
         except Exception as e:
-            logger.error("Agent推理错误 (turn %d): %s", turn, e)
-            yield {"type": "error", "message": str(e)}
+            logger.error("Agent推理错误 (turn %d): %s", turn, e, exc_info=True)
+            yield {"type": "error", "message": "LLM provider error"}
             break
 
     # 返回总 Token 用量
@@ -266,8 +266,8 @@ async def run_agent_with_llm_provider(
             break
 
         except Exception as e:
-            logger.error("Agent推理错误 (turn %d): %s", turn, e)
-            yield {"type": "error", "message": str(e)}
+            logger.error("Agent推理错误 (turn %d): %s", turn, e, exc_info=True)
+            yield {"type": "error", "message": "LLM provider error"}
             break
 
     # 返回总 Token 用量
